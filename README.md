@@ -46,18 +46,25 @@ cd client && npm install && cd ../server && npm install && cd ..
 cd client && npm run build && cd ..
 
 # Start the dev server (uses SQLite — no Docker or AWS needed)
-cd server && node dev-sqlite.js
+cd server && ANTHROPIC_API_KEY=sk-ant-your-key-here node dev-sqlite.js
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-On first visit you'll create an admin account. After that, seed the prompts, courses, and knowledge base:
+On first visit you'll create an admin account. Prompts, courses, and the knowledge base are seeded automatically.
 
-```bash
-# In a separate terminal
-cd server
-DB_BACKEND=sqlite SQLITE_PATH=./data/plato-dev.db node scripts/seed-content.js
-```
+### AI provider
+
+plato needs access to Claude models. Set one of these:
+
+| Option | Env var | Best for |
+|--------|---------|----------|
+| **Anthropic API** (recommended) | `ANTHROPIC_API_KEY=sk-ant-...` | Local dev, small deployments |
+| **Amazon Bedrock** | AWS credentials + `AI_PROVIDER=bedrock` | Production on AWS |
+
+The Anthropic API key is the easiest way to get started. Get one at [console.anthropic.com](https://console.anthropic.com/settings/keys).
+
+If `ANTHROPIC_API_KEY` is set, plato uses it automatically. For Bedrock, set `AI_PROVIDER=bedrock` and configure AWS credentials.
 
 Then log in and navigate to `/plato` to see the admin dashboard, or `/courses` to start learning.
 
