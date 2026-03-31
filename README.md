@@ -2,11 +2,11 @@
   <img src="client/assets/plato-square.png" alt="plato" width="120" />
 </p>
 
-<h1 align="center">plato</h1>
+# plato
 
-<p align="center">An open-source, exemplar-driven learning platform powered by AI.<br>Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.</p>
+An open-source, exemplar-driven learning platform powered by AI. Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.
 
-<p align="center">Built by <a href="https://github.com/1111philo">11:11 Philosopher's Group</a></p>
+Built by [11:11 Philosopher's Group](https://github.com/1111philo).
 
 ## How it works
 
