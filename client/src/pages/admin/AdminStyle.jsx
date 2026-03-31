@@ -15,7 +15,7 @@ export default function AdminTheme() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    document.title = 'Classroom Theme — plato';
+    document.title = 'Classroom Style — plato';
     loadTheme();
   }, []);
 
@@ -95,7 +95,7 @@ export default function AdminTheme() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Classroom Theme & Branding</h1>
+      <h1 className="text-2xl font-bold mb-1">Classroom Style</h1>
       <p className="text-sm text-muted-foreground mb-4">These settings only affect the learner-facing classroom. The plato dashboard always uses the default plato branding.</p>
 
       <Card className="mb-6">
@@ -182,7 +182,7 @@ export default function AdminTheme() {
 
       <div className="flex items-center gap-3">
         <Button onClick={saveTheme} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Classroom Theme'}
+          {saving ? 'Saving...' : 'Save Classroom Style'}
         </Button>
         {message && (
           <span className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>

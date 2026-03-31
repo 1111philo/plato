@@ -4,37 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
 
 export default function AdminSettings() {
-  const [knowledgeBase, setKnowledgeBase] = useState('');
-  const [kbEditing, setKbEditing] = useState(false);
   const [message, setMessage] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetInput, setResetInput] = useState('');
 
   useEffect(() => {
     document.title = 'Settings — plato';
-    loadSettings();
   }, []);
-
-  async function loadSettings() {
-    setLoading(true);
-    try {
-      const kb = await adminApi('GET', '/v1/admin/knowledge-base');
-      setKnowledgeBase(kb.content || '');
-    } catch { /* ignore */ }
-    setLoading(false);
-  }
-
-  async function saveKnowledgeBase() {
-    try {
-      await adminApi('PUT', '/v1/admin/knowledge-base', { content: knowledgeBase });
-      setMessage({ text: 'Knowledge base saved.', type: 'success' });
-      setKbEditing(false);
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
 
   async function resetAllSyncData() {
     if (resetInput !== 'RESET') return;
@@ -45,8 +23,6 @@ export default function AdminSettings() {
       setResetInput('');
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
-
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
 
   return (
     <div>
@@ -60,32 +36,6 @@ export default function AdminSettings() {
           <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Knowledge Base</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Injected into the coach system prompt so it can answer program questions.</p>
-          {kbEditing ? (
-            <>
-              <Textarea className="font-mono text-sm min-h-[300px]" rows={15}
-                value={knowledgeBase} onChange={e => setKnowledgeBase(e.target.value)} />
-              <div className="flex gap-2">
-                <Button onClick={saveKnowledgeBase}>Save</Button>
-                <Button variant="outline" onClick={() => setKbEditing(false)}>Cancel</Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <pre className="rounded-md bg-muted p-3 text-sm overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto">
-                {knowledgeBase.slice(0, 500)}{knowledgeBase.length > 500 ? '...' : ''}
-              </pre>
-              <Button variant="outline" onClick={() => setKbEditing(true)}>Edit Knowledge Base</Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
 
       <Card className="border-destructive/30">
         <CardHeader>
