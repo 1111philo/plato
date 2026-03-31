@@ -9,6 +9,7 @@ Globals:
     MemorySize: 1024
     Tags:
       Application: plato
+      Project: ai-leaders
 
 Resources:
   # API Gateway function — serves the admin dashboard and non-streaming API
