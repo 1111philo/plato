@@ -7,6 +7,49 @@ import { sendResetEmail } from '../lib/email.js';
 
 const auth = new Hono();
 
+// GET /v1/auth/setup-status — check if initial setup is needed
+auth.get('/v1/auth/setup-status', async (c) => {
+  const count = await db.countUsers();
+  return c.json({ needsSetup: count === 0 });
+});
+
+// POST /v1/auth/setup — create the first admin account (only works when no users exist)
+auth.post('/v1/auth/setup', async (c) => {
+  const count = await db.countUsers();
+  if (count > 0) {
+    return c.json({ error: 'Setup already completed' }, 400);
+  }
+
+  const { email, name, password } = await c.req.json();
+  if (!email || !name || !password) {
+    return c.json({ error: 'email, name, and password are required' }, 400);
+  }
+  if (password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400);
+  }
+
+  const userId = generateUserId();
+  const passwordHash = await hashPassword(password);
+
+  await db.createUser({
+    userId,
+    email: email.toLowerCase(),
+    passwordHash,
+    name,
+    role: 'admin',
+  });
+
+  const accessToken = await signAccessToken(userId, 'admin');
+  const refreshToken = generateRefreshToken();
+  await db.storeRefreshToken(hashToken(refreshToken), userId);
+
+  return c.json({
+    accessToken,
+    refreshToken,
+    user: { userId, email: email.toLowerCase(), name, role: 'admin' },
+  }, 201);
+});
+
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
   const { inviteToken, name, password, affiliation } = await c.req.json();

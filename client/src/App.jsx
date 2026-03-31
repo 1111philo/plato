@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
@@ -8,6 +8,7 @@ import CourseCreate from './pages/CourseCreate.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
@@ -53,11 +54,30 @@ const AdminFallback = () => (
 
 export default function App() {
   const { loading } = useAuth();
+  const [needsSetup, setNeedsSetup] = useState(null);
 
-  if (loading) {
+  useEffect(() => {
+    fetch('/v1/auth/setup-status')
+      .then(r => r.json())
+      .then(d => setNeedsSetup(d.needsSetup))
+      .catch(() => setNeedsSetup(false));
+  }, []);
+
+  if (loading || needsSetup === null) {
     return <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
       <span className="loading-spinner-inline" aria-hidden="true" />
     </main>;
+  }
+
+  if (needsSetup) {
+    return (
+      <>
+        <ScreenReaderAnnounce />
+        <Routes>
+          <Route path="*" element={<Setup />} />
+        </Routes>
+      </>
+    );
   }
 
   return (

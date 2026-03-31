@@ -12,8 +12,8 @@ process.env.DB_BACKEND = 'sqlite';
 process.env.SQLITE_PATH = process.env.SQLITE_PATH ?? './data/learn-service-dev.db';
 process.env.SKIP_EMAIL = process.env.SKIP_EMAIL ?? 'true';
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
-process.env.ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? '';
-process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? '';
+process.env.ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@plato.dev';
+process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'admin123';
 process.env.APP_URL = process.env.APP_URL ?? 'http://localhost:3000';
 
 const { default: health } = await import('./src/routes/health.js');
@@ -22,6 +22,7 @@ const { default: me } = await import('./src/routes/me.js');
 const { default: admin } = await import('./src/routes/admin.js');
 const { default: sync } = await import('./src/routes/sync.js');
 const { default: ai } = await import('./src/routes/ai.js');
+const { default: content } = await import('./src/routes/content.js');
 const { default: app } = await import('./src/routes/app.js');
 const { default: db } = await import('./src/lib/db.js');
 const { generateUserId } = await import('./src/lib/crypto.js');
@@ -63,6 +64,7 @@ server.route('/', me);
 server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
+server.route('/', content);
 server.route('/', app);
 
 server.notFound((c) => c.json({ error: 'Not found' }, 404));
