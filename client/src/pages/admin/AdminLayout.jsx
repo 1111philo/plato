@@ -24,7 +24,7 @@ export default function AdminLayout() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <aside
-        className="w-full md:w-56 bg-primary text-primary-foreground flex md:flex-col shrink-0"
+        className="w-full md:w-56 md:h-screen md:sticky md:top-0 bg-primary text-primary-foreground flex md:flex-col shrink-0"
         role="navigation"
         aria-label="Admin navigation"
       >
@@ -55,7 +55,6 @@ export default function AdminLayout() {
         <div className="hidden md:flex flex-col gap-2 px-4 py-3 mt-auto">
           <Button
             variant="secondary"
-            size="sm"
             className="w-full"
             onClick={() => navigate('/courses')}
           >
