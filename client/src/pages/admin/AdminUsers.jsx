@@ -85,6 +85,7 @@ export default function AdminUsers() {
       const data = await adminApi('POST', '/v1/admin/invites', { email });
       setMessage({ text: `Invite sent to ${email}.${data.signupUrl ? ` Link: ${data.signupUrl}` : ''}`, type: 'success' });
       setInviteEmail('');
+      setInviteOpen(false);
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import usePublicBranding from '../hooks/usePublicBranding.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,10 +13,7 @@ export default function ForgotPassword() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
-
-  useEffect(() => {
-    document.title = 'Reset password — plato';
-  }, []);
+  const branding = usePublicBranding('Reset password');
 
   async function handleSubmit() {
     if (!email.trim()) {
@@ -39,8 +37,11 @@ export default function ForgotPassword() {
     }
   }
 
+  if (!branding) return null;
+
   return (
-    <main className="min-h-dvh flex items-center justify-center bg-muted p-4">
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
+      <img src={branding.logo} alt={branding.logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Reset password</CardTitle>
@@ -79,6 +80,9 @@ export default function ForgotPassword() {
           </Button>
         </CardFooter>
       </Card>
+      <p className="mt-4 text-xs text-white/60">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
+      </p>
     </main>
   );
 }

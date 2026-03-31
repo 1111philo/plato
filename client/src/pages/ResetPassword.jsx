@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -16,10 +17,7 @@ export default function ResetPassword() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('reset') || '';
   const confirmRef = useRef(null);
-
-  useEffect(() => {
-    document.title = 'Set new password — plato';
-  }, []);
+  const branding = usePublicBranding('Set new password');
 
   async function handleReset() {
     if (!password) {
@@ -52,8 +50,11 @@ export default function ResetPassword() {
     }
   }
 
+  if (!branding) return null;
+
   return (
-    <main className="min-h-dvh flex items-center justify-center bg-muted p-4">
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
+      <img src={branding.logo} alt={branding.logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Set new password</CardTitle>
@@ -95,6 +96,9 @@ export default function ResetPassword() {
           </Button>
         </CardContent>
       </Card>
+      <p className="mt-4 text-xs text-white/60">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
+      </p>
     </main>
   );
 }

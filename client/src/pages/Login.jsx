@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,15 +15,10 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [branding, setBranding] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
   const passwordRef = useRef(null);
-
-  useEffect(() => {
-    document.title = 'Sign in — plato';
-    fetch('/v1/branding').then(r => r.ok ? r.json() : null).then(setBranding).catch(() => {});
-  }, []);
+  const branding = usePublicBranding('Sign in');
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -41,9 +37,9 @@ export default function Login() {
     }
   }
 
-  const headerBg = branding?.theme?.primary || '#8b1a1a';
-  const logo = branding?.logoBase64 || '/assets/academy-logo.png';
-  const logoAlt = branding?.logoAlt || "Plato's Academy";
+  if (!branding) return null;
+
+  const { primary: headerBg, logo, logoAlt } = branding;
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
@@ -79,7 +75,7 @@ export default function Login() {
         </CardFooter>
       </Card>
       <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
       </p>
     </main>
   );

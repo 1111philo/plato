@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,12 +23,9 @@ export default function Signup() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
   const confirmRef = useRef(null);
-
-  const [branding, setBranding] = useState(null);
+  const branding = usePublicBranding('Create account');
 
   useEffect(() => {
-    document.title = 'Create account — plato';
-    fetch('/v1/branding').then(r => r.ok ? r.json() : null).then(setBranding).catch(() => {});
     fetch('/v1/groups')
       .then(r => r.json())
       .then(d => setGroups(d.userGroups || []))
@@ -72,13 +70,15 @@ export default function Signup() {
     }
   }
 
+  if (!branding) return null;
+
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding?.theme?.primary || '#8b1a1a' }}>
-      <img src={branding?.logoBase64 || '/assets/academy-logo.png'} alt={branding?.logoAlt || "Plato's Academy"} className="h-16 w-16 mb-6 rounded-lg object-contain" />
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
+      <img src={branding.logo} alt={branding.logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>You've been invited to join plato.</CardDescription>
+          <CardDescription>You've been invited to join {branding.logoAlt}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -145,7 +145,7 @@ export default function Signup() {
         </CardFooter>
       </Card>
       <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
       </p>
     </main>
   );
