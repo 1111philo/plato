@@ -43,7 +43,7 @@ sync.get('/v1/sync/:dataKey', async (c) => {
 
   const item = await db.getSyncData(userId, dataKey);
   if (!item) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ dataKey, data: null, version: 0 });
   }
   return c.json({
     dataKey: item.dataKey,
