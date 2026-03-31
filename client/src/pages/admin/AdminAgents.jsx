@@ -5,29 +5,29 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 const AGENTS = [
   {
     id: 'coach',
     name: 'Coach',
     description: 'The learner\'s companion in a continuous conversation. Coaches toward the exemplar, creates activities inline, evaluates submissions (text and images), and tracks progress.',
-    receives: ['Course knowledge base', 'Learner profile summary', 'Conversation history', 'Knowledge base (program info)'],
-    outputs: ['Coaching responses', 'Inline activities', 'Progress updates [PROGRESS: 0-10]', 'KB updates [KB_UPDATE]', 'Profile updates [PROFILE_UPDATE]'],
-    hasKnowledgeBase: true,
+    receives: ['Course KB', 'Learner profile', 'Conversation history', 'Knowledge base'],
+    outputs: ['Coaching responses', 'Inline activities', 'Progress [PROGRESS: 0-10]', 'KB updates [KB_UPDATE]', 'Profile updates [PROFILE_UPDATE]'],
+    usesKB: true,
   },
   {
     id: 'course-creator',
     name: 'Course Creator',
     description: 'Guides users through designing custom courses via conversational chat. Helps define an exemplar and learning objectives.',
-    receives: ['Conversation history', 'Knowledge base (program info)'],
+    receives: ['Conversation history', 'Knowledge base'],
     outputs: ['Coaching responses', 'Readiness signal [READINESS: 0-10]'],
-    hasKnowledgeBase: true,
+    usesKB: true,
   },
   {
     id: 'course-owner',
     name: 'Course Owner',
-    description: 'Initializes a course knowledge base from the course prompt. Produces structured objectives with evidence descriptors, initial learner position, and insights.',
+    description: 'Initializes a course knowledge base from the course prompt. Produces structured objectives with evidence descriptors.',
     receives: ['Course prompt (exemplar + objectives)', 'Learner profile summary'],
     outputs: ['Structured course KB (JSON)'],
   },
@@ -36,20 +36,20 @@ const AGENTS = [
     name: 'Course Extractor',
     description: 'Extracts structured course markdown from a course creation conversation.',
     receives: ['Course creation conversation text'],
-    outputs: ['Course markdown (title, description, exemplar, objectives)'],
+    outputs: ['Course markdown (title, exemplar, objectives)'],
   },
   {
     id: 'learner-profile-owner',
     name: 'Learner Profile Owner',
-    description: 'Deep profile update when a learner completes a course. Revises the profile based on everything demonstrated during the course.',
-    receives: ['Current learner profile', 'Course KB', 'Course name', 'Activities completed count'],
+    description: 'Deep profile update when a learner completes a course. Revises the full profile based on demonstrated mastery.',
+    receives: ['Current profile', 'Course KB', 'Course name', 'Activities completed'],
     outputs: ['Updated learner profile (JSON)'],
   },
   {
     id: 'learner-profile-update',
     name: 'Learner Profile Update',
     description: 'Incremental profile update from direct learner feedback or observations.',
-    receives: ['Current learner profile', 'Learner feedback text', 'Activity context'],
+    receives: ['Current profile', 'Feedback text', 'Activity context'],
     outputs: ['Updated profile fields (JSON)'],
   },
 ];
@@ -57,15 +57,16 @@ const AGENTS = [
 export default function AdminAgents() {
   const [prompts, setPrompts] = useState({});
   const [knowledgeBase, setKnowledgeBase] = useState('');
-  const [editing, setEditing] = useState(null); // { id, name }
+  const [kbDraft, setKbDraft] = useState('');
+  const [kbEditing, setKbEditing] = useState(false);
+  const [editing, setEditing] = useState(null);
   const [editContent, setEditContent] = useState('');
-  const [editKB, setEditKB] = useState('');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    document.title = 'Agents — plato';
+    document.title = 'Agents & Knowledge — plato';
     load();
   }, []);
 
@@ -77,108 +78,83 @@ export default function AdminAgents() {
         adminApi('GET', '/v1/admin/knowledge-base'),
       ]);
       const map = {};
-      for (const p of (Array.isArray(promptList) ? promptList : [])) {
-        map[p.name] = p;
-      }
+      for (const p of (Array.isArray(promptList) ? promptList : [])) map[p.name] = p;
       setPrompts(map);
       setKnowledgeBase(kb.content || '');
+      setKbDraft(kb.content || '');
     } catch { /* ignore */ }
     setLoading(false);
+  }
+
+  async function saveKB() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi('PUT', '/v1/admin/knowledge-base', { content: kbDraft });
+      setKnowledgeBase(kbDraft);
+      setKbEditing(false);
+      setMessage({ text: 'Knowledge base saved.', type: 'success' });
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+    finally { setSaving(false); }
   }
 
   async function startEditing(agent) {
     try {
       const data = await adminApi('GET', `/v1/admin/prompts/${encodeURIComponent(agent.id)}`);
       setEditContent(data.content || '');
-      setEditKB(agent.hasKnowledgeBase ? knowledgeBase : '');
       setEditing(agent);
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function save() {
+  async function savePrompt() {
     if (!editing) return;
     setSaving(true);
     setMessage(null);
     try {
       await adminApi('PUT', `/v1/admin/prompts/${encodeURIComponent(editing.id)}`, { content: editContent });
-      if (editing.hasKnowledgeBase && editKB !== knowledgeBase) {
-        await adminApi('PUT', '/v1/admin/knowledge-base', { content: editKB });
-        setKnowledgeBase(editKB);
-      }
-      setMessage({ text: `${editing.name} agent saved. Changes take effect immediately.`, type: 'success' });
+      setMessage({ text: `${editing.name} saved.`, type: 'success' });
       setEditing(null);
       load();
-    } catch (e) {
-      setMessage({ text: e.message, type: 'error' });
-    } finally {
-      setSaving(false);
-    }
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+    finally { setSaving(false); }
   }
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
 
+  // Agent prompt editor view
   if (editing) {
     return (
       <div>
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-1">
           <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>&larr; Back</Button>
           <h1 className="text-2xl font-bold">{editing.name}</h1>
         </div>
         <p className="text-sm text-muted-foreground mb-4">{editing.description}</p>
 
-        <Card className="mb-4">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">System Prompt</CardTitle>
-            <CardDescription>The instructions this agent receives. Changes take effect immediately.</CardDescription>
+            <CardDescription>The instructions this agent receives. Changes take effect immediately for all learners.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Textarea
-              className="font-mono text-sm min-h-[400px]"
-              rows={20}
-              value={editContent}
-              onChange={e => setEditContent(e.target.value)}
-            />
+          <CardContent className="space-y-4">
+            <Textarea className="font-mono text-sm min-h-[400px]" rows={20}
+              value={editContent} onChange={e => setEditContent(e.target.value)} />
+            <div className="flex items-center gap-3">
+              <Button onClick={savePrompt} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+              <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+              {message && <span className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
+            </div>
           </CardContent>
         </Card>
-
-        {editing.hasKnowledgeBase && (
-          <Card className="mb-4">
-            <CardHeader>
-              <CardTitle className="text-base">Knowledge Base</CardTitle>
-              <CardDescription>Program information appended to this agent's system prompt. Shared across all agents that receive it.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Textarea
-                className="font-mono text-sm min-h-[200px]"
-                rows={10}
-                value={editKB}
-                onChange={e => setEditKB(e.target.value)}
-                placeholder="Program info, FAQs, policies..."
-              />
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="flex items-center gap-3">
-          <Button onClick={save} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-          <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-          {message && (
-            <span className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>
-              {message.text}
-            </span>
-          )}
-        </div>
       </div>
     );
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Agents</h1>
+      <h1 className="text-2xl font-bold mb-1">Agents & Knowledge</h1>
       <p className="text-sm text-muted-foreground mb-4">
-        These AI agents power the learning experience. Each has a system prompt that defines its behavior. Changes take effect immediately.
+        The knowledge base is shared context injected into AI agents. Agent prompts define each agent's behavior.
       </p>
 
       {message && (
@@ -190,37 +166,87 @@ export default function AdminAgents() {
         </div>
       )}
 
-      <div className="space-y-3">
-        {AGENTS.map(agent => {
-          const prompt = prompts[agent.id];
-          return (
-            <Card key={agent.id} className="hover:ring-1 hover:ring-primary/20 transition-shadow cursor-pointer"
-              onClick={() => startEditing(agent)}>
-              <CardContent className="flex items-start gap-4">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">{agent.name}</h3>
-                    {agent.hasKnowledgeBase && <Badge variant="outline" className="text-xs">+ Knowledge Base</Badge>}
-                    {!prompt && <Badge variant="destructive" className="text-xs">Not seeded</Badge>}
+      <Tabs defaultValue="knowledge" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
+          <TabsTrigger value="agents">Agents</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="knowledge">
+          <Card>
+            <CardHeader>
+              <CardTitle>Knowledge Base</CardTitle>
+              <CardDescription>
+                Program information, FAQs, and policies. Injected into the Coach and Course Creator agents so they can answer questions about your program.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {kbEditing ? (
+                <>
+                  <Textarea className="font-mono text-sm min-h-[400px]" rows={20}
+                    value={kbDraft} onChange={e => setKbDraft(e.target.value)}
+                    placeholder="Enter program information, FAQs, policies..." />
+                  <div className="flex items-center gap-3">
+                    <Button onClick={saveKB} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+                    <Button variant="outline" onClick={() => { setKbEditing(false); setKbDraft(knowledgeBase); }}>Cancel</Button>
                   </div>
-                  <p className="text-sm text-muted-foreground">{agent.description}</p>
-                  <div className="flex gap-6 text-xs text-muted-foreground">
-                    <div>
-                      <span className="font-medium text-foreground">Receives:</span>{' '}
-                      {agent.receives.join(', ')}
+                </>
+              ) : (
+                <>
+                  {knowledgeBase ? (
+                    <pre className="rounded-md bg-muted p-3 text-sm whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+                      {knowledgeBase}
+                    </pre>
+                  ) : (
+                    <p className="text-muted-foreground py-4 text-center">No knowledge base content yet.</p>
+                  )}
+                  <Button variant="outline" onClick={() => { setKbDraft(knowledgeBase); setKbEditing(true); }}>
+                    {knowledgeBase ? 'Edit' : 'Add Knowledge Base'}
+                  </Button>
+                </>
+              )}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground pt-2">
+                <span>Used by:</span>
+                {AGENTS.filter(a => a.usesKB).map(a => (
+                  <Badge key={a.id} variant="outline" className="text-xs">{a.name}</Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="agents">
+          <div className="space-y-3">
+            {AGENTS.map(agent => {
+              const prompt = prompts[agent.id];
+              return (
+                <Card key={agent.id} className="hover:ring-1 hover:ring-primary/20 transition-shadow cursor-pointer"
+                  onClick={() => startEditing(agent)}>
+                  <CardContent className="flex items-start gap-4">
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-semibold">{agent.name}</h3>
+                        {agent.usesKB && <Badge variant="outline" className="text-xs">Uses Knowledge Base</Badge>}
+                        {!prompt && <Badge variant="destructive" className="text-xs">Not seeded</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{agent.description}</p>
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Receives: </span>
+                        {agent.receives.join(' · ')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">Outputs: </span>
+                        {agent.outputs.join(' · ')}
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">Outputs:</span>{' '}
-                    {agent.outputs.join(', ')}
-                  </div>
-                </div>
-                <Button variant="ghost" size="sm" className="shrink-0 mt-1">Edit</Button>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                    <Button variant="ghost" size="sm" className="shrink-0 mt-1">Edit</Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
