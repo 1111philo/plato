@@ -49,7 +49,7 @@ export default function AppShell({ children }) {
   const classroomLogo = branding?.logoBase64 || '/assets/logo-white.svg';
   const classroomAlt = branding?.logoAlt || 'plato';
 
-  const headerBtnClass = 'text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10';
+  const headerBtnClass = 'text-inherit opacity-80 hover:opacity-100 hover:bg-white/10';
 
   return (
     <>
@@ -57,7 +57,14 @@ export default function AppShell({ children }) {
         Skip to main content
       </a>
 
-      <header className="flex items-center gap-2 bg-primary px-4 py-2 text-primary-foreground" role="banner">
+      <header
+        className="flex items-center gap-2 px-4 py-2"
+        style={{
+          backgroundColor: 'var(--classroom-header-bg, var(--color-primary))',
+          color: 'var(--classroom-header-text, var(--color-primary-foreground))',
+        }}
+        role="banner"
+      >
         <img src={classroomLogo} alt={classroomAlt} className="h-5 w-auto" />
         <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
           {navLinks.map(({ path, label }) => (

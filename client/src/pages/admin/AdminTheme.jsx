@@ -6,27 +6,24 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const THEME_VARS = [
-  { key: '--color-bg', label: 'Background', default: '#ffffff' },
-  { key: '--color-surface', label: 'Surface', default: '#f5f5f5' },
-  { key: '--color-border', label: 'Border', default: '#e0e0e0' },
-  { key: '--color-text', label: 'Text', default: '#1a1a1a' },
-  { key: '--color-text-secondary', label: 'Text Secondary', default: '#555555' },
-  { key: '--color-primary', label: 'Primary (Header)', default: '#1a1a1a' },
-  { key: '--color-primary-text', label: 'Primary Text', default: '#ffffff' },
-  { key: '--color-accent', label: 'Accent', default: '#2563eb' },
-  { key: '--color-success', label: 'Success', default: '#16a34a' },
-  { key: '--color-warning', label: 'Warning', default: '#d97706' },
+  { key: 'headerBg', label: 'Header Background', default: '#470d99' },
+  { key: 'headerText', label: 'Header Text', default: '#ffffff' },
+  { key: 'accent', label: 'Accent / Links', default: '#470d99' },
+  { key: 'background', label: 'Page Background', default: '#ffffff' },
+  { key: 'surface', label: 'Surface / Cards', default: '#f5f5f5' },
+  { key: 'text', label: 'Text', default: '#1a1a1a' },
+  { key: 'border', label: 'Borders', default: '#e0e0e0' },
 ];
 
 export default function AdminTheme() {
   const [theme, setTheme] = useState({});
   const [logoBase64, setLogoBase64] = useState(null);
-  const [logoAlt, setLogoAlt] = useState('plato');
+  const [logoAlt, setLogoAlt] = useState('');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    document.title = 'Theme — Admin';
+    document.title = 'Classroom Theme — plato';
     loadTheme();
   }, []);
 
@@ -36,20 +33,19 @@ export default function AdminTheme() {
       const data = await adminApi('GET', '/v1/admin/theme');
       setTheme(data.theme || {});
       setLogoBase64(data.logoBase64 || null);
-      setLogoAlt(data.logoAlt || 'plato');
+      setLogoAlt(data.logoAlt || '');
     } catch { /* ignore */ }
     setLoading(false);
   }
 
   function updateVar(key, value) {
     setTheme(prev => ({ ...prev, [key]: value }));
-    document.documentElement.style.setProperty(key, value);
   }
 
   async function saveTheme() {
     try {
       await adminApi('PUT', '/v1/admin/theme', { theme, logoBase64, logoAlt });
-      setMessage({ text: 'Theme saved.', type: 'success' });
+      setMessage({ text: 'Classroom theme saved. Learners will see the changes on next load.', type: 'success' });
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
@@ -66,7 +62,7 @@ export default function AdminTheme() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Classroom Theme & Branding</h1>
-      <p className="text-sm text-muted-foreground mb-4">These settings only affect the learner-facing classroom. The plato admin interface always uses the default plato branding.</p>
+      <p className="text-sm text-muted-foreground mb-4">These settings only affect the learner-facing classroom. The plato dashboard always uses the default plato branding.</p>
 
       {message && (
         <div
@@ -84,22 +80,23 @@ export default function AdminTheme() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Colors</CardTitle>
+          <CardTitle>Classroom Colors</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground mb-4">Changes preview live. Click Save to persist.</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {THEME_VARS.map(v => (
               <div key={v.key} className="flex items-center gap-3">
-                <Label htmlFor={`theme-${v.key}`} className="min-w-28 text-sm">{v.label}</Label>
                 <input
-                  id={`theme-${v.key}`}
                   type="color"
-                  className="h-8 w-10 cursor-pointer rounded border border-border"
                   value={theme[v.key] || v.default}
                   onChange={e => updateVar(v.key, e.target.value)}
+                  className="w-10 h-10 rounded border border-border cursor-pointer p-0.5"
+                  aria-label={v.label}
                 />
-                <code className="text-xs text-muted-foreground">{v.key}</code>
+                <div>
+                  <Label className="text-sm">{v.label}</Label>
+                  <code className="block text-xs text-muted-foreground">{theme[v.key] || v.default}</code>
+                </div>
               </div>
             ))}
           </div>
@@ -108,26 +105,28 @@ export default function AdminTheme() {
 
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Logo</CardTitle>
+          <CardTitle>Classroom Logo</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">This logo appears in the classroom header. If not set, the plato logo is used.</p>
           <div className="space-y-2">
             <Label htmlFor="logo-alt">Logo alt text</Label>
-            <Input id="logo-alt" type="text" value={logoAlt} onChange={e => setLogoAlt(e.target.value)} />
+            <Input id="logo-alt" type="text" value={logoAlt} placeholder="Your organization name"
+              onChange={e => setLogoAlt(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="logo-file">Upload logo</Label>
             <Input id="logo-file" type="file" accept="image/*" onChange={handleLogoUpload} />
           </div>
           {logoBase64 && (
-            <div className="pt-2">
-              <img src={logoBase64} alt={logoAlt} className="max-h-16" />
+            <div className="p-4 bg-muted rounded-lg text-center">
+              <img src={logoBase64} alt={logoAlt || 'Logo preview'} className="max-h-16 inline-block" />
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Button onClick={saveTheme}>Save Theme</Button>
+      <Button onClick={saveTheme}>Save Classroom Theme</Button>
     </div>
   );
 }
