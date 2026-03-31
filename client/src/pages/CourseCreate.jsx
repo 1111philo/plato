@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useStreamedText } from '../hooks/useStreamedText.js';
 import { MSG_TYPES } from '../lib/constants.js';
-import { loadCourses } from '../../js/courseOwner.js';
+import { loadCourses, invalidateCoursesCache } from '../../js/courseOwner.js';
 import * as creation from '../lib/courseCreationEngine.js';
 
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
@@ -108,6 +108,8 @@ export default function CourseCreate() {
         return;
       }
 
+      await creation.deleteDraft(draftId);
+      invalidateCoursesCache();
       const courses = await loadCourses();
       dispatch({ type: 'REFRESH_COURSES', courses });
       setLoading('');

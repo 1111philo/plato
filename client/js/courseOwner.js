@@ -4,6 +4,7 @@
  */
 
 import { authenticatedFetch } from './auth.js';
+import { getUserCourses } from './storage.js';
 
 /** Max recent insights to keep in full. Older ones get summarized. */
 const MAX_RECENT_INSIGHTS = 10;
@@ -29,6 +30,16 @@ export async function loadCourses() {
       }
     }
   } catch { /* server unavailable */ }
+
+  // Merge user-created courses from sync-data
+  try {
+    const userCourses = await getUserCourses();
+    for (const uc of userCourses) {
+      if (uc.markdown && !courses.some(c => c.courseId === uc.courseId)) {
+        courses.push(parseCoursePrompt(uc.courseId, uc.markdown));
+      }
+    }
+  } catch { /* ignore */ }
 
   coursesCache = courses;
   return courses;
