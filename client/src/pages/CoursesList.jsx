@@ -105,6 +105,7 @@ export default function CoursesList() {
               <strong className="text-sm font-medium">{c.name}</strong>
               {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
               <div className="flex items-center gap-2 flex-wrap">
+                {c.courseId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Course</Badge>}
                 {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
                 <button className="text-xs text-primary hover:underline"
                   onClick={(e) => { e.stopPropagation(); setDetailCourse(c); }}>
@@ -123,17 +124,7 @@ export default function CoursesList() {
           </div>
         </CourseItem>
 
-        <CourseItem index={courses.length + 1} onClick={() => fileRef.current?.click()} dashed>
-          <CourseIcon>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </CourseIcon>
-          <div className="min-w-0 flex-1 space-y-1">
-            <strong className="text-sm font-medium">Import Course</strong>
-            <p className="text-sm text-muted-foreground">Load a course from a .md file</p>
-          </div>
-        </CourseItem>
       </ul>
-      <input ref={fileRef} type="file" accept=".md,text/markdown" onChange={handleImport} className="sr-only" aria-label="Import course file" />
 
       {detailCourse && (
         <CourseDetailDialog
