@@ -1,8 +1,12 @@
-# plato
+<p align="center">
+  <img src="client/assets/plato-square.png" alt="plato" width="120" />
+</p>
 
-An open-source, exemplar-driven learning platform powered by AI. Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.
+<h1 align="center">plato</h1>
 
-Built by [11:11 Philosopher's Group](https://github.com/1111philo).
+<p align="center">An open-source, exemplar-driven learning platform powered by AI.<br>Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.</p>
+
+<p align="center">Built by <a href="https://github.com/1111philo">11:11 Philosopher's Group</a></p>
 
 ## How it works
 
