@@ -185,7 +185,7 @@ export default function CourseCreate() {
         </div>
       </div>
 
-      {hasUserMessage && (
+      {draftId && (
         <div className="border-b border-border px-4 py-2">
         <div className="mx-auto max-w-5xl flex items-center gap-3">
           <div
