@@ -96,7 +96,7 @@ export default function AdminSettings() {
       {/* Groups */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Groups</CardTitle>
+          <CardTitle>User Groups</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -120,7 +120,7 @@ export default function AdminSettings() {
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">No groups yet.</p>
+            <p className="text-sm text-muted-foreground">No user groups yet.</p>
           )}
         </CardContent>
       </Card>

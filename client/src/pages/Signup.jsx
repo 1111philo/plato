@@ -96,7 +96,7 @@ export default function Signup() {
           {groups.length > 0 && (
             <div className="space-y-2">
               <Label htmlFor="signup-group">
-                Group <span className="text-muted-foreground text-xs">(optional)</span>
+                User Group <span className="text-muted-foreground text-xs">(optional)</span>
               </Label>
               <select
                 id="signup-group"
