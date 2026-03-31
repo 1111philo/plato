@@ -434,7 +434,7 @@ admin.get('/v1/admin/theme', async (c) => {
   return c.json({
     theme: settings.theme || {},
     logoBase64: settings.logoBase64 || null,
-    logoAlt: settings.logoAlt || '1111 Learn',
+    logoAlt: settings.logoAlt || 'plato',
   });
 });
 

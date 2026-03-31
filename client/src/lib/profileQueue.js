@@ -12,7 +12,7 @@ let _profileUpdateQueue = Promise.resolve();
 
 export function queueProfileUpdate(fn) {
   _profileUpdateQueue = _profileUpdateQueue.then(fn).catch(e => {
-    console.error('[1111] Profile update failed:', e?.message || e, e?.stack);
+    console.error('[plato] Profile update failed:', e?.message || e, e?.stack);
   });
   return _profileUpdateQueue;
 }
@@ -47,7 +47,7 @@ export function mergeProfile(existing, returned) {
 
 async function saveProfileResult(existing, result) {
   if (!result?.profile) {
-    console.error('[1111] Profile update agent returned no profile:', result);
+    console.error('[plato] Profile update agent returned no profile:', result);
     return;
   }
   const merged = mergeProfile(existing, result.profile);

@@ -11,15 +11,15 @@ export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
     return { skipped: true, signupUrl };
   }
 
-  const subject = 'You\'re invited to 1111 Learn';
+  const subject = 'You\'re invited to plato';
   const html = `
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
       <div style="background: #1a1a1a; color: #fff; padding: 16px 20px; border-radius: 8px 8px 0 0; font-weight: 700;">
-        1111 Learn
+        plato
       </div>
       <div style="border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; padding: 24px 20px;">
         <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-          ${invitedByName ? `${invitedByName} has` : 'You\'ve been'} invited you to join <strong>1111 Learn</strong>.
+          ${invitedByName ? `${invitedByName} has` : 'You\'ve been'} invited you to join <strong>plato</strong>.
         </p>
         <a href="${signupUrl}" style="display: inline-block; background: #1a1a1a; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
           Create your account
@@ -32,7 +32,7 @@ export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
   `;
 
   await ses.send(new SendEmailCommand({
-    Source: `AI Leaders <${SES_FROM_EMAIL}>`,
+    Source: `plato <${SES_FROM_EMAIL}>`,
     Destination: { ToAddresses: [toEmail] },
     Message: {
       Subject: { Data: subject },
@@ -51,11 +51,11 @@ export async function sendResetEmail(toEmail, resetToken) {
     return { skipped: true, resetUrl };
   }
 
-  const subject = 'Reset your 1111 Learn password';
+  const subject = 'Reset your plato password';
   const html = `
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
       <div style="background: #1a1a1a; color: #fff; padding: 16px 20px; border-radius: 8px 8px 0 0; font-weight: 700;">
-        1111 Learn
+        plato
       </div>
       <div style="border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; padding: 24px 20px;">
         <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
@@ -72,7 +72,7 @@ export async function sendResetEmail(toEmail, resetToken) {
   `;
 
   await ses.send(new SendEmailCommand({
-    Source: `AI Leaders <${SES_FROM_EMAIL}>`,
+    Source: `plato <${SES_FROM_EMAIL}>`,
     Destination: { ToAddresses: [toEmail] },
     Message: {
       Subject: { Data: subject },

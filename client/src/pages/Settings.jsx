@@ -159,7 +159,7 @@ function ProfileFeedbackModal({ onDone }) {
       hide();
       if (onDone) onDone();
     } catch (e) {
-      console.error('[1111] Profile feedback failed:', e?.message || e);
+      console.error('[plato] Profile feedback failed:', e?.message || e);
       setSubmitting(false);
     }
   };

@@ -48,11 +48,11 @@ async function callWithValidation(agentFn, validator) {
   const parsed = await agentFn();
   const error = validator(parsed);
   if (!error) return parsed;
-  console.error(`[1111] Validation failed (retrying): ${error}`);
+  console.error(`[plato] Validation failed (retrying): ${error}`);
   const retry = await agentFn();
   const retryError = validator(retry);
   if (retryError) {
-    console.error(`[1111] Validation failed after retry: ${retryError}`);
+    console.error(`[plato] Validation failed after retry: ${retryError}`);
     if (retryError.includes('unsafe')) throw new ApiError('safety', retryError);
   }
   return retry;

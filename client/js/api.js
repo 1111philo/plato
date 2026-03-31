@@ -44,7 +44,7 @@ export async function parseResponse(resp) {
   if (!textBlock) throw new ApiError('parse', 'No text content in API response.');
 
   if (data.stop_reason === 'max_tokens') {
-    console.warn('[1111] Response truncated — max_tokens reached. Output may be incomplete.');
+    console.warn('[plato] Response truncated — max_tokens reached. Output may be incomplete.');
   }
 
   return { content: textBlock.text, usage: data.usage };
