@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { readFileSync, readdirSync } from 'fs';
-import { join, extname } from 'path';
+import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
 const app = new Hono();
@@ -21,7 +21,8 @@ const MIME_TYPES = {
 };
 
 // Load built client files into memory at startup
-const clientDistDir = join(fileURLToPath(import.meta.url), '../../../client/dist');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const clientDistDir = join(__dirname, '../../../client/dist');
 const staticFiles = {};
 function loadDir(dir, prefix) {
   try {

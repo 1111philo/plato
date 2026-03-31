@@ -17,22 +17,24 @@ Thank you for your interest in contributing to plato. This project is maintained
    cd client && npm install
    cd ../server && npm install
    ```
-3. Build the client:
+3. Build the client (the server serves the built files):
    ```bash
    cd client && npm run build
    ```
-4. Seed content (prompts, courses, knowledge base):
+4. Start the dev server:
+   ```bash
+   cd server && node dev-sqlite.js
+   ```
+5. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account.
+6. Seed content (prompts, courses, knowledge base) in a separate terminal:
    ```bash
    cd server
    DB_BACKEND=sqlite SQLITE_PATH=./data/learn-service-dev.db node scripts/seed-content.js
    ```
-5. Start the dev server:
-   ```bash
-   node dev-sqlite.js
-   ```
-6. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account.
 
 No Docker, AWS credentials, or external services needed for local development. AI features require a Bedrock proxy connection — without it, the app is fully navigable but you can't start course conversations.
+
+The client uses **Tailwind CSS v4** and **shadcn/ui** for styling. UI components are in `src/components/ui/`.
 
 ## Project structure
 

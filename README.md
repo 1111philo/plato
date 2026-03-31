@@ -32,38 +32,52 @@ plato/
 - Node.js 20+
 - npm
 
-### 1. Install dependencies
+### Setup and run
 
 ```bash
-cd client && npm install
-cd ../server && npm install
-cd ..
-```
+# Clone the repo
+git clone https://github.com/1111philo/plato.git
+cd plato
 
-### 2. Build the client
+# Install dependencies (client and server)
+cd client && npm install && cd ../server && npm install && cd ..
 
-```bash
+# Build the client (server serves the built files)
 cd client && npm run build && cd ..
+
+# Start the dev server (uses SQLite — no Docker or AWS needed)
+cd server && node dev-sqlite.js
 ```
 
-### 3. Seed content
+Open [http://localhost:3000](http://localhost:3000).
 
-Prompts, courses, and the knowledge base are stored in the database. The seed script reads the markdown files from `client/prompts/` and `client/data/` and inserts them:
+On first visit you'll create an admin account. After that, seed the prompts, courses, and knowledge base:
 
 ```bash
+# In a separate terminal
 cd server
 DB_BACKEND=sqlite SQLITE_PATH=./data/learn-service-dev.db node scripts/seed-content.js
 ```
 
-### 4. Start the dev server
+Then log in and navigate to `/plato-admin` to see the admin dashboard, or `/courses` to start learning.
+
+### Development workflow
+
+For client changes with hot reload:
 
 ```bash
-node dev-sqlite.js
+cd client && npm run dev    # Vite dev server on :5173
 ```
 
-Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account. No Docker, no AWS credentials, no external services needed for local dev.
+For server changes (restart required):
 
-> **AI features** require the server to proxy to Amazon Bedrock. For local testing without AI, the app is fully navigable — you just can't start a course conversation.
+```bash
+cd server && node dev-sqlite.js    # API server on :3000
+```
+
+When developing the client with Vite's dev server, API calls go to `localhost:3000` — configure your browser or use a proxy.
+
+> **AI features** require the server to proxy to Amazon Bedrock. Without it, the app is fully navigable but course conversations won't work.
 
 ## Architecture
 
