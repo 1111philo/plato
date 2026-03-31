@@ -131,10 +131,14 @@ export default function AdminAgents() {
         </div>
         <p className="text-sm text-muted-foreground mb-4">{editing.description}</p>
 
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800" role="alert">
+          <strong>Caution:</strong> Changes to agent prompts take effect immediately for all learners. Incorrect prompts can break the learning experience. Test changes carefully.
+        </div>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">System Prompt</CardTitle>
-            <CardDescription>The instructions this agent receives. Changes take effect immediately for all learners.</CardDescription>
+            <CardDescription>The instructions this agent receives.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Label htmlFor="agent-prompt-editor" className="sr-only">System prompt</Label>
@@ -184,6 +188,9 @@ export default function AdminAgents() {
             <CardContent className="space-y-4">
               {kbEditing ? (
                 <>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="alert">
+                    <strong>Caution:</strong> The knowledge base is injected into AI agents and affects how they respond to all learners. Verify accuracy before saving.
+                  </div>
                   <Label htmlFor="kb-editor" className="sr-only">Knowledge base content</Label>
                   <Textarea id="kb-editor" className="font-mono text-sm min-h-[400px]" rows={20}
                     value={kbDraft} onChange={e => setKbDraft(e.target.value)}
