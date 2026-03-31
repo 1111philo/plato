@@ -163,18 +163,24 @@ export default function CourseCreate() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-2">
+      <div
+        className="px-4 py-2"
+        style={{
+          backgroundColor: 'var(--classroom-header-bg, var(--color-primary))',
+          color: 'var(--classroom-header-text, var(--color-primary-foreground))',
+        }}
+      >
         <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
+          <button type="button" className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md p-1" aria-label="Back to courses" onClick={() => navigate('/courses')}>
             &larr;
-          </Button>
+          </button>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold truncate">Create Course</h2>
           </div>
           {draftId && (
-            <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Start over" title="Start over">
+            <button type="button" className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md p-1" onClick={handleReset} aria-label="Start over" title="Start over">
               &#8635;
-            </Button>
+            </button>
           )}
         </div>
       </div>
