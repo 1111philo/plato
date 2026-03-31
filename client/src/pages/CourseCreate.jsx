@@ -163,73 +163,67 @@ export default function CourseCreate() {
 
   return (
     <div className="flex flex-col h-full">
-      <div
-        className="px-4 py-2"
-        style={{
-          backgroundColor: 'var(--classroom-header-bg, var(--color-primary))',
-          color: 'var(--classroom-header-text, var(--color-primary-foreground))',
-        }}
-      >
+      <div className="border-b border-border bg-background px-4 py-2">
         <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <button type="button" className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md p-1" aria-label="Back to courses" onClick={() => navigate('/courses')}>
+          <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
             &larr;
-          </button>
+          </Button>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-semibold truncate">Create Course</h2>
+            {draftId && (
+              <div
+                className="mt-1.5"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={10}
+                aria-valuenow={readiness}
+                aria-label={`Course readiness: ${readiness} out of 10`}
+              >
+                <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
+                  <span>Not ready</span>
+                  <span>Ready</span>
+                </div>
+                <div className="h-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${readiness * 10}%`,
+                      backgroundColor: `hsl(${readiness * 12}, 80%, 45%)`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           {draftId && (
-            <button type="button" className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md p-1" onClick={handleReset} aria-label="Start over" title="Start over">
-              &#8635;
-            </button>
+            <>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (canCreate) {
+                    handleCreate();
+                  } else {
+                    setConfirmModal({
+                      title: 'Create course now?',
+                      message: 'Continuing the conversation would strengthen your course. Create anyway?',
+                      confirmLabel: 'Create Anyway',
+                      variant: 'default',
+                      onConfirm: handleCreate,
+                    });
+                  }
+                }}
+                disabled={busy}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Create Course
+              </Button>
+              <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Start over" title="Start over">
+                &#8635;
+              </Button>
+            </>
           )}
         </div>
       </div>
-
-      {draftId && (
-        <div className="border-b border-border px-4 py-2">
-        <div className="mx-auto max-w-5xl flex items-center gap-3">
-          <div
-            className="flex-1"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={10}
-            aria-valuenow={readiness}
-            aria-label={`Course readiness: ${readiness} out of 10`}
-          >
-            <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
-              <span>Not ready</span>
-              <span>Ready</span>
-            </div>
-            <div className="h-1 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full bg-primary transition-all duration-500"
-                style={{ width: `${readiness * 10}%` }}
-              />
-            </div>
-          </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              if (canCreate) {
-                handleCreate();
-              } else {
-                setConfirmModal({
-                  title: 'Create course now?',
-                  message: 'Continuing the conversation would strengthen your course. Create anyway?',
-                  confirmLabel: 'Create Anyway',
-                  variant: 'default',
-                  onConfirm: handleCreate,
-                });
-              }
-            }}
-            disabled={busy}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Create Course
-          </Button>
-        </div>
-        </div>
-      )}
 
       <ChatArea courseName="Course Creator">
         {messages.map(renderMessage)}
