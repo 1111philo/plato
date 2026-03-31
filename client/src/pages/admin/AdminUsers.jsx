@@ -139,7 +139,7 @@ export default function AdminUsers() {
     if (!name) return;
     try {
       const data = await adminApi('PUT', '/v1/admin/groups', { name });
-      setGroups(data.userGroups || []);
+      setGroups(data.groups || []);
       setNewGroupName('');
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -147,7 +147,7 @@ export default function AdminUsers() {
   async function deleteGroup(name) {
     try {
       const data = await adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`);
-      setGroups(data.userGroups || []);
+      setGroups(data.groups || []);
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
