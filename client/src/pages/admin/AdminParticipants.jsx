@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from '@/components/ui/table';
 
 function parseCsvEmails(text) {
   const lines = text.split(/\r?\n/);
@@ -114,74 +122,121 @@ export default function AdminParticipants() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  if (loading) return <div className="admin-loading">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
 
   return (
     <div>
-      <h1>Participants</h1>
+      <h1 className="text-2xl font-bold mb-4">Participants</h1>
 
       {message && (
-        <div className={`admin-alert admin-alert-${message.type}`} role="alert">
-          {message.text}
-          <button onClick={() => setMessage(null)} aria-label="Dismiss">&times;</button>
+        <div
+          className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
+            message.type === 'error'
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+          }`}
+          role="alert"
+        >
+          <span>{message.text}</span>
+          <button
+            onClick={() => setMessage(null)}
+            aria-label="Dismiss"
+            className="ml-2 text-lg leading-none hover:opacity-70"
+          >
+            &times;
+          </button>
         </div>
       )}
 
-      <div className="admin-card">
-        <div className="admin-inline-form">
-          <label htmlFor="inv-email">Invite a participant</label>
-          <div className="admin-input-row">
-            <input id="inv-email" type="email" placeholder="participant@example.com"
-              value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }} />
-            <button className="primary-btn" onClick={sendInvite}>Send invite</button>
-          </div>
-        </div>
-
-        <div className="admin-bulk-section">
-          <label htmlFor="csv-file">Bulk invite from CSV</label>
-          <input id="csv-file" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
-          {csvPreview && csvEmails?.length > 0 && (
-            <div className="admin-csv-preview">
-              <div>{csvEmails.length} email(s) ready to invite</div>
-              {csvInvalid.length > 0 && <div className="admin-csv-invalid">{csvInvalid.length} invalid: {csvInvalid.join(', ')}</div>}
-              <button className="primary-btn" onClick={sendBulkInvites}>Send {csvEmails.length} invite(s)</button>
+      <Card className="mb-6">
+        <CardContent className="space-y-6">
+          {/* Single invite */}
+          <div className="space-y-2">
+            <Label htmlFor="inv-email">Invite a participant</Label>
+            <div className="flex gap-2">
+              <Input
+                id="inv-email"
+                type="email"
+                placeholder="participant@example.com"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }}
+                className="flex-1"
+              />
+              <Button onClick={sendInvite}>Send invite</Button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+
+          {/* Bulk invite */}
+          <div className="space-y-2">
+            <Label htmlFor="csv-file">Bulk invite from CSV</Label>
+            <Input id="csv-file" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
+            {csvPreview && csvEmails?.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="text-sm">{csvEmails.length} email(s) ready to invite</div>
+                {csvInvalid.length > 0 && (
+                  <div className="text-sm text-destructive">{csvInvalid.length} invalid: {csvInvalid.join(', ')}</div>
+                )}
+                <Button onClick={sendBulkInvites}>Send {csvEmails.length} invite(s)</Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {(pendingInvites.length > 0 || participants.length > 0) && (
-        <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table className="admin-table" aria-label="Participants and invites">
-            <thead><tr><th>Name</th><th>Email</th><th>Status</th><th>Date</th><th><span className="sr-only">Actions</span></th></tr></thead>
-            <tbody>
+        <Card className="p-0 overflow-hidden">
+          <Table aria-label="Participants and invites">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {pendingInvites.map(inv => (
-                <tr key={inv.inviteToken}>
-                  <td>&mdash;</td><td>{inv.email}</td>
-                  <td><span className="admin-badge pending">Invited</span></td>
-                  <td>{new Date(inv.createdAt).toLocaleDateString()}</td>
-                  <td>
-                    <button className="admin-icon-btn" title="Resend" onClick={() => resendInvite(inv.email)}>&#8635;</button>
-                    <button className="admin-icon-btn" title="Revoke" onClick={() => revokeInvite(inv.inviteToken)}>&#10005;</button>
-                  </td>
-                </tr>
+                <TableRow key={inv.inviteToken}>
+                  <TableCell>&mdash;</TableCell>
+                  <TableCell>{inv.email}</TableCell>
+                  <TableCell><Badge variant="outline">Invited</Badge></TableCell>
+                  <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon-xs" title="Resend" onClick={() => resendInvite(inv.email)}>
+                        &#8635;
+                      </Button>
+                      <Button variant="ghost" size="icon-xs" title="Revoke" onClick={() => revokeInvite(inv.inviteToken)}>
+                        &#10005;
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ))}
               {participants.map(p => (
-                <tr key={p.userId}>
-                  <td>{p.name}</td><td>{p.email}</td>
-                  <td><span className={`admin-badge ${p.role}`}>{p.role === 'admin' ? 'Admin' : 'Participant'}</span></td>
-                  <td>{new Date(p.createdAt).toLocaleDateString()}</td>
-                  <td>
+                <TableRow key={p.userId}>
+                  <TableCell>{p.name}</TableCell>
+                  <TableCell>{p.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
+                      {p.role === 'admin' ? 'Admin' : 'Participant'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>
                     {p.userId !== currentUser?.userId && (
-                      <button className="admin-icon-btn" title="Delete" onClick={() => deleteUser(p.userId, p.name || p.email)}>&#128465;</button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteUser(p.userId, p.name || p.email)}>
+                        &#128465;
+                      </Button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   );

@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
-import { useModal } from '../contexts/ModalContext.jsx';
 import { useStreamedText } from '../hooks/useStreamedText.js';
 import { COURSE_PHASES, MSG_TYPES } from '../lib/constants.js';
 import { launchConfetti } from '../lib/confetti.js';
@@ -19,13 +18,13 @@ import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
+import { Button } from '@/components/ui/button';
 
 export default function CourseChat() {
   const { courseGroupId } = useParams();
   const navigate = useNavigate();
   const { state, dispatch } = useApp();
   const { courses } = state;
-  const { show: showModal } = useModal();
   const course = courses.find(c => c.courseId === courseGroupId);
 
   const [phase, setPhase] = useState(null);
@@ -38,6 +37,9 @@ export default function CourseChat() {
   const displayText = useStreamedText(streamingText);
   const pendingAfterStreamRef = useRef(null);
 
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState(null);
+
   useEffect(() => {
     if (displayText === null && pendingAfterStreamRef.current) {
       const { msgs, p, confetti } = pendingAfterStreamRef.current;
@@ -48,8 +50,6 @@ export default function CourseChat() {
       setLoading('');
     }
   }, [displayText]);
-
-  // -- Load on mount ----------------------------------------------------------
 
   useEffect(() => {
     if (!course) return;
@@ -83,15 +83,12 @@ export default function CourseChat() {
     return () => { cancelled = true; };
   }, [courseGroupId]);
 
-  // -- Send message -----------------------------------------------------------
-
   const handleSend = useCallback(async ({ text, imageDataUrl }) => {
     if (!text && !imageDataUrl) return;
     setError('');
     setLoading('qa');
     setStreamingText('');
 
-    // Show user message immediately (with image preview if attached)
     setMessages(prev => [...prev, {
       role: 'user', content: text || '', msgType: MSG_TYPES.USER,
       phase: COURSE_PHASES.LEARNING,
@@ -117,8 +114,6 @@ export default function CourseChat() {
     }
   }, [courseGroupId, course]);
 
-  // -- Export / Reset / Delete ------------------------------------------------
-
   const isCustomCourse = courseGroupId?.startsWith('custom-');
 
   const handleExport = useCallback(async () => {
@@ -134,40 +129,30 @@ export default function CourseChat() {
   }, [courseGroupId, course]);
 
   const handleReset = () => {
-    showModal(
-      <ConfirmModal
-        title="Reset Course?"
-        message="This will delete all progress. You'll start from scratch."
-        confirmLabel="Reset Course"
-        onConfirm={async () => { await deleteCourseProgress(courseGroupId); navigate('/courses'); }}
-      />,
-      'alertdialog',
-      'Reset course'
-    );
+    setConfirmModal({
+      title: 'Reset Course?',
+      message: "This will delete all progress. You'll start from scratch.",
+      confirmLabel: 'Reset Course',
+      onConfirm: async () => { await deleteCourseProgress(courseGroupId); navigate('/courses'); },
+    });
   };
 
   const handleDelete = () => {
-    showModal(
-      <ConfirmModal
-        title="Delete Course?"
-        message="This will permanently delete this course and all its progress."
-        confirmLabel="Delete Course"
-        onConfirm={async () => {
-          await deleteCourseProgress(courseGroupId);
-          await deleteUserCourse(courseGroupId);
-          invalidateCoursesCache();
-          dispatch({ type: 'REFRESH_COURSES', courses: await loadCourses() });
-          navigate('/courses');
-        }}
-      />,
-      'alertdialog',
-      'Delete course'
-    );
+    setConfirmModal({
+      title: 'Delete Course?',
+      message: 'This will permanently delete this course and all its progress.',
+      confirmLabel: 'Delete Course',
+      onConfirm: async () => {
+        await deleteCourseProgress(courseGroupId);
+        await deleteUserCourse(courseGroupId);
+        invalidateCoursesCache();
+        dispatch({ type: 'REFRESH_COURSES', courses: await loadCourses() });
+        navigate('/courses');
+      },
+    });
   };
 
-  // -- Render -----------------------------------------------------------------
-
-  if (!course) return <p>Course not found.</p>;
+  if (!course) return <p className="p-4 text-muted-foreground">Course not found.</p>;
   const busy = !!loading;
 
   const renderMessage = (msg, idx) => {
@@ -179,8 +164,10 @@ export default function CourseChat() {
           <div key={idx}>
             {msg.content && <UserMessage content={msg.content} />}
             {msg.metadata?.imageDataUrl && (
-              <div className="msg msg-user" style={{ padding: '6px', marginTop: msg.content ? '4px' : 0 }}>
-                <img src={msg.metadata.imageDataUrl} alt="Your uploaded work" style={{ maxWidth: '100%', borderRadius: 'var(--radius)' }} />
+              <div className="flex justify-end mt-1">
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary p-1.5">
+                  <img src={msg.metadata.imageDataUrl} alt="Your uploaded work" className="max-w-full rounded-lg" />
+                </div>
               </div>
             )}
           </div>
@@ -191,23 +178,29 @@ export default function CourseChat() {
   };
 
   return (
-    <div className="course-layout">
-      <div className="course-header">
-        <button className="back-btn" aria-label="Back to courses" onClick={() => navigate('/courses')}>&larr;</button>
-        <div className="course-header-info">
-          <h2>{course.name}</h2>
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+        <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
+          &larr;
+        </Button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold truncate">{course.name}</h2>
           <ProgressBar courseKB={courseKB} />
         </div>
         {isCustomCourse && (
-          <button className="reset-btn" onClick={handleExport} aria-label="Export course" title="Export course markdown">
+          <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export course" title="Export course markdown">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          </button>
+          </Button>
         )}
-        {phase && <button className="reset-btn" onClick={handleReset} aria-label="Reset course" title="Reset course">&#8635;</button>}
+        {phase && (
+          <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset course" title="Reset course">
+            &#8635;
+          </Button>
+        )}
         {isCustomCourse && (
-          <button className="reset-btn" onClick={handleDelete} aria-label="Delete course" title="Delete course">
+          <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete course" title="Delete course">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
+          </Button>
         )}
       </div>
 
@@ -218,18 +211,27 @@ export default function CourseChat() {
         )}
         {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your course..." />}
         {loading === 'qa' && !displayText && <ThinkingSpinner />}
-        {error && <div className="msg msg-response" role="alert" style={{ color: 'var(--color-warning)' }}>{error}</div>}
+        {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
       </ChatArea>
 
       {phase && (
-        <div className="course-bottom-bar">
-          <ComposeBar
-            placeholder={phase === COURSE_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
-            onSend={handleSend}
-            disabled={busy}
-            allowImages
-          />
-        </div>
+        <ComposeBar
+          placeholder={phase === COURSE_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+          onSend={handleSend}
+          disabled={busy}
+          allowImages
+        />
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          open={!!confirmModal}
+          onOpenChange={(open) => { if (!open) setConfirmModal(null); }}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmLabel={confirmModal.confirmLabel}
+          onConfirm={() => { setConfirmModal(null); confirmModal.onConfirm(); }}
+        />
       )}
     </div>
   );

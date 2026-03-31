@@ -13,7 +13,6 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
 
-// Lazy-load admin bundle
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminParticipants = lazy(() => import('./pages/admin/AdminParticipants.jsx'));
@@ -25,9 +24,11 @@ const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'));
 function RequireAuth({ children }) {
   const { loggedIn, loading } = useAuth();
   if (loading) {
-    return <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-      <span className="loading-spinner-inline" aria-hidden="true" />
-    </main>;
+    return (
+      <main className="min-h-dvh flex items-center justify-center">
+        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
+      </main>
+    );
   }
   if (!loggedIn) return <Navigate to="/login" replace />;
   return children;
@@ -47,8 +48,8 @@ function RequireGuest({ children }) {
 }
 
 const AdminFallback = () => (
-  <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-    <span className="loading-spinner-inline" aria-hidden="true" />
+  <main className="min-h-dvh flex items-center justify-center">
+    <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
   </main>
 );
 
@@ -64,9 +65,11 @@ export default function App() {
   }, []);
 
   if (loading || needsSetup === null) {
-    return <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-      <span className="loading-spinner-inline" aria-hidden="true" />
-    </main>;
+    return (
+      <main className="min-h-dvh flex items-center justify-center">
+        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
+      </main>
+    );
   }
 
   if (needsSetup) {
@@ -84,13 +87,11 @@ export default function App() {
     <>
       <ScreenReaderAnnounce />
       <Routes>
-        {/* Public auth routes */}
         <Route path="/login" element={<RequireGuest><Login /></RequireGuest>} />
         <Route path="/signup" element={<RequireGuest><Signup /></RequireGuest>} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
 
-        {/* Admin routes */}
         <Route path="/plato-admin/*" element={
           <RequireAuth>
             <RequireAdmin>
@@ -108,7 +109,6 @@ export default function App() {
           <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
         </Route>
 
-        {/* Protected app routes */}
         <Route path="/*" element={
           <RequireAuth>
             <AppShell>

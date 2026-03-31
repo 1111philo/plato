@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
 import { adminApi } from './adminApi.js';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const THEME_VARS = [
   { key: '--color-bg', label: 'Background', default: '#ffffff' },
@@ -57,53 +61,72 @@ export default function AdminTheme() {
     reader.readAsDataURL(file);
   }
 
-  if (loading) return <div className="admin-loading">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
 
   return (
     <div>
-      <h1>Theme & Branding</h1>
+      <h1 className="text-2xl font-bold mb-4">Theme & Branding</h1>
+
       {message && (
-        <div className={`admin-alert admin-alert-${message.type}`} role="alert">
-          {message.text}
-          <button onClick={() => setMessage(null)} aria-label="Dismiss">&times;</button>
+        <div
+          className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
+            message.type === 'error'
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+          }`}
+          role="alert"
+        >
+          <span>{message.text}</span>
+          <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
 
-      <div className="admin-card">
-        <h2>Colors</h2>
-        <p className="admin-subtitle">Changes preview live. Click Save to persist.</p>
-        <div className="admin-theme-grid">
-          {THEME_VARS.map(v => (
-            <div key={v.key} className="admin-theme-row">
-              <label htmlFor={`theme-${v.key}`}>{v.label}</label>
-              <input id={`theme-${v.key}`} type="color"
-                value={theme[v.key] || v.default}
-                onChange={e => updateVar(v.key, e.target.value)} />
-              <code>{v.key}</code>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="admin-card">
-        <h2>Logo</h2>
-        <div className="form-group">
-          <label htmlFor="logo-alt">Logo alt text</label>
-          <input id="logo-alt" type="text" value={logoAlt}
-            onChange={e => setLogoAlt(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="logo-file">Upload logo</label>
-          <input id="logo-file" type="file" accept="image/*" onChange={handleLogoUpload} />
-        </div>
-        {logoBase64 && (
-          <div className="admin-logo-preview">
-            <img src={logoBase64} alt={logoAlt} style={{ maxHeight: 64 }} />
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Colors</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">Changes preview live. Click Save to persist.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {THEME_VARS.map(v => (
+              <div key={v.key} className="flex items-center gap-3">
+                <Label htmlFor={`theme-${v.key}`} className="min-w-28 text-sm">{v.label}</Label>
+                <input
+                  id={`theme-${v.key}`}
+                  type="color"
+                  className="h-8 w-10 cursor-pointer rounded border border-border"
+                  value={theme[v.key] || v.default}
+                  onChange={e => updateVar(v.key, e.target.value)}
+                />
+                <code className="text-xs text-muted-foreground">{v.key}</code>
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
 
-      <button className="primary-btn" onClick={saveTheme}>Save Theme</button>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Logo</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="logo-alt">Logo alt text</Label>
+            <Input id="logo-alt" type="text" value={logoAlt} onChange={e => setLogoAlt(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="logo-file">Upload logo</Label>
+            <Input id="logo-file" type="file" accept="image/*" onChange={handleLogoUpload} />
+          </div>
+          {logoBase64 && (
+            <div className="pt-2">
+              <img src={logoBase64} alt={logoAlt} className="max-h-16" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Button onClick={saveTheme}>Save Theme</Button>
     </div>
   );
 }

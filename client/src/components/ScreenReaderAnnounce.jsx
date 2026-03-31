@@ -28,7 +28,7 @@ export default function ScreenReaderAnnounce() {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap' }}
+      className="sr-only"
     >
       {message}
     </div>

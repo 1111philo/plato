@@ -1,17 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
-import { useModal } from '../contexts/ModalContext.jsx';
 import { getCourseKB, getDraftCourseId, saveUserCourse } from '../../js/storage.js';
 import { parseCoursePrompt, invalidateCoursesCache, loadCourses } from '../../js/courseOwner.js';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 
 export default function CoursesList() {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
-  const { show: showModal } = useModal();
   const { courses } = state;
   const [courseData, setCourseData] = useState({});
   const [hasDraft, setHasDraft] = useState(false);
+  const [detailCourse, setDetailCourse] = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -63,60 +70,65 @@ export default function CoursesList() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
-  const showCourseDetails = (course, e) => {
-    e.stopPropagation();
-    showModal(
-      <CourseDetailModal course={course} progress={courseData[course.courseId]} />
-    );
-  };
-
   return (
-    <>
-      <h2>Courses</h2>
-      <div className="course-list" role="list">
+    <div className="mx-auto max-w-lg p-4">
+      <h2 className="text-xl font-semibold mb-4">Courses</h2>
+      <div className="space-y-3" role="list">
         {courses.map((c, i) => {
           const icon = statusIcon(c.courseId);
           const pLabel = progressLabel(c);
           return (
             <button
               key={c.courseId}
-              className="course-card stagger-item"
+              className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
               style={{ animationDelay: `${i * 40}ms` }}
               role="listitem"
               onClick={() => navigate(`/courses/${c.courseId}`)}
             >
-              <span className="course-status" aria-hidden="true">{icon}</span>
-              <div className="course-info">
-                <strong>{c.name}</strong>
-                {c.description && <p>{c.description}</p>}
-                <div className="course-meta">
-                  {pLabel && <small>{pLabel}</small>}
-                  <small
-                    className="course-objectives-link"
-                    onClick={(e) => showCourseDetails(c, e)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter') showCourseDetails(c, e); }}
-                  >
-                    {c.learningObjectives.length} objectives
-                  </small>
-                </div>
-              </div>
+              <Card className="transition-colors hover:bg-accent/50 cursor-pointer">
+                <CardContent className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
+                    {icon}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <strong className="text-sm font-medium">{c.name}</strong>
+                    {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {pLabel && <Badge variant="secondary" className="text-xs">{pLabel}</Badge>}
+                      <button
+                        className="text-xs text-primary hover:underline"
+                        onClick={(e) => { e.stopPropagation(); setDetailCourse(c); }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setDetailCourse(c); } }}
+                      >
+                        {c.learningObjectives.length} objectives
+                      </button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </button>
           );
         })}
 
         <button
-          className="course-card course-card-create stagger-item"
+          className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
           style={{ animationDelay: `${courses.length * 40}ms` }}
           role="listitem"
           onClick={() => navigate('/courses/create')}
         >
-          <span className="course-status" aria-hidden="true">+</span>
-          <div className="course-info">
-            <strong>{hasDraft ? 'Continue Course Draft' : 'Create Your Own Course'}</strong>
-            <p>{hasDraft ? 'Resume designing your course' : 'Design a custom course with AI guidance'}</p>
-          </div>
+          <Card className="border-dashed transition-colors hover:bg-accent/50 cursor-pointer">
+            <CardContent className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
+                +
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <strong className="text-sm font-medium">{hasDraft ? 'Continue Course Draft' : 'Create Your Own Course'}</strong>
+                <p className="text-sm text-muted-foreground">{hasDraft ? 'Resume designing your course' : 'Design a custom course with AI guidance'}</p>
+              </div>
+            </CardContent>
+          </Card>
         </button>
 
         <input
@@ -128,57 +140,80 @@ export default function CoursesList() {
           aria-label="Import course file"
         />
         <button
-          className="course-card course-card-create stagger-item"
+          className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
           style={{ animationDelay: `${(courses.length + 1) * 40}ms` }}
           role="listitem"
           onClick={() => fileRef.current?.click()}
         >
-          <span className="course-status" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </span>
-          <div className="course-info">
-            <strong>Import Course</strong>
-            <p>Load a course from a .md file</p>
-          </div>
+          <Card className="border-dashed transition-colors hover:bg-accent/50 cursor-pointer">
+            <CardContent className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </span>
+              <div className="min-w-0 flex-1 space-y-1">
+                <strong className="text-sm font-medium">Import Course</strong>
+                <p className="text-sm text-muted-foreground">Load a course from a .md file</p>
+              </div>
+            </CardContent>
+          </Card>
         </button>
       </div>
-    </>
+
+      {detailCourse && (
+        <CourseDetailDialog
+          course={detailCourse}
+          progress={courseData[detailCourse.courseId]}
+          open={!!detailCourse}
+          onOpenChange={(open) => { if (!open) setDetailCourse(null); }}
+        />
+      )}
+    </div>
   );
 }
 
-function CourseDetailModal({ course, progress }) {
-  const { hide } = useModal();
+function CourseDetailDialog({ course, progress, open, onOpenChange }) {
+  const pct = progress?.status === 'completed' ? 100 : (progress?.progress != null ? progress.progress * 10 : null);
 
   return (
-    <>
-      <h2>{course.name}</h2>
-      {course.description && <p style={{ color: 'var(--color-text-secondary)', marginBottom: '12px' }}>{course.description}</p>}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{course.name}</DialogTitle>
+          {course.description && (
+            <DialogDescription>{course.description}</DialogDescription>
+          )}
+        </DialogHeader>
 
-      {progress?.progress != null && (
-        <div style={{ marginBottom: '12px' }}>
-          <div className="creation-meter-labels" style={{ marginBottom: '4px' }}>
-            <span>Starting</span>
-            <span>{progress.status === 'completed' ? 'Completed' : `${progress.progress * 10}%`}</span>
+        {pct != null && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Starting</span>
+              <span>{progress.status === 'completed' ? 'Completed' : `${pct}%`}</span>
+            </div>
+            <div className="h-1 rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+            </div>
           </div>
-          <div className="creation-meter-track">
-            <div className="creation-meter-overlay" style={{ width: `${100 - (progress.status === 'completed' ? 100 : progress.progress * 10)}%` }} />
-          </div>
+        )}
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Exemplar</h3>
+          <p className="text-sm text-muted-foreground leading-relaxed">{course.exemplar}</p>
         </div>
-      )}
 
-      <h3 style={{ fontSize: '0.85rem', marginBottom: '6px' }}>Exemplar</h3>
-      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '12px', lineHeight: 1.5 }}>{course.exemplar}</p>
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">Learning Objectives</h3>
+          <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
+            {course.learningObjectives.map((obj, i) => (
+              <li key={i}>{obj}</li>
+            ))}
+          </ul>
+        </div>
 
-      <h3 style={{ fontSize: '0.85rem', marginBottom: '6px' }}>Learning Objectives</h3>
-      <ul style={{ fontSize: '0.85rem', paddingLeft: '1.2em', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-        {course.learningObjectives.map((obj, i) => (
-          <li key={i} style={{ marginBottom: '4px' }}>{obj}</li>
-        ))}
-      </ul>
-
-      <div className="action-bar" style={{ marginTop: '12px' }}>
-        <button className="secondary-btn" onClick={hide}>Close</button>
-      </div>
-    </>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

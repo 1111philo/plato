@@ -22,7 +22,6 @@ const ChatArea = forwardRef(function ChatArea({ children, courseName }, ref) {
     }
 
     function handleScroll() {
-      // Ignore scroll events we triggered ourselves
       if (programmaticScroll.current) {
         programmaticScroll.current = false;
         return;
@@ -30,7 +29,6 @@ const ChatArea = forwardRef(function ChatArea({ children, courseName }, ref) {
       nearBottomRef.current = isNearBottom();
     }
 
-    // Watch for ANY DOM change inside the container (new nodes, text growth, etc.)
     const observer = new MutationObserver(() => {
       if (nearBottomRef.current) scrollToBottom();
     });
@@ -45,7 +43,13 @@ const ChatArea = forwardRef(function ChatArea({ children, courseName }, ref) {
   }, [scrollRef]);
 
   return (
-    <div className="chat" role="log" aria-live="polite" aria-label={courseName ? `${courseName} conversation` : 'Course conversation'} ref={scrollRef}>
+    <div
+      className="flex-1 overflow-y-auto p-4 space-y-3"
+      role="log"
+      aria-live="polite"
+      aria-label={courseName ? `${courseName} conversation` : 'Course conversation'}
+      ref={scrollRef}
+    >
       {children}
     </div>
   );

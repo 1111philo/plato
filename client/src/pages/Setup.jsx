@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Card, CardHeader, CardTitle, CardDescription, CardContent,
+} from '@/components/ui/card';
 
 export default function Setup() {
   const [email, setEmail] = useState('');
@@ -51,36 +57,65 @@ export default function Setup() {
   }
 
   return (
-    <main className="auth-page">
-      <div className="auth-card" style={{ maxWidth: 440 }}>
-        <h1>Welcome to plato</h1>
-        <p className="auth-subtitle">Create your admin account to get started.</p>
-        {error && <div className="auth-error" role="alert">{error}</div>}
-        <div className="form-group">
-          <label htmlFor="setup-name">Name</label>
-          <input id="setup-name" type="text" placeholder="Your name" autoComplete="name"
-            value={name} onChange={e => setName(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="setup-email">Email</label>
-          <input id="setup-email" type="email" placeholder="admin@example.com" autoComplete="email"
-            value={email} onChange={e => setEmail(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="setup-password">Password</label>
-          <PasswordField id="setup-password" placeholder="At least 8 characters" autoComplete="new-password"
-            value={password} onChange={e => setPassword(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="setup-confirm">Confirm password</label>
-          <PasswordField id="setup-confirm" autoComplete="new-password"
-            value={confirm} onChange={e => setConfirm(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleSetup(); }} />
-        </div>
-        <button className="primary-btn auth-submit" onClick={handleSetup} disabled={submitting}>
-          {submitting ? 'Creating...' : 'Create admin account'}
-        </button>
-      </div>
+    <main className="min-h-dvh flex items-center justify-center bg-muted p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle className="text-2xl">Welcome to plato</CardTitle>
+          <CardDescription>Create your admin account to get started.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="setup-name">Name</Label>
+            <Input
+              id="setup-name"
+              type="text"
+              placeholder="Your name"
+              autoComplete="name"
+              value={name}
+              onChange={e => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="setup-email">Email</Label>
+            <Input
+              id="setup-email"
+              type="email"
+              placeholder="admin@example.com"
+              autoComplete="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="setup-password">Password</Label>
+            <PasswordField
+              id="setup-password"
+              placeholder="At least 8 characters"
+              autoComplete="new-password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="setup-confirm">Confirm password</Label>
+            <PasswordField
+              id="setup-confirm"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSetup(); }}
+            />
+          </div>
+          <Button className="w-full" onClick={handleSetup} disabled={submitting}>
+            {submitting ? 'Creating...' : 'Create admin account'}
+          </Button>
+        </CardContent>
+      </Card>
     </main>
   );
 }

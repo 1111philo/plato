@@ -5,7 +5,7 @@ import { AuthProvider } from './contexts/AuthContext.jsx';
 import { AppProvider } from './contexts/AppContext.jsx';
 import { ModalProvider } from './contexts/ModalContext.jsx';
 import App from './App.jsx';
-import '../styles.css';
+import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

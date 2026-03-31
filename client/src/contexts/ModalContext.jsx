@@ -1,7 +1,10 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import * as AlertDialog from '@radix-ui/react-alert-dialog';
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
+import {
+  Dialog, DialogContent, DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const ModalContext = createContext(null);
 
@@ -20,25 +23,19 @@ export function ModalProvider({ children }) {
     <ModalContext.Provider value={{ show, hide, isOpen: !!modal }}>
       {children}
       {isAlert ? (
-        <AlertDialog.Root open={!!modal} onOpenChange={(open) => { if (!open) hide(); }}>
-          <AlertDialog.Portal>
-            <AlertDialog.Overlay className="modal-overlay" />
-            <AlertDialog.Content className="modal" aria-label={modal?.label || undefined}>
-              <VisuallyHidden><AlertDialog.Title>{modal?.label || 'Dialog'}</AlertDialog.Title></VisuallyHidden>
-              {modal?.content}
-            </AlertDialog.Content>
-          </AlertDialog.Portal>
-        </AlertDialog.Root>
+        <AlertDialog open={!!modal} onOpenChange={(open) => { if (!open) hide(); }}>
+          <AlertDialogContent>
+            <AlertDialogTitle className="sr-only">{modal?.label || 'Dialog'}</AlertDialogTitle>
+            {modal?.content}
+          </AlertDialogContent>
+        </AlertDialog>
       ) : (
-        <Dialog.Root open={!!modal} onOpenChange={(open) => { if (!open) hide(); }}>
-          <Dialog.Portal>
-            <Dialog.Overlay className="modal-overlay" />
-            <Dialog.Content className="modal" aria-label={modal?.label || undefined}>
-              <VisuallyHidden><Dialog.Title>{modal?.label || 'Dialog'}</Dialog.Title></VisuallyHidden>
-              {modal?.content}
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
+        <Dialog open={!!modal} onOpenChange={(open) => { if (!open) hide(); }}>
+          <DialogContent showCloseButton={false} aria-label={modal?.label || undefined}>
+            <DialogTitle className="sr-only">{modal?.label || 'Dialog'}</DialogTitle>
+            {modal?.content}
+          </DialogContent>
+        </Dialog>
       )}
     </ModalContext.Provider>
   );

@@ -1,33 +1,35 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useModal } from '../contexts/ModalContext.jsx';
 import { useViewTransition } from '../hooks/useViewTransition.js';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 export default function AppShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, sessionExpired } = useAuth();
-  const { show: showModal } = useModal();
   const animClass = useViewTransition();
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
-  // Redirect to login when session expires
   useEffect(() => {
     if (sessionExpired) {
       logout().then(() => navigate('/login', { replace: true }));
     }
   }, [sessionExpired, logout, navigate]);
 
-  const handleSignOut = () => {
-    showModal(
-      <ConfirmSignOut onConfirm={async () => {
-        await logout();
-        navigate('/login', { replace: true });
-      }} />,
-      'alertdialog',
-      'Confirm sign out'
-    );
+  const handleSignOut = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+    setSignOutOpen(false);
   };
 
   const navTo = (path) => navigate(path);
@@ -38,33 +40,64 @@ export default function AppShell({ children }) {
 
   return (
     <>
-      <a href="#main-content" className="skip-link">Skip to main content</a>
-      <header role="banner">
-        <img src="/assets/logo-white.svg" alt="plato" className="logo" />
-        <nav className="header-nav" aria-label="Main navigation">
-          <button onClick={() => navTo('/courses')} aria-current={currentNav('/courses') ? 'page' : 'false'}>Courses</button>
-          <button onClick={() => navTo('/settings')} aria-current={currentNav('/settings') ? 'page' : 'false'}>Settings</button>
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-primary focus:text-primary-foreground">
+        Skip to main content
+      </a>
+
+      <header role="banner" className="flex items-center gap-2 bg-primary px-4 py-2 text-primary-foreground">
+        <img src="/assets/logo-white.svg" alt="plato" className="h-5 w-auto" />
+        <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+            onClick={() => navTo('/courses')}
+            aria-current={currentNav('/courses') ? 'page' : 'false'}
+          >
+            Courses
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+            onClick={() => navTo('/settings')}
+            aria-current={currentNav('/settings') ? 'page' : 'false'}
+          >
+            Settings
+          </Button>
           {user?.role === 'admin' && (
-            <button onClick={() => navTo('/plato-admin')} aria-current={currentNav('/plato-admin') ? 'page' : 'false'}>Admin</button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+              onClick={() => navTo('/plato-admin')}
+              aria-current={currentNav('/plato-admin') ? 'page' : 'false'}
+            >
+              Admin
+            </Button>
           )}
         </nav>
-        <div className="header-spacer" />
-        <div className="user-menu">
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <button className="user-menu-btn" aria-label={`Account: ${user?.email || 'signed in'}`}>
-                <span>{user?.email || 'Account'}</span>
-              </button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content className="user-dropdown" sideOffset={6} align="end">
-                <DropdownMenu.Label className="user-dropdown-email">{user?.email || ''}</DropdownMenu.Label>
-                <DropdownMenu.Item className="user-dropdown-action danger" onSelect={handleSignOut}>
-                  Sign Out
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
+        <div className="flex-1" />
+        <div className="hidden md:block">
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                aria-label={`Account: ${user?.email || 'signed in'}`}
+              >
+                {user?.email || 'Account'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={6}>
+              <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -72,24 +105,44 @@ export default function AppShell({ children }) {
         {children}
       </main>
 
-      <nav className="bottom-nav" aria-label="Main navigation">
-        <button onClick={() => navTo('/courses')} aria-current={currentNav('/courses') ? 'page' : 'false'}>Courses</button>
-        <button onClick={() => navTo('/settings')} aria-current={currentNav('/settings') ? 'page' : 'false'}>Settings</button>
+      <nav className="flex md:hidden items-center justify-around border-t border-border bg-background py-2" aria-label="Main navigation">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navTo('/courses')}
+          aria-current={currentNav('/courses') ? 'page' : 'false'}
+        >
+          Courses
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => navTo('/settings')}
+          aria-current={currentNav('/settings') ? 'page' : 'false'}
+        >
+          Settings
+        </Button>
       </nav>
-    </>
-  );
-}
 
-function ConfirmSignOut({ onConfirm }) {
-  const { hide } = useModal();
-  return (
-    <>
-      <h2>Sign Out?</h2>
-      <p>You'll need to sign in again to access your courses.</p>
-      <div className="action-bar">
-        <button className="secondary-btn" onClick={hide}>Cancel</button>
-        <button className="danger-btn" onClick={async () => { await onConfirm(); hide(); }}>Sign Out</button>
-      </div>
+      <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign Out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You'll need to sign in again to access your courses.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+              onClick={handleSignOut}
+            >
+              Sign Out
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

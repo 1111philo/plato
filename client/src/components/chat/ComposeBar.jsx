@@ -1,5 +1,6 @@
 import { useState, useRef, useId } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
+import { Button } from '@/components/ui/button';
 
 export default function ComposeBar({
   placeholder = 'Ask a question...',
@@ -36,19 +37,27 @@ export default function ComposeBar({
   const hasContent = text.trim() || image;
 
   return (
-    <div className="chat-compose">
-      <div className="compose-card">
+    <div className="px-4 pb-4 pt-2">
+      <div className="rounded-lg border border-input bg-background">
         {image && (
-          <div className="compose-image-preview">
-            <img src={image.dataUrl} alt={image.name} />
-            <button className="compose-image-remove" onClick={() => setImage(null)} aria-label="Remove image">&times;</button>
+          <div className="relative m-2 inline-block">
+            <img src={image.dataUrl} alt={image.name} className="h-20 rounded-md object-cover" />
+            <Button
+              variant="secondary"
+              size="icon-xs"
+              className="absolute -top-1.5 -right-1.5 rounded-full"
+              onClick={() => setImage(null)}
+              aria-label="Remove image"
+            >
+              &times;
+            </Button>
           </div>
         )}
         <label htmlFor={inputId} className="sr-only">Your message</label>
         <textarea
           ref={inputRef}
           id={inputId}
-          className="chat-input"
+          className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           rows={1}
           placeholder={placeholder}
           value={text}
@@ -58,7 +67,7 @@ export default function ComposeBar({
           }}
           disabled={disabled}
         />
-        <div className="compose-actions">
+        <div className="flex items-center gap-1 px-2 pb-2">
           {allowImages && (
             <>
               <input
@@ -69,8 +78,9 @@ export default function ComposeBar({
                 className="sr-only"
                 aria-label="Upload image"
               />
-              <button
-                className="compose-attach-btn"
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => fileRef.current?.click()}
                 disabled={disabled}
                 aria-label="Attach image"
@@ -78,16 +88,23 @@ export default function ComposeBar({
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
-              </button>
+              </Button>
             </>
           )}
-          <div style={{ flex: 1 }} />
-          <button className={`compose-send-btn${hasContent ? ' visible' : ''}`} aria-label="Send" onClick={send} disabled={disabled || !hasContent}>
+          <div className="flex-1" />
+          <Button
+            variant="default"
+            size="icon-sm"
+            className={`transition-opacity ${hasContent ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+            aria-label="Send"
+            onClick={send}
+            disabled={disabled || !hasContent}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="5 12 12 5 19 12" />
             </svg>
-          </button>
+          </Button>
         </div>
       </div>
     </div>
