@@ -7,6 +7,7 @@ import me from './routes/me.js';
 import admin from './routes/admin.js';
 import sync from './routes/sync.js';
 import ai from './routes/ai.js';
+import content from './routes/content.js';
 import app from './routes/app.js';
 import db from './lib/db.js';
 import { generateUserId } from './lib/crypto.js';
@@ -53,6 +54,7 @@ server.route('/', me);
 server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
+server.route('/', content);
 server.route('/', app);
 
 server.notFound((c) => c.json({ error: 'Not found' }, 404));

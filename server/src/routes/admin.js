@@ -322,4 +322,132 @@ admin.delete('/v1/admin/participants/:userId', async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Content management (prompts, courses, knowledge base, theme) ──
+
+// GET /v1/admin/prompts — list all prompts
+admin.get('/v1/admin/prompts', async (c) => {
+  const items = await db.getAllSyncData('_system');
+  const prompts = items
+    .filter(i => i.dataKey.startsWith('prompt:'))
+    .map(i => ({
+      name: i.dataKey.slice('prompt:'.length),
+      updatedAt: i.updatedAt,
+      updatedBy: i.data.updatedBy || null,
+    }));
+  return c.json(prompts);
+});
+
+// GET /v1/admin/prompts/:name
+admin.get('/v1/admin/prompts/:name', async (c) => {
+  const name = c.req.param('name');
+  const item = await db.getSyncData('_system', `prompt:${name}`);
+  if (!item) return c.json({ error: 'Prompt not found' }, 404);
+  return c.json({ name, content: item.data.content, updatedAt: item.updatedAt });
+});
+
+// PUT /v1/admin/prompts/:name
+admin.put('/v1/admin/prompts/:name', async (c) => {
+  const name = c.req.param('name');
+  const { content } = await c.req.json();
+  if (content === undefined) return c.json({ error: 'content is required' }, 400);
+  const adminUser = c.get('user');
+  const current = await db.getSyncData('_system', `prompt:${name}`);
+  await db.putSyncData('_system', `prompt:${name}`, {
+    content,
+    updatedBy: adminUser.userId,
+  }, current?.version || 0);
+  return c.json({ name, ok: true });
+});
+
+// GET /v1/admin/courses — list all courses
+admin.get('/v1/admin/courses', async (c) => {
+  const items = await db.getAllSyncData('_system');
+  const courses = items
+    .filter(i => i.dataKey.startsWith('course:'))
+    .map(i => ({
+      courseId: i.dataKey.slice('course:'.length),
+      name: i.data.name || i.dataKey.slice('course:'.length),
+      isBuiltIn: i.data.isBuiltIn || false,
+      updatedAt: i.updatedAt,
+    }));
+  return c.json(courses);
+});
+
+// GET /v1/admin/courses/:courseId
+admin.get('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const item = await db.getSyncData('_system', `course:${courseId}`);
+  if (!item) return c.json({ error: 'Course not found' }, 404);
+  return c.json({ courseId, ...item.data, updatedAt: item.updatedAt });
+});
+
+// PUT /v1/admin/courses/:courseId
+admin.put('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const body = await c.req.json();
+  if (!body.markdown) return c.json({ error: 'markdown is required' }, 400);
+  const adminUser = c.get('user');
+  const current = await db.getSyncData('_system', `course:${courseId}`);
+  const data = {
+    markdown: body.markdown,
+    name: body.name || courseId,
+    isBuiltIn: body.isBuiltIn || false,
+    updatedBy: adminUser.userId,
+    createdAt: current?.data?.createdAt || new Date().toISOString(),
+  };
+  await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);
+  return c.json({ courseId, ok: true });
+});
+
+// DELETE /v1/admin/courses/:courseId
+admin.delete('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const item = await db.getSyncData('_system', `course:${courseId}`);
+  if (!item) return c.json({ error: 'Course not found' }, 404);
+  await db.deleteSyncData('_system', `course:${courseId}`);
+  return c.json({ ok: true });
+});
+
+// GET /v1/admin/knowledge-base
+admin.get('/v1/admin/knowledge-base', async (c) => {
+  const item = await db.getSyncData('_system', 'knowledgeBase');
+  return c.json({ content: item?.data?.content || '' });
+});
+
+// PUT /v1/admin/knowledge-base
+admin.put('/v1/admin/knowledge-base', async (c) => {
+  const { content } = await c.req.json();
+  if (content === undefined) return c.json({ error: 'content is required' }, 400);
+  const current = await db.getSyncData('_system', 'knowledgeBase');
+  const adminUser = c.get('user');
+  await db.putSyncData('_system', 'knowledgeBase', {
+    content,
+    updatedBy: adminUser.userId,
+  }, current?.version || 0);
+  return c.json({ ok: true });
+});
+
+// GET /v1/admin/theme
+admin.get('/v1/admin/theme', async (c) => {
+  const item = await db.getSyncData('_system', 'settings');
+  const settings = item?.data || {};
+  return c.json({
+    theme: settings.theme || {},
+    logoBase64: settings.logoBase64 || null,
+    logoAlt: settings.logoAlt || '1111 Learn',
+  });
+});
+
+// PUT /v1/admin/theme
+admin.put('/v1/admin/theme', async (c) => {
+  const body = await c.req.json();
+  const current = await db.getSyncData('_system', 'settings');
+  const settings = { ...(current?.data || {}) };
+  if (body.theme !== undefined) settings.theme = body.theme;
+  if (body.logoBase64 !== undefined) settings.logoBase64 = body.logoBase64;
+  if (body.logoAlt !== undefined) settings.logoAlt = body.logoAlt;
+  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
+  return c.json({ ok: true });
+});
+
 export default admin;
