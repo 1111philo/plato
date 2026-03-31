@@ -30,7 +30,7 @@ function emailWrapper(classroom, body) {
 }
 
 export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
-  const signupUrl = `${APP_URL}?token=${inviteToken}`;
+  const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
 
   if (process.env.SKIP_EMAIL === 'true') {
     console.log(`[SKIP_EMAIL] Invite for ${toEmail}: ${signupUrl}`);
