@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,7 +22,10 @@ const MIME_TYPES = {
 
 // Load built client files into memory at startup
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const clientDistDir = join(__dirname, '../../../client/dist');
+// In Lambda, client-dist is a sibling. In local dev, it's at ../../client/dist.
+const clientDistDir = existsSync(join(__dirname, '../../client-dist'))
+  ? join(__dirname, '../../client-dist')
+  : join(__dirname, '../../../client/dist');
 const staticFiles = {};
 function loadDir(dir, prefix) {
   try {

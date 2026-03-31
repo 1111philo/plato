@@ -2,3 +2,4 @@ node_modules/
 .aws-sam/
 .env
 data/
+client-dist/
