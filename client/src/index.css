@@ -122,8 +122,14 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html, body, #root {
+    @apply h-full;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground flex flex-col;
+  }
+  #root {
+    @apply flex flex-col;
   }
   html {
     @apply font-sans;

@@ -98,7 +98,7 @@ export function BrandingProvider({ children }) {
 
   return (
     <BrandingContext.Provider value={branding}>
-      <div style={classroomStyle} className="flex flex-col flex-1 min-h-0">
+      <div style={classroomStyle} className="flex flex-col flex-1">
         {children}
       </div>
     </BrandingContext.Provider>

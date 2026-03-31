@@ -48,9 +48,9 @@ export default function AppShell({ children }) {
               <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
-            <button onClick={() => navigate('/plato')} className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-              Dashboard
+            <button onClick={() => navigate('/plato')} className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              View Dashboard
             </button>
           </div>
         </div>
@@ -94,7 +94,7 @@ export default function AppShell({ children }) {
                   className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent"
                   onSelect={() => navigate('/settings')}
                 >
-                  Settings
+                  User Settings
                 </DropdownMenuRadix.Item>
                 <DropdownMenuRadix.Item
                   className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm text-destructive outline-none hover:bg-destructive/10 focus:bg-destructive/10"
@@ -108,7 +108,7 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
-      <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto bg-stone-100 dark:bg-stone-900 ${animClass}`} tabIndex={-1}>
+      <main id="main-content" className={`flex-1 overflow-y-auto bg-stone-100 dark:bg-stone-900 ${animClass}`} tabIndex={-1}>
         {children}
       </main>
 

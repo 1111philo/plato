@@ -25,7 +25,7 @@ import {
 export default function Settings() {
   const { state, dispatch } = useApp();
   const { user, refreshUser } = useAuth();
-  const [name, setName] = useState(state.preferences?.name || '');
+  const [name, setName] = useState(user?.name || state.preferences?.name || '');
   const [profileSummary, setProfileSummary] = useState('');
 
   const [newPassword, setNewPassword] = useState('');
@@ -86,7 +86,7 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-lg space-y-6 p-4">
-      <h2 className="text-xl font-semibold">Settings</h2>
+      <h2 className="text-xl font-semibold">User Settings</h2>
 
       <Card>
         <CardHeader>
