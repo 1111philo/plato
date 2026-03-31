@@ -28,9 +28,8 @@ export default function AdminLayout() {
         role="navigation"
         aria-label="Admin navigation"
       >
-        <div className="px-4 py-3 font-semibold text-lg hidden md:flex items-center gap-2">
-          <img src="/assets/logo-white.svg" alt="" className="h-4 w-auto" />
-          <span>plato</span>
+        <div className="px-4 py-4 hidden md:block">
+          <img src="/assets/logo-white.svg" alt="plato" className="h-6 w-auto" />
         </div>
 
         <nav className="flex md:flex-col flex-1 overflow-x-auto md:overflow-x-visible gap-0.5 px-2 md:px-2">
