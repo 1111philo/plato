@@ -24,12 +24,9 @@ export default defineConfig({
     courseManifestPlugin(),
     viteStaticCopy({
       targets: [
-        { src: 'lib', dest: '' },
         { src: 'data', dest: '' },
         { src: 'prompts', dest: '' },
         { src: 'assets', dest: '' },
-        { src: 'js', dest: '' },
-        ...(existsSync('.env.js') ? [{ src: '.env.js', dest: '', rename: '.env.js' }] : []),
       ],
     }),
   ],

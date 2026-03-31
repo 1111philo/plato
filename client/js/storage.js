@@ -1,356 +1,348 @@
 /**
- * Storage layer backed by sql.js (SQLite WASM).
- * Screenshots remain in IndexedDB — referenced by key in the drafts table.
+ * Storage layer backed by server API (via sync endpoints).
+ * All data is server-side. An in-memory cache avoids redundant fetches within a session.
+ * Auth tokens use localStorage. Screenshots are embedded in draft data.
  */
 
-import { run, query, queryAll, persist } from './db.js';
+import { authenticatedFetch } from './auth.js';
+
+// -- In-memory cache ----------------------------------------------------------
+
+const _cache = new Map();
+const _versions = new Map();
+
+export function clearCache() {
+  _cache.clear();
+  _versions.clear();
+}
+
+/** Used by sync.js loadAll() to bulk-populate the cache from server data. */
+export function _populateCache(syncKey, data, version) {
+  _cache.set(syncKey, data);
+  _versions.set(syncKey, version);
+}
+
+async function fetchSyncData(syncKey) {
+  if (_cache.has(syncKey)) return _cache.get(syncKey);
+  try {
+    const res = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`);
+    if (!res.ok) return null;
+    const item = await res.json();
+    _cache.set(syncKey, item.data);
+    _versions.set(syncKey, item.version);
+    return item.data;
+  } catch {
+    return null;
+  }
+}
+
+/** Write data to the server with optimistic locking. Also exported for syncDebounce. */
+export async function putSyncData(syncKey, data) {
+  _cache.set(syncKey, data);
+  const version = _versions.get(syncKey) || 0;
+  try {
+    const res = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data, version }),
+    });
+    if (res.ok) {
+      const result = await res.json();
+      _versions.set(syncKey, result.version);
+    } else if (res.status === 409) {
+      // Version conflict — fetch latest version and retry once
+      const current = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`);
+      if (current.ok) {
+        const item = await current.json();
+        _versions.set(syncKey, item.version);
+        const retry = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data, version: item.version }),
+        });
+        if (retry.ok) {
+          const retryResult = await retry.json();
+          _versions.set(syncKey, retryResult.version);
+        }
+      }
+    }
+  } catch {
+    // Write failed — cache is still updated for this session
+  }
+}
+
+async function deleteSyncData(syncKey) {
+  _cache.delete(syncKey);
+  _versions.delete(syncKey);
+  try {
+    await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`, { method: 'DELETE' });
+  } catch { /* best effort */ }
+}
 
 // -- Preferences --------------------------------------------------------------
 
 export async function getPreferences() {
-  const row = query('SELECT data FROM preferences WHERE id = 1');
-  return row ? JSON.parse(row.data) : { name: '' };
+  const data = await fetchSyncData('preferences');
+  return data || { name: '' };
 }
 
 export async function savePreferences(prefs) {
-  run(
-    'INSERT OR REPLACE INTO preferences (id, data, updated_at) VALUES (1, ?, ?)',
-    [JSON.stringify(prefs), Date.now()]
-  );
-}
-
-// -- API key ------------------------------------------------------------------
-
-export async function getApiKey() {
-  const row = query("SELECT value FROM settings WHERE key = 'apiKey'");
-  return row ? JSON.parse(row.value) : null;
-}
-
-export async function saveApiKey(key) {
-  run(
-    "INSERT OR REPLACE INTO settings (key, value) VALUES ('apiKey', ?)",
-    [JSON.stringify(key)]
-  );
+  await putSyncData('preferences', prefs);
 }
 
 // -- Learner profile ----------------------------------------------------------
 
 export async function getLearnerProfile() {
-  const row = query('SELECT data FROM profile WHERE id = 1');
-  return row ? JSON.parse(row.data) : null;
+  return fetchSyncData('profile');
 }
 
 export async function saveLearnerProfile(profile) {
-  run(
-    'INSERT OR REPLACE INTO profile (id, data, updated_at) VALUES (1, ?, ?)',
-    [JSON.stringify(profile), Date.now()]
-  );
+  await putSyncData('profile', profile);
 }
 
 export async function getLearnerProfileSummary() {
-  const row = query('SELECT summary FROM profile_summary WHERE id = 1');
-  return row ? row.summary : '';
+  const data = await fetchSyncData('profileSummary');
+  return data || '';
 }
 
 export async function saveLearnerProfileSummary(summary) {
-  run(
-    'INSERT OR REPLACE INTO profile_summary (id, summary, updated_at) VALUES (1, ?, ?)',
-    [summary, Date.now()]
-  );
+  await putSyncData('profileSummary', summary);
 }
 
 // -- Course KB ----------------------------------------------------------------
 
 export async function getCourseKB(courseId) {
-  const row = query('SELECT kb FROM course_kbs WHERE course_id = ?', [courseId]);
-  return row ? JSON.parse(row.kb) : null;
+  return fetchSyncData(`courseKB:${courseId}`);
 }
 
 export async function saveCourseKB(courseId, kb) {
-  run(
-    'INSERT OR REPLACE INTO course_kbs (course_id, kb, updated_at) VALUES (?, ?, ?)',
-    [courseId, JSON.stringify(kb), Date.now()]
-  );
+  await putSyncData(`courseKB:${courseId}`, kb);
 }
 
 export async function deleteCourseKB(courseId) {
-  run('DELETE FROM course_kbs WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`courseKB:${courseId}`);
 }
 
 // -- Activity KB --------------------------------------------------------------
 
 export async function getActivityKB(activityId) {
-  const row = query('SELECT kb FROM activity_kbs WHERE activity_id = ?', [activityId]);
-  return row ? JSON.parse(row.kb) : null;
+  // Activity KBs are stored as part of the course's activityKBs collection.
+  // Individual lookups scan the cache.
+  for (const [key, data] of _cache.entries()) {
+    if (!key.startsWith('activityKBs:')) continue;
+    if (Array.isArray(data)) {
+      const found = data.find(kb => kb.activityId === activityId);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 export async function saveActivityKB(activityId, courseId, kb) {
-  run(
-    'INSERT OR REPLACE INTO activity_kbs (activity_id, course_id, kb, updated_at) VALUES (?, ?, ?, ?)',
-    [activityId, courseId, JSON.stringify(kb), Date.now()]
-  );
+  const key = `activityKBs:${courseId}`;
+  let all = await fetchSyncData(key);
+  if (!Array.isArray(all)) all = [];
+  const idx = all.findIndex(k => k.activityId === activityId);
+  const entry = { activityId, courseId, ...kb };
+  if (idx >= 0) all[idx] = entry; else all.push(entry);
+  await putSyncData(key, all);
 }
 
 export async function getActivityKBsForCourse(courseId) {
-  const rows = queryAll('SELECT * FROM activity_kbs WHERE course_id = ? ORDER BY activity_id', [courseId]);
-  return rows.map(r => ({ activityId: r.activity_id, courseId: r.course_id, ...JSON.parse(r.kb) }));
+  const data = await fetchSyncData(`activityKBs:${courseId}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function deleteActivityKBsForCourse(courseId) {
-  run('DELETE FROM activity_kbs WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`activityKBs:${courseId}`);
 }
 
 // -- Activities ---------------------------------------------------------------
 
 export async function getActivities(courseId) {
-  const rows = queryAll(
-    'SELECT * FROM activities WHERE course_id = ? ORDER BY activity_number',
-    [courseId]
-  );
-  return rows.map(r => ({
-    id: r.id,
-    courseId: r.course_id,
-    activityNumber: r.activity_number,
-    instruction: r.instruction,
-    tips: r.tips ? JSON.parse(r.tips) : [],
-    objectiveFocus: r.objective_focus,
-    createdAt: r.created_at,
-  }));
+  const data = await fetchSyncData(`activities:${courseId}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function saveActivity(activity) {
-  run(
-    `INSERT OR REPLACE INTO activities
-     (id, course_id, activity_number, instruction, tips, objective_focus, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      activity.id,
-      activity.courseId,
-      activity.activityNumber,
-      activity.instruction || null,
-      activity.tips ? JSON.stringify(activity.tips) : null,
-      activity.objectiveFocus || null,
-      activity.createdAt || Date.now(),
-    ]
-  );
+  const courseId = activity.courseId;
+  const key = `activities:${courseId}`;
+  let all = await fetchSyncData(key);
+  if (!Array.isArray(all)) all = [];
+  const idx = all.findIndex(a => a.id === activity.id);
+  if (idx >= 0) all[idx] = activity; else all.push(activity);
+  await putSyncData(key, all);
 }
 
 export async function deleteActivitiesForCourse(courseId) {
-  run('DELETE FROM activities WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`activities:${courseId}`);
 }
 
 // -- Drafts -------------------------------------------------------------------
 
 export async function getDrafts(courseId) {
-  const rows = queryAll(
-    'SELECT * FROM drafts WHERE course_id = ? ORDER BY timestamp',
-    [courseId]
-  );
-  return rows.map(r => ({
-    id: r.id,
-    activityId: r.activity_id,
-    courseId: r.course_id,
-    screenshotKey: r.screenshot_key || null,
-    textResponse: r.text_response || null,
-    url: r.url || null,
-    achieved: !!r.achieved,
-    demonstrates: r.demonstrates || null,
-    moved: r.moved || null,
-    needed: r.needed || null,
-    strengths: r.strengths ? JSON.parse(r.strengths) : [],
-    attempt: r.attempt || 1,
-    timestamp: r.timestamp,
-  }));
+  const data = await fetchSyncData(`drafts:${courseId}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getDraftsForActivity(activityId) {
-  const rows = queryAll(
-    'SELECT * FROM drafts WHERE activity_id = ? ORDER BY timestamp',
-    [activityId]
-  );
-  return rows.map(r => ({
-    id: r.id,
-    activityId: r.activity_id,
-    courseId: r.course_id,
-    screenshotKey: r.screenshot_key || null,
-    textResponse: r.text_response || null,
-    url: r.url || null,
-    achieved: !!r.achieved,
-    demonstrates: r.demonstrates || null,
-    moved: r.moved || null,
-    needed: r.needed || null,
-    strengths: r.strengths ? JSON.parse(r.strengths) : [],
-    attempt: r.attempt || 1,
-    timestamp: r.timestamp,
-  }));
+  // Scan all draft collections in cache
+  for (const [key, data] of _cache.entries()) {
+    if (!key.startsWith('drafts:')) continue;
+    if (Array.isArray(data)) {
+      const matched = data.filter(d => d.activityId === activityId);
+      if (matched.length > 0) return matched;
+    }
+  }
+  return [];
 }
 
 export async function saveDraft(draft) {
-  run(
-    `INSERT OR REPLACE INTO drafts
-     (id, activity_id, course_id, screenshot_key, text_response, url,
-      achieved, demonstrates, moved, needed, strengths, attempt, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      draft.id,
-      draft.activityId,
-      draft.courseId,
-      draft.screenshotKey || null,
-      draft.textResponse || null,
-      draft.url || null,
-      draft.achieved ? 1 : 0,
-      draft.demonstrates || null,
-      draft.moved || null,
-      draft.needed || null,
-      draft.strengths ? JSON.stringify(draft.strengths) : null,
-      draft.attempt || 1,
-      draft.timestamp || Date.now(),
-    ]
-  );
+  const courseId = draft.courseId;
+  const key = `drafts:${courseId}`;
+  let all = await fetchSyncData(key);
+  if (!Array.isArray(all)) all = [];
+  const idx = all.findIndex(d => d.id === draft.id);
+  if (idx >= 0) all[idx] = draft; else all.push(draft);
+  await putSyncData(key, all);
 }
 
 export async function deleteDraftsForCourse(courseId) {
-  run('DELETE FROM drafts WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`drafts:${courseId}`);
 }
 
 // -- Course messages (unified conversation per course) ------------------------
 
 export async function getCourseMessages(courseId) {
-  const rows = queryAll(
-    'SELECT * FROM course_messages WHERE course_id = ? ORDER BY timestamp',
-    [courseId]
-  );
-  return rows.map(r => ({
-    id: r.id,
-    courseId: r.course_id,
-    role: r.role,
-    content: r.content,
-    msgType: r.msg_type,
-    phase: r.phase,
-    metadata: r.metadata ? JSON.parse(r.metadata) : null,
-    timestamp: r.timestamp,
-  }));
+  const data = await fetchSyncData(`messages:${courseId}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function saveCourseMessage(courseId, msg) {
-  run(
-    `INSERT INTO course_messages (course_id, role, content, msg_type, phase, metadata, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      courseId,
-      msg.role,
-      msg.content || '',
-      msg.msgType,
-      msg.phase || null,
-      msg.metadata ? JSON.stringify(msg.metadata) : null,
-      msg.timestamp || Date.now(),
-    ]
-  );
+  const key = `messages:${courseId}`;
+  let all = _cache.get(key);
+  if (!Array.isArray(all)) all = await getCourseMessages(courseId);
+  all = [...all, { ...msg, timestamp: msg.timestamp || Date.now() }];
+  _cache.set(key, all);
+  // Don't await — debounced sync handles persistence
 }
 
 export async function saveCourseMessages(courseId, msgs) {
-  for (const msg of msgs) {
-    await saveCourseMessage(courseId, msg);
-  }
+  const key = `messages:${courseId}`;
+  const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
+  _cache.set(key, withTimestamps);
+  await putSyncData(key, withTimestamps);
 }
 
 export async function clearCourseMessages(courseId) {
-  run('DELETE FROM course_messages WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`messages:${courseId}`);
 }
 
 // -- User-created courses -----------------------------------------------------
 
 export async function saveUserCourse(courseId, markdown) {
-  run(
-    'INSERT OR REPLACE INTO courses (course_id, markdown, created_at) VALUES (?, ?, ?)',
-    [courseId, markdown, Date.now()]
-  );
+  await putSyncData(`courses:${courseId}`, { courseId, markdown, createdAt: Date.now() });
 }
 
 export async function getUserCourses() {
-  return queryAll('SELECT * FROM courses ORDER BY created_at');
+  // Scan cache for all courses:* keys, or fetch from loadAll
+  const courses = [];
+  for (const [key, data] of _cache.entries()) {
+    if (key.startsWith('courses:') && data) {
+      courses.push(data);
+    }
+  }
+  return courses;
 }
 
 export async function getUserCourseMarkdown(courseId) {
-  const row = query('SELECT markdown FROM courses WHERE course_id = ?', [courseId]);
-  return row ? row.markdown : null;
+  const data = await fetchSyncData(`courses:${courseId}`);
+  return data?.markdown || null;
 }
 
 export async function deleteUserCourse(courseId) {
-  run('DELETE FROM courses WHERE course_id = ?', [courseId]);
+  await deleteSyncData(`courses:${courseId}`);
 }
 
 export async function getDraftCourseId() {
-  const row = query(
-    "SELECT course_id FROM course_messages WHERE course_id LIKE 'create:%' ORDER BY timestamp DESC LIMIT 1"
-  );
-  return row ? row.course_id : null;
+  // Check cache for create:* message keys
+  for (const key of _cache.keys()) {
+    if (key.startsWith('messages:create:')) {
+      return key.slice('messages:'.length);
+    }
+  }
+  return null;
 }
 
-// -- Auth tokens (cloud sync) -------------------------------------------------
+// -- Auth tokens (localStorage) -----------------------------------------------
+
+const AUTH_STORAGE_KEY = 'plato_auth';
 
 export async function getAuthTokens() {
-  const row = query('SELECT access_token, refresh_token FROM auth WHERE id = 1');
-  if (!row || !row.access_token) return null;
-  return { accessToken: row.access_token, refreshToken: row.refresh_token };
+  try {
+    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    return parsed.accessToken ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveAuthTokens({ accessToken, refreshToken }) {
-  const existing = query('SELECT id FROM auth WHERE id = 1');
-  if (existing) {
-    run(
-      'UPDATE auth SET access_token = ?, refresh_token = ? WHERE id = 1',
-      [accessToken, refreshToken]
-    );
-  } else {
-    run(
-      'INSERT INTO auth (id, access_token, refresh_token) VALUES (1, ?, ?)',
-      [accessToken, refreshToken]
-    );
-  }
+  try {
+    const existing = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || '{}');
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
+      ...existing, accessToken, refreshToken,
+    }));
+  } catch { /* storage full or disabled */ }
 }
 
 export async function clearAuth() {
-  run('DELETE FROM auth WHERE id = 1');
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+  clearCache();
 }
 
 export async function getAuthUser() {
-  const row = query('SELECT user_json FROM auth WHERE id = 1');
-  return row?.user_json ? JSON.parse(row.user_json) : null;
+  try {
+    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!stored) return null;
+    return JSON.parse(stored).user || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function saveAuthUser(user) {
-  const existing = query('SELECT id FROM auth WHERE id = 1');
-  if (existing) {
-    run('UPDATE auth SET user_json = ? WHERE id = 1', [JSON.stringify(user)]);
-  } else {
-    run('INSERT INTO auth (id, user_json) VALUES (1, ?)', [JSON.stringify(user)]);
-  }
+  try {
+    const existing = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || '{}');
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ...existing, user }));
+  } catch { /* storage full or disabled */ }
 }
 
 // -- Onboarding ---------------------------------------------------------------
 
 export async function getOnboardingComplete() {
-  const row = query("SELECT value FROM settings WHERE key = 'onboardingComplete'");
-  return row ? JSON.parse(row.value) : false;
+  // With login required, onboarding is always considered complete
+  return true;
 }
 
 export async function saveOnboardingComplete() {
-  run("INSERT OR REPLACE INTO settings (key, value) VALUES ('onboardingComplete', ?)", [JSON.stringify(true)]);
+  // No-op — login replaces onboarding
 }
 
 // -- Delete functions (used by sync.js and course reset) ----------------------
 
 export async function deleteProfile() {
-  run('DELETE FROM profile WHERE id = 1');
+  await deleteSyncData('profile');
 }
 
 export async function deleteProfileSummary() {
-  run('DELETE FROM profile_summary WHERE id = 1');
+  await deleteSyncData('profileSummary');
 }
 
 export async function deletePreferences() {
-  run('DELETE FROM preferences WHERE id = 1');
+  await deleteSyncData('preferences');
 }
 
 export async function deleteCourseProgress(courseId) {
@@ -361,42 +353,14 @@ export async function deleteCourseProgress(courseId) {
   await clearCourseMessages(courseId);
 }
 
-// -- IndexedDB for binary assets (screenshots) --------------------------------
-
-const DB_NAME = '1111-blobs';
-const DB_VERSION = 1;
-const STORE_NAME = 'screenshots';
-
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
+// -- Screenshots (embedded in drafts as base64) -------------------------------
 
 export async function saveScreenshot(key, dataUrl) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(dataUrl, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+  // Screenshots are now stored as part of draft data (screenshotDataUrl field).
+  // This function caches the dataUrl so it can be embedded when the draft is saved.
+  _cache.set(`screenshot:${key}`, dataUrl);
 }
 
 export async function getScreenshot(key) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
+  return _cache.get(`screenshot:${key}`) || null;
 }
