@@ -55,10 +55,10 @@ app.get('/assets/*', (c) => {
 
 // ── API endpoints (public, no auth) ──
 
-app.get('/v1/affiliations', async (c) => {
+app.get('/v1/groups', async (c) => {
   const db = (await import('../lib/db.js')).default;
   const item = await db.getSyncData('_system', 'settings');
-  return c.json({ affiliations: item?.data?.affiliations || [] });
+  return c.json({ groups: item?.data?.userGroups || [] });
 });
 
 app.get('/v1/invite-example.csv', (c) => {

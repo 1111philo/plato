@@ -16,7 +16,7 @@ import { BrandingProvider } from './contexts/BrandingContext.jsx';
 
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
-const AdminParticipants = lazy(() => import('./pages/admin/AdminParticipants.jsx'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
 const AdminCourses = lazy(() => import('./pages/admin/AdminCourses.jsx'));
 const AdminPrompts = lazy(() => import('./pages/admin/AdminPrompts.jsx'));
 const AdminTheme = lazy(() => import('./pages/admin/AdminTheme.jsx'));
@@ -103,7 +103,7 @@ export default function App() {
           </RequireAuth>
         }>
           <Route index element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
-          <Route path="participants" element={<Suspense fallback={<AdminFallback />}><AdminParticipants /></Suspense>} />
+          <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="courses" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
           <Route path="prompts" element={<Suspense fallback={<AdminFallback />}><AdminPrompts /></Suspense>} />
           <Route path="theme" element={<Suspense fallback={<AdminFallback />}><AdminTheme /></Suspense>} />

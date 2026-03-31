@@ -9,21 +9,21 @@ const admin = new Hono();
 
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
-// GET /v1/admin/participants
-admin.get('/v1/admin/participants', async (c) => {
+// GET /v1/admin/users
+admin.get('/v1/admin/users', async (c) => {
   const users = await db.listAllUsers();
   return c.json(users.map((p) => ({
     userId: p.userId,
     email: p.email,
     name: p.name,
-    affiliation: p.affiliation,
+    userGroup: p.userGroup,
     role: p.role,
     createdAt: p.createdAt,
   })));
 });
 
-// GET /v1/admin/participants/:userId
-admin.get('/v1/admin/participants/:userId', async (c) => {
+// GET /v1/admin/users/:userId
+admin.get('/v1/admin/users/:userId', async (c) => {
   const user = await db.getUserById(c.req.param('userId'));
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
@@ -32,7 +32,7 @@ admin.get('/v1/admin/participants/:userId', async (c) => {
     userId: user.userId,
     email: user.email,
     name: user.name,
-    affiliation: user.affiliation,
+    userGroup: user.userGroup,
     role: user.role,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -170,21 +170,21 @@ admin.delete('/v1/admin/invites/:token', async (c) => {
   return c.json({ ok: true });
 });
 
-// PATCH /v1/admin/participants/:userId — update participant fields
-admin.patch('/v1/admin/participants/:userId', async (c) => {
+// PATCH /v1/admin/users/:userId — update user fields
+admin.patch('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
   const user = await db.getUserById(userId);
   if (!user) return c.json({ error: 'User not found' }, 404);
   const body = await c.req.json();
   const updates = {};
-  if (body.affiliation !== undefined) updates.affiliation = body.affiliation;
+  if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
   if (Object.keys(updates).length === 0) return c.json({ error: 'No valid fields' }, 400);
   await db.updateUser(userId, updates);
   return c.json({ ok: true });
 });
 
-// PUT /v1/admin/participants/:userId/role
-admin.put('/v1/admin/participants/:userId/role', async (c) => {
+// PUT /v1/admin/users/:userId/role
+admin.put('/v1/admin/users/:userId/role', async (c) => {
   const userId = c.req.param('userId');
   const adminUser = c.get('user');
   if (userId === adminUser.userId) {
@@ -195,8 +195,8 @@ admin.put('/v1/admin/participants/:userId/role', async (c) => {
     return c.json({ error: 'User not found' }, 404);
   }
   const { role } = await c.req.json();
-  if (role !== 'admin' && role !== 'participant') {
-    return c.json({ error: 'Role must be admin or participant' }, 400);
+  if (role !== 'admin' && role !== 'user') {
+    return c.json({ error: 'Role must be admin or user' }, 400);
   }
   await db.updateUser(userId, { role });
   return c.json({ ok: true, role });
@@ -217,62 +217,62 @@ admin.put('/v1/admin/settings', async (c) => {
   return c.json(merged);
 });
 
-// PUT /v1/admin/affiliations — add or rename an affiliation
-admin.put('/v1/admin/affiliations', async (c) => {
+// PUT /v1/admin/groups — add or rename an group
+admin.put('/v1/admin/groups', async (c) => {
   const { name, oldName } = await c.req.json();
   if (!name || !name.trim()) {
-    return c.json({ error: 'Affiliation name is required' }, 400);
+    return c.json({ error: 'Group name is required' }, 400);
   }
   const trimmed = name.trim();
   const current = await db.getSyncData('_system', 'settings');
   const settings = current?.data || {};
-  const affiliations = settings.affiliations || [];
+  const groups = settings.userGroups || [];
 
   if (oldName) {
     // Rename
-    const idx = affiliations.indexOf(oldName);
-    if (idx === -1) return c.json({ error: 'Affiliation not found' }, 404);
-    affiliations[idx] = trimmed;
-    // Update all users with the old affiliation
+    const idx = groups.indexOf(oldName);
+    if (idx === -1) return c.json({ error: 'Group not found' }, 404);
+    groups[idx] = trimmed;
+    // Update all users with the old group
     const users = await db.listAllUsers();
     await Promise.all(
-      users.filter((u) => u.affiliation === oldName)
-        .map((u) => db.updateUser(u.userId, { affiliation: trimmed }))
+      users.filter((u) => u.userGroup === oldName)
+        .map((u) => db.updateUser(u.userId, { userGroup: trimmed }))
     );
   } else {
     // Add
-    if (affiliations.includes(trimmed)) {
-      return c.json({ error: 'Affiliation already exists' }, 409);
+    if (groups.includes(trimmed)) {
+      return c.json({ error: 'Group already exists' }, 409);
     }
-    affiliations.push(trimmed);
+    groups.push(trimmed);
   }
 
-  settings.affiliations = affiliations;
+  settings.userGroups = groups;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-  return c.json({ affiliations });
+  return c.json({ groups });
 });
 
-// DELETE /v1/admin/affiliations/:name — remove an affiliation and clear from all users
-admin.delete('/v1/admin/affiliations/:name', async (c) => {
+// DELETE /v1/admin/groups/:name — remove an group and clear from all users
+admin.delete('/v1/admin/groups/:name', async (c) => {
   const name = decodeURIComponent(c.req.param('name'));
   const current = await db.getSyncData('_system', 'settings');
   const settings = current?.data || {};
-  const affiliations = settings.affiliations || [];
-  const idx = affiliations.indexOf(name);
-  if (idx === -1) return c.json({ error: 'Affiliation not found' }, 404);
+  const groups = settings.userGroups || [];
+  const idx = groups.indexOf(name);
+  if (idx === -1) return c.json({ error: 'Group not found' }, 404);
 
-  affiliations.splice(idx, 1);
-  settings.affiliations = affiliations;
+  groups.splice(idx, 1);
+  settings.userGroups = groups;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
 
-  // Clear affiliation from all users who had it
+  // Clear group from all users who had it
   const users = await db.listAllUsers();
   await Promise.all(
-    users.filter((u) => u.affiliation === name)
-      .map((u) => db.updateUser(u.userId, { affiliation: null }))
+    users.filter((u) => u.userGroup === name)
+      .map((u) => db.updateUser(u.userId, { userGroup: null }))
   );
 
-  return c.json({ affiliations });
+  return c.json({ groups });
 });
 
 // DELETE /v1/admin/sync — reset sync data for all users
@@ -295,8 +295,8 @@ admin.delete('/v1/admin/sync', async (c) => {
   return c.json({ ok: true, usersAffected: users.length, itemsDeleted: totalDeleted });
 });
 
-// DELETE /v1/admin/participants/:userId
-admin.delete('/v1/admin/participants/:userId', async (c) => {
+// DELETE /v1/admin/users/:userId
+admin.delete('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
   const adminUser = c.get('user');
   if (userId === adminUser.userId) {
@@ -312,7 +312,7 @@ admin.delete('/v1/admin/participants/:userId', async (c) => {
     userId,
     email: user.email,
     performedBy: adminUser.userId,
-    details: { name: user.name, affiliation: user.affiliation, role: user.role, selfDelete: false },
+    details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: false },
   });
 
   // Delete all sync data for this user

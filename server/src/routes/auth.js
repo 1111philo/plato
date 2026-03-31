@@ -58,7 +58,7 @@ auth.post('/v1/auth/setup', async (c) => {
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, affiliation } = await c.req.json();
+  const { inviteToken, name, password, userGroup } = await c.req.json();
 
   if (!inviteToken || !name || !password) {
     return c.json({ error: 'inviteToken, name, and password are required' }, 400);
@@ -90,20 +90,20 @@ auth.post('/v1/auth/signup', async (c) => {
     email: invite.email,
     passwordHash,
     name,
-    affiliation: affiliation || null,
-    role: 'participant',
+    userGroup: userGroup || null,
+    role: 'user',
   });
 
   await db.markInviteUsed(inviteToken);
 
-  const accessToken = await signAccessToken(userId, 'participant');
+  const accessToken = await signAccessToken(userId, 'user');
   const refreshToken = generateRefreshToken();
   await db.storeRefreshToken(hashToken(refreshToken), userId);
 
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: invite.email, name, role: 'participant' },
+    user: { userId, email: invite.email, name, role: 'user' },
   }, 201);
 });
 

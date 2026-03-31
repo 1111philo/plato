@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL COLLATE NOCASE,
   passwordHash TEXT NOT NULL,
   name TEXT,
-  affiliation TEXT,
+  userGroup TEXT,
   role TEXT NOT NULL,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
@@ -98,12 +98,12 @@ function conditionalCheckFailed(message) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, affiliation, role }) {
+  async createUser({ userId, email, passwordHash, name, userGroup, role }) {
     const now = new Date().toISOString();
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, passwordHash, name, affiliation, role, createdAt, updatedAt)
+      `INSERT OR IGNORE INTO users (userId, email, passwordHash, name, userGroup, role, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), passwordHash, name, affiliation || null, role, now, now);
+    ).run(userId, email.toLowerCase(), passwordHash, name, userGroup || null, role, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
@@ -128,8 +128,8 @@ const db = {
     sqlite.prepare('DELETE FROM users WHERE userId = ?').run(userId);
   },
 
-  async listParticipants() {
-    return sqlite.prepare("SELECT * FROM users WHERE role = 'participant'").all();
+  async listUsers() {
+    return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all();
   },
 
   async listAllUsers() {

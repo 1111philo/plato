@@ -19,13 +19,13 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, affiliation, role }) {
+  async createUser({ userId, email, passwordHash, name, userGroup, role }) {
     const now = new Date().toISOString();
     await doc.send(new PutCommand({
       TableName: USERS_TABLE,
       Item: {
         userId, email: email.toLowerCase(), passwordHash, name,
-        affiliation: affiliation || null,
+        userGroup: userGroup || null,
         role, createdAt: now, updatedAt: now,
       },
       ConditionExpression: 'attribute_not_exists(userId)',
@@ -74,7 +74,7 @@ const db = {
     }));
   },
 
-  async listParticipants() {
+  async listUsers() {
     const items = [];
     let lastKey;
     do {
@@ -82,7 +82,7 @@ const db = {
         TableName: USERS_TABLE,
         FilterExpression: '#r = :role',
         ExpressionAttributeNames: { '#r': 'role' },
-        ExpressionAttributeValues: { ':role': 'participant' },
+        ExpressionAttributeValues: { ':role': 'user' },
         ExclusiveStartKey: lastKey,
       }));
       items.push(...result.Items);

@@ -5,7 +5,7 @@ import { Separator } from '@/components/ui/separator';
 
 const NAV_LINKS = [
   { to: '/plato', label: 'Home', end: true },
-  { to: '/plato/participants', label: 'Participants' },
+  { to: '/plato/users', label: 'Users' },
   { to: '/plato/courses', label: 'Courses' },
   { to: '/plato/prompts', label: 'Prompts' },
   { to: '/plato/theme', label: 'Classroom Theme' },

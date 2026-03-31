@@ -11,12 +11,12 @@ import {
 
 export default function Signup() {
   const [name, setName] = useState('');
-  const [affiliation, setAffiliation] = useState('');
+  const [group, setGroup] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [affiliations, setAffiliations] = useState([]);
+  const [groups, setGroups] = useState([]);
   const { login } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -25,9 +25,9 @@ export default function Signup() {
 
   useEffect(() => {
     document.title = 'Create account — plato';
-    fetch('/v1/affiliations')
+    fetch('/v1/groups')
       .then(r => r.json())
-      .then(d => setAffiliations(d.affiliations || []))
+      .then(d => setGroups(d.userGroups || []))
       .catch(() => {});
   }, []);
 
@@ -54,7 +54,7 @@ export default function Signup() {
           inviteToken: token,
           name: name.trim(),
           password,
-          affiliation: affiliation || undefined,
+          userGroup: userGroup || undefined,
         }),
       });
       const data = await res.json();
@@ -93,19 +93,19 @@ export default function Signup() {
               onChange={(e) => setName(e.target.value)}
             />
           </div>
-          {affiliations.length > 0 && (
+          {groups.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="signup-affiliation">
-                Affiliation <span className="text-muted-foreground text-xs">(optional)</span>
+              <Label htmlFor="signup-group">
+                Group <span className="text-muted-foreground text-xs">(optional)</span>
               </Label>
               <select
-                id="signup-affiliation"
+                id="signup-group"
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                value={affiliation}
-                onChange={(e) => setAffiliation(e.target.value)}
+                value={group}
+                onChange={(e) => setGroup(e.target.value)}
               >
-                <option value="">Select affiliation</option>
-                {affiliations.map((a) => <option key={a} value={a}>{a}</option>)}
+                <option value="">Select group</option>
+                {groups.map((a) => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
           )}

@@ -71,7 +71,7 @@ plato/
 | `client/js/courseOwner.js` | Course loading, parsing, and knowledge base management |
 | `client/src/lib/courseEngine.js` | The learning loop state machine (phases, messages, KB updates) |
 | `server/src/routes/sync.js` | Data sync endpoints (per-user key-value store with optimistic locking) |
-| `server/src/routes/admin.js` | Admin API (participants, invites, content management) |
+| `server/src/routes/admin.js` | Admin API (users, invites, content management) |
 | `server/src/routes/content.js` | Content API (prompts, courses, knowledge base, branding) |
 
 ### Content management

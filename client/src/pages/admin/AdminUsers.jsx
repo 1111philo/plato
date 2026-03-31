@@ -31,9 +31,9 @@ function parseCsvEmails(text) {
   return emails;
 }
 
-export default function AdminParticipants() {
+export default function AdminUsers() {
   const { user: currentUser } = useAuth();
-  const [participants, setParticipants] = useState([]);
+  const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -47,17 +47,17 @@ export default function AdminParticipants() {
     setLoading(true);
     try {
       const [p, i] = await Promise.all([
-        adminApi('GET', '/v1/admin/participants'),
+        adminApi('GET', '/v1/admin/users'),
         adminApi('GET', '/v1/admin/invites'),
       ]);
-      setParticipants(Array.isArray(p) ? p : []);
+      setUsers(Array.isArray(p) ? p : []);
       setPendingInvites(Array.isArray(i) ? i.filter(x => x.status === 'pending') : []);
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    document.title = 'Participants — Admin';
+    document.title = 'Users — Admin';
     loadData();
   }, [loadData]);
 
@@ -92,7 +92,7 @@ export default function AdminParticipants() {
   async function deleteUser(userId, name) {
     if (!confirm(`Delete ${name} and all their data? This cannot be undone.`)) return;
     try {
-      await adminApi('DELETE', `/v1/admin/participants/${userId}`);
+      await adminApi('DELETE', `/v1/admin/users/${userId}`);
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -126,7 +126,7 @@ export default function AdminParticipants() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Participants</h1>
+      <h1 className="text-2xl font-bold mb-4">Users</h1>
 
       {message && (
         <div
@@ -152,12 +152,12 @@ export default function AdminParticipants() {
         <CardContent className="space-y-6">
           {/* Single invite */}
           <div className="space-y-2">
-            <Label htmlFor="inv-email">Invite a participant</Label>
+            <Label htmlFor="inv-email">Invite a user</Label>
             <div className="flex gap-2">
               <Input
                 id="inv-email"
                 type="email"
-                placeholder="participant@example.com"
+                placeholder="user@example.com"
                 value={inviteEmail}
                 onChange={e => setInviteEmail(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }}
@@ -184,9 +184,9 @@ export default function AdminParticipants() {
         </CardContent>
       </Card>
 
-      {(pendingInvites.length > 0 || participants.length > 0) && (
+      {(pendingInvites.length > 0 || users.length > 0) && (
         <Card className="p-0 overflow-hidden">
-          <Table aria-label="Participants and invites">
+          <Table aria-label="Users and invites">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -215,13 +215,13 @@ export default function AdminParticipants() {
                   </TableCell>
                 </TableRow>
               ))}
-              {participants.map(p => (
+              {users.map(p => (
                 <TableRow key={p.userId}>
                   <TableCell>{p.name}</TableCell>
                   <TableCell>{p.email}</TableCell>
                   <TableCell>
                     <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
-                      {p.role === 'admin' ? 'Admin' : 'Participant'}
+                      {p.role === 'admin' ? 'Admin' : 'User'}
                     </Badge>
                   </TableCell>
                   <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>

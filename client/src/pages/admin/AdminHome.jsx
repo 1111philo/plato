@@ -10,10 +10,10 @@ export default function AdminHome() {
   useEffect(() => {
     document.title = 'Admin — plato';
     Promise.all([
-      adminApi('GET', '/v1/admin/participants'),
+      adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
-    ]).then(([participants, invites]) => {
-      setActiveCount(Array.isArray(participants) ? participants.length : 0);
+    ]).then(([users, invites]) => {
+      setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
     }).catch(() => {});
   }, []);
@@ -21,18 +21,18 @@ export default function AdminHome() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-      <p className="text-muted-foreground mb-6">Manage participants and settings for plato.</p>
+      <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link to="/plato/participants" className="no-underline">
+        <Link to="/plato/users" className="no-underline">
           <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
             <CardContent>
               <div className="text-3xl font-bold">{activeCount}</div>
-              <div className="text-sm text-muted-foreground">Active participants</div>
+              <div className="text-sm text-muted-foreground">Active users</div>
             </CardContent>
           </Card>
         </Link>
-        <Link to="/plato/participants" className="no-underline">
+        <Link to="/plato/users" className="no-underline">
           <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
             <CardContent>
               <div className="text-3xl font-bold">{pendingCount}</div>

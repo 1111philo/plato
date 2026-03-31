@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 
 export default function AdminSettings() {
-  const [affiliations, setAffiliations] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [newAffName, setNewAffName] = useState('');
   const [knowledgeBase, setKnowledgeBase] = useState('');
   const [kbEditing, setKbEditing] = useState(false);
@@ -29,29 +29,29 @@ export default function AdminSettings() {
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/knowledge-base'),
       ]);
-      setAffiliations(settings.affiliations || []);
+      setGroups(settings.userGroups || []);
       setKnowledgeBase(kb.content || '');
     } catch { /* ignore */ }
     setLoading(false);
   }
 
-  async function addAffiliation() {
+  async function addGroup() {
     const name = newAffName.trim();
     if (!name) return;
     try {
-      const data = await adminApi('PUT', '/v1/admin/affiliations', { name });
-      setAffiliations(data.affiliations || []);
+      const data = await adminApi('PUT', '/v1/admin/groups', { name });
+      setGroups(data.userGroups || []);
       setNewAffName('');
-      setMessage({ text: 'Affiliation added.', type: 'success' });
+      setMessage({ text: 'Group added.', type: 'success' });
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function deleteAffiliation(name) {
-    if (!confirm(`Delete "${name}"? This will clear the affiliation from all participants.`)) return;
+  async function deleteGroup(name) {
+    if (!confirm(`Delete "${name}"? This will clear the group from all users.`)) return;
     try {
-      const data = await adminApi('DELETE', `/v1/admin/affiliations/${encodeURIComponent(name)}`);
-      setAffiliations(data.affiliations || []);
-      setMessage({ text: 'Affiliation deleted.', type: 'success' });
+      const data = await adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`);
+      setGroups(data.userGroups || []);
+      setMessage({ text: 'Group deleted.', type: 'success' });
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
@@ -93,10 +93,10 @@ export default function AdminSettings() {
         </div>
       )}
 
-      {/* Affiliations */}
+      {/* Groups */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Affiliations</CardTitle>
+          <CardTitle>Groups</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
@@ -105,22 +105,22 @@ export default function AdminSettings() {
               placeholder="Organization name"
               value={newAffName}
               onChange={e => setNewAffName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addAffiliation(); }}
+              onKeyDown={e => { if (e.key === 'Enter') addGroup(); }}
               className="flex-1"
             />
-            <Button onClick={addAffiliation}>Add</Button>
+            <Button onClick={addGroup}>Add</Button>
           </div>
-          {affiliations.length > 0 ? (
+          {groups.length > 0 ? (
             <ul className="space-y-1">
-              {affiliations.map(a => (
+              {groups.map(a => (
                 <li key={a} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
                   <span className="text-sm">{a}</span>
-                  <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteAffiliation(a)}>&#10005;</Button>
+                  <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteGroup(a)}>&#10005;</Button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-muted-foreground">No affiliations yet.</p>
+            <p className="text-sm text-muted-foreground">No groups yet.</p>
           )}
         </CardContent>
       </Card>
@@ -162,7 +162,7 @@ export default function AdminSettings() {
           <CardTitle className="text-destructive">Danger Zone</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Reset synced data for all participants. This cannot be undone.</p>
+          <p className="text-sm text-muted-foreground">Reset synced data for all users. This cannot be undone.</p>
           {!showResetConfirm ? (
             <Button variant="destructive" onClick={() => setShowResetConfirm(true)}>Reset all sync data</Button>
           ) : (

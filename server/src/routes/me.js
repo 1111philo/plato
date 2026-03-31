@@ -15,7 +15,7 @@ me.get('/v1/me', (c) => {
     userId: user.userId,
     email: user.email,
     name: user.name,
-    affiliation: user.affiliation,
+    userGroup: user.userGroup,
     role: user.role,
     createdAt: user.createdAt,
   });
@@ -25,7 +25,7 @@ me.get('/v1/me', (c) => {
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json();
-  const allowed = ['name', 'email', 'affiliation', 'password'];
+  const allowed = ['name', 'email', 'group', 'password'];
   const updates = {};
 
   for (const key of allowed) {
@@ -58,7 +58,7 @@ me.patch('/v1/me', async (c) => {
     userId: updated.userId,
     email: updated.email,
     name: updated.name,
-    affiliation: updated.affiliation,
+    userGroup: updated.userGroup,
     role: updated.role,
   });
 });
@@ -76,7 +76,7 @@ me.get('/v1/me/export', async (c) => {
       userId: user.userId,
       email: user.email,
       name: user.name,
-      affiliation: user.affiliation,
+      userGroup: user.userGroup,
       role: user.role,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -102,7 +102,7 @@ me.delete('/v1/me', async (c) => {
     userId,
     email: user.email,
     performedBy: userId,
-    details: { name: user.name, affiliation: user.affiliation, role: user.role, selfDelete: true },
+    details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: true },
   });
 
   // Delete all sync data
