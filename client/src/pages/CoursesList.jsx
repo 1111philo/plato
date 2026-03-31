@@ -77,24 +77,27 @@ export default function CoursesList() {
   );
 
   const CourseItem = ({ index, onClick, dashed, children }) => (
-    <button
-      className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
+    <li
+      className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
       style={{ animationDelay: `${index * 40}ms` }}
-      role="listitem"
-      onClick={onClick}
     >
-      <Card className={`transition-colors hover:bg-accent/50 cursor-pointer ${dashed ? 'border-dashed' : ''}`}>
-        <CardContent className="flex items-start gap-3">
-          {children}
-        </CardContent>
-      </Card>
-    </button>
+      <button
+        className="w-full text-left"
+        onClick={onClick}
+      >
+        <Card className={`transition-colors hover:bg-accent/50 cursor-pointer ${dashed ? 'border-dashed' : ''}`}>
+          <CardContent className="flex items-start gap-3">
+            {children}
+          </CardContent>
+        </Card>
+      </button>
+    </li>
   );
 
   return (
     <div className="mx-auto max-w-lg p-4">
       <h2 className="text-xl font-semibold mb-4">Courses</h2>
-      <div className="space-y-3" role="list">
+      <ul className="space-y-3" role="list">
         {courses.map((c, i) => (
           <CourseItem key={c.courseId} index={i} onClick={() => navigate(`/courses/${c.courseId}`)}>
             <CourseIcon>{statusIcon(c.courseId)}</CourseIcon>
@@ -120,17 +123,17 @@ export default function CoursesList() {
           </div>
         </CourseItem>
 
-        <input ref={fileRef} type="file" accept=".md,text/markdown" onChange={handleImport} className="sr-only" aria-label="Import course file" />
         <CourseItem index={courses.length + 1} onClick={() => fileRef.current?.click()} dashed>
           <CourseIcon>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           </CourseIcon>
           <div className="min-w-0 flex-1 space-y-1">
             <strong className="text-sm font-medium">Import Course</strong>
             <p className="text-sm text-muted-foreground">Load a course from a .md file</p>
           </div>
         </CourseItem>
-      </div>
+      </ul>
+      <input ref={fileRef} type="file" accept=".md,text/markdown" onChange={handleImport} className="sr-only" aria-label="Import course file" />
 
       {detailCourse && (
         <CourseDetailDialog
@@ -158,8 +161,15 @@ function CourseDetailDialog({ course, progress, open, onOpenChange }) {
         </DialogHeader>
 
         {pct != null && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
+          <div
+            className="space-y-1"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+            aria-label={`Course progress: ${pct}%`}
+          >
+            <div className="flex justify-between text-xs text-muted-foreground" aria-hidden="true">
               <span>Starting</span>
               <span>{progress.status === 'completed' ? 'Completed' : `${pct}%`}</span>
             </div>

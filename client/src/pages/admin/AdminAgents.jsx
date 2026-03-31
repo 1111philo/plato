@@ -119,14 +119,14 @@ export default function AdminAgents() {
     finally { setSaving(false); }
   }
 
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
   // Agent prompt editor view
   if (editing) {
     return (
       <div>
         <div className="flex items-center gap-3 mb-1">
-          <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>&larr; Back</Button>
+          <Button variant="ghost" size="sm" onClick={() => setEditing(null)} aria-label="Back to agents list">&larr; Back</Button>
           <h1 className="text-2xl font-bold">{editing.name}</h1>
         </div>
         <p className="text-sm text-muted-foreground mb-4">{editing.description}</p>
@@ -137,12 +137,13 @@ export default function AdminAgents() {
             <CardDescription>The instructions this agent receives. Changes take effect immediately for all learners.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Textarea className="font-mono text-sm min-h-[400px]" rows={20}
+            <Label htmlFor="agent-prompt-editor" className="sr-only">System prompt</Label>
+            <Textarea id="agent-prompt-editor" className="font-mono text-sm min-h-[400px]" rows={20}
               value={editContent} onChange={e => setEditContent(e.target.value)} />
             <div className="flex items-center gap-3">
               <Button onClick={savePrompt} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
               <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-              {message && <span className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
+              {message && <span role="status" aria-live="polite" className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
             </div>
           </CardContent>
         </Card>
@@ -183,7 +184,8 @@ export default function AdminAgents() {
             <CardContent className="space-y-4">
               {kbEditing ? (
                 <>
-                  <Textarea className="font-mono text-sm min-h-[400px]" rows={20}
+                  <Label htmlFor="kb-editor" className="sr-only">Knowledge base content</Label>
+                  <Textarea id="kb-editor" className="font-mono text-sm min-h-[400px]" rows={20}
                     value={kbDraft} onChange={e => setKbDraft(e.target.value)}
                     placeholder="Enter program information, FAQs, policies..." />
                   <div className="flex items-center gap-3">
@@ -221,7 +223,9 @@ export default function AdminAgents() {
               const prompt = prompts[agent.id];
               return (
                 <Card key={agent.id} className="hover:ring-1 hover:ring-primary/20 transition-shadow cursor-pointer"
-                  onClick={() => startEditing(agent)}>
+                  role="button" tabIndex={0} aria-label={`Edit ${agent.name} agent`}
+                  onClick={() => startEditing(agent)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEditing(agent); } }}>
                   <CardContent className="flex items-start gap-4">
                     <div className="flex-1 min-w-0 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">

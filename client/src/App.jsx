@@ -26,8 +26,9 @@ function RequireAuth({ children }) {
   const { loggedIn, loading } = useAuth();
   if (loading) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-dvh flex items-center justify-center" role="status" aria-live="polite">
         <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
+        <span className="sr-only">Loading...</span>
       </main>
     );
   }
@@ -49,8 +50,9 @@ function RequireGuest({ children }) {
 }
 
 const AdminFallback = () => (
-  <main className="min-h-dvh flex items-center justify-center">
+  <main className="min-h-dvh flex items-center justify-center" role="status" aria-live="polite">
     <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
+    <span className="sr-only">Loading...</span>
   </main>
 );
 
@@ -67,8 +69,9 @@ export default function App() {
 
   if (loading || needsSetup === null) {
     return (
-      <main className="min-h-dvh flex items-center justify-center">
+      <main className="min-h-dvh flex items-center justify-center" role="status" aria-live="polite">
         <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
+        <span className="sr-only">Loading...</span>
       </main>
     );
   }

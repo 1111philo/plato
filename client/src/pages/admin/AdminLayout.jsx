@@ -25,14 +25,13 @@ export default function AdminLayout() {
     <div className="flex flex-col md:flex-row min-h-screen">
       <aside
         className="w-full md:w-56 md:h-screen md:sticky md:top-0 bg-primary text-primary-foreground flex md:flex-col shrink-0"
-        role="navigation"
-        aria-label="Admin navigation"
+        aria-label="Admin sidebar"
       >
         <div className="px-4 py-4 hidden md:block">
           <img src="/assets/logo-white.svg" alt="plato" className="h-6 w-auto" />
         </div>
 
-        <nav className="flex md:flex-col flex-1 overflow-x-auto md:overflow-x-visible gap-0.5 px-2 md:px-2">
+        <nav className="flex md:flex-col flex-1 overflow-x-auto md:overflow-x-visible gap-0.5 px-2 md:px-2" aria-label="Admin navigation">
           {NAV_LINKS.map(({ to, label, end }) => (
             <NavLink
               key={to}

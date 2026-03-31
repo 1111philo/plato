@@ -147,7 +147,7 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
   return (
     <div>
@@ -191,8 +191,8 @@ export default function AdminUsers() {
                   <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon-xs" title="Resend" onClick={() => resendInvite(inv.email)}>&#8635;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Revoke" onClick={() => revokeInvite(inv.inviteToken)}>&#10005;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${inv.email}`} onClick={() => resendInvite(inv.email)}>&#8635;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${inv.email}`} onClick={() => revokeInvite(inv.inviteToken)}>&#10005;</Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -210,7 +210,7 @@ export default function AdminUsers() {
                   <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     {p.userId !== currentUser?.userId && (
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteUser(p.userId, p.name || p.email)}>&#128465;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${p.name || p.email}`} onClick={() => deleteUser(p.userId, p.name || p.email)}>&#128465;</Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -263,7 +263,8 @@ export default function AdminUsers() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex gap-2">
-              <Input type="text" placeholder="Group name" value={newGroupName}
+              <Label htmlFor="new-group-name" className="sr-only">Group name</Label>
+              <Input id="new-group-name" type="text" placeholder="Group name" value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') addGroup(); }} className="flex-1" />
               <Button onClick={addGroup}>Add</Button>
@@ -273,7 +274,7 @@ export default function AdminUsers() {
                 {groups.map(g => (
                   <li key={g} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
                     <span className="text-sm">{g}</span>
-                    <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteGroup(g)}>&#10005;</Button>
+                    <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete group ${g}`} onClick={() => deleteGroup(g)}>&#10005;</Button>
                   </li>
                 ))}
               </ul>
