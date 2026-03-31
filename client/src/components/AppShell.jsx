@@ -58,51 +58,55 @@ export default function AppShell({ children }) {
       </a>
 
       <header
-        className="flex items-center gap-2 px-4 py-2"
+        className="px-4 py-2"
         style={{
           backgroundColor: 'var(--classroom-header-bg, var(--color-primary))',
           color: 'var(--classroom-header-text, var(--color-primary-foreground))',
         }}
         role="banner"
       >
-        <img src={classroomLogo} alt={classroomAlt} className="h-5 w-auto" />
-        <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
-          {navLinks.map(({ path, label }) => (
-            <Button key={path} variant="ghost" size="sm" className={headerBtnClass}
-              onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
-              {label}
-            </Button>
-          ))}
-        </nav>
-        <div className="flex-1" />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className={headerBtnClass}
-              aria-label={`Account: ${user?.email || 'signed in'}`}>
-              {user?.email || 'Account'}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
-              Sign Out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="mx-auto max-w-5xl flex items-center gap-2">
+          <img src={classroomLogo} alt={classroomAlt} className="h-5 w-auto" />
+          <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
+            {navLinks.map(({ path, label }) => (
+              <Button key={path} variant="ghost" size="sm" className={headerBtnClass}
+                onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
+                {label}
+              </Button>
+            ))}
+          </nav>
+          <div className="flex-1" />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className={headerBtnClass}
+                aria-label={`Account: ${user?.email || 'signed in'}`}>
+                {user?.email || 'Account'}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </header>
 
       <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto ${animClass}`} tabIndex={-1}>
         {children}
       </main>
 
-      <nav className="flex md:hidden border-t bg-background" aria-label="Main navigation">
+      <nav className="md:hidden border-t bg-background" aria-label="Main navigation">
+        <div className="mx-auto max-w-5xl flex">
         {navLinks.filter(l => l.path !== '/plato').map(({ path, label }) => (
           <Button key={path} variant="ghost" size="sm" className="flex-1"
             onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
             {label}
           </Button>
         ))}
+        </div>
       </nav>
 
       <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
