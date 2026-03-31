@@ -2,15 +2,27 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const BrandingContext = createContext(null);
 
-/** Convert hex (#rrggbb) to an oklch() string for Tailwind CSS variable overrides. */
+/** Relative luminance (0=black, 1=white). */
+function luminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Pick white or dark text for readable contrast on a background. */
+function contrastText(bgHex) {
+  return luminance(bgHex) < 0.4 ? '#ffffff' : '#1a1a1a';
+}
+
+/** Convert hex to oklch string. */
 function hexToOklch(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
-  // sRGB to linear
   const lin = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   const lr = lin(r), lg = lin(g), lb = lin(b);
-  // Linear sRGB to OKLab
   const l_ = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
   const m_ = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
   const s_ = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
@@ -24,8 +36,11 @@ function hexToOklch(hex) {
 }
 
 /**
- * Provides classroom branding (theme colors + logo) to learner-facing UI.
+ * Provides classroom branding to learner-facing UI.
  * The plato dashboard is never affected.
+ *
+ * Only two colors are needed: primary and accent.
+ * Everything else (foreground, header text, hover states) is derived automatically.
  */
 export function BrandingProvider({ children }) {
   const [branding, setBranding] = useState({
@@ -48,7 +63,7 @@ export function BrandingProvider({ children }) {
       .catch(() => setBranding(prev => ({ ...prev, loaded: true })));
   }, []);
 
-  // Set favicon to classroom logo if available
+  // Swap favicon to classroom logo
   useEffect(() => {
     if (!branding.logoBase64) return;
     const link = document.querySelector("link[rel='icon']") || document.createElement('link');
@@ -56,31 +71,24 @@ export function BrandingProvider({ children }) {
     link.rel = 'icon';
     link.href = branding.logoBase64;
     document.head.appendChild(link);
-    return () => { link.href = original; }; // restore plato favicon on unmount
+    return () => { link.href = original; };
   }, [branding.logoBase64]);
 
-  // Override Tailwind CSS variables with classroom theme colors
+  // Derive full theme from primary + accent
   const classroomStyle = {};
   if (branding.theme) {
-    const t = branding.theme;
-    // Header colors (read by AppShell via var())
-    if (t.headerBg) classroomStyle['--classroom-header-bg'] = t.headerBg;
-    if (t.headerText) classroomStyle['--classroom-header-text'] = t.headerText;
-    // Override Tailwind/shadcn semantic tokens so all components pick up the theme
-    if (t.accent) {
-      const oklch = hexToOklch(t.accent);
-      classroomStyle['--primary'] = oklch;
-      classroomStyle['--ring'] = oklch;
+    const { primary, accent } = branding.theme;
+    if (primary) {
+      classroomStyle['--classroom-header-bg'] = primary;
+      classroomStyle['--classroom-header-text'] = contrastText(primary);
+      classroomStyle['--primary'] = hexToOklch(primary);
+      classroomStyle['--primary-foreground'] = hexToOklch(contrastText(primary));
+      classroomStyle['--ring'] = hexToOklch(primary);
     }
-    if (t.background) classroomStyle['--background'] = hexToOklch(t.background);
-    if (t.surface) classroomStyle['--muted'] = hexToOklch(t.surface);
-    if (t.text) {
-      classroomStyle['--foreground'] = hexToOklch(t.text);
-      classroomStyle['--card-foreground'] = hexToOklch(t.text);
-    }
-    if (t.border) {
-      classroomStyle['--border'] = hexToOklch(t.border);
-      classroomStyle['--input'] = hexToOklch(t.border);
+    if (accent) {
+      // Use accent for links, focus rings — but only if different from primary
+      const accentColor = accent !== primary ? accent : primary;
+      classroomStyle['--ring'] = hexToOklch(accentColor);
     }
   }
 
