@@ -12,6 +12,7 @@ content.use('/v1/knowledge-base', authenticate);
 
 // GET /v1/branding — public (needed for login page theming)
 content.get('/v1/branding', async (c) => {
+  c.header('Cache-Control', 'no-cache');
   const item = await db.getSyncData('_system', 'settings');
   const settings = item?.data || {};
   return c.json({
