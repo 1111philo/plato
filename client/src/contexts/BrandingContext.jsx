@@ -96,6 +96,8 @@ export function BrandingProvider({ children }) {
     }
   }
 
+  if (!branding.loaded) return null;
+
   return (
     <BrandingContext.Provider value={branding}>
       <div style={classroomStyle} className="flex flex-col flex-1">

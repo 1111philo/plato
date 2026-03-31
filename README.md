@@ -162,10 +162,27 @@ Create these in AWS Systems Manager Parameter Store before deploying:
 cd client && npm ci && npm run build && cd ..
 
 # Build and deploy server
-cd server && sam build && sam deploy
+cd server && sam build
+
+# Bundle client into Lambda deploy artifacts
+cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
+cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
+
+# Deploy
+sam deploy
 ```
 
-See `server/template.yaml` for the full infrastructure definition and `server/samconfig.toml` for deploy config (stack: `plato`, region: `us-east-2`).
+See `server/template.yaml` for the full infrastructure definition and `server/samconfig.toml` for deploy config.
+
+### Custom domain (optional)
+
+To serve the app from a custom domain:
+
+1. Create a CloudFront distribution with the Lambda Function URL as a **Custom Origin** (HTTPS-only)
+2. Set the Origin Request Policy to **AllViewerExceptHostHeader** (required for Lambda Function URLs)
+3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
+4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
+5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
 
 After deploying, run the seed script against DynamoDB to populate prompts and courses.
 

@@ -112,7 +112,7 @@ export default function AppShell({ children }) {
         {children}
       </main>
 
-      <footer className="shrink-0 border-t bg-background px-4 py-2 text-center text-xs text-muted-foreground">
+      <footer className="shrink-0 border-t px-4 py-2 text-center text-xs text-muted-foreground">
         Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-foreground">plato</a>.
       </footer>
 
