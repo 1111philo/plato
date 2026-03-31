@@ -45,8 +45,8 @@ export default function CoursesList() {
 
   function progressLabel(course) {
     const d = courseData[course.courseId];
-    if (d?.status === 'completed') return 'Completed';
-    if (d?.progress != null) return `${d.progress * 10}% toward exemplar`;
+    if (d?.status === 'completed') return '\uD83C\uDF89 Completed';
+    if (d?.progress != null) return `${d.progress * 10}% toward exemplar \uD83C\uDF8A`;
     if (d?.status) return 'In progress';
     return null;
   }

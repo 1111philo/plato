@@ -136,3 +136,19 @@
   }
 }
 
+/* Confetti animation */
+.confetti-piece {
+  position: fixed;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: confetti-fall var(--d, 0.8s) cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes confetti-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--x, 0), var(--y, -200px)) rotate(var(--r, 360deg)); opacity: 0; }
+}
+

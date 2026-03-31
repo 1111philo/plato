@@ -19,7 +19,7 @@ export default function ProgressBar({ courseKB }) {
     >
       <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
         <span>Starting</span>
-        <span>Exemplar</span>
+        <span>{isComplete ? '\uD83C\uDF89 Exemplar' : 'Exemplar \uD83C\uDF8A'}</span>
       </div>
       <div className="h-1 rounded-full bg-muted overflow-hidden">
         <div
