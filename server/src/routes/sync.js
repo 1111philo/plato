@@ -7,7 +7,7 @@ const sync = new Hono();
 sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
-const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+)$/;
+const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|courses:.+|onboardingComplete)$/;
 
 // Keep user record name in sync with extension preferences
 async function syncNameIfNeeded(userId, dataKey, data) {

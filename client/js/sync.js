@@ -21,10 +21,11 @@ import {
 
 const _versions = {};
 
-// Keys the server currently accepts. New keys (activities, activityKBs, messages,
-// courseKB, onboardingComplete) are stored locally and will sync once learn-service
-// is updated. Until then, skip them to avoid 400 console noise.
-const SERVER_KNOWN_PREFIXES = ['profile', 'profileSummary', 'preferences', 'summative', 'gap', 'journey', 'progress'];
+// All data key prefixes the server accepts.
+const SERVER_KNOWN_PREFIXES = [
+  'profile', 'profileSummary', 'preferences', 'work', 'progress',
+  'courseKB', 'activities', 'activityKBs', 'drafts', 'messages', 'courses', 'onboardingComplete',
+];
 
 function serverAcceptsKey(syncKey) {
   return SERVER_KNOWN_PREFIXES.some(p => syncKey === p || syncKey.startsWith(p + ':'));
