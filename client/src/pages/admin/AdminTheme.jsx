@@ -49,11 +49,45 @@ export default function AdminTheme() {
     }
   }
 
+  const [logoError, setLogoError] = useState('');
+
   function handleLogoUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+    setLogoError('');
+
+    // SVG — use directly, scales infinitely
+    if (file.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.onload = (ev) => setLogoBase64(ev.target.result);
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // Raster — validate minimum size then resize to 256x256
     const reader = new FileReader();
-    reader.onload = (ev) => setLogoBase64(ev.target.result);
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        if (img.width < 128 || img.height < 128) {
+          setLogoError('Image must be at least 128×128px. Upload a larger square image.');
+          return;
+        }
+        // Resize to 256x256 square (fits header, favicon, and retina)
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        // Fit within square, centered
+        const scale = Math.min(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        setLogoBase64(canvas.toDataURL('image/png'));
+      };
+      img.src = ev.target.result;
+    };
     reader.readAsDataURL(file);
   }
 
@@ -124,9 +158,9 @@ export default function AdminTheme() {
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
           <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
-            <p><strong>Recommended:</strong> SVG or PNG with transparent background.</p>
-            <p>Header logo displays at 32px tall. Use a wide wordmark or icon that reads well at small sizes.</p>
-            <p>For favicon, a square icon (at least 32&times;32px) works best.</p>
+            <p><strong>Requirements:</strong> Square image, at least 128&times;128px. SVG or PNG with transparent background.</p>
+            <p>The logo is automatically resized to 256&times;256px for crisp rendering at all sizes (header, favicon, retina displays).</p>
+            <p>SVG uploads are used as-is and scale perfectly at any size.</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="logo-alt">Logo alt text</Label>
@@ -135,7 +169,8 @@ export default function AdminTheme() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="logo-file">Upload logo</Label>
-            <Input id="logo-file" type="file" accept="image/*" onChange={handleLogoUpload} />
+            <Input id="logo-file" type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp" onChange={handleLogoUpload} />
+            {logoError && <p className="text-sm text-destructive">{logoError}</p>}
           </div>
           {logoBase64 && (
             <div className="p-4 rounded-lg text-center" style={{ backgroundColor: primary }}>
