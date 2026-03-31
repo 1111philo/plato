@@ -6,26 +6,26 @@
 import { parseSSEStream, parseResponse, MODEL_LIGHT, MODEL_HEAVY, ApiError } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateCourseKB } from './validators.js';
-import { resolveAssetURL } from './platform.js';
 
 const promptCache = {};
 let knowledgeBase = null;
 
 async function loadPrompt(name) {
   if (promptCache[name]) return promptCache[name];
-  const url = resolveAssetURL(`prompts/${name}.md`);
-  const resp = await fetch(url);
-  const text = await resp.text();
-  promptCache[name] = text;
-  return text;
+  const resp = await authenticatedFetch(`/v1/prompts/${encodeURIComponent(name)}`);
+  if (!resp.ok) throw new ApiError('api', `Failed to load prompt: ${name}`, resp.status);
+  const { content } = await resp.json();
+  promptCache[name] = content;
+  return content;
 }
 
 async function loadKnowledgeBase() {
   if (knowledgeBase) return knowledgeBase;
   try {
-    const url = resolveAssetURL('data/knowledge-base.md');
-    const resp = await fetch(url);
-    knowledgeBase = await resp.text();
+    const resp = await authenticatedFetch('/v1/knowledge-base');
+    if (!resp.ok) throw new Error();
+    const data = await resp.json();
+    knowledgeBase = data.content || '';
   } catch {
     knowledgeBase = '';
   }

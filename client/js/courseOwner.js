@@ -3,8 +3,7 @@
  * manages course KB updates after assessments.
  */
 
-import { getUserCourses } from './storage.js';
-import { resolveAssetURL } from './platform.js';
+import { authenticatedFetch } from './auth.js';
 
 /** Max recent insights to keep in full. Older ones get summarized. */
 const MAX_RECENT_INSIGHTS = 10;
@@ -12,36 +11,24 @@ const MAX_RECENT_INSIGHTS = 10;
 let coursesCache = null;
 
 /**
- * Load all courses: built-in files + user-created from SQLite.
+ * Load all courses from the server.
  * Returns an array of { courseId, name, description, exemplar, learningObjectives }.
  */
 export async function loadCourses() {
   if (coursesCache) return coursesCache;
 
-  // Built-in courses from files (discovered via build-time manifest)
   const courses = [];
   try {
-    const manifestUrl = resolveAssetURL('data/courses/index.json');
-    const manifestResp = await fetch(manifestUrl);
-    if (manifestResp.ok) {
-      const courseIds = await manifestResp.json();
-      for (const id of courseIds) {
-        try {
-          const url = resolveAssetURL(`data/courses/${id}.md`);
-          const resp = await fetch(url);
-          if (!resp.ok) continue;
-          const text = await resp.text();
-          courses.push(parseCoursePrompt(id, text));
-        } catch { /* skip unreadable file */ }
+    const resp = await authenticatedFetch('/v1/courses');
+    if (resp.ok) {
+      const serverCourses = await resp.json();
+      for (const course of serverCourses) {
+        if (course.markdown) {
+          courses.push(parseCoursePrompt(course.courseId, course.markdown));
+        }
       }
     }
-  } catch { /* no manifest — no built-in courses */ }
-
-  // User-created courses from SQLite
-  const userCourses = await getUserCourses();
-  for (const row of userCourses) {
-    courses.push(parseCoursePrompt(row.course_id, row.markdown));
-  }
+  } catch { /* server unavailable */ }
 
   coursesCache = courses;
   return courses;
