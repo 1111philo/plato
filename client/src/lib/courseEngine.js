@@ -129,9 +129,11 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
     await saveScreenshot(imageKey, imageDataUrl);
   }
 
-  // Build conversation tail
+  // Build conversation tail (filter out empty content — e.g. image-only messages)
   const allMsgs = await getCourseMessages(courseId);
-  const tail = allMsgs.slice(-15).map(m => ({ role: m.role, content: m.content }));
+  const tail = allMsgs.slice(-15)
+    .map(m => ({ role: m.role, content: m.content }))
+    .filter(m => m.content && m.content.length > 0);
 
   // Build user message content
   const userParts = [];
@@ -149,8 +151,6 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
 
-  // Call coach (use heavy model if image attached)
-  const model = imageDataUrl ? 'heavy' : undefined;
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
@@ -200,15 +200,15 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
     updateProfileOnCompletionInBackground(courseKB, course);
   }
 
-  // Save messages
+  // Save messages (append to existing history)
   const newMessages = [
-    { role: 'user', content: text || '', msgType: MSG_TYPES.USER, phase: COURSE_PHASES.LEARNING,
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase: COURSE_PHASES.LEARNING,
       metadata: imageKey ? { imageKey } : null, timestamp: ts() },
     { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
       phase: achieved ? COURSE_PHASES.COMPLETED : COURSE_PHASES.LEARNING, timestamp: ts() },
   ];
 
-  await saveCourseMessages(courseId, newMessages);
+  await saveCourseMessages(courseId, [...allMsgs, ...newMessages]);
   syncInBackground(`messages:${courseId}`);
 
   return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? COURSE_PHASES.COMPLETED : COURSE_PHASES.LEARNING };
