@@ -9,7 +9,7 @@ export default function AssistantMessage({ content }) {
 
   return (
     <div className="flex justify-start" role="article" aria-label="Coach message">
-      <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-3 py-2 text-sm prose prose-sm prose-neutral dark:prose-invert font-serif">
+      <div className="max-w-[85%] rounded-2xl rounded-bl-sm bg-muted px-4 py-3 text-base prose prose-base prose-neutral dark:prose-invert font-serif">
         <div dangerouslySetInnerHTML={{ __html: renderMd(text) }} />
       </div>
     </div>

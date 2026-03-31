@@ -38,7 +38,7 @@ export default function ComposeBar({
 
   return (
     <div className="px-4 pb-4 pt-2">
-      <div className="rounded-lg border border-input bg-background">
+      <div className="mx-auto max-w-3xl rounded-lg border border-input bg-background">
         {image && (
           <div className="relative m-2 inline-block">
             <img src={image.dataUrl} alt={image.name} className="h-20 rounded-md object-cover" />
