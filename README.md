@@ -6,7 +6,9 @@
 
 An open-source, exemplar-driven learning platform powered by AI. Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.
 
-Built by [11:11 Philosopher's Group](https://github.com/1111philo) in collaboration with [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source Fund](https://osf.it.uic.edu/), [WordPress](https://wordpress.org/), [Louisiana Tech](https://www.latech.edu/), and the [ULL Louisiana Educate Program](https://louisiana.edu/educate).
+Built by [11:11 Philosopher's Group](https://github.com/1111philo).
+
+Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source Fund](https://osf.it.uic.edu/), [WordPress](https://wordpress.org/), [Louisiana Tech](https://www.latech.edu/), and the [ULL Louisiana Educate Program](https://louisiana.edu/educate).
 
 ## How it works
 
