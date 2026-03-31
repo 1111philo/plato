@@ -251,7 +251,7 @@ admin.put('/v1/admin/groups', async (c) => {
 
   settings.userGroups = groups;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-  return c.json({ groups });
+  return c.json({ userGroups: groups });
 });
 
 // DELETE /v1/admin/groups/:name — remove an group and clear from all users
@@ -274,7 +274,7 @@ admin.delete('/v1/admin/groups/:name', async (c) => {
       .map((u) => db.updateUser(u.userId, { userGroup: null }))
   );
 
-  return c.json({ groups });
+  return c.json({ userGroups: groups });
 });
 
 // DELETE /v1/admin/users/:userId

@@ -55,7 +55,7 @@ export default function Signup() {
           inviteToken: token,
           name: name.trim(),
           password,
-          userGroup: userGroup || undefined,
+          userGroup: group || undefined,
         }),
       });
       const data = await res.json();

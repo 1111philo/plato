@@ -61,7 +61,7 @@ app.get('/assets/*', (c) => {
 app.get('/v1/groups', async (c) => {
   const db = (await import('../lib/db.js')).default;
   const item = await db.getSyncData('_system', 'settings');
-  return c.json({ groups: item?.data?.userGroups || [] });
+  return c.json({ userGroups: item?.data?.userGroups || [] });
 });
 
 app.get('/v1/invite-example.csv', (c) => {
