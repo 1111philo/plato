@@ -57,10 +57,11 @@ export default function Setup() {
   }
 
   return (
-    <main className="min-h-dvh flex items-center justify-center bg-muted p-4">
+    <main className="min-h-dvh flex flex-col items-center justify-center bg-muted p-4">
+      <img src="/assets/logo.svg" alt="plato" className="h-10 mb-6" />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl">Welcome to plato</CardTitle>
+          <CardTitle className="text-2xl">Let's Start...</CardTitle>
           <CardDescription>Create your admin account to get started.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
