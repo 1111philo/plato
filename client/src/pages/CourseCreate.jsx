@@ -163,22 +163,25 @@ export default function CourseCreate() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
-          &larr;
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold truncate">Create Course</h2>
-        </div>
-        {draftId && (
-          <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Start over" title="Start over">
-            &#8635;
+      <div className="border-b border-border px-4 py-2">
+        <div className="mx-auto max-w-5xl flex items-center gap-2">
+          <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
+            &larr;
           </Button>
-        )}
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold truncate">Create Course</h2>
+          </div>
+          {draftId && (
+            <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Start over" title="Start over">
+              &#8635;
+            </Button>
+          )}
+        </div>
       </div>
 
       {hasUserMessage && (
-        <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+        <div className="border-b border-border px-4 py-2">
+        <div className="mx-auto max-w-5xl flex items-center gap-3">
           <div
             className="flex-1"
             role="progressbar"
@@ -218,6 +221,7 @@ export default function CourseCreate() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Create Course
           </Button>
+        </div>
         </div>
       )}
 
