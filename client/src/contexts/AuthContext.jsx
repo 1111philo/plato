@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as authModule from '../../js/auth.js';
-import { init as initDatabase, clearAllData } from '../../js/db.js';
 
 const AuthContext = createContext(null);
 
@@ -38,8 +37,6 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     await authModule.logout();
-    await clearAllData();
-    await initDatabase();
     setLoggedIn(false);
     setUser(null);
   }, []);

@@ -2,7 +2,7 @@ import { createContext, useContext, useReducer, useEffect } from 'react';
 import { getPreferences } from '../../js/storage.js';
 import { loadCourses, invalidateCoursesCache } from '../../js/courseOwner.js';
 import * as sync from '../../js/sync.js';
-import * as auth from '../../js/auth.js';
+import { useAuth } from './AuthContext.jsx';
 
 const AppContext = createContext(null);
 
@@ -30,37 +30,35 @@ function reducer(state, action) {
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const { loggedIn } = useAuth();
 
   useEffect(() => {
+    if (!loggedIn) return;
     async function load() {
+      try { await sync.loadAll(); } catch { /* offline or error */ }
       const courses = await loadCourses();
-
-      if (await auth.isLoggedIn()) {
-        try { await sync.loadAll(); } catch { /* offline */ }
-      }
-
       const preferences = await getPreferences();
       dispatch({ type: 'INIT_DATA', payload: { preferences, courses } });
     }
     load();
-  }, []);
+  }, [loggedIn]);
 
-  // Re-sync when the app returns to foreground (multi-device: pick up changes from other devices)
+  // Re-sync when the app returns to foreground
   useEffect(() => {
+    if (!loggedIn) return;
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
-      if (!await auth.isLoggedIn()) return;
       try {
         await sync.loadAll();
         invalidateCoursesCache();
         const preferences = await getPreferences();
         const courses = await loadCourses();
         dispatch({ type: 'INIT_DATA', payload: { preferences, courses } });
-      } catch { /* offline or session expired — handled elsewhere */ }
+      } catch { /* offline or session expired */ }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, []);
+  }, [loggedIn]);
 
   return (
     <AppContext.Provider value={{ state, dispatch }}>

@@ -1959,3 +1959,71 @@ hr {
     border: 1px solid CanvasText;
   }
 }
+
+/* -- Auth pages ------------------------------------------------------------- */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--space);
+  background: var(--color-surface);
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: calc(var(--space) * 3);
+}
+
+.auth-card h1 {
+  text-align: center;
+  font-size: 1.25rem;
+  margin-bottom: calc(var(--space) * 2);
+}
+
+.auth-subtitle {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-bottom: calc(var(--space) * 1.5);
+}
+
+.auth-error {
+  background: #fef2f2;
+  color: var(--color-warning);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin-bottom: var(--space);
+}
+
+.auth-success {
+  background: #f0fdf4;
+  color: var(--color-success);
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin-bottom: var(--space);
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: var(--space);
+}
+
+.auth-link {
+  text-align: center;
+  margin-top: var(--space);
+  font-size: 0.85rem;
+}
+
+.label-optional {
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}

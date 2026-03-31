@@ -3,9 +3,8 @@
  * parses structured JSON responses.
  */
 
-import { callClaude, streamClaude, parseSSEStream, parseResponse, MODEL_LIGHT, MODEL_HEAVY, ApiError } from './api.js';
-import { isLoggedIn, authenticatedFetch } from './auth.js';
-import { getApiKey } from './storage.js';
+import { parseSSEStream, parseResponse, MODEL_LIGHT, MODEL_HEAVY, ApiError } from './api.js';
+import { authenticatedFetch } from './auth.js';
 import { validateCourseKB } from './validators.js';
 import { resolveAssetURL } from './platform.js';
 
@@ -61,17 +60,12 @@ async function callWithValidation(agentFn, validator) {
 
 async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
   const attempt = async () => {
-    if (await isLoggedIn()) {
-      const resp = await authenticatedFetch('/v1/ai/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages }),
-      });
-      return parseResponse(resp);
-    }
-    const apiKey = await getApiKey();
-    if (apiKey) return callClaude({ apiKey, model, systemPrompt, messages, maxTokens });
-    throw new ApiError('invalid_key', 'No AI provider configured. Sign in or add your API key in Settings.');
+    const resp = await authenticatedFetch('/v1/ai/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages }),
+    });
+    return parseResponse(resp);
   };
 
   const RETRIES = 2;
@@ -89,8 +83,7 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
 }
 
 export async function isReady() {
-  if (await isLoggedIn()) return true;
-  return !!(await getApiKey());
+  return true;
 }
 
 // -- Streaming conversations --------------------------------------------------
@@ -102,36 +95,21 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
     if (kb) systemPrompt = `${systemPrompt}\n\n---\n\n## Program Knowledge Base\n\n${kb}`;
   }
 
-  // Logged-in users call through the service proxy (streaming via Function URL)
-  if (await isLoggedIn()) {
-    const resp = await authenticatedFetch('/v1/ai/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODEL_LIGHT, max_tokens: maxTokens, system: systemPrompt, messages, stream: true }),
-    });
-    const contentType = resp.headers.get('content-type') || '';
-    if (resp.ok && contentType.includes('text/event-stream')) {
-      // Proxy supports SSE streaming
-      let full = '';
-      for await (const chunk of parseSSEStream(resp.body)) { full += chunk; onChunk(full); }
-      return full;
-    }
-    // Non-streaming response (proxy returned JSON)
-    const { content } = await parseResponse(resp);
-    onChunk(content);
-    return content;
-  }
-
-  // Direct Anthropic API with user's own key (streaming)
-  const apiKey = await getApiKey();
-  if (apiKey) {
+  const resp = await authenticatedFetch('/v1/ai/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: MODEL_LIGHT, max_tokens: maxTokens, system: systemPrompt, messages, stream: true }),
+  });
+  const contentType = resp.headers.get('content-type') || '';
+  if (resp.ok && contentType.includes('text/event-stream')) {
     let full = '';
-    const stream = await streamClaude({ apiKey, model: MODEL_LIGHT, systemPrompt, messages, maxTokens });
-    for await (const chunk of stream) { full += chunk; onChunk(full); }
+    for await (const chunk of parseSSEStream(resp.body)) { full += chunk; onChunk(full); }
     return full;
   }
-
-  throw new ApiError('invalid_key', 'No AI provider configured. Sign in or add your API key in Settings.');
+  // Non-streaming response (proxy returned JSON)
+  const { content } = await parseResponse(resp);
+  onChunk(content);
+  return content;
 }
 
 // -- Course Owner (LLM) -------------------------------------------------------
