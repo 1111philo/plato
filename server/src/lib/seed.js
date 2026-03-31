@@ -58,5 +58,21 @@ export async function seedDefaultContent() {
     }
   }
 
+  // Seed default classroom branding (logo, colors)
+  const existing = await db.getSyncData('_system', 'settings');
+  if (!existing?.data?.logoBase64) {
+    const logoPath = join(clientDir, 'assets/academy-logo.png');
+    if (existsSync(logoPath)) {
+      const logoData = readFileSync(logoPath);
+      const logoBase64 = `data:image/png;base64,${logoData.toString('base64')}`;
+      const settings = existing?.data || {};
+      settings.logoBase64 = logoBase64;
+      settings.logoAlt = "Plato's Academy";
+      settings.theme = { primary: '#8b1a1a', accent: '#dc2626' };
+      await db.putSyncData('_system', 'settings', settings, existing?.version || 0);
+      seeded++;
+    }
+  }
+
   return seeded;
 }

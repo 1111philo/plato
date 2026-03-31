@@ -8,8 +8,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export default function AdminSettings() {
   // Style state
-  const [primary, setPrimary] = useState('#470d99');
-  const [accent, setAccent] = useState('#470d99');
+  const [primary, setPrimary] = useState('#8b1a1a');
+  const [accent, setAccent] = useState('#dc2626');
   const [logoBase64, setLogoBase64] = useState(null);
   const [logoAlt, setLogoAlt] = useState('');
   const [logoError, setLogoError] = useState('');
@@ -33,8 +33,8 @@ export default function AdminSettings() {
     try {
       const data = await adminApi('GET', '/v1/admin/theme');
       const t = data.theme || {};
-      setPrimary(t.primary || '#470d99');
-      setAccent(t.accent || '#470d99');
+      setPrimary(t.primary || '#8b1a1a');
+      setAccent(t.accent || '#dc2626');
       setLogoBase64(data.logoBase64 || null);
       setLogoAlt(data.logoAlt || '');
     } catch { /* ignore */ }
