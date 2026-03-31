@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.build.parameters]
+cached = true
+
+[default.deploy.parameters]
+stack_name = "learn-service"
+resolve_s3 = true
+s3_prefix = "learn-service"
+region = "us-east-2"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+profile = "dase"
+tags = "Application=\"ai-leaders\""

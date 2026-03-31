@@ -1,0 +1,212 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: learn-service — user management and data sync for learn-extension
+
+Globals:
+  Function:
+    Timeout: 60
+    Runtime: nodejs20.x
+    MemorySize: 1024
+    Tags:
+      Application: ai-leaders
+
+Resources:
+  # API Gateway function — serves the admin dashboard and non-streaming API
+  LearnServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/index.handler
+      CodeUri: .
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          INVITES_TABLE: !Ref InvitesTable
+          REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
+          SYNC_DATA_TABLE: !Ref SyncDataTable
+          AUDIT_LOG_TABLE: !Ref AuditLogTable
+          JWT_SECRET: '{{resolve:ssm:/learn-service/jwt-secret}}'
+          ADMIN_EMAIL: '{{resolve:ssm:/learn-service/admin-email}}'
+          ADMIN_PASSWORD: '{{resolve:ssm:/learn-service/admin-password}}'
+          SES_FROM_EMAIL: '{{resolve:ssm:/learn-service/ses-from-email}}'
+          APP_URL: '{{resolve:ssm:/learn-service/app-url}}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvitesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RefreshTokensTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncDataTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditLogTable
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+      Events:
+        ApiCatchAll:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  # Function URL — supports response streaming for SSE (used by learn extension)
+  LearnServiceStreamFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src/index.streamHandler
+      CodeUri: .
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          INVITES_TABLE: !Ref InvitesTable
+          REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
+          SYNC_DATA_TABLE: !Ref SyncDataTable
+          AUDIT_LOG_TABLE: !Ref AuditLogTable
+          JWT_SECRET: '{{resolve:ssm:/learn-service/jwt-secret}}'
+          ADMIN_EMAIL: '{{resolve:ssm:/learn-service/admin-email}}'
+          ADMIN_PASSWORD: '{{resolve:ssm:/learn-service/admin-password}}'
+          SES_FROM_EMAIL: '{{resolve:ssm:/learn-service/ses-from-email}}'
+          APP_URL: '{{resolve:ssm:/learn-service/app-url}}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InvitesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RefreshTokensTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncDataTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditLogTable
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+      FunctionUrlConfig:
+        AuthType: NONE
+        InvokeMode: RESPONSE_STREAM
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: learn-service-users
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Application
+          Value: ai-leaders
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InvitesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: learn-service-invites
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Application
+          Value: ai-leaders
+      AttributeDefinitions:
+        - AttributeName: inviteToken
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: inviteToken
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  RefreshTokensTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: learn-service-refresh-tokens
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Application
+          Value: ai-leaders
+      AttributeDefinitions:
+        - AttributeName: tokenHash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: tokenHash
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  SyncDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: learn-service-sync-data
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Application
+          Value: ai-leaders
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: dataKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: dataKey
+          KeyType: RANGE
+
+  AuditLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: learn-service-audit-log
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: Application
+          Value: ai-leaders
+      AttributeDefinitions:
+        - AttributeName: logId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: logId
+          KeyType: HASH
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL (admin dashboard)
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  StreamingUrl:
+    Description: Lambda Function URL (response streaming for learn extension)
+    Value: !GetAtt LearnServiceStreamFunctionUrl.FunctionUrl

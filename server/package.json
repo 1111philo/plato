@@ -1,0 +1,26 @@
+{
+  "name": "learn-service",
+  "version": "1.0.0",
+  "description": "Cloud user management and data sync for learn-extension",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/**/*.test.js",
+    "dev": "node dev.js",
+    "dev:sqlite": "node dev-sqlite.js",
+    "setup-db": "node scripts/setup-local-db.js",
+    "start": "sam local start-api"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-ses": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.8.0",
+    "hono": "^4.6.0",
+    "jose": "^5.0.0"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.19.11"
+  }
+}
