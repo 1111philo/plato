@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { HashRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router-dom';
 import { AppProvider } from './contexts/AppContext.jsx';
 import { AuthProvider } from './contexts/AuthContext.jsx';
 import { ModalProvider } from './contexts/ModalContext.jsx';
@@ -44,7 +44,7 @@ async function bootstrap() {
 
   ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-      <HashRouter>
+      <BrowserRouter>
         <AppProvider>
           <AuthProvider>
             <ModalProvider>
@@ -52,7 +52,7 @@ async function bootstrap() {
             </ModalProvider>
           </AuthProvider>
         </AppProvider>
-      </HashRouter>
+      </BrowserRouter>
     </React.StrictMode>
   );
 }

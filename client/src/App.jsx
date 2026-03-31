@@ -18,7 +18,7 @@ export default function App() {
 
   useEffect(() => {
     if (!state.loaded || authLoading) return;
-    if (window.location.hash.includes('/onboarding')) return;
+    if (window.location.pathname.includes('/onboarding')) return;
     (async () => {
       const done = await getOnboardingComplete();
       if (!done && loggedIn) {

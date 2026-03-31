@@ -9,9 +9,9 @@ import {
   getAuthUser, saveAuthUser
 } from './storage.js';
 
-// Lambda Function URL — supports response streaming for SSE.
-// API Gateway is no longer used (streamHandle is incompatible with it).
-const SERVICE_URL = 'https://oaqs3vycouibj7rpf27vujh5lu0jrgbr.lambda-url.us-east-2.on.aws';
+// When served from the same origin (Lambda), use relative paths.
+// Falls back to the Lambda Function URL for local development.
+const SERVICE_URL = globalThis.__SERVICE_URL || '';
 
 // -- Session expiry event -----------------------------------------------------
 

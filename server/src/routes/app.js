@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 const app = new Hono();
 
-// ── Serve React dashboard from built files ──
+// ── Serve React client from built files ──
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=UTF-8',
@@ -15,10 +15,13 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.wasm': 'application/wasm',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 };
 
-// Load built dashboard files into memory at startup
-const distDir = join(fileURLToPath(import.meta.url), '../../../dashboard/dist');
+// Load built client files into memory at startup
+const clientDistDir = join(fileURLToPath(import.meta.url), '../../../client/dist');
 const staticFiles = {};
 function loadDir(dir, prefix) {
   try {
@@ -36,11 +39,11 @@ function loadDir(dir, prefix) {
     }
   } catch { /* dist dir may not exist in tests */ }
 }
-loadDir(distDir, '/');
+loadDir(clientDistDir, '/');
 
 const indexHtml = staticFiles['/index.html'];
 
-// Serve static assets
+// Serve static assets with long-term caching
 app.get('/assets/*', (c) => {
   const file = staticFiles[c.req.path];
   if (!file) return c.notFound();
@@ -66,8 +69,18 @@ app.get('/v1/invite-example.csv', (c) => {
 
 // SPA fallback — serve index.html for all non-API routes
 app.get('*', (c) => {
+  // Don't intercept API routes
   if (c.req.path.startsWith('/v1/')) return c.notFound();
-  if (!indexHtml) return c.text('Dashboard not built. Run: cd dashboard && npm run build', 500);
+
+  // Try to serve a static file first (for css, js, images, etc.)
+  const file = staticFiles[c.req.path];
+  if (file) {
+    c.header('Content-Type', file.type);
+    return c.body(file.content);
+  }
+
+  // SPA fallback: serve index.html for all other routes
+  if (!indexHtml) return c.text('Client not built. Run: cd client && npm run build', 500);
   c.header('Content-Type', indexHtml.type);
   return c.body(indexHtml.content);
 });

@@ -1,0 +1,16 @@
+{
+  "name": "plato",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:client": "cd client && npm run build",
+    "build:server": "cd server && sam build",
+    "build": "npm run build:client && npm run build:server",
+    "dev:client": "cd client && npm run dev",
+    "dev:server": "cd server && npm run dev:sqlite",
+    "test:client": "cd client && npm test",
+    "test:server": "cd server && npm test",
+    "test": "npm run test:client && npm run test:server",
+    "deploy": "npm run build && cd server && sam deploy"
+  }
+}
