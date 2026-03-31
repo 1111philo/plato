@@ -46,7 +46,7 @@ export default function AppShell({ children }) {
 
       {/* Admin bar — plato branding, quick links to dashboard */}
       {isAdmin && (
-        <div className="bg-primary text-primary-foreground px-4 py-1.5 text-xs">
+        <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
           <div className="mx-auto max-w-5xl flex items-center gap-3">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
               <img src="/assets/logo-white.svg" alt="plato" className="h-3.5 w-auto" />

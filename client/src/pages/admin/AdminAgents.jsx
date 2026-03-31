@@ -6,6 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 const AGENTS = [
   {
@@ -64,6 +69,7 @@ export default function AdminAgents() {
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null); // { type: 'kb' | 'prompt' }
 
   useEffect(() => {
     document.title = 'Agents & Knowledge — plato';
@@ -145,7 +151,7 @@ export default function AdminAgents() {
             <Textarea id="agent-prompt-editor" className="font-mono text-sm min-h-[400px]" rows={20}
               value={editContent} onChange={e => setEditContent(e.target.value)} />
             <div className="flex items-center gap-3">
-              <Button onClick={savePrompt} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+              <Button onClick={() => setConfirmAction({ type: 'prompt' })} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
               <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
               {message && <span role="status" aria-live="polite" className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
             </div>
@@ -196,7 +202,7 @@ export default function AdminAgents() {
                     value={kbDraft} onChange={e => setKbDraft(e.target.value)}
                     placeholder="Enter program information, FAQs, policies..." />
                   <div className="flex items-center gap-3">
-                    <Button onClick={saveKB} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+                    <Button onClick={() => setConfirmAction({ type: 'kb' })} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
                     <Button variant="outline" onClick={() => { setKbEditing(false); setKbDraft(knowledgeBase); }}>Cancel</Button>
                   </div>
                 </>
@@ -258,6 +264,30 @@ export default function AdminAgents() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AlertDialog open={!!confirmAction} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmAction?.type === 'kb'
+                ? 'This will update the knowledge base used by AI agents. Changes affect how agents respond to all learners immediately.'
+                : `This will update the ${editing?.name || 'agent'} system prompt. Changes affect all learners immediately.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const action = confirmAction;
+              setConfirmAction(null);
+              if (action?.type === 'kb') saveKB();
+              else savePrompt();
+            }}>
+              Save Changes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
