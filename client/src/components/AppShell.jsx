@@ -40,7 +40,7 @@ export default function AppShell({ children }) {
   const navLinks = [
     { path: '/courses', label: 'Courses' },
     { path: '/settings', label: 'Settings' },
-    ...(user?.role === 'admin' ? [{ path: '/plato-admin', label: 'Admin' }] : []),
+    ...(user?.role === 'admin' ? [{ path: '/plato', label: 'Admin' }] : []),
   ];
 
   const headerBtnClass = 'text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10';
@@ -84,7 +84,7 @@ export default function AppShell({ children }) {
       </main>
 
       <nav className="flex md:hidden border-t bg-background" aria-label="Main navigation">
-        {navLinks.filter(l => l.path !== '/plato-admin').map(({ path, label }) => (
+        {navLinks.filter(l => l.path !== '/plato').map(({ path, label }) => (
           <Button key={path} variant="ghost" size="sm" className="flex-1"
             onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
             {label}

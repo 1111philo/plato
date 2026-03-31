@@ -14,7 +14,7 @@ Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source
 
 A **course** defines an exemplar (the mastery-level outcome a learner is working toward) and a set of learning objectives. When a learner starts a course, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
 
-Admins manage everything from `/plato-admin`: participants, courses, system prompts, a program knowledge base, and visual theming.
+Admins manage everything from `/plato`: participants, courses, system prompts, a program knowledge base, and visual theming.
 
 ## Repository structure
 
@@ -59,7 +59,7 @@ cd server
 DB_BACKEND=sqlite SQLITE_PATH=./data/plato-dev.db node scripts/seed-content.js
 ```
 
-Then log in and navigate to `/plato-admin` to see the admin dashboard, or `/courses` to start learning.
+Then log in and navigate to `/plato` to see the admin dashboard, or `/courses` to start learning.
 
 ### Development workflow
 
@@ -85,7 +85,7 @@ When developing the client with Vite's dev server, API calls go to `localhost:30
 
 - **Login required** — all data is server-side, no browser storage beyond auth tokens
 - **6 AI agents** via Amazon Bedrock: coach, course-owner, course-creator, course-extractor, learner-profile-owner, learner-profile-update
-- **Admin dashboard** at `/plato-admin` — manage participants, courses, system prompts, knowledge base, and theme
+- **Admin dashboard** at `/plato` — manage participants, courses, system prompts, knowledge base, and theme
 - **Single-tenant** — one instance per deployment, global settings, multiple admins
 
 ### Client
@@ -126,7 +126,7 @@ All content (system prompts, courses, knowledge base, theme/branding) is stored 
 | **Learner Profile Owner** | Deep profile update on course completion |
 | **Learner Profile Update** | Incremental profile update from feedback/observations |
 
-System prompts are stored in the database and editable by admins at `/plato-admin/prompts`. Changes take effect immediately.
+System prompts are stored in the database and editable by admins at `/plato/prompts`. Changes take effect immediately.
 
 ## Deploying to AWS
 

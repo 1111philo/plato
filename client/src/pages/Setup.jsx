@@ -48,7 +48,7 @@ export default function Setup() {
       if (!res.ok) throw new Error(data.error || 'Setup failed');
       // Log in with the new admin credentials
       await login(email.trim(), password);
-      navigate('/plato-admin', { replace: true });
+      navigate('/plato', { replace: true });
     } catch (e) {
       setError(e.message || 'Setup failed');
     } finally {

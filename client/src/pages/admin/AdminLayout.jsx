@@ -4,12 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 
 const NAV_LINKS = [
-  { to: '/plato-admin', label: 'Home', end: true },
-  { to: '/plato-admin/participants', label: 'Participants' },
-  { to: '/plato-admin/courses', label: 'Courses' },
-  { to: '/plato-admin/prompts', label: 'Prompts' },
-  { to: '/plato-admin/theme', label: 'Theme' },
-  { to: '/plato-admin/settings', label: 'Settings' },
+  { to: '/plato', label: 'Home', end: true },
+  { to: '/plato/participants', label: 'Participants' },
+  { to: '/plato/courses', label: 'Courses' },
+  { to: '/plato/prompts', label: 'Prompts' },
+  { to: '/plato/theme', label: 'Theme' },
+  { to: '/plato/settings', label: 'Settings' },
 ];
 
 export default function AdminLayout() {

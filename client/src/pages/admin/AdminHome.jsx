@@ -24,7 +24,7 @@ export default function AdminHome() {
       <p className="text-muted-foreground mb-6">Manage participants and settings for plato.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link to="/plato-admin/participants" className="no-underline">
+        <Link to="/plato/participants" className="no-underline">
           <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
             <CardContent>
               <div className="text-3xl font-bold">{activeCount}</div>
@@ -32,7 +32,7 @@ export default function AdminHome() {
             </CardContent>
           </Card>
         </Link>
-        <Link to="/plato-admin/participants" className="no-underline">
+        <Link to="/plato/participants" className="no-underline">
           <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
             <CardContent>
               <div className="text-3xl font-bold">{pendingCount}</div>

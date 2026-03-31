@@ -92,7 +92,7 @@ export default function App() {
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
 
-        <Route path="/plato-admin/*" element={
+        <Route path="/plato/*" element={
           <RequireAuth>
             <RequireAdmin>
               <Suspense fallback={<AdminFallback />}>
