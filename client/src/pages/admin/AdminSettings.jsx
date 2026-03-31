@@ -65,11 +65,11 @@ export default function AdminSettings() {
     reader.onload = (ev) => {
       const img = new Image();
       img.onload = () => {
-        if (img.width < 128 || img.height < 128) {
-          setLogoError('Image must be at least 128×128px.');
+        if (img.width < 512 || img.height < 512) {
+          setLogoError('Image must be at least 512×512px for crisp rendering at all sizes.');
           return;
         }
-        const size = 256;
+        const size = 512;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
@@ -154,8 +154,8 @@ export default function AdminSettings() {
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
               <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
-                <p><strong>Requirements:</strong> Square image, at least 128×128px. SVG or PNG with transparent background.</p>
-                <p>Raster images are auto-resized to 256×256px. SVGs scale perfectly at any size.</p>
+                <p><strong>Requirements:</strong> Square image, at least 512×512px. SVG or PNG with transparent background recommended.</p>
+                <p>Raster images are auto-resized to 512×512px for crisp rendering on retina displays. SVGs scale perfectly at any size.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="logo-alt">Logo alt text</Label>
