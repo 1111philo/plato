@@ -21,6 +21,7 @@ export default function AppShell({ children }) {
   const branding = useBranding();
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const isAdmin = user?.role === 'admin';
 
   useEffect(() => {
     if (sessionExpired) {
@@ -34,22 +35,8 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
-  const isCurrent = (path) => {
-    if (path === '/courses') return location.pathname === '/courses' || location.pathname.startsWith('/courses/');
-    return location.pathname === path;
-  };
-
-  const navLinks = [
-    { path: '/courses', label: 'Courses' },
-    { path: '/settings', label: 'Settings' },
-    ...(user?.role === 'admin' ? [{ path: '/plato', label: 'Admin' }] : []),
-  ];
-
-  // Classroom uses custom branding if set, otherwise falls back to plato logo
   const classroomLogo = branding?.logoBase64 || '/assets/logo-white.svg';
   const classroomAlt = branding?.logoAlt || 'plato';
-
-  const headerBtnClass = 'text-inherit opacity-80 hover:opacity-100 hover:bg-white/10';
 
   return (
     <>
@@ -57,6 +44,26 @@ export default function AppShell({ children }) {
         Skip to main content
       </a>
 
+      {/* Admin bar — plato branding, quick links to dashboard */}
+      {isAdmin && (
+        <div className="bg-primary text-primary-foreground px-4 py-1.5 text-xs">
+          <div className="mx-auto max-w-5xl flex items-center gap-3">
+            <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
+              <img src="/assets/logo-white.svg" alt="plato" className="h-3.5 w-auto" />
+            </a>
+            <nav className="flex items-center gap-2" aria-label="Admin quick links">
+              <button onClick={() => navigate('/plato/users')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Users</button>
+              <button onClick={() => navigate('/plato/courses')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Courses</button>
+              <button onClick={() => navigate('/plato/agents')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Agents</button>
+              <button onClick={() => navigate('/plato/settings')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Settings</button>
+            </nav>
+            <div className="flex-1" />
+            <button onClick={() => navigate('/plato')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Dashboard</button>
+          </div>
+        </div>
+      )}
+
+      {/* Classroom header — custom branding */}
       <header
         className="px-4 py-2"
         style={{
@@ -69,18 +76,10 @@ export default function AppShell({ children }) {
           <a href="/courses" onClick={e => { e.preventDefault(); navigate('/courses'); }} className="shrink-0">
             <img src={classroomLogo} alt={classroomAlt} className="h-8 w-auto" />
           </a>
-          <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
-            {navLinks.map(({ path, label }) => (
-              <Button key={path} variant="ghost" size="sm" className={headerBtnClass}
-                onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
-                {label}
-              </Button>
-            ))}
-          </nav>
           <div className="flex-1" />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className={headerBtnClass}
+              <Button variant="ghost" size="sm" className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10"
                 aria-label={`Account: ${user?.email || 'signed in'}`}>
                 {user?.name || user?.email || 'Account'}
               </Button>
@@ -102,17 +101,6 @@ export default function AppShell({ children }) {
       <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto ${animClass}`} tabIndex={-1}>
         {children}
       </main>
-
-      <nav className="md:hidden border-t bg-background" aria-label="Main navigation">
-        <div className="mx-auto max-w-5xl flex">
-        {navLinks.filter(l => l.path !== '/plato').map(({ path, label }) => (
-          <Button key={path} variant="ghost" size="sm" className="flex-1"
-            onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
-            {label}
-          </Button>
-        ))}
-        </div>
-      </nav>
 
       <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
         <AlertDialogContent>
