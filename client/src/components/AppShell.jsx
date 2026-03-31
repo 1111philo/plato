@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useBranding } from '../contexts/BrandingContext.jsx';
 import { useViewTransition } from '../hooks/useViewTransition.js';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,6 +18,7 @@ export default function AppShell({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, sessionExpired } = useAuth();
+  const branding = useBranding();
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
 
@@ -43,6 +45,10 @@ export default function AppShell({ children }) {
     ...(user?.role === 'admin' ? [{ path: '/plato', label: 'Admin' }] : []),
   ];
 
+  // Classroom uses custom branding if set, otherwise falls back to plato logo
+  const classroomLogo = branding?.logoBase64 || '/assets/logo-white.svg';
+  const classroomAlt = branding?.logoAlt || 'plato';
+
   const headerBtnClass = 'text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10';
 
   return (
@@ -52,7 +58,7 @@ export default function AppShell({ children }) {
       </a>
 
       <header className="flex items-center gap-2 bg-primary px-4 py-2 text-primary-foreground" role="banner">
-        <img src="/assets/logo-white.svg" alt="plato" className="h-5 w-auto" />
+        <img src={classroomLogo} alt={classroomAlt} className="h-5 w-auto" />
         <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
           {navLinks.map(({ path, label }) => (
             <Button key={path} variant="ghost" size="sm" className={headerBtnClass}

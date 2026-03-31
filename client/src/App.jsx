@@ -12,6 +12,7 @@ import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
+import { BrandingProvider } from './contexts/BrandingContext.jsx';
 
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
@@ -109,8 +110,10 @@ export default function App() {
           <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
         </Route>
 
+        {/* Classroom routes — custom theme/branding applied here */}
         <Route path="/*" element={
           <RequireAuth>
+            <BrandingProvider>
             <AppShell>
               <Routes>
                 <Route path="/courses" element={<CoursesList />} />
@@ -121,6 +124,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/courses" replace />} />
               </Routes>
             </AppShell>
+            </BrandingProvider>
           </RequireAuth>
         } />
       </Routes>

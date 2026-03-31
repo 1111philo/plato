@@ -65,7 +65,8 @@ export default function AdminTheme() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Theme & Branding</h1>
+      <h1 className="text-2xl font-bold mb-1">Classroom Theme & Branding</h1>
+      <p className="text-sm text-muted-foreground mb-4">These settings only affect the learner-facing classroom. The plato admin interface always uses the default plato branding.</p>
 
       {message && (
         <div
