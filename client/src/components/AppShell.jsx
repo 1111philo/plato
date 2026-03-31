@@ -32,11 +32,18 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
-  const navTo = (path) => navigate(path);
-  const currentNav = (path) => {
+  const isCurrent = (path) => {
     if (path === '/courses') return location.pathname === '/courses' || location.pathname.startsWith('/courses/');
     return location.pathname === path;
   };
+
+  const navLinks = [
+    { path: '/courses', label: 'Courses' },
+    { path: '/settings', label: 'Settings' },
+    ...(user?.role === 'admin' ? [{ path: '/plato-admin', label: 'Admin' }] : []),
+  ];
+
+  const headerBtnClass = 'text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10';
 
   return (
     <>
@@ -44,84 +51,45 @@ export default function AppShell({ children }) {
         Skip to main content
       </a>
 
-      <header role="banner" className="flex items-center gap-2 bg-primary px-4 py-2 text-primary-foreground">
+      <header className="flex items-center gap-2 bg-primary px-4 py-2 text-primary-foreground" role="banner">
         <img src="/assets/logo-white.svg" alt="plato" className="h-5 w-auto" />
         <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            onClick={() => navTo('/courses')}
-            aria-current={currentNav('/courses') ? 'page' : 'false'}
-          >
-            Courses
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            onClick={() => navTo('/settings')}
-            aria-current={currentNav('/settings') ? 'page' : 'false'}
-          >
-            Settings
-          </Button>
-          {user?.role === 'admin' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-              onClick={() => navTo('/plato-admin')}
-              aria-current={currentNav('/plato-admin') ? 'page' : 'false'}
-            >
-              Admin
+          {navLinks.map(({ path, label }) => (
+            <Button key={path} variant="ghost" size="sm" className={headerBtnClass}
+              onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
+              {label}
             </Button>
-          )}
+          ))}
         </nav>
         <div className="flex-1" />
-        <div className="hidden md:block">
-          <DropdownMenu>
-            <DropdownMenuTrigger>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-                aria-label={`Account: ${user?.email || 'signed in'}`}
-              >
-                {user?.email || 'Account'}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" sideOffset={6}>
-              <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
-                Sign Out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className={headerBtnClass}
+              aria-label={`Account: ${user?.email || 'signed in'}`}>
+              {user?.email || 'Account'}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
+              Sign Out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
-      <main id="main-content" className={animClass} tabIndex={-1} aria-label="App content">
+      <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto ${animClass}`} tabIndex={-1}>
         {children}
       </main>
 
-      <nav className="flex md:hidden items-center justify-around border-t border-border bg-background py-2" aria-label="Main navigation">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navTo('/courses')}
-          aria-current={currentNav('/courses') ? 'page' : 'false'}
-        >
-          Courses
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => navTo('/settings')}
-          aria-current={currentNav('/settings') ? 'page' : 'false'}
-        >
-          Settings
-        </Button>
+      <nav className="flex md:hidden border-t bg-background" aria-label="Main navigation">
+        {navLinks.filter(l => l.path !== '/plato-admin').map(({ path, label }) => (
+          <Button key={path} variant="ghost" size="sm" className="flex-1"
+            onClick={() => navigate(path)} aria-current={isCurrent(path) ? 'page' : undefined}>
+            {label}
+          </Button>
+        ))}
       </nav>
 
       <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>

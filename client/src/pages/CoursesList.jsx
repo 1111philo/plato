@@ -70,93 +70,66 @@ export default function CoursesList() {
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const CourseIcon = ({ children }) => (
+    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
+      {children}
+    </span>
+  );
+
+  const CourseItem = ({ index, onClick, dashed, children }) => (
+    <button
+      className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
+      style={{ animationDelay: `${index * 40}ms` }}
+      role="listitem"
+      onClick={onClick}
+    >
+      <Card className={`transition-colors hover:bg-accent/50 cursor-pointer ${dashed ? 'border-dashed' : ''}`}>
+        <CardContent className="flex items-start gap-3">
+          {children}
+        </CardContent>
+      </Card>
+    </button>
+  );
+
   return (
     <div className="mx-auto max-w-lg p-4">
       <h2 className="text-xl font-semibold mb-4">Courses</h2>
       <div className="space-y-3" role="list">
-        {courses.map((c, i) => {
-          const icon = statusIcon(c.courseId);
-          const pLabel = progressLabel(c);
-          return (
-            <button
-              key={c.courseId}
-              className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
-              style={{ animationDelay: `${i * 40}ms` }}
-              role="listitem"
-              onClick={() => navigate(`/courses/${c.courseId}`)}
-            >
-              <Card className="transition-colors hover:bg-accent/50 cursor-pointer">
-                <CardContent className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
-                    {icon}
-                  </span>
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <strong className="text-sm font-medium">{c.name}</strong>
-                    {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {pLabel && <Badge variant="secondary" className="text-xs">{pLabel}</Badge>}
-                      <button
-                        className="text-xs text-primary hover:underline"
-                        onClick={(e) => { e.stopPropagation(); setDetailCourse(c); }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setDetailCourse(c); } }}
-                      >
-                        {c.learningObjectives.length} objectives
-                      </button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </button>
-          );
-        })}
-
-        <button
-          className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
-          style={{ animationDelay: `${courses.length * 40}ms` }}
-          role="listitem"
-          onClick={() => navigate('/courses/create')}
-        >
-          <Card className="border-dashed transition-colors hover:bg-accent/50 cursor-pointer">
-            <CardContent className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
-                +
-              </span>
-              <div className="min-w-0 flex-1 space-y-1">
-                <strong className="text-sm font-medium">{hasDraft ? 'Continue Course Draft' : 'Create Your Own Course'}</strong>
-                <p className="text-sm text-muted-foreground">{hasDraft ? 'Resume designing your course' : 'Design a custom course with AI guidance'}</p>
+        {courses.map((c, i) => (
+          <CourseItem key={c.courseId} index={i} onClick={() => navigate(`/courses/${c.courseId}`)}>
+            <CourseIcon>{statusIcon(c.courseId)}</CourseIcon>
+            <div className="min-w-0 flex-1 space-y-1">
+              <strong className="text-sm font-medium">{c.name}</strong>
+              {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
+              <div className="flex items-center gap-2 flex-wrap">
+                {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
+                <button className="text-xs text-primary hover:underline"
+                  onClick={(e) => { e.stopPropagation(); setDetailCourse(c); }}>
+                  {c.learningObjectives.length} objectives
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        </button>
+            </div>
+          </CourseItem>
+        ))}
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".md,text/markdown"
-          onChange={handleImport}
-          className="sr-only"
-          aria-label="Import course file"
-        />
-        <button
-          className="w-full text-left animate-in fade-in slide-in-from-bottom-2 fill-mode-both"
-          style={{ animationDelay: `${(courses.length + 1) * 40}ms` }}
-          role="listitem"
-          onClick={() => fileRef.current?.click()}
-        >
-          <Card className="border-dashed transition-colors hover:bg-accent/50 cursor-pointer">
-            <CardContent className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary" aria-hidden="true">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              </span>
-              <div className="min-w-0 flex-1 space-y-1">
-                <strong className="text-sm font-medium">Import Course</strong>
-                <p className="text-sm text-muted-foreground">Load a course from a .md file</p>
-              </div>
-            </CardContent>
-          </Card>
-        </button>
+        <CourseItem index={courses.length} onClick={() => navigate('/courses/create')} dashed>
+          <CourseIcon>+</CourseIcon>
+          <div className="min-w-0 flex-1 space-y-1">
+            <strong className="text-sm font-medium">{hasDraft ? 'Continue Course Draft' : 'Create Your Own Course'}</strong>
+            <p className="text-sm text-muted-foreground">{hasDraft ? 'Resume designing your course' : 'Design a custom course with AI guidance'}</p>
+          </div>
+        </CourseItem>
+
+        <input ref={fileRef} type="file" accept=".md,text/markdown" onChange={handleImport} className="sr-only" aria-label="Import course file" />
+        <CourseItem index={courses.length + 1} onClick={() => fileRef.current?.click()} dashed>
+          <CourseIcon>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </CourseIcon>
+          <div className="min-w-0 flex-1 space-y-1">
+            <strong className="text-sm font-medium">Import Course</strong>
+            <p className="text-sm text-muted-foreground">Load a course from a .md file</p>
+          </div>
+        </CourseItem>
       </div>
 
       {detailCourse && (
