@@ -66,7 +66,9 @@ export default function AppShell({ children }) {
         role="banner"
       >
         <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <img src={classroomLogo} alt={classroomAlt} className="h-8 w-auto" />
+          <a href="/courses" onClick={e => { e.preventDefault(); navigate('/courses'); }} className="shrink-0">
+            <img src={classroomLogo} alt={classroomAlt} className="h-8 w-auto" />
+          </a>
           <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
             {navLinks.map(({ path, label }) => (
               <Button key={path} variant="ghost" size="sm" className={headerBtnClass}
@@ -80,12 +82,15 @@ export default function AppShell({ children }) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className={headerBtnClass}
                 aria-label={`Account: ${user?.email || 'signed in'}`}>
-                {user?.email || 'Account'}
+                {user?.name || user?.email || 'Account'}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => navigate('/settings')}>
+                Settings
+              </DropdownMenuItem>
               <DropdownMenuItem variant="destructive" onSelect={() => setSignOutOpen(true)}>
                 Sign Out
               </DropdownMenuItem>
