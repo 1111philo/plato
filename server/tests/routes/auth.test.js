@@ -37,7 +37,7 @@ describe('POST /v1/auth/signup', () => {
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
     assert.equal(data.user.email, 'test@example.com');
-    assert.equal(data.user.role, 'participant');
+    assert.equal(data.user.role, 'user');
   });
 
   it('rejects expired invite', async () => {
@@ -85,7 +85,7 @@ describe('POST /v1/auth/login', () => {
     const hash = await hashPassword('password123');
     db.getUserByEmail = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Test',
-      role: 'participant', passwordHash: hash,
+      role: 'user', passwordHash: hash,
     });
     const app = new Hono();
     app.route('/', auth);
@@ -101,7 +101,7 @@ describe('POST /v1/auth/login', () => {
     const hash = await hashPassword('correctpass');
     db.getUserByEmail = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Test',
-      role: 'participant', passwordHash: hash,
+      role: 'user', passwordHash: hash,
     });
     const app = new Hono();
     app.route('/', auth);
@@ -121,7 +121,7 @@ describe('POST /v1/auth/login', () => {
 describe('POST /v1/auth/refresh', () => {
   it('rotates refresh tokens', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     const app = new Hono();

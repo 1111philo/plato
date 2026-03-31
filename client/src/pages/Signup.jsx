@@ -23,8 +23,11 @@ export default function Signup() {
   const token = searchParams.get('token') || '';
   const confirmRef = useRef(null);
 
+  const [branding, setBranding] = useState(null);
+
   useEffect(() => {
     document.title = 'Create account — plato';
+    fetch('/v1/branding').then(r => r.ok ? r.json() : null).then(setBranding).catch(() => {});
     fetch('/v1/groups')
       .then(r => r.json())
       .then(d => setGroups(d.userGroups || []))
@@ -70,7 +73,8 @@ export default function Signup() {
   }
 
   return (
-    <main className="min-h-dvh flex items-center justify-center bg-muted p-4">
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding?.theme?.primary || '#8b1a1a' }}>
+      <img src={branding?.logoBase64 || '/assets/academy-logo.png'} alt={branding?.logoAlt || "Plato's Academy"} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
@@ -140,6 +144,9 @@ export default function Signup() {
           </Button>
         </CardFooter>
       </Card>
+      <p className="mt-4 text-xs text-white/60">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>
+      </p>
     </main>
   );
 }

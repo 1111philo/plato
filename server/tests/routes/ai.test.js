@@ -7,7 +7,7 @@ import bedrock from '../../src/lib/bedrock.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
 async function authedReq(app, method, path, body) {
-  const token = await signAccessToken('usr_test', 'participant');
+  const token = await signAccessToken('usr_test', 'user');
   return app.request(path, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
@@ -25,7 +25,7 @@ function unauthReq(app, method, path, body) {
 
 describe('POST /v1/ai/messages', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('proxies valid request to Bedrock and returns response', async () => {

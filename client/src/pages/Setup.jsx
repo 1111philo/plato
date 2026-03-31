@@ -43,7 +43,6 @@ export default function Setup() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Setup failed');
-      // Save tokens and reload — this resets needsSetup and logs in
       await saveAuthTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
       await saveAuthUser(data.user);
       window.location.href = '/plato';
@@ -55,11 +54,11 @@ export default function Setup() {
   }
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center bg-muted p-4">
-      <img src="/assets/logo.svg" alt="plato" className="h-10 mb-6" />
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: '#470d99' }}>
+      <img src="/assets/logo-white.svg" alt="plato" className="h-10 mb-6" />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl">Let's Start...</CardTitle>
+          <CardTitle className="text-2xl">Build your Academy.</CardTitle>
           <CardDescription>Create your admin account to get started.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -70,51 +69,33 @@ export default function Setup() {
           )}
           <div className="space-y-2">
             <Label htmlFor="setup-name">Name</Label>
-            <Input
-              id="setup-name"
-              type="text"
-              placeholder="Your name"
-              autoComplete="name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-            />
+            <Input id="setup-name" type="text" placeholder="Your name" autoComplete="name"
+              value={name} onChange={e => setName(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="setup-email">Email</Label>
-            <Input
-              id="setup-email"
-              type="email"
-              placeholder="admin@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-            />
+            <Input id="setup-email" type="email" placeholder="admin@example.com" autoComplete="email"
+              value={email} onChange={e => setEmail(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="setup-password">Password</Label>
-            <PasswordField
-              id="setup-password"
-              placeholder="At least 8 characters"
-              autoComplete="new-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-            />
+            <PasswordField id="setup-password" placeholder="At least 8 characters" autoComplete="new-password"
+              value={password} onChange={e => setPassword(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="setup-confirm">Confirm password</Label>
-            <PasswordField
-              id="setup-confirm"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSetup(); }}
-            />
+            <PasswordField id="setup-confirm" autoComplete="new-password"
+              value={confirm} onChange={e => setConfirm(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSetup(); }} />
           </div>
           <Button className="w-full" onClick={handleSetup} disabled={submitting}>
             {submitting ? 'Creating...' : 'Create admin account'}
           </Button>
         </CardContent>
       </Card>
+      <p className="mt-4 text-xs text-white/60">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>
+      </p>
     </main>
   );
 }

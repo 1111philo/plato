@@ -6,7 +6,7 @@ import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
 async function authedReq(app, method, path, body) {
-  const token = await signAccessToken('usr_test', 'participant');
+  const token = await signAccessToken('usr_test', 'user');
   return app.request(path, {
     method,
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -16,7 +16,7 @@ async function authedReq(app, method, path, body) {
 
 describe('GET /v1/sync', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('returns all sync data', async () => {
@@ -35,7 +35,7 @@ describe('GET /v1/sync', () => {
 
 describe('PUT /v1/sync/:dataKey', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('upserts data', async () => {
@@ -79,7 +79,7 @@ describe('PUT /v1/sync/:dataKey', () => {
 
 describe('PUT /v1/sync/batch', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('processes batch items', async () => {
@@ -102,7 +102,7 @@ describe('PUT /v1/sync/batch', () => {
 
 describe('DELETE /v1/sync', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('deletes all sync data', async () => {
@@ -136,7 +136,7 @@ describe('DELETE /v1/sync', () => {
 
 describe('DELETE /v1/sync/:dataKey', () => {
   beforeEach(() => {
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'participant' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
 
   it('deletes sync data', async () => {

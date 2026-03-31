@@ -12,13 +12,13 @@ describe('JWT', () => {
   });
 
   it('rejects a tampered token', async () => {
-    const token = await signAccessToken('usr_test123', 'participant');
+    const token = await signAccessToken('usr_test123', 'user');
     const tampered = token.slice(0, -5) + 'xxxxx';
     await assert.rejects(() => verifyAccessToken(tampered));
   });
 
   it('includes iat claim', async () => {
-    const token = await signAccessToken('usr_test', 'participant');
+    const token = await signAccessToken('usr_test', 'user');
     const payload = await verifyAccessToken(token);
     assert.ok(payload.iat);
     assert.ok(payload.iat <= Math.floor(Date.now() / 1000) + 1);

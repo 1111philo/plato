@@ -14,12 +14,14 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [branding, setBranding] = useState(null);
   const { login } = useAuth();
   const navigate = useNavigate();
   const passwordRef = useRef(null);
 
   useEffect(() => {
     document.title = 'Sign in — plato';
+    fetch('/v1/branding').then(r => r.ok ? r.json() : null).then(setBranding).catch(() => {});
   }, []);
 
   async function handleLogin() {
@@ -39,12 +41,16 @@ export default function Login() {
     }
   }
 
+  const headerBg = branding?.theme?.primary || '#8b1a1a';
+  const logo = branding?.logoBase64 || '/assets/academy-logo.png';
+  const logoAlt = branding?.logoAlt || "Plato's Academy";
+
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center bg-muted p-4">
-      <img src="/assets/logo.svg" alt="plato" className="h-10 mb-6" />
+    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
+      <img src={logo} alt={logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl">Let's Start...</CardTitle>
+          <CardTitle className="text-2xl">Sign in</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -54,37 +60,27 @@ export default function Login() {
           )}
           <div className="space-y-2">
             <Label htmlFor="login-email">Email</Label>
-            <Input
-              id="login-email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') passwordRef.current?.focus(); }}
-            />
+            <Input id="login-email" type="email" placeholder="you@example.com" autoComplete="email"
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') passwordRef.current?.focus(); }} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="login-password">Password</Label>
-            <PasswordField
-              id="login-password"
-              autoComplete="current-password"
-              inputRef={passwordRef}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
-            />
+            <PasswordField id="login-password" autoComplete="current-password" inputRef={passwordRef}
+              value={password} onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }} />
           </div>
           <Button className="w-full" onClick={handleLogin} disabled={submitting}>
             {submitting ? 'Signing in...' : 'Sign in'}
           </Button>
         </CardContent>
         <CardFooter className="justify-center">
-          <Button variant="link" onClick={() => navigate('/forgot-password')}>
-            Forgot password?
-          </Button>
+          <Button variant="link" onClick={() => navigate('/forgot-password')}>Forgot password?</Button>
         </CardFooter>
       </Card>
+      <p className="mt-4 text-xs text-white/60">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>
+      </p>
     </main>
   );
 }

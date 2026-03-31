@@ -8,11 +8,11 @@ Globals:
     Runtime: nodejs20.x
     MemorySize: 1024
     Tags:
-      Application: ai-leaders
+      Application: plato
 
 Resources:
   # API Gateway function — serves the admin dashboard and non-streaming API
-  LearnServiceFunction:
+  PlatoApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/index.handler
@@ -57,8 +57,8 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
-  # Function URL — supports response streaming for SSE (used by learn extension)
-  LearnServiceStreamFunction:
+  # Function URL — supports response streaming for SSE
+  PlatoStreamFunction:
     Type: AWS::Serverless::Function
     Properties:
       Handler: src/index.streamHandler
@@ -107,7 +107,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
-          Value: ai-leaders
+          Value: plato
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -131,7 +131,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
-          Value: ai-leaders
+          Value: plato
       AttributeDefinitions:
         - AttributeName: inviteToken
           AttributeType: S
@@ -158,7 +158,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
-          Value: ai-leaders
+          Value: plato
       AttributeDefinitions:
         - AttributeName: tokenHash
           AttributeType: S
@@ -176,7 +176,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
-          Value: ai-leaders
+          Value: plato
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -195,7 +195,7 @@ Resources:
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
-          Value: ai-leaders
+          Value: plato
       AttributeDefinitions:
         - AttributeName: logId
           AttributeType: S
@@ -205,8 +205,8 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Description: API Gateway endpoint URL (admin dashboard)
+    Description: API Gateway endpoint URL
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
   StreamingUrl:
-    Description: Lambda Function URL (response streaming for learn extension)
-    Value: !GetAtt LearnServiceStreamFunctionUrl.FunctionUrl
+    Description: Lambda Function URL (response streaming)
+    Value: !GetAtt PlatoStreamFunctionUrl.FunctionUrl

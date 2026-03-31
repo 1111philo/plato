@@ -5,7 +5,7 @@ import me from '../../src/routes/me.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
-async function authedReq(app, method, path, body, role = 'participant') {
+async function authedReq(app, method, path, body, role = 'user') {
   const token = await signAccessToken('usr_test', role);
   return app.request(path, {
     method,
@@ -18,7 +18,7 @@ describe('GET /v1/me', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Test',
-      affiliation: 'Org', role: 'participant',
+      userGroup: 'Org', role: 'user',
       createdAt: '2024-01-01T00:00:00Z',
     });
   });
@@ -46,7 +46,7 @@ describe('PATCH /v1/me', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Updated',
-      affiliation: null, role: 'participant',
+      userGroup: null, role: 'user',
     });
     db.getUserByEmail = async () => null;
     db.updateUser = async () => {};
@@ -73,7 +73,7 @@ describe('GET /v1/me/export', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Test',
-      affiliation: 'Org', role: 'participant',
+      userGroup: 'Org', role: 'user',
       createdAt: '2024-01-01T00:00:00Z', updatedAt: '2024-06-01T00:00:00Z',
     });
     db.getAllSyncData = async () => [
@@ -104,7 +104,7 @@ describe('DELETE /v1/me', () => {
     auditCreated = null;
     db.getUserById = async () => ({
       userId: 'usr_test', email: 'test@example.com', name: 'Test',
-      affiliation: 'Org', role: 'participant',
+      userGroup: 'Org', role: 'user',
     });
     db.getAllSyncData = async () => [
       { dataKey: 'profile' },

@@ -73,5 +73,5 @@ server.onError((err, c) => {
 });
 
 const port = parseInt(process.env.PORT || '3000');
-console.log(`Learn Service running at http://localhost:${port}`);
+console.log(`plato server running at http://localhost:${port}`);
 serve({ fetch: server.fetch, port });

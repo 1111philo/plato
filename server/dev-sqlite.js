@@ -74,6 +74,6 @@ server.onError((err, c) => {
 });
 
 const port = parseInt(process.env.PORT || '3000');
-console.log(`Learn Service (SQLite) running at http://localhost:${port}`);
+console.log(`plato server (SQLite) running at http://localhost:${port}`);
 console.log(`Database: ${process.env.SQLITE_PATH}`);
 serve({ fetch: server.fetch, port });

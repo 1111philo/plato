@@ -27,14 +27,14 @@ describe('db-sqlite', () => {
         email: 'Test@Example.com',
         passwordHash: '$2a$12$fake',
         name: 'Test User',
-        role: 'participant',
+        role: 'user',
       });
 
       const user = await db.getUserById(userId);
       assert.equal(user.userId, userId);
       assert.equal(user.email, 'test@example.com'); // lowercase
       assert.equal(user.name, 'Test User');
-      assert.equal(user.role, 'participant');
+      assert.equal(user.role, 'user');
     });
 
     it('retrieves user by email (case-insensitive)', async () => {
@@ -48,15 +48,15 @@ describe('db-sqlite', () => {
         email: 'other@example.com',
         passwordHash: '$2a$12$fake',
         name: 'Dup',
-        role: 'participant',
+        role: 'user',
       }), { name: 'ConditionalCheckFailedException' });
     });
 
     it('updates user fields', async () => {
-      await db.updateUser(userId, { name: 'Updated Name', affiliation: 'Test Org' });
+      await db.updateUser(userId, { name: 'Updated Name', userGroup: 'Test Org' });
       const user = await db.getUserById(userId);
       assert.equal(user.name, 'Updated Name');
-      assert.equal(user.affiliation, 'Test Org');
+      assert.equal(user.userGroup, 'Test Org');
     });
 
     it('counts users', async () => {
@@ -64,8 +64,8 @@ describe('db-sqlite', () => {
       assert.ok(count >= 1);
     });
 
-    it('lists participants', async () => {
-      const list = await db.listParticipants();
+    it('lists users', async () => {
+      const list = await db.listUsers();
       assert.ok(list.some(u => u.userId === userId));
     });
 

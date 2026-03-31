@@ -14,8 +14,8 @@ async function adminReq(app, method, path, body) {
   });
 }
 
-async function participantReq(app, method, path, body) {
-  const token = await signAccessToken('usr_participant', 'participant');
+async function userReq(app, method, path, body) {
+  const token = await signAccessToken('usr_user', 'user');
   return app.request(path, {
     method,
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -23,22 +23,22 @@ async function participantReq(app, method, path, body) {
   });
 }
 
-describe('GET /v1/admin/participants', () => {
+describe('GET /v1/admin/users', () => {
   beforeEach(() => {
     db.getUserById = async (id) => {
       if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
-      if (id === 'usr_participant') return { userId: 'usr_participant', role: 'participant' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
       return null;
     };
   });
 
-  it('returns participant list for admin', async () => {
+  it('returns user list for admin', async () => {
     db.listAllUsers = async () => [
-      { userId: 'usr_1', email: 'a@x.com', name: 'A', affiliation: null, role: 'participant', createdAt: '2024-01-01' },
+      { userId: 'usr_1', email: 'a@x.com', name: 'A', userGroup: null, role: 'user', createdAt: '2024-01-01' },
     ];
     const app = new Hono();
     app.route('/', admin);
-    const res = await adminReq(app, 'GET', '/v1/admin/participants');
+    const res = await adminReq(app, 'GET', '/v1/admin/users');
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.length, 1);
@@ -48,7 +48,7 @@ describe('GET /v1/admin/participants', () => {
   it('rejects non-admin', async () => {
     const app = new Hono();
     app.route('/', admin);
-    const res = await participantReq(app, 'GET', '/v1/admin/participants');
+    const res = await userReq(app, 'GET', '/v1/admin/users');
     assert.equal(res.status, 403);
   });
 });
@@ -168,17 +168,17 @@ describe('GET /v1/invite-example.csv', () => {
   });
 });
 
-describe('DELETE /v1/admin/participants/:userId', () => {
+describe('DELETE /v1/admin/users/:userId', () => {
   beforeEach(() => {
     db.getUserById = async (id) => {
       if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
-      if (id === 'usr_p1') return { userId: 'usr_p1', role: 'participant', name: 'P1' };
+      if (id === 'usr_p1') return { userId: 'usr_p1', role: 'user', name: 'P1' };
       return null;
     };
     db.deleteUser = async () => {};
   });
 
-  it('deletes participant and sync data', async () => {
+  it('deletes user and sync data', async () => {
     let deleted = false;
     db.getAllSyncData = async () => [{ dataKey: 'profile' }, { dataKey: 'work' }];
     db.deleteSyncData = async () => {};
@@ -186,7 +186,7 @@ describe('DELETE /v1/admin/participants/:userId', () => {
     db.createAuditLog = async () => {};
     const app = new Hono();
     app.route('/', admin);
-    const res = await adminReq(app, 'DELETE', '/v1/admin/participants/usr_p1');
+    const res = await adminReq(app, 'DELETE', '/v1/admin/users/usr_p1');
     assert.equal(res.status, 200);
     assert.ok(deleted);
   });

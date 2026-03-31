@@ -67,5 +67,5 @@ server.onError((err, c) => {
 // API Gateway handler (buffered — used by admin dashboard)
 export const handler = handle(server);
 
-// Function URL handler (streaming — used by learn extension for SSE)
+// Function URL handler (streaming SSE responses)
 export const streamHandler = streamHandle(server);
