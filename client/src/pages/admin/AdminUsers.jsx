@@ -154,8 +154,14 @@ export default function AdminUsers() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Users</h1>
         <div className="flex gap-2">
-          <Button onClick={() => setInviteOpen(true)}>Invite User</Button>
-          <Button variant="outline" onClick={() => setGroupsOpen(true)}>User Groups</Button>
+          <Button onClick={() => setInviteOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Invite Userss
+          </Button>
+          <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            User Groups
+          </Button>
         </div>
       </div>
 
@@ -219,14 +225,14 @@ export default function AdminUsers() {
           </Table>
         </div>
       ) : (
-        <p className="text-muted-foreground py-8 text-center">No users yet. Click "Invite User" to get started.</p>
+        <p className="text-muted-foreground py-8 text-center">No users yet. Click "Invite Users" to get started.</p>
       )}
 
-      {/* Invite User Modal */}
+      {/* Invite Users Modal */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite User</DialogTitle>
+            <DialogTitle>Invite Users</DialogTitle>
             <DialogDescription>Send an invite by email or upload a CSV for bulk invites.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

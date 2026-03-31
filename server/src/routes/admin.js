@@ -275,26 +275,6 @@ admin.delete('/v1/admin/groups/:name', async (c) => {
   return c.json({ groups });
 });
 
-// DELETE /v1/admin/sync — reset sync data for all users
-admin.delete('/v1/admin/sync', async (c) => {
-  const adminUser = c.get('user');
-  const users = await db.listAllUsers();
-  const counts = await Promise.all(users.map(async (user) => {
-    const items = await db.getAllSyncData(user.userId);
-    await Promise.all(items.map((item) => db.deleteSyncData(user.userId, item.dataKey)));
-    return items.length;
-  }));
-  const totalDeleted = counts.reduce((sum, n) => sum + n, 0);
-  await db.createAuditLog({
-    action: 'all_sync_data_reset',
-    userId: adminUser.userId,
-    email: adminUser.email,
-    performedBy: adminUser.userId,
-    details: { usersAffected: users.length, itemsDeleted: totalDeleted },
-  });
-  return c.json({ ok: true, usersAffected: users.length, itemsDeleted: totalDeleted });
-});
-
 // DELETE /v1/admin/users/:userId
 admin.delete('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
