@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
-import { getCourseKB, getDraftCourseId, saveUserCourse } from '../../js/storage.js';
-import { parseCoursePrompt, invalidateCoursesCache, loadCourses } from '../../js/courseOwner.js';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { getCourseKB, getDraftCourseId } from '../../js/storage.js';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -19,7 +17,6 @@ export default function CoursesList() {
   const [courseData, setCourseData] = useState({});
   const [hasDraft, setHasDraft] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
-  const fileRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -50,25 +47,6 @@ export default function CoursesList() {
     if (d?.status) return 'In progress';
     return null;
   }
-
-  const handleImport = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const markdown = await file.text();
-    const courseId = `custom-${Date.now()}`;
-    const course = parseCoursePrompt(courseId, markdown);
-
-    if (!course.name || !course.exemplar || !course.learningObjectives.length) {
-      alert('Invalid course file. Must have a title, exemplar, and learning objectives.');
-      return;
-    }
-
-    await saveUserCourse(courseId, markdown);
-    invalidateCoursesCache();
-    const refreshed = await loadCourses();
-    dispatch({ type: 'REFRESH_COURSES', courses: refreshed });
-    if (fileRef.current) fileRef.current.value = '';
-  };
 
   const CourseIcon = ({ children }) => (
     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
