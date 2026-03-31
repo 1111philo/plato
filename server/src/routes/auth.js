@@ -4,6 +4,7 @@ import { generateUserId, generateRefreshToken, generateResetToken, hashToken } f
 import { hashPassword, comparePassword } from '../lib/password.js';
 import { signAccessToken, verifyAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
+import { seedDefaultContent } from '../lib/seed.js';
 
 const auth = new Hono();
 
@@ -38,6 +39,11 @@ auth.post('/v1/auth/setup', async (c) => {
     name,
     role: 'admin',
   });
+
+  // Seed default prompts, courses, and knowledge base
+  try { await seedDefaultContent(); } catch (e) {
+    console.error('Content seed failed (non-fatal):', e.message);
+  }
 
   const accessToken = await signAccessToken(userId, 'admin');
   const refreshToken = generateRefreshToken();
