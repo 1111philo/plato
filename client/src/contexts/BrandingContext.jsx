@@ -35,11 +35,12 @@ export function BrandingProvider({ children }) {
   // Generate and set favicon (regular users only — admins keep plato favicon)
   useEffect(() => {
     if (!branding.logoBase64 || !branding.theme?.primary || isAdmin) return;
-    let cleanup;
+    let cancelled = false;
+    let restoreFn;
     generateFavicon(branding.logoBase64, branding.theme.primary).then(dataUrl => {
-      if (dataUrl) cleanup = setFavicon(dataUrl);
+      if (dataUrl && !cancelled) restoreFn = setFavicon(dataUrl);
     });
-    return () => cleanup?.();
+    return () => { cancelled = true; restoreFn?.(); };
   }, [branding.logoBase64, branding.theme?.primary, isAdmin]);
 
   const classroomStyle = buildThemeVars(branding.theme);

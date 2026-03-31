@@ -43,11 +43,12 @@ export default function usePublicBranding(pageTitle) {
   // Generate and set favicon
   useEffect(() => {
     if (!branding?.logoBase64 || !branding?.theme?.primary) return;
-    let cleanup;
+    let cancelled = false;
+    let restoreFn;
     generateFavicon(branding.logoBase64, branding.theme.primary).then(dataUrl => {
-      if (dataUrl) cleanup = setFavicon(dataUrl);
+      if (dataUrl && !cancelled) restoreFn = setFavicon(dataUrl);
     });
-    return () => cleanup?.();
+    return () => { cancelled = true; restoreFn?.(); };
   }, [branding?.logoBase64, branding?.theme?.primary]);
 
   if (!branding) return null;
