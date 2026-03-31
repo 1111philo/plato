@@ -66,7 +66,7 @@ export default function AppShell({ children }) {
         role="banner"
       >
         <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <img src={classroomLogo} alt={classroomAlt} className="h-5 w-auto" />
+          <img src={classroomLogo} alt={classroomAlt} className="h-8 w-auto" />
           <nav className="hidden md:flex items-center gap-1 ml-2" aria-label="Main navigation">
             {navLinks.map(({ path, label }) => (
               <Button key={path} variant="ghost" size="sm" className={headerBtnClass}

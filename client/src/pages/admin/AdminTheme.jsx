@@ -21,6 +21,7 @@ export default function AdminTheme() {
   const [logoAlt, setLogoAlt] = useState('');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     document.title = 'Classroom Theme — plato';
@@ -43,10 +44,15 @@ export default function AdminTheme() {
   }
 
   async function saveTheme() {
+    setSaving(true);
     try {
       await adminApi('PUT', '/v1/admin/theme', { theme, logoBase64, logoAlt });
-      setMessage({ text: 'Classroom theme saved. Learners will see the changes on next load.', type: 'success' });
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+      setMessage({ text: 'Saved! Click "Visit Classroom" to see the changes.', type: 'success' });
+    } catch (e) {
+      setMessage({ text: e.message, type: 'error' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleLogoUpload(e) {
@@ -126,7 +132,9 @@ export default function AdminTheme() {
         </CardContent>
       </Card>
 
-      <Button onClick={saveTheme}>Save Classroom Theme</Button>
+      <Button onClick={saveTheme} disabled={saving}>
+        {saving ? 'Saving...' : 'Save Classroom Theme'}
+      </Button>
     </div>
   );
 }
