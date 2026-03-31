@@ -75,12 +75,12 @@ export default function AppShell({ children }) {
           </a>
           <div className="flex-1" />
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium"
-                aria-label={`Account: ${user?.email || 'signed in'}`}>
-                {user?.name || user?.email || 'Account'}
-              </button>
+            <DropdownMenuTrigger
+              className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium"
+              aria-label={`Account: ${user?.email || 'signed in'}`}
+              render={<button type="button" />}
+            >
+              {user?.name || user?.email || 'Account'}
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{user?.email || ''}</DropdownMenuLabel>
