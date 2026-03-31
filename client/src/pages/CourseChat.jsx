@@ -178,7 +178,7 @@ export default function CourseChat() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-stone-100 dark:bg-stone-900">
+    <div className="flex flex-col h-full">
       <div className="border-b border-border bg-background px-4 py-2">
       <div className="mx-auto max-w-5xl flex items-center gap-2">
         <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>

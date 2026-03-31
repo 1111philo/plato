@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useAuth } from './AuthContext.jsx';
 
 const BrandingContext = createContext(null);
 
@@ -43,6 +44,9 @@ function hexToOklch(hex) {
  * Everything else (foreground, header text, hover states) is derived automatically.
  */
 export function BrandingProvider({ children }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [branding, setBranding] = useState({
     theme: null,
     logoBase64: null,
@@ -63,9 +67,9 @@ export function BrandingProvider({ children }) {
       .catch(() => setBranding(prev => ({ ...prev, loaded: true })));
   }, []);
 
-  // Swap favicon to classroom logo
+  // Swap favicon to classroom logo (regular users only — admins keep plato favicon)
   useEffect(() => {
-    if (!branding.logoBase64) return;
+    if (!branding.logoBase64 || isAdmin) return;
     const link = document.querySelector("link[rel='icon']") || document.createElement('link');
     const original = link.href;
     link.rel = 'icon';

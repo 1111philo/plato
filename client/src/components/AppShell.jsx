@@ -47,17 +47,15 @@ export default function AppShell({ children }) {
       {/* Admin bar — plato branding, quick links to dashboard */}
       {isAdmin && (
         <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
-          <div className="mx-auto max-w-5xl flex items-center gap-3">
+          <div className="mx-auto max-w-5xl flex items-center">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
-              <img src="/assets/logo-white.svg" alt="plato dashboard" className="h-3.5 w-auto" />
+              <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
-            <nav className="flex items-center gap-2" aria-label="Admin quick links">
-              <button onClick={() => navigate('/plato/users')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Users</button>
-              <button onClick={() => navigate('/plato/courses')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Courses</button>
-              <button onClick={() => navigate('/plato/agents')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Agents</button>
-              <button onClick={() => navigate('/plato/settings')} className="opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">Settings</button>
-            </nav>
+            <button onClick={() => navigate('/plato')} className="flex items-center gap-1 opacity-70 hover:opacity-100 cursor-pointer bg-transparent border-none text-inherit text-xs">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Dashboard
+            </button>
           </div>
         </div>
       )}
@@ -98,7 +96,7 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
-      <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto ${animClass}`} tabIndex={-1}>
+      <main id="main-content" className={`flex-1 min-h-0 overflow-y-auto bg-stone-100 dark:bg-stone-900 ${animClass}`} tabIndex={-1}>
         {children}
       </main>
 
