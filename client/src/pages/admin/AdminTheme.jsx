@@ -123,6 +123,11 @@ export default function AdminTheme() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
+          <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
+            <p><strong>Recommended:</strong> SVG or PNG with transparent background.</p>
+            <p>Header logo displays at 32px tall. Use a wide wordmark or icon that reads well at small sizes.</p>
+            <p>For favicon, a square icon (at least 32&times;32px) works best.</p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="logo-alt">Logo alt text</Label>
             <Input id="logo-alt" type="text" value={logoAlt} placeholder="Your organization name"

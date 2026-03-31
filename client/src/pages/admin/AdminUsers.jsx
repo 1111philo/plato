@@ -4,11 +4,13 @@ import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 
 function parseCsvEmails(text) {
   const lines = text.split(/\r?\n/);
@@ -35,29 +37,41 @@ export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState('');
   const [message, setMessage] = useState(null);
+
+  // Modal states
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState(false);
+
+  // Invite form
+  const [inviteEmail, setInviteEmail] = useState('');
   const [csvEmails, setCsvEmails] = useState(null);
   const [csvInvalid, setCsvInvalid] = useState([]);
   const [csvPreview, setCsvPreview] = useState(false);
   const csvRef = useRef(null);
 
+  // Groups form
+  const [newGroupName, setNewGroupName] = useState('');
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, i] = await Promise.all([
+      const [p, i, s] = await Promise.all([
         adminApi('GET', '/v1/admin/users'),
         adminApi('GET', '/v1/admin/invites'),
+        adminApi('GET', '/v1/admin/settings'),
       ]);
       setUsers(Array.isArray(p) ? p : []);
       setPendingInvites(Array.isArray(i) ? i.filter(x => x.status === 'pending') : []);
+      setGroups(s.userGroups || []);
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
 
   useEffect(() => {
-    document.title = 'Users — Admin';
+    document.title = 'Users — plato';
     loadData();
   }, [loadData]);
 
@@ -69,9 +83,7 @@ export default function AdminUsers() {
       setMessage({ text: `Invite sent to ${email}.${data.signupUrl ? ` Link: ${data.signupUrl}` : ''}`, type: 'success' });
       setInviteEmail('');
       loadData();
-    } catch (e) {
-      setMessage({ text: e.message, type: 'error' });
-    }
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
   async function resendInvite(email) {
@@ -83,18 +95,13 @@ export default function AdminUsers() {
   }
 
   async function revokeInvite(token) {
-    try {
-      await adminApi('DELETE', `/v1/admin/invites/${token}`);
-      loadData();
-    } catch { /* ignore */ }
+    try { await adminApi('DELETE', `/v1/admin/invites/${token}`); loadData(); } catch { /* ignore */ }
   }
 
   async function deleteUser(userId, name) {
     if (!confirm(`Delete ${name} and all their data? This cannot be undone.`)) return;
-    try {
-      await adminApi('DELETE', `/v1/admin/users/${userId}`);
-      loadData();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+    try { await adminApi('DELETE', `/v1/admin/users/${userId}`); loadData(); }
+    catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
   function handleCsvFile(e) {
@@ -118,7 +125,25 @@ export default function AdminUsers() {
       setMessage({ text: `${data.sent} invite(s) sent. ${data.skipped} skipped.`, type: 'success' });
       setCsvPreview(false); setCsvEmails(null);
       if (csvRef.current) csvRef.current.value = '';
+      setInviteOpen(false);
       loadData();
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
+  async function addGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    try {
+      const data = await adminApi('PUT', '/v1/admin/groups', { name });
+      setGroups(data.userGroups || []);
+      setNewGroupName('');
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
+  async function deleteGroup(name) {
+    try {
+      const data = await adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`);
+      setGroups(data.userGroups || []);
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
@@ -126,72 +151,32 @@ export default function AdminUsers() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Users</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Users</h1>
+        <div className="flex gap-2">
+          <Button onClick={() => setInviteOpen(true)}>Invite User</Button>
+          <Button variant="outline" onClick={() => setGroupsOpen(true)}>User Groups</Button>
+        </div>
+      </div>
 
       {message && (
-        <div
-          className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
-            message.type === 'error'
-              ? 'bg-destructive/10 text-destructive'
-              : 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-          }`}
-          role="alert"
-        >
+        <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
+          message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'
+        }`} role="alert">
           <span>{message.text}</span>
-          <button
-            onClick={() => setMessage(null)}
-            aria-label="Dismiss"
-            className="ml-2 text-lg leading-none hover:opacity-70"
-          >
-            &times;
-          </button>
+          <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
 
-      <Card className="mb-6">
-        <CardContent className="space-y-6">
-          {/* Single invite */}
-          <div className="space-y-2">
-            <Label htmlFor="inv-email">Invite a user</Label>
-            <div className="flex gap-2">
-              <Input
-                id="inv-email"
-                type="email"
-                placeholder="user@example.com"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }}
-                className="flex-1"
-              />
-              <Button onClick={sendInvite}>Send invite</Button>
-            </div>
-          </div>
-
-          {/* Bulk invite */}
-          <div className="space-y-2">
-            <Label htmlFor="csv-file">Bulk invite from CSV</Label>
-            <Input id="csv-file" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
-            {csvPreview && csvEmails?.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <div className="text-sm">{csvEmails.length} email(s) ready to invite</div>
-                {csvInvalid.length > 0 && (
-                  <div className="text-sm text-destructive">{csvInvalid.length} invalid: {csvInvalid.join(', ')}</div>
-                )}
-                <Button onClick={sendBulkInvites}>Send {csvEmails.length} invite(s)</Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {(pendingInvites.length > 0 || users.length > 0) && (
-        <Card className="p-0 overflow-hidden">
+      {(pendingInvites.length > 0 || users.length > 0) ? (
+        <div className="rounded-lg border overflow-hidden">
           <Table aria-label="Users and invites">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Group</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead><span className="sr-only">Actions</span></TableHead>
               </TableRow>
@@ -199,18 +184,15 @@ export default function AdminUsers() {
             <TableBody>
               {pendingInvites.map(inv => (
                 <TableRow key={inv.inviteToken}>
-                  <TableCell>&mdash;</TableCell>
+                  <TableCell className="text-muted-foreground">&mdash;</TableCell>
                   <TableCell>{inv.email}</TableCell>
+                  <TableCell>&mdash;</TableCell>
                   <TableCell><Badge variant="outline">Invited</Badge></TableCell>
                   <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon-xs" title="Resend" onClick={() => resendInvite(inv.email)}>
-                        &#8635;
-                      </Button>
-                      <Button variant="ghost" size="icon-xs" title="Revoke" onClick={() => revokeInvite(inv.inviteToken)}>
-                        &#10005;
-                      </Button>
+                      <Button variant="ghost" size="icon-xs" title="Resend" onClick={() => resendInvite(inv.email)}>&#8635;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Revoke" onClick={() => revokeInvite(inv.inviteToken)}>&#10005;</Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -219,6 +201,7 @@ export default function AdminUsers() {
                 <TableRow key={p.userId}>
                   <TableCell>{p.name}</TableCell>
                   <TableCell>{p.email}</TableCell>
+                  <TableCell>{p.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                   <TableCell>
                     <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
                       {p.role === 'admin' ? 'Admin' : 'User'}
@@ -227,17 +210,79 @@ export default function AdminUsers() {
                   <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     {p.userId !== currentUser?.userId && (
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteUser(p.userId, p.name || p.email)}>
-                        &#128465;
-                      </Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteUser(p.userId, p.name || p.email)}>&#128465;</Button>
                     )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </Card>
+        </div>
+      ) : (
+        <p className="text-muted-foreground py-8 text-center">No users yet. Click "Invite User" to get started.</p>
       )}
+
+      {/* Invite User Modal */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invite User</DialogTitle>
+            <DialogDescription>Send an invite by email or upload a CSV for bulk invites.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="modal-inv-email">Email</Label>
+              <div className="flex gap-2">
+                <Input id="modal-inv-email" type="email" placeholder="user@example.com"
+                  value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }} className="flex-1" />
+                <Button onClick={sendInvite}>Send</Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="modal-csv">Bulk invite (CSV)</Label>
+              <Input id="modal-csv" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
+              {csvPreview && csvEmails?.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-sm">{csvEmails.length} email(s) ready</p>
+                  {csvInvalid.length > 0 && <p className="text-sm text-destructive">{csvInvalid.length} invalid</p>}
+                  <Button onClick={sendBulkInvites}>Send {csvEmails.length} invite(s)</Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Groups Modal */}
+      <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>User Groups</DialogTitle>
+            <DialogDescription>Groups are available for users to select during signup.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input type="text" placeholder="Group name" value={newGroupName}
+                onChange={e => setNewGroupName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addGroup(); }} className="flex-1" />
+              <Button onClick={addGroup}>Add</Button>
+            </div>
+            {groups.length > 0 ? (
+              <ul className="space-y-1">
+                {groups.map(g => (
+                  <li key={g} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
+                    <span className="text-sm">{g}</span>
+                    <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteGroup(g)}>&#10005;</Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No user groups yet.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
