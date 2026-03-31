@@ -44,6 +44,8 @@ export default function AdminUsers() {
   // Modal states
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [editUser, setEditUser] = useState(null); // user object being edited
+  const [editForm, setEditForm] = useState({ name: '', email: '', userGroup: '', role: '' });
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState('');
@@ -147,7 +149,88 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
+  function openEditUser(u) {
+    setEditUser(u);
+    setEditForm({ name: u.name || '', email: u.email || '', userGroup: u.userGroup || '', role: u.role || 'user' });
+  }
+
+  async function saveEditUser() {
+    if (!editUser) return;
+    try {
+      await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
+        name: editForm.name,
+        email: editForm.email,
+        userGroup: editForm.userGroup || null,
+      });
+      if (editForm.role !== editUser.role) {
+        await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
+      }
+      setMessage({ text: 'User updated.', type: 'success' });
+      setEditUser(null);
+      loadData();
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
+
+  // Edit user view
+  if (editUser) {
+    const isSelf = editUser.userId === currentUser?.userId;
+    return (
+      <div>
+        <div className="flex items-center gap-3 mb-4">
+          <Button variant="ghost" size="sm" onClick={() => setEditUser(null)} aria-label="Back to users">&larr; Back</Button>
+          <h1 className="text-2xl font-bold">Edit User</h1>
+        </div>
+        {message && (
+          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
+            {message.text}
+          </div>
+        )}
+        <Card>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-group">User Group</Label>
+              <select id="edit-group" value={editForm.userGroup}
+                onChange={e => setEditForm({ ...editForm, userGroup: e.target.value })}
+                className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
+                <option value="">None</option>
+                {groups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            {!isSelf && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-role">Role</Label>
+                <select id="edit-role" value={editForm.role}
+                  onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                  className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-3 pt-2">
+              <Button onClick={saveEditUser}>Save</Button>
+              <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
+              {!isSelf && (
+                <Button variant="destructive" className="ml-auto" onClick={() => { setEditUser(null); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
+                  Delete User
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -156,7 +239,7 @@ export default function AdminUsers() {
         <div className="flex gap-2">
           <Button onClick={() => setInviteOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Invite Userss
+            Invite Users
           </Button>
           <Button variant="outline" onClick={() => setGroupsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -204,7 +287,7 @@ export default function AdminUsers() {
                 </TableRow>
               ))}
               {users.map(p => (
-                <TableRow key={p.userId}>
+                <TableRow key={p.userId} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(p)} role="button" tabIndex={0} aria-label={`Edit ${p.name || p.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(p); }}>
                   <TableCell>{p.name}</TableCell>
                   <TableCell>{p.email}</TableCell>
                   <TableCell>{p.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>

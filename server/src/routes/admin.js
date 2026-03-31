@@ -177,6 +177,8 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   if (!user) return c.json({ error: 'User not found' }, 404);
   const body = await c.req.json();
   const updates = {};
+  if (body.name !== undefined) updates.name = body.name;
+  if (body.email !== undefined) updates.email = body.email.toLowerCase();
   if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
   if (Object.keys(updates).length === 0) return c.json({ error: 'No valid fields' }, 400);
   await db.updateUser(userId, updates);
