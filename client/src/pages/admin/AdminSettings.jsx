@@ -153,10 +153,7 @@ export default function AdminSettings() {
             <CardHeader><CardTitle>Classroom Logo</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
-              <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground space-y-1">
-                <p><strong>Requirements:</strong> Square image, at least 512×512px. SVG or PNG with transparent background recommended.</p>
-                <p>Raster images are auto-resized to 512×512px for crisp rendering on retina displays. SVGs scale perfectly at any size.</p>
-              </div>
+              <p className="text-xs text-muted-foreground">Square, at least 512×512px. SVG preferred.</p>
               <div className="space-y-2">
                 <Label htmlFor="logo-alt">Logo alt text</Label>
                 <Input id="logo-alt" type="text" value={logoAlt} placeholder="Your organization name" onChange={e => setLogoAlt(e.target.value)} />
