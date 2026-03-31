@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
+import { saveAuthTokens, saveAuthUser } from '../../js/storage.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,8 +15,6 @@ export default function Setup() {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const { login } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'Setup — plato';
@@ -46,9 +43,10 @@ export default function Setup() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Setup failed');
-      // Log in with the new admin credentials
-      await login(email.trim(), password);
-      navigate('/plato', { replace: true });
+      // Save tokens and reload — this resets needsSetup and logs in
+      await saveAuthTokens({ accessToken: data.accessToken, refreshToken: data.refreshToken });
+      await saveAuthUser(data.user);
+      window.location.href = '/plato';
     } catch (e) {
       setError(e.message || 'Setup failed');
     } finally {
