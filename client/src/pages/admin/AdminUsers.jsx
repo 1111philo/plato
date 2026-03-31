@@ -299,7 +299,7 @@ export default function AdminUsers() {
                   <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
                   <TableCell>
                     {p.userId !== currentUser?.userId && (
-                      <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${p.name || p.email}`} onClick={() => deleteUser(p.userId, p.name || p.email)}>&#128465;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${p.name || p.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(p.userId, p.name || p.email); }}>&#128465;</Button>
                     )}
                   </TableCell>
                 </TableRow>
