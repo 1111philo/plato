@@ -13,7 +13,7 @@ export default function ResetPassword() {
   const confirmRef = useRef(null);
 
   useEffect(() => {
-    document.title = 'Set new password — 1111 Learn';
+    document.title = 'Set new password — plato';
   }, []);
 
   async function handleReset() {

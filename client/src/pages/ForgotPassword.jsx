@@ -8,7 +8,7 @@ export default function ForgotPassword() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    document.title = 'Reset password — 1111 Learn';
+    document.title = 'Reset password — plato';
   }, []);
 
   async function handleSubmit() {

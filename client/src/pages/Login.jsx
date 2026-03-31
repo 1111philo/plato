@@ -13,7 +13,7 @@ export default function Login() {
   const passwordRef = useRef(null);
 
   useEffect(() => {
-    document.title = 'Sign in — 1111 Learn';
+    document.title = 'Sign in — plato';
   }, []);
 
   async function handleLogin() {
@@ -36,7 +36,7 @@ export default function Login() {
   return (
     <main className="auth-page">
       <div className="auth-card">
-        <h1>Sign in to Learn</h1>
+        <h1>Sign in to plato</h1>
         {error && <div className="auth-error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="login-email">Email</label>

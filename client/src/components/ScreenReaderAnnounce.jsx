@@ -19,7 +19,7 @@ export default function ScreenReaderAnnounce() {
 
     if (name) {
       setMessage(`Navigated to ${name}`);
-      document.title = `${name} — 1111 Learn`;
+      document.title = `${name} — plato`;
     }
   }, [location.pathname]);
 

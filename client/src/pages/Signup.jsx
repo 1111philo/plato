@@ -18,7 +18,7 @@ export default function Signup() {
   const confirmRef = useRef(null);
 
   useEffect(() => {
-    document.title = 'Create account — 1111 Learn';
+    document.title = 'Create account — plato';
     fetch('/v1/affiliations')
       .then(r => r.json())
       .then(d => setAffiliations(d.affiliations || []))
@@ -67,7 +67,7 @@ export default function Signup() {
     <main className="auth-page">
       <div className="auth-card">
         <h1>Create your account</h1>
-        <p className="auth-subtitle">You've been invited to join 1111 Learn.</p>
+        <p className="auth-subtitle">You've been invited to join plato.</p>
         {error && <div className="auth-error" role="alert">{error}</div>}
         <div className="form-group">
           <label htmlFor="signup-name">Name</label>

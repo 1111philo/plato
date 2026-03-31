@@ -40,11 +40,14 @@ export default function AppShell({ children }) {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <header role="banner">
-        <img src="/assets/icon-32.png" alt="1111" className="logo" />
-        <span className="header-title">Learn</span>
+        <img src="/assets/icon-32.png" alt="" className="logo" />
+        <span className="header-title">plato</span>
         <nav className="header-nav" aria-label="Main navigation">
           <button onClick={() => navTo('/courses')} aria-current={currentNav('/courses') ? 'page' : 'false'}>Courses</button>
           <button onClick={() => navTo('/settings')} aria-current={currentNav('/settings') ? 'page' : 'false'}>Settings</button>
+          {user?.role === 'admin' && (
+            <button onClick={() => navTo('/plato-admin')} aria-current={currentNav('/plato-admin') ? 'page' : 'false'}>Admin</button>
+          )}
         </nav>
         <div className="header-spacer" />
         <div className="user-menu">
