@@ -71,9 +71,8 @@ header {
 header > * { flex-shrink: 0; }
 
 .logo {
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  height: 20px;
+  width: auto;
 }
 
 .header-title {

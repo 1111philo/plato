@@ -40,8 +40,7 @@ export default function AppShell({ children }) {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <header role="banner">
-        <img src="/assets/icon-32.png" alt="" className="logo" />
-        <span className="header-title">plato</span>
+        <img src="/assets/logo-white.svg" alt="plato" className="logo" />
         <nav className="header-nav" aria-label="Main navigation">
           <button onClick={() => navTo('/courses')} aria-current={currentNav('/courses') ? 'page' : 'false'}>Courses</button>
           <button onClick={() => navTo('/settings')} aria-current={currentNav('/settings') ? 'page' : 'false'}>Settings</button>
