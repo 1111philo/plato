@@ -18,8 +18,7 @@ const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
 const AdminCourses = lazy(() => import('./pages/admin/AdminCourses.jsx'));
-const AdminPrompts = lazy(() => import('./pages/admin/AdminPrompts.jsx'));
-const AdminKnowledgeBase = lazy(() => import('./pages/admin/AdminKnowledgeBase.jsx'));
+const AdminAgents = lazy(() => import('./pages/admin/AdminAgents.jsx'));
 const AdminStyle = lazy(() => import('./pages/admin/AdminStyle.jsx'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'));
 
@@ -106,8 +105,7 @@ export default function App() {
           <Route index element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="courses" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
-          <Route path="prompts" element={<Suspense fallback={<AdminFallback />}><AdminPrompts /></Suspense>} />
-          <Route path="knowledge-base" element={<Suspense fallback={<AdminFallback />}><AdminKnowledgeBase /></Suspense>} />
+          <Route path="agents" element={<Suspense fallback={<AdminFallback />}><AdminAgents /></Suspense>} />
           <Route path="style" element={<Suspense fallback={<AdminFallback />}><AdminStyle /></Suspense>} />
           <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
         </Route>
