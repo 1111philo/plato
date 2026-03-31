@@ -1,5 +1,5 @@
 /**
- * SQLite backend for learn-service.
+ * SQLite backend for plato.
  * Drop-in replacement for db-dynamodb.js — same function signatures and return shapes.
  * Uses better-sqlite3 (synchronous API).
  */
@@ -11,7 +11,7 @@ import {
   REFRESH_TOKEN_TTL_DAYS, INVITE_TTL_DAYS, RESET_TOKEN_TTL_HOURS,
 } from '../config.js';
 
-const SQLITE_PATH = process.env.SQLITE_PATH || './data/learn-service.db';
+const SQLITE_PATH = process.env.SQLITE_PATH || './data/plato.db';
 
 // Ensure directory exists
 const dir = dirname(SQLITE_PATH);

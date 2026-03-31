@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: learn-service — user management and data sync for learn-extension
+Description: plato — API server, auth, data sync, AI proxy
 
 Globals:
   Function:
@@ -24,11 +24,11 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
-          JWT_SECRET: '{{resolve:ssm:/learn-service/jwt-secret}}'
-          ADMIN_EMAIL: '{{resolve:ssm:/learn-service/admin-email}}'
-          ADMIN_PASSWORD: '{{resolve:ssm:/learn-service/admin-password}}'
-          SES_FROM_EMAIL: '{{resolve:ssm:/learn-service/ses-from-email}}'
-          APP_URL: '{{resolve:ssm:/learn-service/app-url}}'
+          JWT_SECRET: '{{resolve:ssm:/plato/jwt-secret}}'
+          ADMIN_EMAIL: '{{resolve:ssm:/plato/admin-email}}'
+          ADMIN_PASSWORD: '{{resolve:ssm:/plato/admin-password}}'
+          SES_FROM_EMAIL: '{{resolve:ssm:/plato/ses-from-email}}'
+          APP_URL: '{{resolve:ssm:/plato/app-url}}'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -70,11 +70,11 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
-          JWT_SECRET: '{{resolve:ssm:/learn-service/jwt-secret}}'
-          ADMIN_EMAIL: '{{resolve:ssm:/learn-service/admin-email}}'
-          ADMIN_PASSWORD: '{{resolve:ssm:/learn-service/admin-password}}'
-          SES_FROM_EMAIL: '{{resolve:ssm:/learn-service/ses-from-email}}'
-          APP_URL: '{{resolve:ssm:/learn-service/app-url}}'
+          JWT_SECRET: '{{resolve:ssm:/plato/jwt-secret}}'
+          ADMIN_EMAIL: '{{resolve:ssm:/plato/admin-email}}'
+          ADMIN_PASSWORD: '{{resolve:ssm:/plato/admin-password}}'
+          SES_FROM_EMAIL: '{{resolve:ssm:/plato/ses-from-email}}'
+          APP_URL: '{{resolve:ssm:/plato/app-url}}'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -103,7 +103,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: learn-service-users
+      TableName: plato-users
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -127,7 +127,7 @@ Resources:
   InvitesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: learn-service-invites
+      TableName: plato-invites
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -154,7 +154,7 @@ Resources:
   RefreshTokensTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: learn-service-refresh-tokens
+      TableName: plato-refresh-tokens
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -172,7 +172,7 @@ Resources:
   SyncDataTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: learn-service-sync-data
+      TableName: plato-sync-data
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -191,7 +191,7 @@ Resources:
   AuditLogTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: learn-service-audit-log
+      TableName: plato-audit-log
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application

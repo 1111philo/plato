@@ -1,7 +1,6 @@
 /**
- * Authentication module for learn-service integration.
+ * Authentication module for plato.
  * Handles login, logout, token refresh, and authenticated requests.
- * All operations are optional — the extension works fully without auth.
  */
 
 import {
@@ -111,7 +110,7 @@ async function refreshAccessToken() {
 }
 
 /**
- * Make an authenticated request to the learn-service.
+ * Make an authenticated request to the plato server.
  * Automatically refreshes the access token on 401.
  */
 export async function authenticatedFetch(path, options = {}) {

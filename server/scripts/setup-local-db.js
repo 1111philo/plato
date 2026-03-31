@@ -13,7 +13,7 @@ const client = new DynamoDBClient({
 
 const tables = [
   {
-    TableName: 'learn-service-users',
+    TableName: 'plato-users',
     KeySchema: [{ AttributeName: 'userId', KeyType: 'HASH' }],
     AttributeDefinitions: [
       { AttributeName: 'userId', AttributeType: 'S' },
@@ -27,7 +27,7 @@ const tables = [
     BillingMode: 'PAY_PER_REQUEST',
   },
   {
-    TableName: 'learn-service-invites',
+    TableName: 'plato-invites',
     KeySchema: [{ AttributeName: 'inviteToken', KeyType: 'HASH' }],
     AttributeDefinitions: [
       { AttributeName: 'inviteToken', AttributeType: 'S' },
@@ -41,7 +41,7 @@ const tables = [
     BillingMode: 'PAY_PER_REQUEST',
   },
   {
-    TableName: 'learn-service-refresh-tokens',
+    TableName: 'plato-refresh-tokens',
     KeySchema: [{ AttributeName: 'tokenHash', KeyType: 'HASH' }],
     AttributeDefinitions: [
       { AttributeName: 'tokenHash', AttributeType: 'S' },
@@ -49,7 +49,7 @@ const tables = [
     BillingMode: 'PAY_PER_REQUEST',
   },
   {
-    TableName: 'learn-service-sync-data',
+    TableName: 'plato-sync-data',
     KeySchema: [
       { AttributeName: 'userId', KeyType: 'HASH' },
       { AttributeName: 'dataKey', KeyType: 'RANGE' },
@@ -61,7 +61,7 @@ const tables = [
     BillingMode: 'PAY_PER_REQUEST',
   },
   {
-    TableName: 'learn-service-audit-log',
+    TableName: 'plato-audit-log',
     KeySchema: [{ AttributeName: 'logId', KeyType: 'HASH' }],
     AttributeDefinitions: [
       { AttributeName: 'logId', AttributeType: 'S' },

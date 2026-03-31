@@ -9,7 +9,7 @@ import { cors } from 'hono/cors';
 
 // Configure SQLite backend
 process.env.DB_BACKEND = 'sqlite';
-process.env.SQLITE_PATH = process.env.SQLITE_PATH ?? './data/learn-service-dev.db';
+process.env.SQLITE_PATH = process.env.SQLITE_PATH ?? './data/plato-dev.db';
 process.env.SKIP_EMAIL = process.env.SKIP_EMAIL ?? 'true';
 process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret';
 process.env.ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@plato.dev';

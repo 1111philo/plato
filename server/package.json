@@ -1,7 +1,7 @@
 {
-  "name": "learn-service",
+  "name": "plato-server",
   "version": "1.0.0",
-  "description": "Cloud user management and data sync for learn-extension",
+  "description": "API server for plato",
   "type": "module",
   "scripts": {
     "test": "node --test tests/**/*.test.js",

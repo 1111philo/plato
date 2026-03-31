@@ -29,7 +29,7 @@ Thank you for your interest in contributing to plato. This project is maintained
 6. Seed content (prompts, courses, knowledge base) in a separate terminal:
    ```bash
    cd server
-   DB_BACKEND=sqlite SQLITE_PATH=./data/learn-service-dev.db node scripts/seed-content.js
+   DB_BACKEND=sqlite SQLITE_PATH=./data/plato-dev.db node scripts/seed-content.js
    ```
 
 No Docker, AWS credentials, or external services needed for local development. AI features require a Bedrock proxy connection — without it, the app is fully navigable but you can't start course conversations.

@@ -56,7 +56,7 @@ On first visit you'll create an admin account. After that, seed the prompts, cou
 ```bash
 # In a separate terminal
 cd server
-DB_BACKEND=sqlite SQLITE_PATH=./data/learn-service-dev.db node scripts/seed-content.js
+DB_BACKEND=sqlite SQLITE_PATH=./data/plato-dev.db node scripts/seed-content.js
 ```
 
 Then log in and navigate to `/plato-admin` to see the admin dashboard, or `/courses` to start learning.
@@ -142,11 +142,11 @@ Create these in AWS Systems Manager Parameter Store before deploying:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `/learn-service/jwt-secret` | SecureString | JWT signing secret |
-| `/learn-service/ses-from-email` | String | Verified SES sender email |
-| `/learn-service/app-url` | String | Public URL (for invite/reset links) |
-| `/learn-service/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
-| `/learn-service/admin-password` | SecureString | Bootstrap admin password (optional) |
+| `/plato/jwt-secret` | SecureString | JWT signing secret |
+| `/plato/ses-from-email` | String | Verified SES sender email |
+| `/plato/app-url` | String | Public URL (for invite/reset links) |
+| `/plato/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
+| `/plato/admin-password` | SecureString | Bootstrap admin password (optional) |
 
 ### Deploy
 
@@ -158,7 +158,7 @@ cd client && npm ci && npm run build && cd ..
 cd server && sam build && sam deploy
 ```
 
-See `server/template.yaml` for the full infrastructure definition and `server/samconfig.toml` for deploy config (stack: `learn-service`, region: `us-east-2`).
+See `server/template.yaml` for the full infrastructure definition and `server/samconfig.toml` for deploy config (stack: `plato`, region: `us-east-2`).
 
 After deploying, run the seed script against DynamoDB to populate prompts and courses.
 

@@ -4,7 +4,7 @@
  * Reads MD files from client/ and inserts as _system sync data.
  *
  * Usage:
- *   DB_BACKEND=sqlite SQLITE_PATH=./data/learn-service-dev.db node scripts/seed-content.js
+ *   DB_BACKEND=sqlite SQLITE_PATH=./data/plato-dev.db node scripts/seed-content.js
  *   # or with DynamoDB:
  *   DYNAMODB_ENDPOINT=http://localhost:8000 node scripts/seed-content.js
  */
