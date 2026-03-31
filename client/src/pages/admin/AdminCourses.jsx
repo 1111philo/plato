@@ -8,12 +8,18 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 export default function AdminCourses() {
   const [courses, setCourses] = useState([]);
   const [editing, setEditing] = useState(null); // { courseId, name, markdown, isNew }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [confirmSave, setConfirmSave] = useState(false);
 
   useEffect(() => {
     document.title = 'Courses — Admin';
@@ -65,6 +71,11 @@ export default function AdminCourses() {
     return (
       <div>
         <h1 className="text-2xl font-bold mb-4">{editing.isNew ? 'New Course' : `Edit: ${editing.name}`}</h1>
+        {!editing.isNew && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800" role="alert">
+            <strong>Caution:</strong> Changes to courses affect all learners immediately. Verify content before saving.
+          </div>
+        )}
         <Card>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -87,11 +98,24 @@ export default function AdminCourses() {
               />
             </div>
             <div className="flex gap-2">
-              <Button onClick={saveCourse}>Save</Button>
+              <Button onClick={() => editing.isNew ? saveCourse() : setConfirmSave(true)}>Save</Button>
               <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
+
+        <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>This will update the course for all learners immediately.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={() => { setConfirmSave(false); saveCourse(); }}>Save Changes</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
