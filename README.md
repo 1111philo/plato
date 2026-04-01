@@ -306,6 +306,12 @@ To serve the app from a custom domain:
 4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
 5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
 
+## Versioning
+
+plato uses a `Beta-RC-X` version scheme stored in `version.json`. The version is bumped automatically when a PR is merged to main via the `version-bump.yml` GitHub Action. The current version is displayed in the admin sidebar with a link to the GitHub repo.
+
+The `main` branch is protected — all changes require a pull request.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, guidelines, and how to submit changes.

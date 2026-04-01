@@ -139,10 +139,14 @@ Tests use Node's built-in test runner. All tests must pass before merging.
 
 ## Submitting changes
 
-1. Create a branch from `main` (or the default branch).
+The `main` branch is protected — direct pushes are not allowed. All changes go through pull requests.
+
+1. Create a branch from `main`.
 2. Make focused, well-described commits.
 3. Run tests — they must pass.
 4. Open a pull request with a clear summary of what changed and why.
+
+When a PR is merged, the version in `version.json` is automatically bumped.
 
 ## License
 
