@@ -463,6 +463,13 @@ export default function AdminUsers() {
     );
   }
 
+  const filterCounts = useMemo(() => ({
+    all: combinedList.length,
+    active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
+    admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
+    invited: combinedList.filter(i => i._type === 'invite').length,
+  }), [combinedList]);
+
   const filterButtons = [
     { key: 'all', label: 'All' },
     { key: 'active', label: 'Active' },
@@ -514,7 +521,7 @@ export default function AdminUsers() {
               onClick={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
             >
-              {f.label}
+              {f.label} <span className="ml-1 opacity-60">{filterCounts[f.key]}</span>
             </Button>
           ))}
         </div>
