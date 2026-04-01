@@ -370,6 +370,13 @@ export default function AdminUsers() {
     return items;
   }, [users, pendingInvites]);
 
+  const filterCounts = useMemo(() => ({
+    all: combinedList.length,
+    active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
+    admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
+    invited: combinedList.filter(i => i._type === 'invite').length,
+  }), [combinedList]);
+
   const filteredList = useMemo(() => {
     let list = combinedList;
 
@@ -462,13 +469,6 @@ export default function AdminUsers() {
       </div>
     );
   }
-
-  const filterCounts = useMemo(() => ({
-    all: combinedList.length,
-    active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
-    admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
-    invited: combinedList.filter(i => i._type === 'invite').length,
-  }), [combinedList]);
 
   const filterButtons = [
     { key: 'all', label: 'All' },
