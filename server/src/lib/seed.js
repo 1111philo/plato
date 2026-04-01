@@ -7,6 +7,7 @@ import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { hashContent } from './content-updates.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientDir = join(__dirname, '../../../client');
@@ -23,7 +24,7 @@ export async function seedDefaultContent() {
       const content = readFileSync(join(promptsDir, file), 'utf-8');
       const existing = await db.getSyncData('_system', `prompt:${name}`);
       if (!existing) {
-        await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, 0);
+        await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup', bundledHash: hashContent(content) }, 0);
         seeded++;
       }
     }
@@ -40,7 +41,7 @@ export async function seedDefaultContent() {
       if (!existing) {
         await db.putSyncData('_system', `course:${courseId}`, {
           markdown, name: courseId, isBuiltIn: true, updatedBy: 'setup',
-          createdAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(), bundledHash: hashContent(markdown),
         }, 0);
         seeded++;
       }
@@ -53,7 +54,7 @@ export async function seedDefaultContent() {
     const existing = await db.getSyncData('_system', 'knowledgeBase');
     if (!existing) {
       const content = readFileSync(kbPath, 'utf-8');
-      await db.putSyncData('_system', 'knowledgeBase', { content, updatedBy: 'setup' }, 0);
+      await db.putSyncData('_system', 'knowledgeBase', { content, updatedBy: 'setup', bundledHash: hashContent(content) }, 0);
       seeded++;
     }
   }

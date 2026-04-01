@@ -17,7 +17,8 @@ plato is an open-source, AI-powered learning platform. Learners work through cou
 - Users have a unique `username` (auto-generated if not set, editable, 3-30 chars alphanumeric/hyphens/underscores)
 - 2 Lambda functions: API Gateway (buffered CRUD) + Function URL (streaming SSE for AI chat)
 - 5 DynamoDB tables: users, invites, refresh-tokens, sync-data, audit-log
-- Content stored as `_system` sync-data: `prompt:*`, `course:*`, `knowledgeBase`, `settings`
+- Content stored as `_system` sync-data: `prompt:*`, `course:*`, `knowledgeBase`, `settings` — each record includes a `bundledHash` for change management
+- Content change management: when bundled files (`client/prompts/`, `client/data/`) differ from DB, admins see an alert on the dashboard and can accept or dismiss each update
 - User-created courses stored under user's own sync-data: `courses:custom-*`
 - 6 AI agents via Bedrock or Anthropic API: coach, course-owner, course-creator, course-extractor, learner-profile-owner, learner-profile-update
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
@@ -38,7 +39,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-80 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+93 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
@@ -87,3 +88,4 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/js/courseOwner.js` — course loading, parsing, KB management
 - `client/js/storage.js` — sync-data cache and persistence
 - `client/js/orchestrator.js` — AI agent orchestration
+- `server/src/lib/content-updates.js` — content change detection (hash comparison, bundled file reading)

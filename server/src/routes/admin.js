@@ -5,6 +5,7 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMembers, sendSlackDM } from '../lib/slack.js';
+import { getPendingUpdates, readBundledContent, hashContent } from '../lib/content-updates.js';
 import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
 
@@ -444,6 +445,63 @@ admin.put('/v1/admin/theme', async (c) => {
   if (body.logoAlt !== undefined) settings.logoAlt = body.logoAlt;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
   return c.json({ ok: true });
+});
+
+// ── Content updates (change management) ──
+
+// GET /v1/admin/content-updates — list pending upstream changes
+admin.get('/v1/admin/content-updates', async (c) => {
+  const updates = await getPendingUpdates();
+  return c.json({ updates, count: updates.length });
+});
+
+// POST /v1/admin/content-updates/accept — apply bundled content to DB
+admin.post('/v1/admin/content-updates/accept', async (c) => {
+  const { dataKey } = await c.req.json();
+  if (!dataKey) return c.json({ error: 'dataKey is required' }, 400);
+
+  const bundled = readBundledContent().find(b => b.dataKey === dataKey);
+  if (!bundled) return c.json({ error: 'Unknown content key' }, 404);
+
+  const current = await db.getSyncData('_system', dataKey);
+  const adminUser = c.get('user');
+
+  if (bundled.type === 'course') {
+    await db.putSyncData('_system', dataKey, {
+      ...(current?.data || {}),
+      markdown: bundled.content,
+      updatedBy: adminUser.userId,
+      bundledHash: bundled.hash,
+    }, current?.version || 0);
+  } else {
+    await db.putSyncData('_system', dataKey, {
+      ...(current?.data || {}),
+      content: bundled.content,
+      updatedBy: adminUser.userId,
+      bundledHash: bundled.hash,
+    }, current?.version || 0);
+  }
+
+  return c.json({ ok: true, dataKey });
+});
+
+// POST /v1/admin/content-updates/dismiss — mark update as seen without changing content
+admin.post('/v1/admin/content-updates/dismiss', async (c) => {
+  const { dataKey } = await c.req.json();
+  if (!dataKey) return c.json({ error: 'dataKey is required' }, 400);
+
+  const bundled = readBundledContent().find(b => b.dataKey === dataKey);
+  if (!bundled) return c.json({ error: 'Unknown content key' }, 404);
+
+  const current = await db.getSyncData('_system', dataKey);
+  if (!current) return c.json({ error: 'Content not found in database' }, 404);
+
+  await db.putSyncData('_system', dataKey, {
+    ...current.data,
+    bundledHash: bundled.hash,
+  }, current.version);
+
+  return c.json({ ok: true, dataKey });
 });
 
 // ── Slack integration ──

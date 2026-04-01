@@ -18,6 +18,7 @@ const clientDir = resolve(__dirname, '../../client');
 
 // Dynamic import to pick up env-driven backend
 const { default: db } = await import('../src/lib/db.js');
+const { hashContent } = await import('../src/lib/content-updates.js');
 
 async function seed() {
   console.log('Seeding content...');
@@ -32,6 +33,7 @@ async function seed() {
     await db.putSyncData('_system', `prompt:${name}`, {
       content,
       updatedBy: 'seed-script',
+      bundledHash: hashContent(content),
     }, existing?.version || 0);
     console.log(`  prompt: ${name}`);
   }
@@ -49,6 +51,7 @@ async function seed() {
       isBuiltIn: true,
       updatedBy: 'seed-script',
       createdAt: existing?.data?.createdAt || new Date().toISOString(),
+      bundledHash: hashContent(markdown),
     }, existing?.version || 0);
     console.log(`  course: ${courseId}`);
   }
@@ -60,6 +63,7 @@ async function seed() {
   await db.putSyncData('_system', 'knowledgeBase', {
     content: kbContent,
     updatedBy: 'seed-script',
+    bundledHash: hashContent(kbContent),
   }, existingKb?.version || 0);
   console.log('  knowledge base');
 
