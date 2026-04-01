@@ -51,6 +51,8 @@ cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
+cp ../version.json .aws-sam/build/PlatoApiFunction/
+cp ../version.json .aws-sam/build/PlatoStreamFunction/
 sam deploy
 ```
 
