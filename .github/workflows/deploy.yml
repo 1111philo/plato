@@ -60,7 +60,7 @@ jobs:
           --config-env ci
           --stack-name plato
           --region us-east-2
-          --resolve-s3
+          --s3-bucket aws-sam-cli-managed-default-samclisourcebucket-kicjbl4qiddh
           --s3-prefix plato
           --capabilities CAPABILITY_IAM
           --no-confirm-changeset
