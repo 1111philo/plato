@@ -140,10 +140,11 @@ System prompts are stored in the database and editable by admins at `/plato/prom
 ### Prerequisites
 
 - AWS SAM CLI
-- AWS credentials with permissions for Lambda, DynamoDB, SES, Bedrock
+- An AWS account with permissions for Lambda, DynamoDB, API Gateway, IAM, S3, and SES
 - A verified SES sender email/domain
+- An Anthropic API key or Amazon Bedrock access
 
-### SSM parameters
+### 1. SSM parameters
 
 Create these in AWS Systems Manager Parameter Store before deploying:
 
@@ -155,16 +156,28 @@ Create these in AWS Systems Manager Parameter Store before deploying:
 | `/plato/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/admin-password` | SecureString | Bootstrap admin password (optional) |
 
-### Deploy
+### 2. Configure SAM
+
+Copy the example config and customize it for your AWS account:
+
+```bash
+cd server
+cp samconfig.toml.example samconfig.toml
+# Edit samconfig.toml — set your region, stack name, and AWS profile
+```
+
+`samconfig.toml` is gitignored so your local config stays out of version control.
+
+### 3. Deploy manually
 
 ```bash
 # Build client
 cd client && npm ci && npm run build && cd ..
 
-# Build and deploy server
+# Build server
 cd server && sam build
 
-# Bundle client into Lambda deploy artifacts
+# Bundle client SPA into Lambda artifacts
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 
@@ -177,7 +190,111 @@ cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client
 sam deploy
 ```
 
-See `server/template.yaml` for the full infrastructure definition and `server/samconfig.toml` for deploy config.
+See `server/template.yaml` for the full infrastructure definition.
+
+### 4. Set up CI/CD (recommended)
+
+For production deployments, we recommend automating deploys from a **private fork** via GitHub Actions. This keeps your AWS credentials and deploy config separate from the public repo.
+
+**Create a private fork:**
+
+```bash
+gh repo fork 1111philo/plato --fork-name my-plato --org my-org --clone=false
+gh repo edit my-org/my-plato --visibility private --accept-visibility-change-consequences
+```
+
+**Set up OIDC authentication** (no static AWS keys needed):
+
+1. Ensure your AWS account has a GitHub OIDC provider (one-time setup):
+   ```bash
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --client-id-list sts.amazonaws.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+   ```
+
+2. Create an IAM role that GitHub Actions can assume. The trust policy should allow your private fork repo:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [{
+       "Effect": "Allow",
+       "Principal": {
+         "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+       },
+       "Action": "sts:AssumeRoleWithWebIdentity",
+       "Condition": {
+         "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+         "StringLike": { "token.actions.githubusercontent.com:sub": "repo:my-org/my-plato:*" }
+       }
+     }]
+   }
+   ```
+
+3. Attach a permissions policy to the role with access to CloudFormation, Lambda, S3, API Gateway, DynamoDB, IAM (for role creation), and SSM (parameter reads).
+
+**Add a deploy workflow** to your private fork at `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: cd server && npm ci && npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::YOUR_ACCOUNT_ID:role/YOUR_DEPLOY_ROLE
+          aws-region: YOUR_REGION
+      - run: cd client && npm ci && npm run build
+      - run: cd server && sam build
+      - run: |
+          cp -r client/dist server/.aws-sam/build/PlatoApiFunction/client-dist
+          cp -r client/dist server/.aws-sam/build/PlatoStreamFunction/client-dist
+      - run: |
+          mkdir -p server/.aws-sam/build/PlatoApiFunction/client-content server/.aws-sam/build/PlatoStreamFunction/client-content
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
+      - run: >
+          cd server && sam deploy
+          --config-env ci
+          --stack-name plato
+          --region YOUR_REGION
+          --s3-bucket YOUR_SAM_S3_BUCKET
+          --s3-prefix plato
+          --capabilities CAPABILITY_IAM
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+```
+
+Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, and `YOUR_SAM_S3_BUCKET` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
+
+**Workflow:** Push changes to the public repo (`origin`), then sync to your private fork (`deploy`) which triggers the CI/CD pipeline. Tests run first — deploy only happens if they pass.
 
 ### Custom domain (optional)
 
@@ -188,8 +305,6 @@ To serve the app from a custom domain:
 3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
 4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
 5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
-
-After deploying, run the seed script against DynamoDB to populate prompts and courses.
 
 ## Contributing
 

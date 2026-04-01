@@ -1,3 +1,6 @@
+# Copy to samconfig.toml and customize for your AWS account.
+# samconfig.toml is gitignored — your local config won't be committed.
+
 version = 0.1
 
 [default.build.parameters]
@@ -10,5 +13,5 @@ s3_prefix = "plato"
 region = "us-east-2"
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = false
-profile = "dase"
+# profile = "default"
 tags = "Application=\"plato\""

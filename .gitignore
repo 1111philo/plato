@@ -4,3 +4,5 @@ node_modules/
 dist/
 data/*.db*
 *.zip
+server/samconfig.toml
+.DS_Store

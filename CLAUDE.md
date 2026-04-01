@@ -56,7 +56,7 @@ sam deploy
 
 The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt/course/KB source files for seeding and content change management.
 
-Deploy config: `server/samconfig.toml` (profile: dase, region: us-east-2, stack: plato).
+Deploy config: `server/samconfig.toml` (copy from `samconfig.toml.example`, gitignored). See README.md for full deploy guide including CI/CD setup.
 
 SSM parameters: `/plato/jwt-secret`, `/plato/admin-email`, `/plato/admin-password`, `/plato/ses-from-email`, `/plato/app-url`
 
