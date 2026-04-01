@@ -94,3 +94,5 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/js/storage.js` — sync-data cache and persistence
 - `client/js/orchestrator.js` — AI agent orchestration
 - `server/src/lib/content-updates.js` — content change detection (hash comparison, bundled file reading)
+- `client/src/pages/admin/AdminContentUpdates.jsx` — admin review page for upstream content changes
+- `version.json` — current version (Beta-RC-X), auto-bumped on PR merge
