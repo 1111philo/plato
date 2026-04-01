@@ -1,0 +1,56 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: cd server && npm ci && npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-2
+
+      # Build client
+      - run: cd client && npm ci && npm run build
+
+      # Build server
+      - run: cd server && sam build
+
+      # Bundle client SPA into Lambda artifacts
+      - run: |
+          cp -r client/dist server/.aws-sam/build/PlatoApiFunction/client-dist
+          cp -r client/dist server/.aws-sam/build/PlatoStreamFunction/client-dist
+
+      # Bundle content source files (prompts, courses, KB) for seeding and change management
+      - run: |
+          mkdir -p server/.aws-sam/build/PlatoApiFunction/client-content server/.aws-sam/build/PlatoStreamFunction/client-content
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
+
+      # Deploy (no --profile flag; uses env credentials)
+      - run: cd server && sam deploy --no-confirm-changeset --no-fail-on-empty-changeset

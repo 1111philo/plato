@@ -168,6 +168,11 @@ cd server && sam build
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 
+# Bundle content source files (prompts, courses, KB) for seeding and change management
+mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
+cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
+cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
+
 # Deploy
 sam deploy
 ```

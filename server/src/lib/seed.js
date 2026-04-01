@@ -10,7 +10,10 @@ import db from './db.js';
 import { hashContent } from './content-updates.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const clientDir = join(__dirname, '../../../client');
+// Lambda build: content copied to server/client-content/; local dev: ../../client relative to server/
+const clientDir = existsSync(join(__dirname, '../../client-content/prompts'))
+  ? join(__dirname, '../../client-content')
+  : join(__dirname, '../../../client');
 
 export async function seedDefaultContent() {
   let seeded = 0;

@@ -48,10 +48,13 @@ cd client && npm ci && npm run build
 cd ../server && sam build
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
+mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
+cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
+cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
 sam deploy
 ```
 
-The client-dist copy step is required — SAM doesn't build the client. Without it, the Lambda serves "Client not built" instead of the SPA.
+The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt/course/KB source files for seeding and content change management.
 
 Deploy config: `server/samconfig.toml` (profile: dase, region: us-east-2, stack: plato).
 
