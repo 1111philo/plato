@@ -1,6 +1,11 @@
 import { Hono } from 'hono';
+import { readFileSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const content = new Hono();
 
@@ -9,6 +14,23 @@ content.use('/v1/prompts/*', authenticate);
 content.use('/v1/courses', authenticate);
 content.use('/v1/courses/*', authenticate);
 content.use('/v1/knowledge-base', authenticate);
+
+// GET /v1/version — public
+content.get('/v1/version', (c) => {
+  const paths = [
+    join(__dirname, '../../../version.json'),       // local dev
+    join(__dirname, '../../version.json'),           // Lambda build
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      try {
+        const data = JSON.parse(readFileSync(p, 'utf-8'));
+        return c.json({ version: data.version || null });
+      } catch { break; }
+    }
+  }
+  return c.json({ version: null });
+});
 
 // GET /v1/branding — public (needed for login page theming)
 content.get('/v1/branding', async (c) => {

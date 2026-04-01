@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,11 @@ const NAV_LINKS = [
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [version, setVersion] = useState(null);
+
+  useEffect(() => {
+    fetch('/v1/version').then(r => r.json()).then(d => setVersion(d.version)).catch(() => {});
+  }, []);
 
   const handleSignOut = async () => {
     await logout();
@@ -67,6 +73,19 @@ export default function AdminLayout() {
           >
             Sign Out
           </Button>
+          {version && (
+            <>
+              <Separator className="bg-primary-foreground/20" />
+              <a
+                href="https://github.com/1111philo/plato"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs opacity-60 hover:opacity-100 transition-opacity"
+              >
+                plato {version}
+              </a>
+            </>
+          )}
         </div>
       </aside>
 

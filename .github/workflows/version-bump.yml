@@ -1,0 +1,31 @@
+name: Bump version
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  bump:
+    # Skip if this push was the version bump itself
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump RC number
+        run: |
+          current=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
+          rc_num=$(echo "$current" | grep -oP '\d+$')
+          new_num=$((rc_num + 1))
+          echo "{\"version\": \"Beta-RC-${new_num}\"}" > version.json
+          echo "Bumped $current -> Beta-RC-${new_num}"
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          git commit -m "Bump version to $(python3 -c "import json; print(json.load(open('version.json'))['version'])") [skip ci]"
+          git push
