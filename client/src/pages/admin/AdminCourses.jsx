@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,8 +28,12 @@ import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 
 export default function AdminCourses() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isNewRoute = location.pathname.endsWith('/new');
+
   const [courses, setCourses] = useState([]);
-  const [editing, setEditing] = useState(null); // { courseId, name, markdown, isNew }
+  const [editing, setEditing] = useState(null); // { courseId, name, markdown }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -79,18 +84,17 @@ export default function AdminCourses() {
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
-  // New course creation with AI Chat / Markdown tabs
-  if (editing?.isNew) {
+  // New course creation via AI Chat
+  if (isNewRoute) {
     return (
       <NewCourseView
         onSave={async (name, markdown) => {
           const courseId = name.trim().replace(/\s+/g, '-').toLowerCase();
           await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { markdown, name });
           setMessage({ text: 'Course created.', type: 'success' });
-          setEditing(null);
           loadCourses();
         }}
-        onCancel={() => setEditing(null)}
+        onCancel={() => navigate('/plato/courses')}
         onError={(text) => setMessage({ text, type: 'error' })}
       />
     );
@@ -147,7 +151,7 @@ export default function AdminCourses() {
         </div>
       )}
 
-      <Button className="mb-4" onClick={() => setEditing({ courseId: '', name: '', markdown: '', isNew: true })}>
+      <Button className="mb-4" onClick={() => navigate('/plato/courses/new')}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Add Course
       </Button>
@@ -224,6 +228,7 @@ function MarkdownEditor({ name, markdown, onNameChange, onMarkdownChange, onSave
 // -- New course view with AI Chat / Markdown tabs -----------------------------
 
 function NewCourseView({ onSave, onCancel, onError }) {
+  useEffect(() => { document.title = 'New Course — Admin'; }, []);
   const [chatMessages, setChatMessages] = useState([]);
   const [readiness, setReadiness] = useState(0);
   const [busy, setBusy] = useState('');
