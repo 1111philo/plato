@@ -16,12 +16,12 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      id-token: write
     steps:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          review_comment_prefix: "**Claude Review:**"
-          direct_prompt: |
+          prompt: |
             Review this PR following the guidelines in REVIEW.md and CLAUDE.md.
             Focus on accessibility, security, and test coverage.
             Be concise — flag real issues, skip style nitpicks.
