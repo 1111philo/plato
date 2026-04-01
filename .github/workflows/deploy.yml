@@ -57,6 +57,7 @@ jobs:
       # Deploy (override samconfig profile — CI uses OIDC env credentials)
       - run: >
           cd server && sam deploy
+          --config-file /dev/null
           --stack-name plato
           --region us-east-2
           --resolve-s3
