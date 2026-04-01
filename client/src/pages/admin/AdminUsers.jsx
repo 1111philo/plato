@@ -110,27 +110,48 @@ export default function AdminUsers() {
 
   function addEmailsToQueue(raw) {
     const parts = raw.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    const toAdd = [];
     let skipped = 0;
+
     setEmailQueue(prev => {
       const existing = new Set(prev);
       const next = [...prev];
       for (const email of parts) {
-        if (!emailRegex.test(email)) { skipped++; continue; }
-        if (existing.has(email) || existingEmails.has(email)) { skipped++; continue; }
+        if (!emailRegex.test(email) || existing.has(email) || existingEmails.has(email)) {
+          continue;
+        }
         existing.add(email);
         next.push(email);
+        toAdd.push(email);
       }
       return next;
     });
-    return skipped;
+
+    skipped = parts.length - toAdd.length;
+    return { skipped, total: parts.length };
   }
 
   function handleAddEmails() {
     if (!inviteInput.trim()) return;
     setInviteNotice(null);
-    const skipped = addEmailsToQueue(inviteInput);
+    const parts = inviteInput.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    // Check against current queue + existing users before setState
+    const skipped = parts.filter(email =>
+      !emailRegex.test(email) || existingEmails.has(email) || emailQueue.includes(email)
+    ).length;
+
+    setEmailQueue(prev => {
+      const existing = new Set(prev);
+      const next = [...prev];
+      for (const email of parts) {
+        if (!emailRegex.test(email) || existing.has(email) || existingEmails.has(email)) continue;
+        existing.add(email);
+        next.push(email);
+      }
+      return next;
+    });
+
     if (skipped > 0) {
-      const parts = inviteInput.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
       const msg = parts.length === 1
         ? 'This user already exists or has a pending invite.'
         : `${skipped} of ${parts.length} skipped (already exist or have pending invites).`;
