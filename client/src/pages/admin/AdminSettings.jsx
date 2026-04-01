@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function AdminSettings() {
+  const [tab, setTab] = useState('styles');
   const [primary, setPrimary] = useState('#8b1a1a');
   const [accent, setAccent] = useState('#dc2626');
   const [logoBase64, setLogoBase64] = useState(null);
@@ -152,140 +153,183 @@ export default function AdminSettings() {
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
+  const tabs = [
+    { key: 'styles', label: 'Styles' },
+    { key: 'integrations', label: 'Integrations' },
+  ];
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Settings</h1>
-      <p className="text-sm text-muted-foreground mb-4">Classroom style and branding. These settings only affect the learner-facing classroom.</p>
+      <h1 className="text-2xl font-bold mb-4">Settings</h1>
 
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Colors</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Set two colors — contrast is derived automatically.</p>
-          <div className="flex flex-wrap gap-6">
-            <div className="flex items-center gap-3">
-              <input type="color" value={primary} onChange={e => setPrimary(e.target.value)}
-                className="w-12 h-12 rounded-lg border border-border cursor-pointer p-0.5" aria-label="Primary color" />
-              <div>
-                <Label>Primary</Label>
-                <p className="text-xs text-muted-foreground">Header, buttons, badges</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <input type="color" value={accent} onChange={e => setAccent(e.target.value)}
-                className="w-12 h-12 rounded-lg border border-border cursor-pointer p-0.5" aria-label="Accent color" />
-              <div>
-                <Label>Accent</Label>
-                <p className="text-xs text-muted-foreground">Links, focus rings</p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg overflow-hidden border border-border" aria-label="Theme preview">
-            <div className="px-4 py-2 flex items-center gap-2 text-sm" style={{ backgroundColor: primary, color: lum(primary) < 0.4 ? '#fff' : '#1a1a1a' }}>
-              <span className="font-semibold">Header Preview</span>
-              <span className="ml-auto opacity-80">Nav Item</span>
-            </div>
-            <div className="px-4 py-3 bg-background text-sm space-y-2">
-              <p>Body text on white background.</p>
-              <a href="#" onClick={e => e.preventDefault()} style={{ color: accent }} className="underline">Accent link</a>
-              <div className="flex gap-2 mt-2">
-                <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: primary, color: lum(primary) < 0.4 ? '#fff' : '#1a1a1a' }}>Badge</span>
-                <span className="px-2 py-0.5 rounded text-xs font-medium border" style={{ borderColor: accent, color: accent }}>Outline</span>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Classroom Logo</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
-          <p className="text-xs text-muted-foreground">Square, at least 512×512px. SVG preferred.</p>
-          <div className="space-y-2">
-            <Label htmlFor="logo-alt">Logo alt text</Label>
-            <Input id="logo-alt" type="text" value={logoAlt} placeholder="Your organization name" onChange={e => setLogoAlt(e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="logo-file">Upload logo</Label>
-            <Input id="logo-file" type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp" onChange={handleLogoUpload} />
-            {logoError && <p className="text-sm text-destructive">{logoError}</p>}
-          </div>
-          {logoBase64 && (
-            <div className="p-4 rounded-lg text-center" style={{ backgroundColor: primary }}>
-              <img src={logoBase64} alt={logoAlt || 'Logo preview'} className="max-h-12 inline-block" />
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="flex items-center gap-3 mb-6">
-        <Button onClick={saveStyle} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
-        {message && <span role="status" aria-live="polite" className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
+      <div className="border-b border-border mb-6" role="tablist" aria-label="Settings sections">
+        <div className="flex gap-6">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              id={`tab-${t.key}`}
+              type="button"
+              onClick={() => setTab(t.key)}
+              role="tab"
+              aria-selected={tab === t.key}
+              aria-controls={`panel-${t.key}`}
+              tabIndex={tab === t.key ? 0 : -1}
+              onKeyDown={e => {
+                const keys = tabs.map(t => t.key);
+                const idx = keys.indexOf(tab);
+                if (e.key === 'ArrowRight') { e.preventDefault(); const next = keys[(idx + 1) % keys.length]; setTab(next); document.getElementById(`tab-${next}`)?.focus(); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = keys[(idx - 1 + keys.length) % keys.length]; setTab(prev); document.getElementById(`tab-${prev}`)?.focus(); }
+              }}
+              className={`pb-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                tab === t.key
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <h2 className="text-xl font-bold mb-1">Integrations</h2>
-      <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato's functionality.</p>
+      {tab === 'styles' && (
+        <div role="tabpanel" id="panel-styles" aria-labelledby="tab-styles">
+          <p className="text-sm text-muted-foreground mb-4">Classroom style and branding. These settings only affect the learner-facing classroom.</p>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
-            </svg>
-            Slack
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {slackConnected ? (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm">Connected to <strong>{slackWorkspace}</strong></span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Slack invites are available in the Invite Users dialog on the Users page.
-              </p>
-              <Button variant="outline" onClick={disconnectSlack} disabled={slackSaving}>
-                {slackSaving ? 'Disconnecting...' : 'Disconnect'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Connect your Slack workspace to invite users via DM. Create a Slack app at{' '}
-                <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="underline">api.slack.com/apps</a>,
-                install it to your workspace, and paste the Bot User OAuth Token below.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="slack-token">Bot User OAuth Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="slack-token"
-                    type="password"
-                    placeholder="xoxb-..."
-                    value={slackToken}
-                    onChange={e => setSlackToken(e.target.value)}
-                    className="flex-1 font-mono"
-                  />
-                  <Button variant="outline" onClick={testSlackConnection} disabled={slackTesting || !slackToken.trim()}>
-                    {slackTesting ? 'Testing...' : 'Test Connection'}
-                  </Button>
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Colors</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">Set two colors — contrast is derived automatically.</p>
+              <div className="flex flex-wrap gap-6">
+                <div className="flex items-center gap-3">
+                  <input type="color" value={primary} onChange={e => setPrimary(e.target.value)}
+                    className="w-12 h-12 rounded-lg border border-border cursor-pointer p-0.5" aria-label="Primary color" />
+                  <div>
+                    <Label>Primary</Label>
+                    <p className="text-xs text-muted-foreground">Header, buttons, badges</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input type="color" value={accent} onChange={e => setAccent(e.target.value)}
+                    className="w-12 h-12 rounded-lg border border-border cursor-pointer p-0.5" aria-label="Accent color" />
+                  <div>
+                    <Label>Accent</Label>
+                    <p className="text-xs text-muted-foreground">Links, focus rings</p>
+                  </div>
                 </div>
               </div>
-              {slackWorkspace && !slackConnected && (
-                <Button onClick={saveSlackIntegration} disabled={slackSaving}>
-                  {slackSaving ? 'Saving...' : `Connect to ${slackWorkspace}`}
-                </Button>
+              <div className="rounded-lg overflow-hidden border border-border" aria-label="Theme preview">
+                <div className="px-4 py-2 flex items-center gap-2 text-sm" style={{ backgroundColor: primary, color: lum(primary) < 0.4 ? '#fff' : '#1a1a1a' }}>
+                  <span className="font-semibold">Header Preview</span>
+                  <span className="ml-auto opacity-80">Nav Item</span>
+                </div>
+                <div className="px-4 py-3 bg-background text-sm space-y-2">
+                  <p>Body text on white background.</p>
+                  <a href="#" onClick={e => e.preventDefault()} style={{ color: accent }} className="underline">Accent link</a>
+                  <div className="flex gap-2 mt-2">
+                    <span className="px-2 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: primary, color: lum(primary) < 0.4 ? '#fff' : '#1a1a1a' }}>Badge</span>
+                    <span className="px-2 py-0.5 rounded text-xs font-medium border" style={{ borderColor: accent, color: accent }}>Outline</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="mb-6">
+            <CardHeader><CardTitle>Classroom Logo</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">Appears in the classroom header and favicon. If not set, the plato logo is used.</p>
+              <p className="text-xs text-muted-foreground">Square, at least 512×512px. SVG preferred.</p>
+              <div className="space-y-2">
+                <Label htmlFor="logo-alt">Logo alt text</Label>
+                <Input id="logo-alt" type="text" value={logoAlt} placeholder="Your organization name" onChange={e => setLogoAlt(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="logo-file">Upload logo</Label>
+                <Input id="logo-file" type="file" accept="image/svg+xml,image/png,image/jpeg,image/webp" onChange={handleLogoUpload} />
+                {logoError && <p className="text-sm text-destructive">{logoError}</p>}
+              </div>
+              {logoBase64 && (
+                <div className="p-4 rounded-lg text-center" style={{ backgroundColor: primary }}>
+                  <img src={logoBase64} alt={logoAlt || 'Logo preview'} className="max-h-12 inline-block" />
+                </div>
               )}
-            </>
-          )}
-          {slackMessage && (
-            <span role="status" aria-live="polite" className={`text-sm ${slackMessage.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>
-              {slackMessage.text}
-            </span>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center gap-3">
+            <Button onClick={saveStyle} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+            {message && <span role="status" aria-live="polite" className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
+          </div>
+        </div>
+      )}
+
+      {tab === 'integrations' && (
+        <div role="tabpanel" id="panel-integrations" aria-labelledby="tab-integrations">
+          <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato's functionality.</p>
+
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
+                </svg>
+                Slack
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {slackConnected ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-sm">Connected to <strong>{slackWorkspace}</strong></span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Slack invites are available in the Invite Users dialog on the Users page.
+                  </p>
+                  <Button variant="outline" onClick={disconnectSlack} disabled={slackSaving}>
+                    {slackSaving ? 'Disconnecting...' : 'Disconnect'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Connect your Slack workspace to invite users via DM. Create a Slack app at{' '}
+                    <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="underline">api.slack.com/apps</a>,
+                    install it to your workspace, and paste the Bot User OAuth Token below.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="slack-token">Bot User OAuth Token</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="slack-token"
+                        type="password"
+                        placeholder="xoxb-..."
+                        value={slackToken}
+                        onChange={e => setSlackToken(e.target.value)}
+                        className="flex-1 font-mono"
+                      />
+                      <Button variant="outline" onClick={testSlackConnection} disabled={slackTesting || !slackToken.trim()}>
+                        {slackTesting ? 'Testing...' : 'Test Connection'}
+                      </Button>
+                    </div>
+                  </div>
+                  {slackWorkspace && !slackConnected && (
+                    <Button onClick={saveSlackIntegration} disabled={slackSaving}>
+                      {slackSaving ? 'Saving...' : `Connect to ${slackWorkspace}`}
+                    </Button>
+                  )}
+                </>
+              )}
+              {slackMessage && (
+                <span role="status" aria-live="polite" className={`text-sm ${slackMessage.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>
+                  {slackMessage.text}
+                </span>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
