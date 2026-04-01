@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -60,6 +61,9 @@ const AGENTS = [
 ];
 
 export default function AdminAgents() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'knowledge';
+  const setTab = (t) => setSearchParams({ tab: t }, { replace: true });
   const [prompts, setPrompts] = useState({});
   const [knowledgeBase, setKnowledgeBase] = useState('');
   const [kbDraft, setKbDraft] = useState('');
@@ -177,8 +181,8 @@ export default function AdminAgents() {
         </div>
       )}
 
-      <Tabs defaultValue="knowledge" className="space-y-4">
-        <TabsList>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList aria-label="Agents and knowledge sections">
           <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
         </TabsList>

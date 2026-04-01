@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
@@ -225,15 +224,11 @@ function MarkdownEditor({ name, markdown, onNameChange, onMarkdownChange, onSave
 // -- New course view with AI Chat / Markdown tabs -----------------------------
 
 function NewCourseView({ onSave, onCancel, onError }) {
-  const [mode, setMode] = useState('chat'); // 'chat' | 'markdown' | 'markdown-only'
   const [chatMessages, setChatMessages] = useState([]);
   const [readiness, setReadiness] = useState(0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-
-  // Markdown editor state
-  const [name, setName] = useState('');
-  const [markdown, setMarkdown] = useState('');
+  const [key, setKey] = useState(0); // increment to restart conversation
 
   // Streaming
   const [streamingText, setStreamingText] = useState(null);
@@ -251,11 +246,14 @@ function NewCourseView({ onSave, onCancel, onError }) {
     }
   }, [displayText]);
 
-  // Start conversation on mount
+  // Start conversation on mount (and on key change after course creation)
   useEffect(() => {
     let cancelled = false;
+    setChatMessages([]);
+    setReadiness(0);
     setBusy('starting');
     setStreamingText('');
+    setError('');
 
     (async () => {
       try {
@@ -276,7 +274,11 @@ function NewCourseView({ onSave, onCancel, onError }) {
     })();
 
     return () => { cancelled = true; };
-  }, []);
+  }, [key]);
+
+  // Keep a ref to chatMessages so handleSend always has the latest
+  const chatMessagesRef = useRef(chatMessages);
+  useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
 
   const handleSend = useCallback(async ({ text }) => {
     if (!text?.trim()) return;
@@ -288,7 +290,7 @@ function NewCourseView({ onSave, onCancel, onError }) {
     setChatMessages(prev => [...prev, userMsg]);
 
     try {
-      const tail = [...chatMessages, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
+      const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
 
       const raw = await converseStream(
         'course-creator',
@@ -306,9 +308,9 @@ function NewCourseView({ onSave, onCancel, onError }) {
       setStreamingText(null);
       setBusy('');
     }
-  }, [chatMessages]);
+  }, []);
 
-  async function handleCreateFromChat() {
+  async function handleCreate() {
     setError('');
     setBusy('creating');
     try {
@@ -318,73 +320,26 @@ function NewCourseView({ onSave, onCancel, onError }) {
       const course = parseCoursePrompt(courseId, md);
 
       if (!course.name || !course.exemplar || !course.learningObjectives.length) {
-        setError('Could not build a complete course. Keep refining with the agent, or switch to markdown.');
+        setError('Could not build a complete course. Keep refining with the agent.');
         setBusy('');
         return;
       }
 
       await onSave(course.name, md);
+      // Reset chat for another course
+      setKey(k => k + 1);
     } catch (e) {
       setError(e.message || 'Failed to create course.');
       setBusy('');
     }
   }
 
-  async function handleSwitchToMarkdown() {
-    setError('');
-    setBusy('extracting');
-    try {
-      const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
-      const md = await extractCourseMarkdown(conversationText);
-      const course = parseCoursePrompt('temp', md);
-      setName(course.name || '');
-      setMarkdown(md);
-      setMode('markdown-only');
-    } catch (e) {
-      setError(e.message || 'Failed to extract course.');
-    }
-    setBusy('');
-  }
-
-  async function handleSaveMarkdown() {
-    if (!name.trim()) { setError('Course name is required.'); return; }
-    if (!markdown.trim()) { setError('Course markdown is required.'); return; }
-    try {
-      await onSave(name, markdown);
-    } catch (e) {
-      onError(e.message);
-    }
-  }
-
   const isBusy = !!busy;
-  const canCreate = readiness >= 7 && !isBusy;
-  const canSwitch = readiness >= 3 && !isBusy;
 
   const renderMessage = (msg, idx) => {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return <AssistantMessage key={idx} content={msg.content} />;
   };
-
-  // After switching from chat to markdown — show markdown editor only
-  if (mode === 'markdown-only') {
-    return (
-      <div>
-        <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to courses">&larr; Back</Button>
-          <h1 className="text-2xl font-bold">New Course</h1>
-        </div>
-        {error && <div className="rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert">{error}</div>}
-        <MarkdownEditor
-          name={name}
-          markdown={markdown}
-          onNameChange={setName}
-          onMarkdownChange={setMarkdown}
-          onSave={handleSaveMarkdown}
-          onCancel={onCancel}
-        />
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -400,96 +355,73 @@ function NewCourseView({ onSave, onCancel, onError }) {
         </div>
       )}
 
-      <Tabs defaultValue="chat" value={mode} onValueChange={setMode}>
-        <TabsList>
-          <TabsTrigger value="chat">AI Chat</TabsTrigger>
-          <TabsTrigger value="markdown">Markdown</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="chat" className="mt-4">
-          {/* Readiness bar */}
-          {chatMessages.length > 0 && (
-            <div
-              className="mb-4"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={10}
-              aria-valuenow={readiness}
-              aria-label={`Course readiness: ${readiness} out of 10`}
+      {/* Readiness bar + Create Course button */}
+      {(chatMessages.length > 0 || displayText != null) && (
+        <div className="flex items-end gap-4 mb-4">
+          <div
+            className="flex-1"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={10}
+            aria-valuenow={readiness}
+            aria-label={`Course readiness: ${readiness} out of 10`}
+          >
+            <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
+              <span>Not ready</span>
+              <span>Ready</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${readiness * 10}%`,
+                  backgroundColor: `hsl(${readiness * 12}, 80%, 45%)`,
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => setKey(k => k + 1)}
+              disabled={isBusy}
+              size="sm"
+              aria-label="Start over"
+              title="Start over"
             >
-              <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
-                <span>Not ready</span>
-                <span>Ready</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{
-                    width: `${readiness * 10}%`,
-                    backgroundColor: `hsl(${readiness * 12}, 80%, 45%)`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
+              &#8635;
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={isBusy}
+              size="sm"
+            >
+              {busy === 'creating' ? 'Creating...' : 'Create Course'}
+            </Button>
+          </div>
+        </div>
+      )}
 
-          {/* Chat area */}
-          <Card className="p-0 overflow-hidden mb-4">
-            <div className="max-h-[400px] overflow-y-auto">
-              <ChatArea courseName="Course Creator">
-                {chatMessages.map(renderMessage)}
-                {displayText != null && displayText.length > 0 && (
-                  <AssistantMessage content={displayText} />
-                )}
-                {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
-                {busy === 'creating' && <ThinkingSpinner text="Generating course..." />}
-                {busy === 'extracting' && <ThinkingSpinner text="Extracting course..." />}
-                {busy === 'qa' && !displayText && <ThinkingSpinner />}
-              </ChatArea>
-            </div>
-          </Card>
+      {/* Chat + compose in a single container */}
+      <div className="rounded-2xl bg-muted/40 border border-border p-4">
+        <div className="mb-3 [&>div]:max-h-[500px]">
+          <ChatArea courseName="Course Creator">
+            {chatMessages.map(renderMessage)}
+            {displayText != null && displayText.length > 0 && (
+              <AssistantMessage content={displayText} />
+            )}
+            {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+            {busy === 'creating' && <ThinkingSpinner text="Generating course..." />}
+            {busy === 'qa' && !displayText && <ThinkingSpinner />}
+          </ChatArea>
+        </div>
 
-          <ComposeBar
-            placeholder="Describe what you want to teach..."
-            onSend={handleSend}
-            disabled={isBusy}
-          />
-
-          {/* Action buttons */}
-          {chatMessages.length > 0 && (
-            <div className="flex items-center gap-2 mt-4">
-              <Button
-                onClick={handleCreateFromChat}
-                disabled={isBusy}
-                size="sm"
-              >
-                {busy === 'creating' ? 'Creating...' : 'Create Course'}
-              </Button>
-              {canSwitch && (
-                <Button
-                  variant="outline"
-                  onClick={handleSwitchToMarkdown}
-                  disabled={isBusy}
-                  size="sm"
-                >
-                  {busy === 'extracting' ? 'Extracting...' : 'Switch to Markdown'}
-                </Button>
-              )}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="markdown" className="mt-4">
-          <MarkdownEditor
-            name={name}
-            markdown={markdown}
-            onNameChange={setName}
-            onMarkdownChange={setMarkdown}
-            onSave={handleSaveMarkdown}
-            onCancel={onCancel}
-          />
-        </TabsContent>
-      </Tabs>
+        <ComposeBar
+          placeholder="Describe what you want to teach..."
+          onSend={handleSend}
+          disabled={isBusy}
+        />
+      </div>
     </div>
   );
 }

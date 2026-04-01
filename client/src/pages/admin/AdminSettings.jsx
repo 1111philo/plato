@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export default function AdminSettings() {
-  const [tab, setTab] = useState('styles');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'styles';
+  const setTab = (t) => setSearchParams({ tab: t }, { replace: true });
   const [primary, setPrimary] = useState('#8b1a1a');
   const [accent, setAccent] = useState('#dc2626');
   const [logoBase64, setLogoBase64] = useState(null);
@@ -153,47 +157,17 @@ export default function AdminSettings() {
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
-  const tabs = [
-    { key: 'styles', label: 'Styles' },
-    { key: 'integrations', label: 'Integrations' },
-  ];
-
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Settings</h1>
 
-      <div className="border-b border-border mb-6" role="tablist" aria-label="Settings sections">
-        <div className="flex gap-6">
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              id={`tab-${t.key}`}
-              type="button"
-              onClick={() => setTab(t.key)}
-              role="tab"
-              aria-selected={tab === t.key}
-              aria-controls={`panel-${t.key}`}
-              tabIndex={tab === t.key ? 0 : -1}
-              onKeyDown={e => {
-                const keys = tabs.map(t => t.key);
-                const idx = keys.indexOf(tab);
-                if (e.key === 'ArrowRight') { e.preventDefault(); const next = keys[(idx + 1) % keys.length]; setTab(next); document.getElementById(`tab-${next}`)?.focus(); }
-                if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = keys[(idx - 1 + keys.length) % keys.length]; setTab(prev); document.getElementById(`tab-${prev}`)?.focus(); }
-              }}
-              className={`pb-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                tab === t.key
-                  ? 'border-primary text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList aria-label="Settings sections">
+          <TabsTrigger value="styles">Styles</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+        </TabsList>
 
-      {tab === 'styles' && (
-        <div role="tabpanel" id="panel-styles" aria-labelledby="tab-styles">
+        <TabsContent value="styles">
           <p className="text-sm text-muted-foreground mb-4">Classroom style and branding. These settings only affect the learner-facing classroom.</p>
 
           <Card className="mb-6">
@@ -261,11 +235,9 @@ export default function AdminSettings() {
             <Button onClick={saveStyle} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
             {message && <span role="status" aria-live="polite" className={`text-sm ${message.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>{message.text}</span>}
           </div>
-        </div>
-      )}
+        </TabsContent>
 
-      {tab === 'integrations' && (
-        <div role="tabpanel" id="panel-integrations" aria-labelledby="tab-integrations">
+        <TabsContent value="integrations">
           <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato's functionality.</p>
 
           <Card className="mb-6">
@@ -328,8 +300,8 @@ export default function AdminSettings() {
               )}
             </CardContent>
           </Card>
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
