@@ -1,0 +1,24 @@
+# Code Review Guidelines
+
+Review instructions for the Claude GitHub App. These apply in addition to CLAUDE.md.
+
+## Critical — always flag
+
+- **Accessibility:** Every interactive element (button, input, link, toggle) must be keyboard-operable and have an accessible name (aria-label, role, etc.). Missing accessibility is a blocking issue.
+- **Security:** No command injection, XSS, SQL injection, or secrets in code. Auth tokens only in `plato_auth` localStorage key.
+- **Tests:** Server-side changes to routes or lib should have corresponding tests in `server/tests/`. Check that `npm test` would still pass.
+- **Content change management:** Changes to files in `client/prompts/` or `client/data/` will surface as pending updates for admins on existing installs. This is expected — just note it in the review.
+
+## Important — flag as suggestions
+
+- **Docs:** Changes that affect architecture, features, or dev workflow should update CLAUDE.md, README.md, or CONTRIBUTING.md.
+- **Admin pages** (`/plato/*`) must not use classroom branding (no BrandingProvider, no usePublicBranding).
+- **Classroom pages** must use BrandingProvider context.
+- **Auth pages** (login, signup, forgot-password, reset-password) must use usePublicBranding hook.
+- **API consistency:** User group responses use `{ userGroups: [...] }`. Sync data uses optimistic locking via version field.
+
+## Skip — do not flag
+
+- Files in `dist/`, `.aws-sam/`, `node_modules/`
+- Bundle size changes
+- Minor style preferences (semicolons, trailing commas) — the project has no linter enforcing these
