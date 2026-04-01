@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
@@ -10,8 +10,10 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+
+const PAGE_SIZE = 20;
 
 function parseCsvEmails(text) {
   const lines = text.split(/\r?\n/);
@@ -34,6 +36,8 @@ function parseCsvEmails(text) {
   return emails;
 }
 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
@@ -45,15 +49,19 @@ export default function AdminUsers() {
   // Modal states
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
-  const [editUser, setEditUser] = useState(null); // user object being edited
+  const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '' });
 
-  // Invite form
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [csvEmails, setCsvEmails] = useState(null);
-  const [csvInvalid, setCsvInvalid] = useState([]);
-  const [csvPreview, setCsvPreview] = useState(false);
+  // Invite modal state
+  const [inviteInput, setInviteInput] = useState('');
+  const [emailQueue, setEmailQueue] = useState([]);
+  const [inviteSending, setInviteSending] = useState(false);
   const csvRef = useRef(null);
+
+  // Search, filter, pagination
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
   // Groups form
   const [newGroupName, setNewGroupName] = useState('');
@@ -78,17 +86,83 @@ export default function AdminUsers() {
     loadData();
   }, [loadData]);
 
-  async function sendInvite() {
-    const email = inviteEmail.trim();
-    if (!email) { setMessage({ text: 'Email is required.', type: 'error' }); return; }
+  // -- Invite modal logic --
+
+  const existingEmails = useMemo(() => {
+    const set = new Set();
+    for (const u of users) set.add(u.email.toLowerCase());
+    for (const inv of pendingInvites) set.add(inv.email.toLowerCase());
+    return set;
+  }, [users, pendingInvites]);
+
+  function addEmailsToQueue(raw) {
+    const parts = raw.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    let skipped = 0;
+    setEmailQueue(prev => {
+      const existing = new Set(prev);
+      const next = [...prev];
+      for (const email of parts) {
+        if (!emailRegex.test(email)) { skipped++; continue; }
+        if (existing.has(email) || existingEmails.has(email)) { skipped++; continue; }
+        existing.add(email);
+        next.push(email);
+      }
+      return next;
+    });
+    return skipped;
+  }
+
+  function handleAddEmails() {
+    if (!inviteInput.trim()) return;
+    addEmailsToQueue(inviteInput);
+    setInviteInput('');
+  }
+
+  function handleCsvFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const emails = parseCsvEmails(ev.target.result);
+      addEmailsToQueue(emails.join(','));
+      if (csvRef.current) csvRef.current.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  function removeFromQueue(email) {
+    setEmailQueue(prev => prev.filter(e => e !== email));
+  }
+
+  async function sendInvites() {
+    if (emailQueue.length === 0) return;
+    setInviteSending(true);
     try {
-      const data = await adminApi('POST', '/v1/admin/invites', { email });
-      setMessage({ text: `Invite sent to ${email}.${data.signupUrl ? ` Link: ${data.signupUrl}` : ''}`, type: 'success' });
-      setInviteEmail('');
+      const data = await adminApi('POST', '/v1/admin/invites/bulk', { emails: emailQueue });
+      const parts = [];
+      if (data.sent > 0) parts.push(`${data.sent} invite(s) sent`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+      setMessage({ text: parts.join('. ') + '.', type: data.sent > 0 ? 'success' : 'error' });
+      setEmailQueue([]);
       setInviteOpen(false);
       loadData();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+    } catch (e) {
+      setMessage({ text: e.message, type: 'error' });
+    } finally {
+      setInviteSending(false);
+    }
   }
+
+  function handleInviteClose(open) {
+    if (!open) {
+      setEmailQueue([]);
+      setInviteInput('');
+      if (csvRef.current) csvRef.current.value = '';
+    }
+    setInviteOpen(open);
+  }
+
+  // -- User actions --
 
   async function resendInvite(email) {
     try {
@@ -108,31 +182,7 @@ export default function AdminUsers() {
     catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  function handleCsvFile(e) {
-    const file = e.target.files[0];
-    if (!file) { setCsvPreview(false); setCsvEmails(null); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const emails = parseCsvEmails(ev.target.result);
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      setCsvEmails(emails.filter(em => emailRegex.test(em)));
-      setCsvInvalid(emails.filter(em => !emailRegex.test(em)));
-      setCsvPreview(true);
-    };
-    reader.readAsText(file);
-  }
-
-  async function sendBulkInvites() {
-    if (!csvEmails?.length) return;
-    try {
-      const data = await adminApi('POST', '/v1/admin/invites/bulk', { emails: csvEmails });
-      setMessage({ text: `${data.sent} invite(s) sent. ${data.skipped} skipped.`, type: 'success' });
-      setCsvPreview(false); setCsvEmails(null);
-      if (csvRef.current) csvRef.current.value = '';
-      setInviteOpen(false);
-      loadData();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
+  // -- Groups --
 
   async function addGroup() {
     const name = newGroupName.trim();
@@ -150,6 +200,8 @@ export default function AdminUsers() {
       setGroups(data.userGroups || []);
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
+
+  // -- Edit user --
 
   function openEditUser(u) {
     setEditUser(u);
@@ -173,6 +225,48 @@ export default function AdminUsers() {
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
+
+  // -- Filtering, search, pagination --
+
+  const combinedList = useMemo(() => {
+    // Build unified list: invites first, then users
+    const items = [];
+    for (const inv of pendingInvites) {
+      items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, createdAt: inv.createdAt, _invite: inv });
+    }
+    for (const u of users) {
+      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, createdAt: u.createdAt, _user: u });
+    }
+    return items;
+  }, [users, pendingInvites]);
+
+  const filteredList = useMemo(() => {
+    let list = combinedList;
+
+    // Apply filter
+    if (filter === 'active') list = list.filter(i => i._type === 'user' && i.role === 'user');
+    else if (filter === 'admins') list = list.filter(i => i._type === 'user' && i.role === 'admin');
+    else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
+
+    // Apply search
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(i =>
+        (i.email && i.email.toLowerCase().includes(q)) ||
+        (i.name && i.name.toLowerCase().includes(q)) ||
+        (i.username && i.username.toLowerCase().includes(q))
+      );
+    }
+
+    return list;
+  }, [combinedList, filter, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = filteredList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  // Reset page when filter/search changes
+  useEffect(() => { setPage(1); }, [filter, search]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -239,6 +333,13 @@ export default function AdminUsers() {
     );
   }
 
+  const filterButtons = [
+    { key: 'all', label: 'All' },
+    { key: 'active', label: 'Active' },
+    { key: 'admins', label: 'Admins' },
+    { key: 'invited', label: 'Invited' },
+  ];
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -264,92 +365,155 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {(pendingInvites.length > 0 || users.length > 0) ? (
-        <div className="rounded-lg border overflow-hidden">
-          <Table aria-label="Users and invites">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Username</TableHead>
-                <TableHead>Group</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead><span className="sr-only">Actions</span></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pendingInvites.map(inv => (
-                <TableRow key={inv.inviteToken}>
-                  <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                  <TableCell>{inv.email}</TableCell>
-                  <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                  <TableCell>&mdash;</TableCell>
-                  <TableCell><Badge variant="outline">Invited</Badge></TableCell>
-                  <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${inv.email}`} onClick={() => resendInvite(inv.email)}>&#8635;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${inv.email}`} onClick={() => revokeInvite(inv.inviteToken)}>&#10005;</Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {users.map(p => (
-                <TableRow key={p.userId} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(p)} role="button" tabIndex={0} aria-label={`Edit ${p.name || p.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(p); }}>
-                  <TableCell>{p.name}</TableCell>
-                  <TableCell>{p.email}</TableCell>
-                  <TableCell>{p.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                  <TableCell>{p.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                  <TableCell>
-                    <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>
-                      {p.role === 'admin' ? 'Admin' : 'User'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{new Date(p.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    {p.userId !== currentUser?.userId && (
-                      <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${p.name || p.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(p.userId, p.name || p.email); }}>&#128465;</Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+      {/* Search and filters */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
+        <Input
+          type="text"
+          placeholder="Search by email, username, or name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="max-w-xs"
+          aria-label="Search users"
+        />
+        <div className="flex gap-1">
+          {filterButtons.map(f => (
+            <Button
+              key={f.key}
+              variant={filter === f.key ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+            </Button>
+          ))}
         </div>
+      </div>
+
+      {filteredList.length > 0 ? (
+        <>
+          <div className="rounded-lg border overflow-hidden">
+            <Table aria-label="Users and invites">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Group</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pageItems.map(item => item._type === 'invite' ? (
+                  <TableRow key={item._key}>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
+                    <TableCell>{item.email}</TableCell>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
+                    <TableCell>&mdash;</TableCell>
+                    <TableCell><Badge variant="outline">Invited</Badge></TableCell>
+                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
+                        <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(item._user); }}>
+                    <TableCell>{item.name}</TableCell>
+                    <TableCell>{item.email}</TableCell>
+                    <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell>
+                      <Badge variant={item.role === 'admin' ? 'default' : 'secondary'}>
+                        {item.role === 'admin' ? 'Admin' : 'User'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      {item._user.userId !== currentUser?.userId && (
+                        <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 mt-4">
+              <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
-        <p className="text-muted-foreground py-8 text-center">No users yet. Click "Invite Users" to get started.</p>
+        <p className="text-muted-foreground py-8 text-center">
+          {search || filter !== 'all' ? 'No matching users.' : 'No users yet. Click "Invite Users" to get started.'}
+        </p>
       )}
 
       {/* Invite Users Modal */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+      <Dialog open={inviteOpen} onOpenChange={handleInviteClose}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite Users</DialogTitle>
-            <DialogDescription>Send an invite by email or upload a CSV for bulk invites.</DialogDescription>
+            <DialogDescription>Add emails to invite. You can type multiple separated by commas or upload a CSV.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="modal-inv-email">Email</Label>
+              <Label htmlFor="modal-inv-email">Email(s)</Label>
               <div className="flex gap-2">
-                <Input id="modal-inv-email" type="email" placeholder="user@example.com"
-                  value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }} className="flex-1" />
-                <Button onClick={sendInvite}>Send</Button>
+                <Input id="modal-inv-email" type="text" placeholder="user@example.com, another@example.com"
+                  value={inviteInput} onChange={e => setInviteInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEmails(); } }} className="flex-1" />
+                <Button variant="outline" onClick={handleAddEmails}>Add</Button>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="modal-csv">Bulk invite (CSV)</Label>
+              <Label htmlFor="modal-csv">Or upload CSV</Label>
               <Input id="modal-csv" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
-              {csvPreview && csvEmails?.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  <p className="text-sm">{csvEmails.length} email(s) ready</p>
-                  {csvInvalid.length > 0 && <p className="text-sm text-destructive">{csvInvalid.length} invalid</p>}
-                  <Button onClick={sendBulkInvites}>Send {csvEmails.length} invite(s)</Button>
-                </div>
-              )}
             </div>
+
+            {emailQueue.length > 0 && (
+              <div className="space-y-2">
+                <Label>Emails to invite ({emailQueue.length})</Label>
+                <div className="max-h-40 overflow-y-auto rounded-md border p-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {emailQueue.map(email => (
+                      <span key={email} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                        {email}
+                        <button
+                          type="button"
+                          onClick={() => removeFromQueue(email)}
+                          className="ml-0.5 hover:text-destructive"
+                          aria-label={`Remove ${email}`}
+                        >
+                          &#10005;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+          <DialogFooter>
+            <Button onClick={sendInvites} disabled={emailQueue.length === 0 || inviteSending}>
+              {inviteSending ? 'Sending...' : `Send ${emailQueue.length} invite(s)`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
