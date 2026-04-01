@@ -372,7 +372,7 @@ export default function AdminUsers() {
           placeholder="Search by email, username, or name..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="max-w-xs"
+          className="max-w-xs h-9 text-sm"
           aria-label="Search users"
         />
         <div className="flex gap-1">
