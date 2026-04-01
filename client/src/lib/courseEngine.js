@@ -63,12 +63,15 @@ function parseCoachResponse(raw) {
 function cleanStream(onStream) {
   if (!onStream) return () => {};
   return (partial) => {
-    const cleaned = partial
+    // Strip any fully-formed tags
+    let cleaned = partial
       .replace(PROGRESS_REGEX, '')
       .replace(KB_UPDATE_REGEX, '')
-      .replace(PROFILE_UPDATE_REGEX, '')
-      .trim();
-    onStream(cleaned);
+      .replace(PROFILE_UPDATE_REGEX, '');
+    // Truncate at any partial tag still being streamed (tags always come at the end)
+    const tagStart = cleaned.search(/\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/);
+    if (tagStart !== -1) cleaned = cleaned.slice(0, tagStart);
+    onStream(cleaned.trim());
   };
 }
 
