@@ -75,9 +75,9 @@ export default function AppShell({ children }) {
               <button
                 type="button"
                 className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none"
-                aria-label={`Account: ${user?.email || 'signed in'}`}
+                aria-label={`Account: ${user?.username || user?.email || 'signed in'}`}
               >
-                {user?.name || user?.email || 'Account'}
+                {user?.name || user?.username || user?.email || 'Account'}
               </button>
             </DropdownMenuRadix.Trigger>
             <DropdownMenuRadix.Portal>

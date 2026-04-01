@@ -12,6 +12,7 @@ import {
 
 export default function Signup() {
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [group, setGroup] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -54,6 +55,7 @@ export default function Signup() {
         body: JSON.stringify({
           inviteToken: token,
           name: name.trim(),
+          username: username.trim() || undefined,
           password,
           userGroup: group || undefined,
         }),
@@ -95,6 +97,19 @@ export default function Signup() {
               autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="signup-username">
+              Username <span className="text-muted-foreground text-xs">(optional)</span>
+            </Label>
+            <Input
+              id="signup-username"
+              type="text"
+              placeholder="Choose a username"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
             />
           </div>
           {groups.length > 0 && (

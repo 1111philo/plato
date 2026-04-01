@@ -45,10 +45,11 @@ describe('GET /v1/me', () => {
 describe('PATCH /v1/me', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
-      userId: 'usr_test', email: 'test@example.com', name: 'Updated',
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Updated',
       userGroup: null, role: 'user',
     });
     db.getUserByEmail = async () => null;
+    db.getUserByUsername = async () => null;
     db.updateUser = async () => {};
   });
 
@@ -59,6 +60,28 @@ describe('PATCH /v1/me', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.name, 'Updated');
+  });
+
+  it('updates username', async () => {
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'PATCH', '/v1/me', { username: 'newname' });
+    assert.equal(res.status, 200);
+  });
+
+  it('rejects invalid username', async () => {
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'PATCH', '/v1/me', { username: '-bad' });
+    assert.equal(res.status, 400);
+  });
+
+  it('rejects taken username', async () => {
+    db.getUserByUsername = async () => ({ userId: 'usr_other' });
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'PATCH', '/v1/me', { username: 'taken' });
+    assert.equal(res.status, 409);
   });
 
   it('rejects short password', async () => {

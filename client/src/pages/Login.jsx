@@ -22,7 +22,7 @@ export default function Login() {
 
   async function handleLogin() {
     if (!email.trim() || !password) {
-      setError('Please enter email and password.');
+      setError('Please enter email/username and password.');
       return;
     }
     setSubmitting(true);
@@ -55,8 +55,8 @@ export default function Login() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="login-email">Email</Label>
-            <Input id="login-email" type="email" placeholder="you@example.com" autoComplete="email"
+            <Label htmlFor="login-email">Email or Username</Label>
+            <Input id="login-email" type="text" placeholder="you@example.com or username" autoComplete="username"
               value={email} onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') passwordRef.current?.focus(); }} />
           </div>

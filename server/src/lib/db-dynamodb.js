@@ -19,12 +19,12 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, userGroup, role }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role }) {
     const now = new Date().toISOString();
     await doc.send(new PutCommand({
       TableName: USERS_TABLE,
       Item: {
-        userId, email: email.toLowerCase(), passwordHash, name,
+        userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
         userGroup: userGroup || null,
         role, createdAt: now, updatedAt: now,
       },
@@ -46,6 +46,16 @@ const db = {
       IndexName: 'email-index',
       KeyConditionExpression: 'email = :email',
       ExpressionAttributeValues: { ':email': email.toLowerCase() },
+    }));
+    return result.Items?.[0] || null;
+  },
+
+  async getUserByUsername(username) {
+    const result = await doc.send(new QueryCommand({
+      TableName: USERS_TABLE,
+      IndexName: 'username-index',
+      KeyConditionExpression: 'username = :username',
+      ExpressionAttributeValues: { ':username': username.toLowerCase() },
     }));
     return result.Items?.[0] || null;
   },

@@ -25,6 +25,7 @@ describe('db-sqlite', () => {
       await db.createUser({
         userId,
         email: 'Test@Example.com',
+        username: 'testuser',
         passwordHash: '$2a$12$fake',
         name: 'Test User',
         role: 'user',
@@ -33,12 +34,18 @@ describe('db-sqlite', () => {
       const user = await db.getUserById(userId);
       assert.equal(user.userId, userId);
       assert.equal(user.email, 'test@example.com'); // lowercase
+      assert.equal(user.username, 'testuser');
       assert.equal(user.name, 'Test User');
       assert.equal(user.role, 'user');
     });
 
     it('retrieves user by email (case-insensitive)', async () => {
       const user = await db.getUserByEmail('TEST@example.COM');
+      assert.equal(user.userId, userId);
+    });
+
+    it('retrieves user by username (case-insensitive)', async () => {
+      const user = await db.getUserByUsername('TESTUSER');
       assert.equal(user.userId, userId);
     });
 

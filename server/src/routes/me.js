@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
+import { validateUsername } from './auth.js';
 
 const me = new Hono();
 
@@ -14,6 +15,7 @@ me.get('/v1/me', (c) => {
   return c.json({
     userId: user.userId,
     email: user.email,
+    username: user.username,
     name: user.name,
     userGroup: user.userGroup,
     role: user.role,
@@ -25,7 +27,7 @@ me.get('/v1/me', (c) => {
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json();
-  const allowed = ['name', 'email', 'group', 'password'];
+  const allowed = ['name', 'email', 'username', 'group', 'password'];
   const updates = {};
 
   for (const key of allowed) {
@@ -41,6 +43,14 @@ me.patch('/v1/me', async (c) => {
           return c.json({ error: 'Email already in use' }, 409);
         }
         updates.email = body.email.toLowerCase();
+      } else if (key === 'username') {
+        const usernameErr = validateUsername(body.username);
+        if (usernameErr) return c.json({ error: usernameErr }, 400);
+        const existing = await db.getUserByUsername(body.username);
+        if (existing && existing.userId !== userId) {
+          return c.json({ error: 'Username already taken' }, 409);
+        }
+        updates.username = body.username.toLowerCase();
       } else {
         updates[key] = body[key];
       }
@@ -57,6 +67,7 @@ me.patch('/v1/me', async (c) => {
   return c.json({
     userId: updated.userId,
     email: updated.email,
+    username: updated.username,
     name: updated.name,
     userGroup: updated.userGroup,
     role: updated.role,
@@ -75,6 +86,7 @@ me.get('/v1/me/export', async (c) => {
     profile: {
       userId: user.userId,
       email: user.email,
+      username: user.username,
       name: user.name,
       userGroup: user.userGroup,
       role: user.role,

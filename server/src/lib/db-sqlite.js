@@ -27,6 +27,7 @@ sqlite.exec(`
 CREATE TABLE IF NOT EXISTS users (
   userId TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+  username TEXT UNIQUE COLLATE NOCASE,
   passwordHash TEXT NOT NULL,
   name TEXT,
   userGroup TEXT,
@@ -73,6 +74,29 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 `);
 
+// -- Migrations ---------------------------------------------------------------
+
+// Add username column if missing (existing databases created before username support)
+const hasUsername = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'username'"
+).get();
+if (hasUsername.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN username TEXT UNIQUE COLLATE NOCASE');
+}
+
+// Backfill any users missing a username with a random one
+{
+  const missing = sqlite.prepare('SELECT userId FROM users WHERE username IS NULL').all();
+  if (missing.length > 0) {
+    const { randomBytes } = await import('node:crypto');
+    const update = sqlite.prepare('UPDATE users SET username = ? WHERE userId = ?');
+    for (const { userId } of missing) {
+      const username = 'user-' + randomBytes(3).toString('hex');
+      update.run(username, userId);
+    }
+  }
+}
+
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
 function cleanupExpired() {
@@ -98,12 +122,12 @@ function conditionalCheckFailed(message) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, userGroup, role }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role }) {
     const now = new Date().toISOString();
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, passwordHash, name, userGroup, role, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), passwordHash, name, userGroup || null, role, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
@@ -113,6 +137,10 @@ const db = {
 
   async getUserByEmail(email) {
     return sqlite.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase()) || null;
+  },
+
+  async getUserByUsername(username) {
+    return sqlite.prepare('SELECT * FROM users WHERE username = ?').get(username.toLowerCase()) || null;
   },
 
   async updateUser(userId, fields) {

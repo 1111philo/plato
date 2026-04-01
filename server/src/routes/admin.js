@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/authenticate.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
+import { validateUsername } from './auth.js';
 
 const admin = new Hono();
 
@@ -15,6 +16,7 @@ admin.get('/v1/admin/users', async (c) => {
   return c.json(users.map((p) => ({
     userId: p.userId,
     email: p.email,
+    username: p.username,
     name: p.name,
     userGroup: p.userGroup,
     role: p.role,
@@ -179,6 +181,15 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   const updates = {};
   if (body.name !== undefined) updates.name = body.name;
   if (body.email !== undefined) updates.email = body.email.toLowerCase();
+  if (body.username !== undefined) {
+    const usernameErr = validateUsername(body.username);
+    if (usernameErr) return c.json({ error: usernameErr }, 400);
+    const existing = await db.getUserByUsername(body.username);
+    if (existing && existing.userId !== userId) {
+      return c.json({ error: 'Username already taken' }, 409);
+    }
+    updates.username = body.username.toLowerCase();
+  }
   if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
   if (Object.keys(updates).length === 0) return c.json({ error: 'No valid fields' }, 400);
   await db.updateUser(userId, updates);

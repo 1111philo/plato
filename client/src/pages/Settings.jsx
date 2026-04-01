@@ -26,6 +26,7 @@ export default function Settings() {
   const { state, dispatch } = useApp();
   const { user, refreshUser } = useAuth();
   const [name, setName] = useState(user?.name || state.preferences?.name || '');
+  const [username, setUsername] = useState(user?.username || '');
   const [profileSummary, setProfileSummary] = useState('');
 
   const [newPassword, setNewPassword] = useState('');
@@ -33,6 +34,7 @@ export default function Settings() {
   const [passwordFeedback, setPasswordFeedback] = useState('');
   const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [nameFeedback, setNameFeedback] = useState('');
+  const [usernameFeedback, setUsernameFeedback] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
@@ -40,6 +42,24 @@ export default function Settings() {
       setProfileSummary(await getLearnerProfileSummary());
     })();
   }, []);
+
+  const handleSaveUsername = async (e) => {
+    e.preventDefault();
+    const trimmed = username.trim();
+    if (!trimmed) {
+      setUsernameFeedback('Username is required');
+      setTimeout(() => setUsernameFeedback(''), 2000);
+      return;
+    }
+    try {
+      await updateProfile({ username: trimmed });
+      await refreshUser();
+      setUsernameFeedback('Saved!');
+    } catch (err) {
+      setUsernameFeedback(err.message || 'Failed to update');
+    }
+    setTimeout(() => setUsernameFeedback(''), 2000);
+  };
 
   const handleSaveName = async (e) => {
     e.preventDefault();
@@ -97,6 +117,17 @@ export default function Settings() {
             <span className="text-sm text-muted-foreground">Email</span>
             <span className="text-sm">{user?.email || ''}</span>
           </div>
+
+          <Separator />
+
+          <form className="space-y-3" onSubmit={handleSaveUsername}>
+            <div className="space-y-1.5">
+              <Label htmlFor="account-username">Username</Label>
+              <Input id="account-username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </div>
+            <Button type="submit">Save</Button>
+            {usernameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{usernameFeedback}</p>}
+          </form>
 
           <Separator />
 

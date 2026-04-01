@@ -1,10 +1,25 @@
 import { Hono } from 'hono';
+import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
 import { generateUserId, generateRefreshToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
 import { signAccessToken, verifyAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
+
+const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
+
+function validateUsername(username) {
+  if (!username || typeof username !== 'string') return 'Username is required';
+  if (username.length < 3 || username.length > 30) return 'Username must be 3-30 characters';
+  if (!USERNAME_RE.test(username)) return 'Username must be alphanumeric with hyphens or underscores, and cannot start/end with them';
+  if (username.includes('@')) return 'Username cannot contain @';
+  return null;
+}
+
+function generateUsername() {
+  return 'user-' + randomBytes(3).toString('hex');
+}
 
 const auth = new Hono();
 
@@ -21,12 +36,20 @@ auth.post('/v1/auth/setup', async (c) => {
     return c.json({ error: 'Setup already completed' }, 400);
   }
 
-  const { email, name, password } = await c.req.json();
+  const { email, name, password, username: rawUsername } = await c.req.json();
   if (!email || !name || !password) {
     return c.json({ error: 'email, name, and password are required' }, 400);
   }
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
+  }
+
+  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  if (rawUsername) {
+    const usernameErr = validateUsername(rawUsername);
+    if (usernameErr) return c.json({ error: usernameErr }, 400);
+    const existingUsername = await db.getUserByUsername(rawUsername);
+    if (existingUsername) return c.json({ error: 'Username already taken' }, 409);
   }
 
   const userId = generateUserId();
@@ -35,6 +58,7 @@ auth.post('/v1/auth/setup', async (c) => {
   await db.createUser({
     userId,
     email: email.toLowerCase(),
+    username,
     passwordHash,
     name,
     role: 'admin',
@@ -52,13 +76,13 @@ auth.post('/v1/auth/setup', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: email.toLowerCase(), name, role: 'admin' },
+    user: { userId, email: email.toLowerCase(), username, name, role: 'admin' },
   }, 201);
 });
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, userGroup } = await c.req.json();
+  const { inviteToken, name, password, username: rawUsername, userGroup } = await c.req.json();
 
   if (!inviteToken || !name || !password) {
     return c.json({ error: 'inviteToken, name, and password are required' }, 400);
@@ -82,12 +106,21 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Account already exists for this email' }, 409);
   }
 
+  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  if (rawUsername) {
+    const usernameErr = validateUsername(rawUsername);
+    if (usernameErr) return c.json({ error: usernameErr }, 400);
+    const existingUsername = await db.getUserByUsername(rawUsername);
+    if (existingUsername) return c.json({ error: 'Username already taken' }, 409);
+  }
+
   const userId = generateUserId();
   const passwordHash = await hashPassword(password);
 
   await db.createUser({
     userId,
     email: invite.email,
+    username,
     passwordHash,
     name,
     userGroup: userGroup || null,
@@ -103,7 +136,7 @@ auth.post('/v1/auth/signup', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: invite.email, name, role: 'user' },
+    user: { userId, email: invite.email, username, name, role: 'user' },
   }, 201);
 });
 
@@ -112,17 +145,20 @@ auth.post('/v1/auth/login', async (c) => {
   const { email, password } = await c.req.json();
 
   if (!email || !password) {
-    return c.json({ error: 'Email and password are required' }, 400);
+    return c.json({ error: 'Email/username and password are required' }, 400);
   }
 
-  const user = await db.getUserByEmail(email);
+  // If the identifier contains @, look up by email; otherwise by username
+  const user = email.includes('@')
+    ? await db.getUserByEmail(email)
+    : await db.getUserByUsername(email);
   if (!user) {
-    return c.json({ error: 'Invalid email or password' }, 401);
+    return c.json({ error: 'Invalid credentials' }, 401);
   }
 
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) {
-    return c.json({ error: 'Invalid email or password' }, 401);
+    return c.json({ error: 'Invalid credentials' }, 401);
   }
 
   const accessToken = await signAccessToken(user.userId, user.role);
@@ -132,7 +168,7 @@ auth.post('/v1/auth/login', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId: user.userId, email: user.email, name: user.name, role: user.role },
+    user: { userId: user.userId, email: user.email, username: user.username, name: user.name, role: user.role },
   });
 });
 
@@ -224,3 +260,4 @@ auth.post('/v1/auth/reset-password', async (c) => {
 });
 
 export default auth;
+export { validateUsername, generateUsername };

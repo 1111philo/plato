@@ -46,7 +46,7 @@ export default function AdminUsers() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [editUser, setEditUser] = useState(null); // user object being edited
-  const [editForm, setEditForm] = useState({ name: '', email: '', userGroup: '', role: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '' });
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState('');
@@ -153,7 +153,7 @@ export default function AdminUsers() {
 
   function openEditUser(u) {
     setEditUser(u);
-    setEditForm({ name: u.name || '', email: u.email || '', userGroup: u.userGroup || '', role: u.role || 'user' });
+    setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user' });
   }
 
   async function saveEditUser() {
@@ -162,6 +162,7 @@ export default function AdminUsers() {
       await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
         name: editForm.name,
         email: editForm.email,
+        username: editForm.username,
         userGroup: editForm.userGroup || null,
       });
       if (editForm.role !== editUser.role) {
@@ -198,6 +199,10 @@ export default function AdminUsers() {
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
               <Input id="edit-email" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-username">Username</Label>
+              <Input id="edit-username" type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-group">User Group</Label>
@@ -266,6 +271,7 @@ export default function AdminUsers() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Username</TableHead>
                 <TableHead>Group</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Date</TableHead>
@@ -277,6 +283,7 @@ export default function AdminUsers() {
                 <TableRow key={inv.inviteToken}>
                   <TableCell className="text-muted-foreground">&mdash;</TableCell>
                   <TableCell>{inv.email}</TableCell>
+                  <TableCell className="text-muted-foreground">&mdash;</TableCell>
                   <TableCell>&mdash;</TableCell>
                   <TableCell><Badge variant="outline">Invited</Badge></TableCell>
                   <TableCell>{new Date(inv.createdAt).toLocaleDateString()}</TableCell>
@@ -292,6 +299,7 @@ export default function AdminUsers() {
                 <TableRow key={p.userId} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(p)} role="button" tabIndex={0} aria-label={`Edit ${p.name || p.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(p); }}>
                   <TableCell>{p.name}</TableCell>
                   <TableCell>{p.email}</TableCell>
+                  <TableCell>{p.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                   <TableCell>{p.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                   <TableCell>
                     <Badge variant={p.role === 'admin' ? 'default' : 'secondary'}>

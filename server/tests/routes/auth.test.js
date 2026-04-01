@@ -21,6 +21,7 @@ describe('POST /v1/auth/signup', () => {
       ttl: Math.floor(Date.now() / 1000) + 86400,
     });
     db.getUserByEmail = async () => null;
+    db.getUserByUsername = async () => null;
     db.createUser = async () => {};
     db.markInviteUsed = async () => {};
     db.storeRefreshToken = async () => {};
@@ -38,6 +39,27 @@ describe('POST /v1/auth/signup', () => {
     assert.ok(data.refreshToken);
     assert.equal(data.user.email, 'test@example.com');
     assert.equal(data.user.role, 'user');
+    assert.ok(data.user.username); // auto-generated when not provided
+  });
+
+  it('creates user with custom username', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', name: 'Test', password: 'password123', username: 'testuser',
+    });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.user.username, 'testuser');
+  });
+
+  it('rejects invalid username format', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', name: 'Test', password: 'password123', username: '-bad',
+    });
+    assert.equal(res.status, 400);
   });
 
   it('rejects expired invite', async () => {
@@ -78,13 +100,14 @@ describe('POST /v1/auth/signup', () => {
 describe('POST /v1/auth/login', () => {
   beforeEach(() => {
     db.storeRefreshToken = async () => {};
+    db.getUserByUsername = async () => null;
   });
 
   it('logs in with correct credentials', async () => {
     const { hashPassword } = await import('../../src/lib/password.js');
     const hash = await hashPassword('password123');
     db.getUserByEmail = async () => ({
-      userId: 'usr_test', email: 'test@example.com', name: 'Test',
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
       role: 'user', passwordHash: hash,
     });
     const app = new Hono();
@@ -94,6 +117,23 @@ describe('POST /v1/auth/login', () => {
     const data = await res.json();
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
+    assert.equal(data.user.username, 'testuser');
+  });
+
+  it('logs in with username', async () => {
+    const { hashPassword } = await import('../../src/lib/password.js');
+    const hash = await hashPassword('password123');
+    db.getUserByEmail = async () => null;
+    db.getUserByUsername = async () => ({
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
+      role: 'user', passwordHash: hash,
+    });
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/login', { email: 'testuser', password: 'password123' });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.user.username, 'testuser');
   });
 
   it('rejects wrong password', async () => {

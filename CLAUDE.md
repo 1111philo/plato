@@ -13,7 +13,8 @@ plato is an open-source, AI-powered learning platform. Learners work through cou
 ## Architecture
 
 - Login required — all data server-side, no offline mode
-- Auth: JWT access tokens (15 min) + refresh tokens (30 day), stored in localStorage (`plato_auth`)
+- Auth: JWT access tokens (15 min) + refresh tokens (30 day), stored in localStorage (`plato_auth`). Login accepts email or username
+- Users have a unique `username` (auto-generated if not set, editable, 3-30 chars alphanumeric/hyphens/underscores)
 - 2 Lambda functions: API Gateway (buffered CRUD) + Function URL (streaming SSE for AI chat)
 - 5 DynamoDB tables: users, invites, refresh-tokens, sync-data, audit-log
 - Content stored as `_system` sync-data: `prompt:*`, `course:*`, `knowledgeBase`, `settings`
@@ -37,7 +38,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-73 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+80 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
