@@ -372,16 +372,17 @@ export default function AdminUsers() {
           placeholder="Search by email, username, or name..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="max-w-xs h-9 text-sm"
+          className="max-w-xs !h-7 py-1 text-[0.8rem]"
           aria-label="Search users"
         />
-        <div className="flex gap-1">
+        <div className="flex gap-1" role="group" aria-label="Filter users">
           {filterButtons.map(f => (
             <Button
               key={f.key}
               variant={filter === f.key ? 'default' : 'outline'}
               size="sm"
               onClick={() => setFilter(f.key)}
+              aria-pressed={filter === f.key}
             >
               {f.label}
             </Button>
@@ -445,17 +446,17 @@ export default function AdminUsers() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 mt-4">
-              <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)}>
+            <nav className="flex items-center justify-center gap-3 mt-4" aria-label="Pagination">
+              <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage(p => p - 1)} aria-label="Previous page">
                 Previous
               </Button>
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground" aria-current="page">
                 Page {currentPage} of {totalPages}
               </span>
-              <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)}>
+              <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setPage(p => p + 1)} aria-label="Next page">
                 Next
               </Button>
-            </div>
+            </nav>
           )}
         </>
       ) : (

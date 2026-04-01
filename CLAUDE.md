@@ -62,6 +62,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 
 ## Conventions
 
+- Accessibility is required: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.)
 - Always commit and push after changes
 - Run `npm test` before deploying
 - API responses for user groups use `{ userGroups: [...] }` consistently
