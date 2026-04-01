@@ -4,6 +4,8 @@ import { authenticate } from '../middleware/authenticate.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
+import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMembers, sendSlackDM } from '../lib/slack.js';
+import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
 
 const admin = new Hono();
@@ -20,6 +22,7 @@ admin.get('/v1/admin/users', async (c) => {
     name: p.name,
     userGroup: p.userGroup,
     role: p.role,
+    slackUserId: p.slackUserId || null,
     createdAt: p.createdAt,
   })));
 });
@@ -441,6 +444,127 @@ admin.put('/v1/admin/theme', async (c) => {
   if (body.logoAlt !== undefined) settings.logoAlt = body.logoAlt;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
   return c.json({ ok: true });
+});
+
+// ── Slack integration ──
+
+// Helper: get Slack bot token from settings
+async function getSlackToken() {
+  const item = await db.getSyncData('_system', 'settings');
+  return item?.data?.slack?.botToken || null;
+}
+
+// POST /v1/admin/slack/test — validate a bot token
+admin.post('/v1/admin/slack/test', async (c) => {
+  const { botToken } = await c.req.json();
+  if (!botToken) return c.json({ error: 'botToken is required' }, 400);
+  try {
+    const result = await testSlackConnection(botToken);
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: 'Invalid token or Slack API error', detail: e.message }, 400);
+  }
+});
+
+// GET /v1/admin/slack/users?q= — search workspace users
+admin.get('/v1/admin/slack/users', async (c) => {
+  const token = await getSlackToken();
+  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
+  try {
+    const q = c.req.query('q') || '';
+    const users = await searchSlackUsers(token, q);
+    return c.json(users);
+  } catch (e) {
+    return c.json({ error: 'Slack API error', detail: e.message }, 500);
+  }
+});
+
+// GET /v1/admin/slack/channels — list public channels
+admin.get('/v1/admin/slack/channels', async (c) => {
+  const token = await getSlackToken();
+  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
+  try {
+    const channels = await listSlackChannels(token);
+    return c.json(channels);
+  } catch (e) {
+    return c.json({ error: 'Slack API error', detail: e.message }, 500);
+  }
+});
+
+// GET /v1/admin/slack/channels/:id/members — list channel members
+admin.get('/v1/admin/slack/channels/:id/members', async (c) => {
+  const token = await getSlackToken();
+  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
+  try {
+    const members = await listChannelMembers(token, c.req.param('id'));
+    return c.json(members);
+  } catch (e) {
+    return c.json({ error: 'Slack API error', detail: e.message }, 500);
+  }
+});
+
+// POST /v1/admin/slack/invites — invite users via Slack DM
+admin.post('/v1/admin/slack/invites', async (c) => {
+  const token = await getSlackToken();
+  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
+
+  const { users } = await c.req.json();
+  if (!Array.isArray(users) || users.length === 0) {
+    return c.json({ error: 'users array is required' }, 400);
+  }
+  if (users.length > 200) {
+    return c.json({ error: 'Maximum 200 invites per batch' }, 400);
+  }
+
+  const adminUser = c.get('user');
+  const classroom = await (async () => {
+    const item = await db.getSyncData('_system', 'settings');
+    const s = item?.data || {};
+    return s.logoAlt || 'plato';
+  })();
+
+  const results = [];
+  for (const u of users) {
+    const email = (u.email || '').trim().toLowerCase();
+    if (!email) {
+      results.push({ slackUserId: u.slackUserId, status: 'skipped', reason: 'No email on Slack profile' });
+      continue;
+    }
+
+    const existing = await db.getUserByEmail(email);
+    if (existing) {
+      results.push({ email, slackUserId: u.slackUserId, status: 'skipped', reason: 'User already exists' });
+      continue;
+    }
+
+    const pendingInvite = await db.getInviteByEmail(email);
+    if (pendingInvite) {
+      results.push({ email, slackUserId: u.slackUserId, status: 'skipped', reason: 'Pending invite already exists' });
+      continue;
+    }
+
+    try {
+      const inviteToken = generateInviteToken();
+      await db.createInvite({
+        inviteToken,
+        email,
+        invitedBy: adminUser.userId,
+        slackUserId: u.slackUserId,
+      });
+
+      const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
+      const message = `${adminUser.name ? `${adminUser.name} has` : "You've been"} invited you to join *${classroom}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
+
+      await sendSlackDM(token, u.slackUserId, message);
+      results.push({ email, slackUserId: u.slackUserId, status: 'sent' });
+    } catch (err) {
+      results.push({ email, slackUserId: u.slackUserId, status: 'error', reason: err.message });
+    }
+  }
+
+  const sent = results.filter(r => r.status === 'sent').length;
+  const skipped = results.filter(r => r.status !== 'sent').length;
+  return c.json({ sent, skipped, total: results.length, results }, 201);
 });
 
 export default admin;

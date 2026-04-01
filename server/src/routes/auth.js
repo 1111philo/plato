@@ -125,6 +125,7 @@ auth.post('/v1/auth/signup', async (c) => {
     name,
     userGroup: userGroup || null,
     role: 'user',
+    slackUserId: invite.slackUserId || null,
   });
 
   await db.markInviteUsed(inviteToken);

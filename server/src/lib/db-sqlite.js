@@ -81,8 +81,10 @@ const hasUsername = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'username'"
 ).get();
 if (hasUsername.count === 0) {
-  sqlite.exec('ALTER TABLE users ADD COLUMN username TEXT UNIQUE COLLATE NOCASE');
+  sqlite.exec('ALTER TABLE users ADD COLUMN username TEXT COLLATE NOCASE');
 }
+// Ensure unique index exists (SQLite ALTER TABLE cannot add UNIQUE columns directly)
+sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL');
 
 // Backfill any users missing a username with a random one
 {
@@ -95,6 +97,22 @@ if (hasUsername.count === 0) {
       update.run(username, userId);
     }
   }
+}
+
+// Add slackUserId column to users if missing
+const hasSlackUser = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'slackUserId'"
+).get();
+if (hasSlackUser.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN slackUserId TEXT');
+}
+
+// Add slackUserId column to invites if missing
+const hasSlackInvite = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
+).get();
+if (hasSlackInvite.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN slackUserId TEXT');
 }
 
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
@@ -122,12 +140,12 @@ function conditionalCheckFailed(message) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId }) {
     const now = new Date().toISOString();
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, slackUserId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, slackUserId || null, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
@@ -171,13 +189,13 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, invitedBy, status, createdAt, ttl)
-       VALUES (?, ?, ?, 'pending', ?, ?)`
-    ).run(inviteToken, email.toLowerCase(), invitedBy, now.toISOString(), ttl);
+      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?)`
+    ).run(inviteToken, email.toLowerCase(), invitedBy, slackUserId || null, now.toISOString(), ttl);
   },
 
   async getInviteByEmail(email) {

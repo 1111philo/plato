@@ -66,6 +66,17 @@ export default function AdminUsers() {
   // Groups form
   const [newGroupName, setNewGroupName] = useState('');
 
+  // Slack integration state
+  const [slackConnected, setSlackConnected] = useState(false);
+  const [inviteTab, setInviteTab] = useState('email');
+  const [slackSearch, setSlackSearch] = useState('');
+  const [slackSearchResults, setSlackSearchResults] = useState([]);
+  const [slackSearching, setSlackSearching] = useState(false);
+  const [slackChannels, setSlackChannels] = useState([]);
+  const [slackSelectedChannel, setSlackSelectedChannel] = useState('');
+  const [slackQueue, setSlackQueue] = useState([]);
+  const [slackSending, setSlackSending] = useState(false);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -77,6 +88,7 @@ export default function AdminUsers() {
       setUsers(Array.isArray(p) ? p : []);
       setPendingInvites(Array.isArray(i) ? i.filter(x => x.status === 'pending') : []);
       setGroups(s.userGroups || []);
+      setSlackConnected(!!s.slack?.connected);
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -158,8 +170,88 @@ export default function AdminUsers() {
       setEmailQueue([]);
       setInviteInput('');
       if (csvRef.current) csvRef.current.value = '';
+      setSlackQueue([]);
+      setSlackSearch('');
+      setSlackSearchResults([]);
+      setInviteTab('email');
     }
     setInviteOpen(open);
+  }
+
+  // -- Slack invite logic --
+
+  const slackSearchTimeout = useRef(null);
+
+  function handleSlackSearchChange(value) {
+    setSlackSearch(value);
+    clearTimeout(slackSearchTimeout.current);
+    if (!value.trim()) { setSlackSearchResults([]); return; }
+    slackSearchTimeout.current = setTimeout(async () => {
+      setSlackSearching(true);
+      try {
+        const results = await adminApi('GET', `/v1/admin/slack/users?q=${encodeURIComponent(value)}`);
+        setSlackSearchResults(Array.isArray(results) ? results : []);
+      } catch { setSlackSearchResults([]); }
+      setSlackSearching(false);
+    }, 300);
+  }
+
+  async function loadSlackChannels() {
+    try {
+      const channels = await adminApi('GET', '/v1/admin/slack/channels');
+      setSlackChannels(Array.isArray(channels) ? channels : []);
+    } catch { setSlackChannels([]); }
+  }
+
+  async function loadChannelMembers(channelId) {
+    if (!channelId) return;
+    setSlackSearching(true);
+    try {
+      const members = await adminApi('GET', `/v1/admin/slack/channels/${channelId}/members`);
+      // Add all members to queue at once
+      if (Array.isArray(members)) {
+        setSlackQueue(prev => {
+          const existingIds = new Set(prev.map(u => u.slackUserId));
+          const newMembers = members.filter(m => !existingIds.has(m.slackUserId) && m.email && !existingEmails.has(m.email.toLowerCase()));
+          return [...prev, ...newMembers];
+        });
+      }
+    } catch { /* ignore */ }
+    setSlackSearching(false);
+    setSlackSelectedChannel('');
+  }
+
+  function addToSlackQueue(user) {
+    setSlackQueue(prev => {
+      if (prev.some(u => u.slackUserId === user.slackUserId)) return prev;
+      if (user.email && existingEmails.has(user.email.toLowerCase())) return prev;
+      return [...prev, user];
+    });
+    setSlackSearch('');
+    setSlackSearchResults([]);
+  }
+
+  function removeFromSlackQueue(slackUserId) {
+    setSlackQueue(prev => prev.filter(u => u.slackUserId !== slackUserId));
+  }
+
+  async function sendSlackInvites() {
+    if (slackQueue.length === 0) return;
+    setSlackSending(true);
+    try {
+      const data = await adminApi('POST', '/v1/admin/slack/invites', { users: slackQueue });
+      const parts = [];
+      if (data.sent > 0) parts.push(`${data.sent} Slack invite(s) sent`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+      setMessage({ text: parts.join('. ') + '.', type: data.sent > 0 ? 'success' : 'error' });
+      setSlackQueue([]);
+      setInviteOpen(false);
+      loadData();
+    } catch (e) {
+      setMessage({ text: e.message, type: 'error' });
+    } finally {
+      setSlackSending(false);
+    }
   }
 
   // -- User actions --
@@ -401,6 +493,7 @@ export default function AdminUsers() {
                   <TableHead>Username</TableHead>
                   <TableHead>Group</TableHead>
                   <TableHead>Role</TableHead>
+                  {slackConnected && <TableHead>Slack</TableHead>}
                   <TableHead>Date</TableHead>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
@@ -413,6 +506,7 @@ export default function AdminUsers() {
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>&mdash;</TableCell>
                     <TableCell><Badge variant="outline">Invited</Badge></TableCell>
+                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -432,6 +526,18 @@ export default function AdminUsers() {
                         {item.role === 'admin' ? 'Admin' : 'User'}
                       </Badge>
                     </TableCell>
+                    {slackConnected && (
+                      <TableCell>
+                        {item._user.slackUserId ? (
+                          <span title={item._user.slackUserId} className="text-xs">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">
+                              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
+                            </svg>
+                            Linked
+                          </span>
+                        ) : <span className="text-muted-foreground">&mdash;</span>}
+                      </TableCell>
+                    )}
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       {item._user.userId !== currentUser?.userId && (
@@ -470,51 +576,155 @@ export default function AdminUsers() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite Users</DialogTitle>
-            <DialogDescription>Add emails to invite. You can type multiple separated by commas or upload a CSV.</DialogDescription>
+            <DialogDescription>
+              {slackConnected
+                ? 'Invite users via email or Slack DM.'
+                : 'Add emails to invite. You can type multiple separated by commas or upload a CSV.'}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="modal-inv-email">Email(s)</Label>
-              <div className="flex gap-2">
-                <Input id="modal-inv-email" type="text" placeholder="user@example.com, another@example.com"
-                  value={inviteInput} onChange={e => setInviteInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEmails(); } }} className="flex-1" />
-                <Button variant="outline" onClick={handleAddEmails}>Add</Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="modal-csv">Or upload CSV</Label>
-              <Input id="modal-csv" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
-            </div>
 
-            {emailQueue.length > 0 && (
+          {/* Tabs if Slack is connected */}
+          {slackConnected && (
+            <div className="flex gap-1 mb-2" role="tablist" aria-label="Invite method">
+              <Button variant={inviteTab === 'email' ? 'default' : 'outline'} size="sm" onClick={() => setInviteTab('email')} role="tab" aria-selected={inviteTab === 'email'}>
+                Email
+              </Button>
+              <Button variant={inviteTab === 'slack' ? 'default' : 'outline'} size="sm" onClick={() => { setInviteTab('slack'); if (slackChannels.length === 0) loadSlackChannels(); }} role="tab" aria-selected={inviteTab === 'slack'}>
+                Slack
+              </Button>
+            </div>
+          )}
+
+          {/* Email tab */}
+          {inviteTab === 'email' && (
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Emails to invite ({emailQueue.length})</Label>
-                <div className="max-h-40 overflow-y-auto rounded-md border p-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {emailQueue.map(email => (
-                      <span key={email} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
-                        {email}
-                        <button
-                          type="button"
-                          onClick={() => removeFromQueue(email)}
-                          className="ml-0.5 hover:text-destructive"
-                          aria-label={`Remove ${email}`}
-                        >
-                          &#10005;
-                        </button>
-                      </span>
-                    ))}
-                  </div>
+                <Label htmlFor="modal-inv-email">Email(s)</Label>
+                <div className="flex gap-2">
+                  <Input id="modal-inv-email" type="text" placeholder="user@example.com, another@example.com"
+                    value={inviteInput} onChange={e => setInviteInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddEmails(); } }} className="flex-1" />
+                  <Button variant="outline" onClick={handleAddEmails}>Add</Button>
                 </div>
               </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button onClick={sendInvites} disabled={emailQueue.length === 0 || inviteSending}>
-              {inviteSending ? 'Sending...' : `Send ${emailQueue.length} invite(s)`}
-            </Button>
-          </DialogFooter>
+              <div className="space-y-2">
+                <Label htmlFor="modal-csv">Or upload CSV</Label>
+                <Input id="modal-csv" type="file" accept=".csv,text/csv" ref={csvRef} onChange={handleCsvFile} />
+              </div>
+
+              {emailQueue.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Emails to invite ({emailQueue.length})</Label>
+                  <div className="max-h-40 overflow-y-auto rounded-md border p-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {emailQueue.map(email => (
+                        <span key={email} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                          {email}
+                          <button
+                            type="button"
+                            onClick={() => removeFromQueue(email)}
+                            className="ml-0.5 hover:text-destructive"
+                            aria-label={`Remove ${email}`}
+                          >
+                            &#10005;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button onClick={sendInvites} disabled={emailQueue.length === 0 || inviteSending}>
+                  {inviteSending ? 'Sending...' : `Send ${emailQueue.length} invite(s)`}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+
+          {/* Slack tab */}
+          {inviteTab === 'slack' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="slack-user-search">Search Slack users</Label>
+                <Input
+                  id="slack-user-search"
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={slackSearch}
+                  onChange={e => handleSlackSearchChange(e.target.value)}
+                />
+                {slackSearching && <p className="text-xs text-muted-foreground">Searching...</p>}
+                {slackSearchResults.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto rounded-md border">
+                    {slackSearchResults.map(u => (
+                      <button
+                        key={u.slackUserId}
+                        type="button"
+                        className="flex items-center gap-2 w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors"
+                        onClick={() => addToSlackQueue(u)}
+                      >
+                        {u.avatar && <img src={u.avatar} alt="" className="w-6 h-6 rounded" />}
+                        <span className="font-medium">{u.name}</span>
+                        {u.email && <span className="text-muted-foreground text-xs ml-auto">{u.email}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="slack-channel-select">Or add from a channel</Label>
+                <div className="flex gap-2">
+                  <select
+                    id="slack-channel-select"
+                    value={slackSelectedChannel}
+                    onChange={e => setSlackSelectedChannel(e.target.value)}
+                    className="h-10 flex-1 rounded-lg border border-input bg-transparent px-3 py-2 text-sm"
+                  >
+                    <option value="">Select a channel...</option>
+                    {slackChannels.map(ch => (
+                      <option key={ch.id} value={ch.id}>#{ch.name} ({ch.memberCount} members)</option>
+                    ))}
+                  </select>
+                  <Button variant="outline" onClick={() => loadChannelMembers(slackSelectedChannel)} disabled={!slackSelectedChannel || slackSearching}>
+                    {slackSearching ? 'Loading...' : 'Add All'}
+                  </Button>
+                </div>
+              </div>
+
+              {slackQueue.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Slack users to invite ({slackQueue.length})</Label>
+                  <div className="max-h-40 overflow-y-auto rounded-md border p-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {slackQueue.map(u => (
+                        <span key={u.slackUserId} className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs">
+                          {u.name}
+                          {!u.email && <span className="text-destructive" title="No email on Slack profile">&#9888;</span>}
+                          <button
+                            type="button"
+                            onClick={() => removeFromSlackQueue(u.slackUserId)}
+                            className="ml-0.5 hover:text-destructive"
+                            aria-label={`Remove ${u.name}`}
+                          >
+                            &#10005;
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <DialogFooter>
+                <Button onClick={sendSlackInvites} disabled={slackQueue.length === 0 || slackSending}>
+                  {slackSending ? 'Sending...' : `Send ${slackQueue.length} Slack invite(s)`}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

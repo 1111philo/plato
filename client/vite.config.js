@@ -19,6 +19,11 @@ export default defineConfig({
       '@': resolve(import.meta.dirname, 'src'),
     },
   },
+  server: {
+    proxy: {
+      '/v1': 'http://localhost:3000',
+    },
+  },
   base: '/',
   build: {
     outDir: 'dist',

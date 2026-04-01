@@ -19,15 +19,17 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId }) {
     const now = new Date().toISOString();
+    const item = {
+      userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
+      userGroup: userGroup || null,
+      role, createdAt: now, updatedAt: now,
+    };
+    if (slackUserId) item.slackUserId = slackUserId;
     await doc.send(new PutCommand({
       TableName: USERS_TABLE,
-      Item: {
-        userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
-        userGroup: userGroup || null,
-        role, createdAt: now, updatedAt: now,
-      },
+      Item: item,
       ConditionExpression: 'attribute_not_exists(userId)',
     }));
   },
@@ -132,15 +134,17 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
+    const item = {
+      inviteToken, email: email.toLowerCase(), invitedBy,
+      status: 'pending', createdAt: now.toISOString(), ttl,
+    };
+    if (slackUserId) item.slackUserId = slackUserId;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
-      Item: {
-        inviteToken, email: email.toLowerCase(), invitedBy,
-        status: 'pending', createdAt: now.toISOString(), ttl,
-      },
+      Item: item,
     }));
   },
 
