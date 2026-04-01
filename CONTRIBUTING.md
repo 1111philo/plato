@@ -27,7 +27,7 @@ Thank you for your interest in contributing to plato. This project is maintained
    ```
 5. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account. Content is seeded automatically.
 
-No Docker, AWS credentials, or external services needed for local development. AI features require a Bedrock proxy connection — without it, the app is fully navigable but you can't start course conversations.
+No Docker, AWS credentials, or external services needed for local development. AI features require an Anthropic API key (or a Bedrock connection if you set `AI_PROVIDER=bedrock`) — without one, the app is fully navigable but you can't start course conversations.
 
 The client uses **Tailwind CSS v4** and **shadcn/ui** for styling. UI components are in `src/components/ui/`.
 
