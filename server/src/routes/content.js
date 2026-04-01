@@ -18,8 +18,8 @@ content.use('/v1/knowledge-base', authenticate);
 // GET /v1/version — public
 content.get('/v1/version', (c) => {
   const paths = [
-    join(__dirname, '../../../version.json'),       // local dev
-    join(__dirname, '../../version.json'),           // Lambda build
+    join(__dirname, '../../../version.json'),       // local dev (server/src/routes -> repo root)
+    join(__dirname, '../../version.json'),           // Lambda build (src/routes -> function root)
   ];
   for (const p of paths) {
     if (existsSync(p)) {
