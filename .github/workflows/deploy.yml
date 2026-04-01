@@ -23,20 +23,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
-
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::380610849750:role/plato-deploy
           aws-region: us-east-2
-
       - run: cd client && npm ci && npm run build
       - run: cd server && sam build
       - run: |
