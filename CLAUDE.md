@@ -69,6 +69,8 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Accessibility is required: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.)
 - Always commit and push after changes
 - Run `npm test` before deploying
+- Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main
+- Deploy workflow lives only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo
 - API responses for user groups use `{ userGroups: [...] }` consistently
 - Emails use classroom name/colors from settings, with "Powered by plato." footer linking to GitHub
 - Auth pages (login, signup, forgot-password, reset-password) use `usePublicBranding` hook for classroom theming
