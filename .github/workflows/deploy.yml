@@ -54,5 +54,13 @@ jobs:
           cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
           cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
 
-      # Deploy (no --profile flag; uses env credentials)
-      - run: cd server && sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+      # Deploy (override samconfig profile — CI uses OIDC env credentials)
+      - run: >
+          cd server && sam deploy
+          --stack-name plato
+          --region us-east-2
+          --resolve-s3
+          --s3-prefix plato
+          --capabilities CAPABILITY_IAM
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
