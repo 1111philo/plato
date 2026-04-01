@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
-import { getCourseKB, getDraftCourseId } from '../../js/storage.js';
+import { getCourseKB } from '../../js/storage.js';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,6 @@ export default function CoursesList() {
   const navigate = useNavigate();
   const { courses } = state;
   const [courseData, setCourseData] = useState({});
-  const [hasDraft, setHasDraft] = useState(false);
   const [detailCourse, setDetailCourse] = useState(null);
 
   useEffect(() => {
@@ -29,7 +28,6 @@ export default function CoursesList() {
         };
       }
       setCourseData(data);
-      setHasDraft(!!(await getDraftCourseId()));
     })();
   }, [courses]);
 
@@ -93,14 +91,6 @@ export default function CoursesList() {
             </div>
           </CourseItem>
         ))}
-
-        <CourseItem index={courses.length} onClick={() => navigate('/courses/create')} dashed>
-          <CourseIcon>+</CourseIcon>
-          <div className="min-w-0 flex-1 space-y-1">
-            <strong className="text-sm font-medium">{hasDraft ? 'Continue Course Draft' : 'Create Your Own Course'}</strong>
-            <p className="text-sm text-muted-foreground">{hasDraft ? 'Resume designing your course' : 'Design a custom course with AI guidance'}</p>
-          </div>
-        </CourseItem>
 
       </ul>
 

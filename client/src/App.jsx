@@ -4,7 +4,6 @@ import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
 import CoursesList from './pages/CoursesList.jsx';
 import CourseChat from './pages/CourseChat.jsx';
-import CourseCreate from './pages/CourseCreate.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
@@ -120,7 +119,7 @@ export default function App() {
             <AppShell>
               <Routes>
                 <Route path="/courses" element={<CoursesList />} />
-                <Route path="/courses/create" element={<CourseCreate />} />
+                <Route path="/courses/create" element={<Navigate to="/courses" replace />} />
                 <Route path="/courses/:courseGroupId" element={<CourseChat />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/" element={<Navigate to="/courses" replace />} />

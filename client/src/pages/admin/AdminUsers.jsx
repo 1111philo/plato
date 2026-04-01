@@ -12,6 +12,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 const PAGE_SIZE = 20;
 
@@ -628,41 +629,20 @@ export default function AdminUsers() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Toggle if Slack is connected */}
-          {slackConnected && (
-            <div
-              className="inline-flex rounded-full bg-muted p-1"
-              role="radiogroup"
-              aria-label="Invite method"
-            >
-              {[
-                { key: 'email', label: 'Email' },
-                { key: 'slack', label: 'Slack' },
-              ].map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={inviteTab === t.key}
-                  onClick={() => { setInviteTab(t.key); setInviteNotice(null); if (t.key === 'slack' && slackChannels.length === 0) loadSlackChannels(); }}
-                  className={`px-4 py-1 text-sm font-medium rounded-full transition-all ${
-                    inviteTab === t.key
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          )}
-
           {inviteNotice && (
             <p className="text-sm text-amber-600" role="status">{inviteNotice}</p>
           )}
 
+          <Tabs defaultValue="email" value={inviteTab} onValueChange={(v) => { setInviteTab(v); setInviteNotice(null); if (v === 'slack' && slackChannels.length === 0) loadSlackChannels(); }}>
+          {slackConnected && (
+            <TabsList className="mb-4" aria-label="Invite method">
+              <TabsTrigger value="email">Email</TabsTrigger>
+              <TabsTrigger value="slack">Slack</TabsTrigger>
+            </TabsList>
+          )}
+
           {/* Email tab */}
-          {inviteTab === 'email' && (
+          <TabsContent value="email">
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="modal-inv-email">Email(s)</Label>
@@ -707,10 +687,10 @@ export default function AdminUsers() {
                 </Button>
               </DialogFooter>
             </div>
-          )}
+          </TabsContent>
 
           {/* Slack tab */}
-          {inviteTab === 'slack' && (
+          <TabsContent value="slack">
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="slack-user-search">Search Slack users</Label>
@@ -790,7 +770,8 @@ export default function AdminUsers() {
                 </Button>
               </DialogFooter>
             </div>
-          )}
+          </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 

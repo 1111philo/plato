@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,18 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
+
+import { converseStream, extractCourseMarkdown } from '../../../js/orchestrator.js';
+import { parseCoursePrompt } from '../../../js/courseOwner.js';
+import { parseResponse, cleanStream } from '../../lib/courseCreationEngine.js';
+import { useStreamedText } from '../../hooks/useStreamedText.js';
+import { MSG_TYPES } from '../../lib/constants.js';
+
+import ChatArea from '../../components/chat/ChatArea.jsx';
+import ComposeBar from '../../components/chat/ComposeBar.jsx';
+import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
+import UserMessage from '../../components/chat/UserMessage.jsx';
+import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 
 export default function AdminCourses() {
   const [courses, setCourses] = useState([]);
@@ -65,45 +77,41 @@ export default function AdminCourses() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
+  // New course creation with AI Chat / Markdown tabs
+  if (editing?.isNew) {
+    return (
+      <NewCourseView
+        onSave={async (name, markdown) => {
+          const courseId = name.trim().replace(/\s+/g, '-').toLowerCase();
+          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { markdown, name });
+          setMessage({ text: 'Course created.', type: 'success' });
+          setEditing(null);
+          loadCourses();
+        }}
+        onCancel={() => setEditing(null)}
+        onError={(text) => setMessage({ text, type: 'error' })}
+      />
+    );
+  }
+
+  // Edit existing course — markdown only
   if (editing) {
     return (
       <div>
-        <h1 className="text-2xl font-bold mb-4">{editing.isNew ? 'New Course' : `Edit: ${editing.name}`}</h1>
-        {!editing.isNew && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800" role="alert">
-            <strong>Caution:</strong> Changes to courses affect all learners immediately. Verify content before saving.
-          </div>
-        )}
-        <Card>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="course-name">Course Name</Label>
-              <Input
-                id="course-name"
-                type="text"
-                value={editing.name}
-                onChange={e => setEditing({ ...editing, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="course-md">Course Markdown</Label>
-              <Textarea
-                id="course-md"
-                className="font-mono text-sm min-h-[400px]"
-                rows={20}
-                value={editing.markdown}
-                onChange={e => setEditing({ ...editing, markdown: e.target.value })}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={() => editing.isNew ? saveCourse() : setConfirmSave(true)}>Save</Button>
-              <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
-
+        <h1 className="text-2xl font-bold mb-4">Edit: {editing.name}</h1>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800" role="alert">
+          <strong>Caution:</strong> Changes to courses affect all learners immediately. Verify content before saving.
+        </div>
+        <MarkdownEditor
+          name={editing.name}
+          markdown={editing.markdown}
+          onNameChange={(name) => setEditing({ ...editing, name })}
+          onMarkdownChange={(markdown) => setEditing({ ...editing, markdown })}
+          onSave={() => setConfirmSave(true)}
+          onCancel={() => setEditing(null)}
+        />
         <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -120,6 +128,7 @@ export default function AdminCourses() {
     );
   }
 
+  // Course list
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Courses</h1>
@@ -129,7 +138,7 @@ export default function AdminCourses() {
           className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
             message.type === 'error'
               ? 'bg-destructive/10 text-destructive'
-              : 'bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+              : 'bg-green-50 text-green-800'
           }`}
           role="alert"
         >
@@ -159,8 +168,8 @@ export default function AdminCourses() {
                 <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editCourse(c.courseId)}>&#9998;</Button>
-                    <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteCourse(c.courseId)}>&#10005;</Button>
+                    <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editCourse(c.courseId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
+                    <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteCourse(c.courseId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -173,6 +182,246 @@ export default function AdminCourses() {
           </TableBody>
         </Table>
       </Card>
+    </div>
+  );
+}
+
+// -- Markdown editor (shared between new + edit) ------------------------------
+
+function MarkdownEditor({ name, markdown, onNameChange, onMarkdownChange, onSave, onCancel }) {
+  return (
+    <Card>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="course-name">Course Name</Label>
+          <Input
+            id="course-name"
+            type="text"
+            value={name}
+            onChange={e => onNameChange(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="course-md">Course Markdown</Label>
+          <Textarea
+            id="course-md"
+            className="font-mono text-sm min-h-[400px]"
+            rows={20}
+            value={markdown}
+            onChange={e => onMarkdownChange(e.target.value)}
+            placeholder={"# Course Title\n\nOne-line description.\n\n## Exemplar\n\nWhat the learner will produce...\n\n## Learning Objectives\n\n- Can objective one\n- Can objective two"}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={onSave}>Save</Button>
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// -- New course view with AI Chat / Markdown tabs -----------------------------
+
+function NewCourseView({ onSave, onCancel, onError }) {
+  const [chatMessages, setChatMessages] = useState([]);
+  const [readiness, setReadiness] = useState(0);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [key, setKey] = useState(0); // increment to restart conversation
+
+  // Streaming
+  const [streamingText, setStreamingText] = useState(null);
+  const displayText = useStreamedText(streamingText);
+  const pendingRef = useRef(null);
+
+  // Handle stream drain completing
+  useEffect(() => {
+    if (displayText === null && pendingRef.current) {
+      const { msgs, r } = pendingRef.current;
+      pendingRef.current = null;
+      if (msgs) setChatMessages(prev => [...prev, ...msgs]);
+      if (r != null) setReadiness(r);
+      setBusy('');
+    }
+  }, [displayText]);
+
+  // Start conversation on mount (and on key change after course creation)
+  useEffect(() => {
+    let cancelled = false;
+    setChatMessages([]);
+    setReadiness(0);
+    setBusy('starting');
+    setStreamingText('');
+    setError('');
+
+    (async () => {
+      try {
+        const raw = await converseStream(
+          'course-creator',
+          [{ role: 'user', content: 'I want to create a new course.' }],
+          cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
+          512
+        );
+        if (cancelled) return;
+        const { text, readiness: r } = parseResponse(raw);
+        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+        pendingRef.current = { msgs: [msg], r: r ?? 1 };
+        setStreamingText(null);
+      } catch (e) {
+        if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [key]);
+
+  // Keep a ref to chatMessages so handleSend always has the latest
+  const chatMessagesRef = useRef(chatMessages);
+  useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
+
+  const handleSend = useCallback(async ({ text }) => {
+    if (!text?.trim()) return;
+    setError('');
+    setBusy('qa');
+    setStreamingText('');
+
+    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, timestamp: Date.now() };
+    setChatMessages(prev => [...prev, userMsg]);
+
+    try {
+      const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
+
+      const raw = await converseStream(
+        'course-creator',
+        tail,
+        cleanStream((partial) => setStreamingText(partial)),
+        512
+      );
+
+      const { text: respText, readiness: r } = parseResponse(raw);
+      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+      pendingRef.current = { msgs: [assistantMsg], r };
+      setStreamingText(null);
+    } catch (e) {
+      setError(e.message || 'Failed to send.');
+      setStreamingText(null);
+      setBusy('');
+    }
+  }, []);
+
+  async function handleCreate() {
+    setError('');
+    setBusy('creating');
+    try {
+      const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
+      const md = await extractCourseMarkdown(conversationText);
+      const courseId = `admin-${Date.now()}`;
+      const course = parseCoursePrompt(courseId, md);
+
+      if (!course.name || !course.exemplar || !course.learningObjectives.length) {
+        setError('Could not build a complete course. Keep refining with the agent.');
+        setBusy('');
+        return;
+      }
+
+      await onSave(course.name, md);
+      // Reset chat for another course
+      setKey(k => k + 1);
+    } catch (e) {
+      setError(e.message || 'Failed to create course.');
+      setBusy('');
+    }
+  }
+
+  const isBusy = !!busy;
+
+  const renderMessage = (msg, idx) => {
+    if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
+    return <AssistantMessage key={idx} content={msg.content} />;
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4">
+        <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to courses">&larr; Back</Button>
+        <h1 className="text-2xl font-bold">New Course</h1>
+      </div>
+
+      {error && (
+        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert">
+          <span>{error}</span>
+          <button onClick={() => setError('')} aria-label="Dismiss error" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
+        </div>
+      )}
+
+      {/* Readiness bar + Create Course button */}
+      {(chatMessages.length > 0 || displayText != null) && (
+        <div className="flex items-end gap-4 mb-4">
+          <div
+            className="flex-1"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={10}
+            aria-valuenow={readiness}
+            aria-label={`Course readiness: ${readiness} out of 10`}
+          >
+            <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
+              <span>Not ready</span>
+              <span>Ready</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${readiness * 10}%`,
+                  backgroundColor: `hsl(${readiness * 12}, 80%, 45%)`,
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              onClick={() => setKey(k => k + 1)}
+              disabled={isBusy}
+              size="sm"
+              aria-label="Start over"
+              title="Start over"
+            >
+              &#8635;
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={isBusy}
+              size="sm"
+            >
+              {busy === 'creating' ? 'Creating...' : 'Create Course'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Chat + compose in a single container */}
+      <div className="rounded-2xl bg-muted/40 border border-border p-4">
+        <div className="mb-3 [&>div]:max-h-[500px]">
+          <ChatArea courseName="Course Creator">
+            {chatMessages.map(renderMessage)}
+            {displayText != null && displayText.length > 0 && (
+              <AssistantMessage content={displayText} />
+            )}
+            {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+            {busy === 'creating' && <ThinkingSpinner text="Generating course..." />}
+            {busy === 'qa' && !displayText && <ThinkingSpinner />}
+          </ChatArea>
+        </div>
+
+        <ComposeBar
+          placeholder="Describe what you want to teach..."
+          onSend={handleSend}
+          disabled={isBusy}
+        />
+      </div>
     </div>
   );
 }

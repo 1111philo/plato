@@ -3,9 +3,19 @@
  * Usage: node dev-sqlite.js
  */
 
+import { readFileSync, existsSync } from 'fs';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+
+// Load .env file if present
+const envPath = new URL('.env', import.meta.url).pathname;
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+    const match = line.match(/^\s*([^#=]+?)\s*=\s*(.*?)\s*$/);
+    if (match && match[2]) process.env[match[1]] = process.env[match[1]] ?? match[2];
+  }
+}
 
 // Configure SQLite backend
 process.env.DB_BACKEND = 'sqlite';

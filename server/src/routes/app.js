@@ -86,6 +86,7 @@ app.get('*', (c) => {
   // SPA fallback: serve index.html for all other routes
   if (!indexHtml) return c.text('Client not built. Run: cd client && npm run build', 500);
   c.header('Content-Type', indexHtml.type);
+  c.header('Cache-Control', 'no-cache');
   return c.body(indexHtml.content);
 });
 
