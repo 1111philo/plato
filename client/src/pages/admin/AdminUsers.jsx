@@ -56,6 +56,7 @@ export default function AdminUsers() {
   const [inviteInput, setInviteInput] = useState('');
   const [emailQueue, setEmailQueue] = useState([]);
   const [inviteSending, setInviteSending] = useState(false);
+  const [inviteNotice, setInviteNotice] = useState(null);
   const csvRef = useRef(null);
 
   // Search, filter, pagination
@@ -126,7 +127,15 @@ export default function AdminUsers() {
 
   function handleAddEmails() {
     if (!inviteInput.trim()) return;
-    addEmailsToQueue(inviteInput);
+    setInviteNotice(null);
+    const skipped = addEmailsToQueue(inviteInput);
+    if (skipped > 0) {
+      const parts = inviteInput.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+      const msg = parts.length === 1
+        ? 'This user already exists or has a pending invite.'
+        : `${skipped} of ${parts.length} skipped (already exist or have pending invites).`;
+      setInviteNotice(msg);
+    }
     setInviteInput('');
   }
 
@@ -174,6 +183,7 @@ export default function AdminUsers() {
       setSlackSearch('');
       setSlackSearchResults([]);
       setInviteTab('email');
+      setInviteNotice(null);
     }
     setInviteOpen(open);
   }
@@ -222,9 +232,16 @@ export default function AdminUsers() {
   }
 
   function addToSlackQueue(user) {
+    setInviteNotice(null);
     setSlackQueue(prev => {
-      if (prev.some(u => u.slackUserId === user.slackUserId)) return prev;
-      if (user.email && existingEmails.has(user.email.toLowerCase())) return prev;
+      if (prev.some(u => u.slackUserId === user.slackUserId)) {
+        setInviteNotice(`${user.name} is already in the queue.`);
+        return prev;
+      }
+      if (user.email && existingEmails.has(user.email.toLowerCase())) {
+        setInviteNotice(`${user.name} already exists or has a pending invite.`);
+        return prev;
+      }
       return [...prev, user];
     });
     setSlackSearch('');
@@ -586,37 +603,34 @@ export default function AdminUsers() {
           {/* Toggle if Slack is connected */}
           {slackConnected && (
             <div
-              className="inline-flex rounded-lg border border-border p-0.5 bg-muted/50"
+              className="inline-flex rounded-full bg-muted p-1"
               role="radiogroup"
               aria-label="Invite method"
             >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={inviteTab === 'email'}
-                onClick={() => setInviteTab('email')}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  inviteTab === 'email'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Email
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={inviteTab === 'slack'}
-                onClick={() => { setInviteTab('slack'); if (slackChannels.length === 0) loadSlackChannels(); }}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  inviteTab === 'slack'
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Slack
-              </button>
+              {[
+                { key: 'email', label: 'Email' },
+                { key: 'slack', label: 'Slack' },
+              ].map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={inviteTab === t.key}
+                  onClick={() => { setInviteTab(t.key); setInviteNotice(null); if (t.key === 'slack' && slackChannels.length === 0) loadSlackChannels(); }}
+                  className={`px-4 py-1 text-sm font-medium rounded-full transition-all ${
+                    inviteTab === t.key
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
+          )}
+
+          {inviteNotice && (
+            <p className="text-sm text-amber-600" role="status">{inviteNotice}</p>
           )}
 
           {/* Email tab */}
