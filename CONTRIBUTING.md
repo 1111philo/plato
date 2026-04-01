@@ -21,11 +21,16 @@ Thank you for your interest in contributing to plato. This project is maintained
    ```bash
    cd client && npm run build
    ```
-4. Start the dev server with your Anthropic API key:
+4. Set up your API key:
    ```bash
-   cd server && ANTHROPIC_API_KEY=sk-ant-your-key node dev-sqlite.js
+   cd server && cp .env.example .env
+   # Edit .env and add your Anthropic API key
    ```
-5. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account. Content is seeded automatically.
+5. Start the dev server:
+   ```bash
+   node dev-sqlite.js
+   ```
+6. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account. Content is seeded automatically.
 
 No Docker, AWS credentials, or external services needed for local development. AI features require an Anthropic API key (or a Bedrock connection if you set `AI_PROVIDER=bedrock`) — without one, the app is fully navigable but you can't start course conversations.
 

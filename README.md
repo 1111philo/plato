@@ -45,8 +45,12 @@ cd client && npm install && cd ../server && npm install && cd ..
 # Build the client (server serves the built files)
 cd client && npm run build && cd ..
 
+# Configure your API key
+cd server && cp .env.example .env
+# Edit .env and add your Anthropic API key
+
 # Start the dev server (uses SQLite — no Docker or AWS needed)
-cd server && ANTHROPIC_API_KEY=sk-ant-your-key-here node dev-sqlite.js
+node dev-sqlite.js
 ```
 
 Open [http://localhost:3000](http://localhost:3000).

@@ -28,7 +28,8 @@ plato is an open-source, AI-powered learning platform. Learners work through cou
 
 ```bash
 cd client && npm install && cd ../server && npm install
-cd server && ANTHROPIC_API_KEY=sk-ant-... node dev-sqlite.js
+cd server && cp .env.example .env   # add your Anthropic API key
+node dev-sqlite.js
 ```
 
 Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
