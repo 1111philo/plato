@@ -583,15 +583,39 @@ export default function AdminUsers() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Tabs if Slack is connected */}
+          {/* Toggle if Slack is connected */}
           {slackConnected && (
-            <div className="flex gap-1 mb-2" role="tablist" aria-label="Invite method">
-              <Button variant={inviteTab === 'email' ? 'default' : 'outline'} size="sm" onClick={() => setInviteTab('email')} role="tab" aria-selected={inviteTab === 'email'}>
+            <div
+              className="inline-flex rounded-lg border border-border p-0.5 bg-muted/50"
+              role="radiogroup"
+              aria-label="Invite method"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={inviteTab === 'email'}
+                onClick={() => setInviteTab('email')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  inviteTab === 'email'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
                 Email
-              </Button>
-              <Button variant={inviteTab === 'slack' ? 'default' : 'outline'} size="sm" onClick={() => { setInviteTab('slack'); if (slackChannels.length === 0) loadSlackChannels(); }} role="tab" aria-selected={inviteTab === 'slack'}>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={inviteTab === 'slack'}
+                onClick={() => { setInviteTab('slack'); if (slackChannels.length === 0) loadSlackChannels(); }}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  inviteTab === 'slack'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
                 Slack
-              </Button>
+              </button>
             </div>
           )}
 
