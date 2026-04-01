@@ -54,10 +54,10 @@ jobs:
           cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
           cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
 
-      # Deploy (override samconfig profile — CI uses OIDC env credentials)
+      # Deploy (use ci config env to avoid local 'dase' profile)
       - run: >
           cd server && sam deploy
-          --config-file /dev/null
+          --config-env ci
           --stack-name plato
           --region us-east-2
           --resolve-s3
