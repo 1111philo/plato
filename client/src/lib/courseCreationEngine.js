@@ -18,7 +18,7 @@ const READINESS_REGEX = /\[READINESS:\s*(\d+)\]\s*$/;
 const COURSE_MD_REGEX = /\[COURSE_MARKDOWN\]([\s\S]*?)\[\/COURSE_MARKDOWN\]/;
 
 /** Strip the readiness tag from a response and return { text, readiness }. */
-function parseResponse(raw) {
+export function parseResponse(raw) {
   const match = raw.match(READINESS_REGEX);
   const readiness = match ? parseInt(match[1], 10) : null;
   const text = stripReadiness(raw);
@@ -31,7 +31,7 @@ function stripReadiness(text) {
 }
 
 /** Wrap a stream callback to strip the readiness tag from partial text. */
-function cleanStream(onStream) {
+export function cleanStream(onStream) {
   if (!onStream) return () => {};
   return (partial) => onStream(stripReadiness(partial));
 }
