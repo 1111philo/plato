@@ -372,7 +372,7 @@ export default function AdminUsers() {
           placeholder="Search by email, username, or name..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="max-w-xs !h-7 py-1 text-[0.8rem]"
+          className="max-w-xs"
           aria-label="Search users"
         />
         <div className="flex gap-1" role="group" aria-label="Filter users">
@@ -380,7 +380,7 @@ export default function AdminUsers() {
             <Button
               key={f.key}
               variant={filter === f.key ? 'default' : 'outline'}
-              size="sm"
+              size="default"
               onClick={() => setFilter(f.key)}
               aria-pressed={filter === f.key}
             >
