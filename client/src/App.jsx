@@ -107,6 +107,7 @@ export default function App() {
           <Route index element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="courses" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
+          <Route path="courses/new" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
           <Route path="agents" element={<Suspense fallback={<AdminFallback />}><AdminAgents /></Suspense>} />
           <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
           <Route path="content-updates" element={<Suspense fallback={<AdminFallback />}><AdminContentUpdates /></Suspense>} />
