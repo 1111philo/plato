@@ -47,6 +47,7 @@ jobs:
           cp version.json server/.aws-sam/build/PlatoStreamFunction/
       - run: >
           cd server && sam deploy
+          --config-env ci
           --stack-name plato-playground
           --region us-east-2
           --s3-bucket aws-sam-cli-managed-default-samclisourcebucket-kicjbl4qiddh
@@ -55,3 +56,4 @@ jobs:
           --no-confirm-changeset
           --no-fail-on-empty-changeset
           --parameter-overrides Stage=playground
+          --tags Application=plato
