@@ -11,6 +11,9 @@ Parameters:
       - playground
     Description: Deployment stage (prod or playground)
 
+Conditions:
+  IsProd: !Equals [!Ref Stage, prod]
+
 Globals:
   Function:
     Timeout: 60
@@ -113,7 +116,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub plato-${Stage}-users
+      TableName: !If [IsProd, plato-users, !Sub 'plato-${Stage}-users']
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -145,7 +148,7 @@ Resources:
   InvitesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub plato-${Stage}-invites
+      TableName: !If [IsProd, plato-invites, !Sub 'plato-${Stage}-invites']
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -172,7 +175,7 @@ Resources:
   RefreshTokensTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub plato-${Stage}-refresh-tokens
+      TableName: !If [IsProd, plato-refresh-tokens, !Sub 'plato-${Stage}-refresh-tokens']
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -190,7 +193,7 @@ Resources:
   SyncDataTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub plato-${Stage}-sync-data
+      TableName: !If [IsProd, plato-sync-data, !Sub 'plato-${Stage}-sync-data']
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -209,7 +212,7 @@ Resources:
   AuditLogTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub plato-${Stage}-audit-log
+      TableName: !If [IsProd, plato-audit-log, !Sub 'plato-${Stage}-audit-log']
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
