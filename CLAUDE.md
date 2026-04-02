@@ -70,6 +70,13 @@ The `template.yaml` accepts a `Stage` parameter (`prod` or `playground`). Each s
 
 SSM parameters (per stage): `/plato/{stage}/jwt-secret`, `/plato/{stage}/admin-email`, `/plato/{stage}/admin-password`, `/plato/{stage}/ses-from-email`, `/plato/{stage}/app-url`
 
+### Backups
+
+Prod DynamoDB tables have two backup layers:
+
+- **PITR** (Point-in-Time Recovery) — continuous, restores to any second in the last 35 days
+- **Pre-deploy snapshots** — the prod deploy workflow creates on-demand backups of all 5 tables before each deploy, keeping the last 5 per table
+
 ## CloudFront
 
 The site is served via CloudFront -> Lambda Function URL. The Origin Request Policy **must** be `AllViewerExceptHostHeader` — Lambda Function URLs reject requests where the Host header doesn't match their domain.

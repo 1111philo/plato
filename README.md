@@ -306,6 +306,8 @@ jobs:
 
 Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, and `YOUR_SAM_S3_BUCKET` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
 
+**Pre-deploy backups:** Add a step before `sam deploy` to back up your DynamoDB tables. The actual deploy workflow in this repo creates on-demand backups of all prod tables and prunes old ones (keeping the last 5). See `.github/workflows/deploy.yml` for the full backup step.
+
 **Multiple environments:** To add a staging environment (e.g., `playground`), create a second workflow triggered on a different branch that deploys with `--stack-name plato-playground --parameter-overrides Stage=playground`. Each stage gets its own DynamoDB tables and SSM parameters.
 
 **Workflow:** Push changes to the public repo (`origin`), then sync to your private fork (`deploy`) which triggers the CI/CD pipeline. Tests run first — deploy only happens if they pass.
@@ -319,6 +321,32 @@ To serve the app from a custom domain:
 3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
 4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
 5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+
+### Backups
+
+Production DynamoDB tables are protected by two backup layers:
+
+- **Point-in-Time Recovery (PITR)** — enabled on all 5 prod tables, allowing restore to any second in the last 35 days. Handles accidental deletes, data corruption, or bugs discovered after the fact.
+- **Pre-deploy snapshots** — the CI/CD deploy workflow automatically creates on-demand backups of all prod tables before each deploy. Old backups are pruned to keep the last 5 per table. These provide named restore points tied to specific deploys.
+
+To restore from a pre-deploy snapshot, use the AWS Console (DynamoDB > Backups) or the CLI:
+
+```bash
+aws dynamodb restore-table-from-backup \
+  --target-table-name plato-users-restored \
+  --backup-arn arn:aws:dynamodb:us-east-2:ACCOUNT:table/plato-users/backup/BACKUP_ID
+```
+
+To restore from PITR:
+
+```bash
+aws dynamodb restore-table-to-point-in-time \
+  --source-table-name plato-users \
+  --target-table-name plato-users-restored \
+  --restore-date-time 2026-04-01T12:00:00Z
+```
+
+In both cases, DynamoDB restores to a new table — rename or swap as needed.
 
 ## Versioning
 
