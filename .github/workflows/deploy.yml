@@ -33,6 +33,32 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::380610849750:role/plato-deploy
           aws-region: us-east-2
+      - name: Backup prod DynamoDB tables
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TABLES="plato-users plato-invites plato-refresh-tokens plato-sync-data plato-audit-log"
+          for TABLE in $TABLES; do
+            echo "Backing up $TABLE..."
+            aws dynamodb create-backup \
+              --table-name "$TABLE" \
+              --backup-name "${TABLE}-predeploy-${TIMESTAMP}" \
+              --region us-east-2
+          done
+      - name: Prune old backups (keep last 5 per table)
+        run: |
+          TABLES="plato-users plato-invites plato-refresh-tokens plato-sync-data plato-audit-log"
+          for TABLE in $TABLES; do
+            aws dynamodb list-backups \
+              --table-name "$TABLE" \
+              --backup-type USER \
+              --region us-east-2 \
+              --query 'BackupSummaries | sort_by(@, &BackupCreationDateTime) | reverse(@) | [5:].BackupArn' \
+              --output text | tr '\t' '\n' | while read ARN; do
+                [ -z "$ARN" ] && continue
+                echo "Deleting old backup: $ARN"
+                aws dynamodb delete-backup --backup-arn "$ARN" --region us-east-2
+              done
+          done
       - run: cd client && npm ci && npm run build
       - run: cd server && sam build
       - run: |
