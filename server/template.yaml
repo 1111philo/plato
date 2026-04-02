@@ -2,6 +2,15 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: plato — API server, auth, data sync, AI proxy
 
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues:
+      - prod
+      - playground
+    Description: Deployment stage (prod or playground)
+
 Globals:
   Function:
     Timeout: 60
@@ -25,11 +34,11 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
-          JWT_SECRET: '{{resolve:ssm:/plato/jwt-secret}}'
-          ADMIN_EMAIL: '{{resolve:ssm:/plato/admin-email}}'
-          ADMIN_PASSWORD: '{{resolve:ssm:/plato/admin-password}}'
-          SES_FROM_EMAIL: '{{resolve:ssm:/plato/ses-from-email}}'
-          APP_URL: '{{resolve:ssm:/plato/app-url}}'
+          JWT_SECRET: !Sub '{{resolve:ssm:/plato/${Stage}/jwt-secret}}'
+          ADMIN_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/admin-email}}'
+          ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
+          SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
+          APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -71,11 +80,11 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
-          JWT_SECRET: '{{resolve:ssm:/plato/jwt-secret}}'
-          ADMIN_EMAIL: '{{resolve:ssm:/plato/admin-email}}'
-          ADMIN_PASSWORD: '{{resolve:ssm:/plato/admin-password}}'
-          SES_FROM_EMAIL: '{{resolve:ssm:/plato/ses-from-email}}'
-          APP_URL: '{{resolve:ssm:/plato/app-url}}'
+          JWT_SECRET: !Sub '{{resolve:ssm:/plato/${Stage}/jwt-secret}}'
+          ADMIN_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/admin-email}}'
+          ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
+          SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
+          APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -104,7 +113,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: plato-users
+      TableName: !Sub plato-${Stage}-users
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -136,7 +145,7 @@ Resources:
   InvitesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: plato-invites
+      TableName: !Sub plato-${Stage}-invites
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -163,7 +172,7 @@ Resources:
   RefreshTokensTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: plato-refresh-tokens
+      TableName: !Sub plato-${Stage}-refresh-tokens
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -181,7 +190,7 @@ Resources:
   SyncDataTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: plato-sync-data
+      TableName: !Sub plato-${Stage}-sync-data
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application
@@ -200,7 +209,7 @@ Resources:
   AuditLogTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: plato-audit-log
+      TableName: !Sub plato-${Stage}-audit-log
       BillingMode: PAY_PER_REQUEST
       Tags:
         - Key: Application

@@ -150,15 +150,15 @@ System prompts are stored in the database and editable by admins at `/plato/prom
 
 ### 1. SSM parameters
 
-Create these in AWS Systems Manager Parameter Store before deploying:
+Create these in AWS Systems Manager Parameter Store before deploying. Replace `{stage}` with your stage name (e.g., `prod`, `playground`):
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `/plato/jwt-secret` | SecureString | JWT signing secret |
-| `/plato/ses-from-email` | String | Verified SES sender email |
-| `/plato/app-url` | String | Public URL (for invite/reset links) |
-| `/plato/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
-| `/plato/admin-password` | SecureString | Bootstrap admin password (optional) |
+| `/plato/{stage}/jwt-secret` | SecureString | JWT signing secret |
+| `/plato/{stage}/ses-from-email` | String | Verified SES sender email |
+| `/plato/{stage}/app-url` | String | Public URL (for invite/reset links) |
+| `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
+| `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
 ### 2. Configure SAM
 
@@ -192,11 +192,13 @@ cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client
 cp ../version.json .aws-sam/build/PlatoApiFunction/
 cp ../version.json .aws-sam/build/PlatoStreamFunction/
 
-# Deploy
+# Deploy (default stage is prod)
 sam deploy
+# Or deploy a specific stage
+sam deploy --parameter-overrides Stage=playground --stack-name plato-playground
 ```
 
-See `server/template.yaml` for the full infrastructure definition.
+The `Stage` parameter controls DynamoDB table name prefixes and SSM parameter paths. See `server/template.yaml` for the full infrastructure definition.
 
 ### 4. Set up CI/CD (recommended)
 
@@ -299,9 +301,12 @@ jobs:
           --capabilities CAPABILITY_IAM
           --no-confirm-changeset
           --no-fail-on-empty-changeset
+          --parameter-overrides Stage=prod
 ```
 
 Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, and `YOUR_SAM_S3_BUCKET` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
+
+**Multiple environments:** To add a staging environment (e.g., `playground`), create a second workflow triggered on a different branch that deploys with `--stack-name plato-playground --parameter-overrides Stage=playground`. Each stage gets its own DynamoDB tables and SSM parameters.
 
 **Workflow:** Push changes to the public repo (`origin`), then sync to your private fork (`deploy`) which triggers the CI/CD pipeline. Tests run first — deploy only happens if they pass.
 

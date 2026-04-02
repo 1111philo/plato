@@ -61,7 +61,14 @@ The copy steps are required — SAM doesn't build the client. `client-dist` serv
 
 Deploy config: `server/samconfig.toml` (copy from `samconfig.toml.example`, gitignored). See README.md for full deploy guide including CI/CD setup.
 
-SSM parameters: `/plato/jwt-secret`, `/plato/admin-email`, `/plato/admin-password`, `/plato/ses-from-email`, `/plato/app-url`
+### Environments
+
+The `template.yaml` accepts a `Stage` parameter (`prod` or `playground`). Each stage gets its own DynamoDB tables and SSM parameters:
+
+- **prod** (`plato` stack) — learn.ai-leaders.org, deploys on push to `main`
+- **playground** (`plato-playground` stack) — playground.ai-leaders.org, deploys on push to `playground`
+
+SSM parameters (per stage): `/plato/{stage}/jwt-secret`, `/plato/{stage}/admin-email`, `/plato/{stage}/admin-password`, `/plato/{stage}/ses-from-email`, `/plato/{stage}/app-url`
 
 ## CloudFront
 

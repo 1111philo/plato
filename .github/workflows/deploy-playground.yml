@@ -1,8 +1,8 @@
-name: Deploy to AWS
+name: Deploy to Playground
 
 on:
   push:
-    branches: [main]
+    branches: [playground]
   workflow_dispatch:
 
 jobs:
@@ -47,12 +47,11 @@ jobs:
           cp version.json server/.aws-sam/build/PlatoStreamFunction/
       - run: >
           cd server && sam deploy
-          --config-env ci
-          --stack-name plato
+          --stack-name plato-playground
           --region us-east-2
           --s3-bucket aws-sam-cli-managed-default-samclisourcebucket-kicjbl4qiddh
-          --s3-prefix plato
+          --s3-prefix plato-playground
           --capabilities CAPABILITY_IAM
           --no-confirm-changeset
           --no-fail-on-empty-changeset
-          --parameter-overrides Stage=prod
+          --parameter-overrides Stage=playground
