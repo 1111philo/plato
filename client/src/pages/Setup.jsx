@@ -54,7 +54,7 @@ export default function Setup() {
   }
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: '#470d99' }}>
+    <main className="min-h-dvh flex flex-col items-center justify-start py-12 p-4 overflow-y-auto" style={{ backgroundColor: '#470d99' }}>
       <img src="/assets/logo-white.svg" alt="plato" className="h-10 mb-6" />
       <Card className="w-full max-w-md">
         <CardHeader>

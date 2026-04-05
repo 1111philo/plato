@@ -75,7 +75,7 @@ export default function Signup() {
   if (!branding) return null;
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
+    <main className="min-h-dvh flex flex-col items-center justify-start py-12 p-4 overflow-y-auto" style={{ backgroundColor: branding.primary }}>
       <img src={branding.logo} alt={branding.logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       <Card className="w-full max-w-md">
         <CardHeader>
