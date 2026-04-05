@@ -28,23 +28,57 @@ export default function AdminLayout() {
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
+      {/* Mobile: top header + horizontal nav tabs */}
+      <header className="md:hidden bg-primary text-primary-foreground">
+        <div className="flex items-center justify-between px-4 py-3">
+          <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }}>
+            <img src="/assets/logo-white.svg" alt="plato" className="h-6 w-auto" />
+          </a>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/courses')}
+              className="text-xs text-primary-foreground/80 hover:text-primary-foreground bg-transparent border border-primary-foreground/30 rounded px-2 py-1 cursor-pointer transition-colors"
+            >
+              Classroom
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="text-xs text-primary-foreground/60 hover:text-primary-foreground bg-transparent border-none cursor-pointer transition-colors"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+        <nav className="flex overflow-x-auto gap-0.5 px-2 pb-2" aria-label="Admin navigation">
+          {NAV_LINKS.map(({ to, label, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                `block px-3 py-1.5 rounded-md text-sm transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'bg-primary-foreground/20 font-medium'
+                    : 'hover:bg-primary-foreground/10'
+                }`
+              }
+            >
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </header>
+
+      {/* Desktop: fixed sidebar */}
       <aside
-        className="w-full md:w-56 md:h-screen md:fixed md:top-0 md:left-0 bg-primary text-primary-foreground flex md:flex-col shrink-0"
+        className="hidden md:flex md:w-56 md:h-screen md:fixed md:top-0 md:left-0 bg-primary text-primary-foreground md:flex-col shrink-0"
         aria-label="Admin sidebar"
       >
-        <div className="px-4 py-3 flex items-center gap-3 md:py-4">
+        <div className="px-4 py-4">
           <img src="/assets/logo-white.svg" alt="plato" className="h-6 w-auto" />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="md:hidden ml-auto text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 text-xs"
-            onClick={() => navigate('/courses')}
-          >
-            Classroom
-          </Button>
         </div>
 
-        <nav className="flex md:flex-col flex-1 overflow-x-auto md:overflow-x-visible gap-0.5 px-2 md:px-2 py-1 md:py-0" aria-label="Admin navigation">
+        <nav className="flex flex-col flex-1 gap-0.5 px-2" aria-label="Admin navigation">
           {NAV_LINKS.map(({ to, label, end }) => (
             <NavLink
               key={to}
@@ -63,7 +97,7 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        <div className="hidden md:flex flex-col gap-2 px-4 py-3 mt-auto">
+        <div className="flex flex-col gap-2 px-4 py-3 mt-auto">
           <Button
             variant="secondary"
             className="w-full"
