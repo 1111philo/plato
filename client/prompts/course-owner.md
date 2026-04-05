@@ -27,6 +27,7 @@ Generate a course knowledge base with:
 - Evidence definitions should describe what the learner PRODUCES, not what they KNOW. "Learner writes a reflection connecting values to professional context" not "Learner understands values."
 - `learnerPosition` should reference the learner's profile if available — their strengths, gaps, experience level. If the profile is minimal, say so.
 - Keep evidence definitions under 20 words each.
+- Evidence definitions should be achievable in 1-2 exchanges. If an objective would require extensive back-and-forth to demonstrate, it's too broad for a microlearning course.
 
 Respond with ONLY valid JSON, no markdown fencing:
 

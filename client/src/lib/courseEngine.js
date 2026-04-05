@@ -16,11 +16,9 @@ import {
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileInBackground, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
-import { COURSE_PHASES, MSG_TYPES } from './constants.js';
+import { COURSE_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
-
-const MAX_EXCHANGES = 40;
 
 // -- Tag parsing --------------------------------------------------------------
 
@@ -89,6 +87,7 @@ export async function startCourse(courseId, course, onStream) {
   courseKB.courseId = courseId;
   courseKB.name = course.name;
   courseKB.progress = 0;
+  courseKB.startedAt = ts();
   await saveCourseKB(courseId, courseKB);
   syncInBackground(`courseKB:${courseId}`);
 
@@ -182,10 +181,14 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
   }
   courseKB.activitiesCompleted = (courseKB.activitiesCompleted || 0) + 1;
 
-  // Check completion
-  const achieved = parsed.progress >= 10 || courseKB.activitiesCompleted >= MAX_EXCHANGES;
-  if (achieved) {
+  // Check completion — the learner achieves the exemplar (progress 10),
+  // or the system gracefully closes the course at 2x the exchange target
+  // as a safety net (the coach is instructed to wrap up well before this).
+  const hardLimit = MAX_EXCHANGES * 2;
+  const achieved = parsed.progress >= 10 || courseKB.activitiesCompleted >= hardLimit;
+  if (achieved && courseKB.status !== 'completed') {
     courseKB.status = 'completed';
+    courseKB.completedAt = ts();
   }
 
   await saveCourseKB(courseId, courseKB);
@@ -231,7 +234,8 @@ export async function resumeCourse(courseId) {
 // -- Helpers ------------------------------------------------------------------
 
 function buildContext(course, courseKB, profileSummary, learnerName) {
-  return JSON.stringify({
+  const completed = courseKB?.activitiesCompleted || 0;
+  const context = {
     learnerName: learnerName || '',
     courseName: course.name,
     courseDescription: course.description,
@@ -241,6 +245,19 @@ function buildContext(course, courseKB, profileSummary, learnerName) {
     learnerProfile: profileSummary || 'No profile yet',
     learnerPosition: courseKB?.learnerPosition || 'New learner',
     progress: courseKB?.progress ?? 0,
-    activitiesCompleted: courseKB?.activitiesCompleted || 0,
-  });
+    activitiesCompleted: completed,
+  };
+  // Escalating pacing directives when over the exchange target
+  const over = completed - MAX_EXCHANGES;
+  if (over >= 9) {
+    // 20+ exchanges: wrap up — accept where the learner is
+    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the course. Award progress 10. Do not assign new work.';
+  } else if (over >= 4) {
+    // 15-19 exchanges: aggressive focus — drop non-essential objectives
+    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';
+  } else if (over >= 0) {
+    // 11-14 exchanges: gentle pivot
+    context.pacingDirective = 'OVER TARGET — Briefly acknowledge the pivot to the learner (e.g. "Let\'s pull together everything you\'ve built so far and focus on the exemplar."). Then stop introducing new concepts. Scaffold the learner directly to the exemplar using only what they have already demonstrated. Be directive, not exploratory. Break the exemplar into the smallest step they can complete right now.';
+  }
+  return JSON.stringify(context);
 }

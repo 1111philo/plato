@@ -4,7 +4,7 @@
 
 # plato
 
-An open-source, exemplar-driven learning platform powered by AI. Learners work through courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery.
+An open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused, exemplar-driven courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery — all in under 20 minutes.
 
 Built by [11:11 Philosopher's Group](https://github.com/1111philo).
 
@@ -12,7 +12,23 @@ Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source
 
 ## How it works
 
-A **course** defines an exemplar (the mastery-level outcome a learner is working toward) and a set of learning objectives. When a learner starts a course, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
+plato applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each course is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
+
+A **course** defines an exemplar (the mastery-level outcome a learner produces) and a set of learning objectives. When a learner starts a course, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
+
+### Microlearning pacing
+
+Courses are designed for completion within 11 exchanges, but the system never cuts a learner off. Instead, the coach adapts its approach as exchanges accumulate:
+
+| Exchanges | Coach behavior |
+|-----------|---------------|
+| 1-10 | Normal coaching — diagnostics, practice, assessment |
+| 11-14 | Pivots to the exemplar — no new concepts, direct scaffolding |
+| 15-19 | Drops to single objective — one concrete, completable task |
+| 20-21 | Celebrates progress and closes the course |
+| 22 | Hard limit — system completes the course (safety net) |
+
+The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of courses complete within the 11-exchange target, helping educators tune course design.
 
 Admins manage everything from `/plato`: users, courses, system prompts, a program knowledge base, and visual theming.
 
@@ -353,6 +369,7 @@ In both cases, DynamoDB restores to a new table — rename or swap as needed.
 plato uses a `Beta-RC-X` version scheme stored in `version.json`. The version is bumped automatically when a PR is merged to main via the `version-bump.yml` GitHub Action. The current version is displayed in the admin sidebar with a link to the GitHub repo.
 
 The `main` branch is protected — all changes require a pull request.
+
 
 ## Contributing
 

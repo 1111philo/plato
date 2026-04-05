@@ -168,6 +168,118 @@ describe('GET /v1/invite-example.csv', () => {
   });
 });
 
+describe('PUT /v1/admin/courses/:courseId — objective validation', () => {
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+  });
+
+  const validMarkdown = `# Test Course
+
+A test course.
+
+## Exemplar
+Produce a thing.
+
+## Learning Objectives
+- Can do thing one
+- Can do thing two
+- Can do thing three`;
+
+  it('accepts 2-4 objectives', async () => {
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/test-1', {
+      markdown: validMarkdown, name: 'Test Course',
+    });
+    assert.equal(res.status, 200);
+  });
+
+  it('rejects too many objectives', async () => {
+    const md = validMarkdown + '\n- Can do thing four\n- Can do thing five';
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/test-1', {
+      markdown: md, name: 'Test Course',
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error.includes('Too many objectives'));
+  });
+
+  it('rejects too few objectives', async () => {
+    const md = `# Test Course
+
+A test.
+
+## Exemplar
+Produce a thing.
+
+## Learning Objectives
+- Can do one thing`;
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/test-1', {
+      markdown: md, name: 'Test Course',
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error.includes('Too few objectives'));
+  });
+});
+
+describe('GET /v1/admin/stats/courses', () => {
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+  });
+
+  it('returns aggregated course stats', async () => {
+    db.listAllUsers = async () => [
+      { userId: 'u1' }, { userId: 'u2' }, { userId: 'u3' },
+    ];
+    db.getAllSyncData = async (userId) => {
+      if (userId === 'u1') return [
+        { dataKey: 'courseKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 6, startedAt: 1000000, completedAt: 1600000 } },
+        { dataKey: 'courseKB:c2', data: { status: 'active', progress: 4, activitiesCompleted: 3 } },
+        { dataKey: 'profile', data: {} },
+      ];
+      if (userId === 'u2') return [
+        { dataKey: 'courseKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 15, startedAt: 1000000, completedAt: 2200000 } },
+      ];
+      // u3: hit hard limit (22 exchanges, progress < 10)
+      return [
+        { dataKey: 'courseKB:c1', data: { status: 'completed', progress: 7, activitiesCompleted: 22, startedAt: 1000000, completedAt: 2800000 } },
+      ];
+    };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/courses');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.totalCompletions, 3);
+    assert.equal(data.withinTarget, 1);
+    assert.equal(data.overTarget, 1);
+    assert.equal(data.hitHardLimit, 1);
+    assert.equal(data.activeCourses, 1);
+    assert.equal(data.avgExchangesWithinTarget, 6);
+    assert.equal(data.exchangeTarget, 11);
+    assert.equal(data.hardLimit, 22);
+    assert.equal(data.avgDurationMinutes, 20);
+  });
+
+  it('returns nulls when no completions', async () => {
+    db.listAllUsers = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/courses');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.totalCompletions, 0);
+    assert.equal(data.avgExchangesPerCompletion, null);
+  });
+});
+
 describe('DELETE /v1/admin/users/:userId', () => {
   beforeEach(() => {
     db.getUserById = async (id) => {

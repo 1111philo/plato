@@ -10,10 +10,9 @@ import {
 import { converseStream, extractCourseMarkdown } from '../../js/orchestrator.js';
 import { parseCoursePrompt, invalidateCoursesCache } from '../../js/courseOwner.js';
 import { syncInBackground } from './syncDebounce.js';
-import { MSG_TYPES } from './constants.js';
+import { MSG_TYPES, MIN_OBJECTIVES, MAX_OBJECTIVES } from './constants.js';
 
 function ts() { return Date.now(); }
-
 const READINESS_REGEX = /\[READINESS:\s*(\d+)\]\s*$/;
 const COURSE_MD_REGEX = /\[COURSE_MARKDOWN\]([\s\S]*?)\[\/COURSE_MARKDOWN\]/;
 
@@ -112,6 +111,12 @@ export async function createCourse(draftId) {
 
   if (!course.name || !course.exemplar || !course.learningObjectives.length) {
     return { error: 'Could not build a complete course from the conversation. Keep refining with the agent.' };
+  }
+  if (course.learningObjectives.length < MIN_OBJECTIVES) {
+    return { error: `Too few objectives (${course.learningObjectives.length}). Courses need at least ${MIN_OBJECTIVES} learning objectives.` };
+  }
+  if (course.learningObjectives.length > MAX_OBJECTIVES) {
+    return { error: `Too many objectives (${course.learningObjectives.length}). Microlearning courses need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives to fit in under 20 minutes.` };
   }
 
   await saveUserCourse(courseId, markdown);
