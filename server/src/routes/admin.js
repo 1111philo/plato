@@ -8,8 +8,25 @@ import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMe
 import { getPendingUpdates, readBundledContent, hashContent } from '../lib/content-updates.js';
 import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
+import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/course-limits.js';
 
 const admin = new Hono();
+
+/** Validate course markdown for microlearning constraints. Returns error string or null. */
+function validateCourseMarkdown(markdown) {
+  const objSection = markdown.split(/^## Learning Objectives$/m)[1];
+  if (!objSection) return 'Course must have a "## Learning Objectives" section.';
+  // Count objective lines before the next section header
+  const lines = objSection.split('\n');
+  const objectives = [];
+  for (const line of lines) {
+    if (/^## /.test(line)) break;
+    if (/^- Can .+/.test(line)) objectives.push(line);
+  }
+  if (objectives.length < MIN_OBJECTIVES) return `Too few objectives (${objectives.length}). Courses need at least ${MIN_OBJECTIVES}.`;
+  if (objectives.length > MAX_OBJECTIVES) return `Too many objectives (${objectives.length}). Microlearning courses need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives.`;
+  return null;
+}
 
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
@@ -383,6 +400,8 @@ admin.put('/v1/admin/courses/:courseId', async (c) => {
   const courseId = c.req.param('courseId');
   const body = await c.req.json();
   if (!body.markdown) return c.json({ error: 'markdown is required' }, 400);
+  const mdError = validateCourseMarkdown(body.markdown);
+  if (mdError) return c.json({ error: mdError }, 400);
   const adminUser = c.get('user');
   const current = await db.getSyncData('_system', `course:${courseId}`);
   const data = {
@@ -623,6 +642,78 @@ admin.post('/v1/admin/slack/invites', async (c) => {
   const sent = results.filter(r => r.status === 'sent').length;
   const skipped = results.filter(r => r.status !== 'sent').length;
   return c.json({ sent, skipped, total: results.length, results }, 201);
+});
+
+// GET /v1/admin/stats/courses — course pacing KPIs
+// MAX_EXCHANGES is not a hard cutoff — it's the target for good course pacing.
+// Courses always run until the exemplar is achieved (progress >= 10).
+admin.get('/v1/admin/stats/courses', async (c) => {
+  // MAX_EXCHANGES imported at top from course-limits.js
+  const hardLimit = MAX_EXCHANGES * 2;
+  const users = await db.listAllUsers();
+  let withinTarget = 0;
+  let overTarget = 0;
+  let hitHardLimit = 0;
+  let totalExchangesWithin = 0;
+  let totalExchangesOver = 0;
+  let activeCourses = 0;
+  const durations = []; // in minutes
+
+  for (const user of users) {
+    const syncItems = await db.getAllSyncData(user.userId);
+    for (const item of syncItems) {
+      if (!item.dataKey?.startsWith('courseKB:')) continue;
+      const kb = item.data;
+      if (!kb) continue;
+      if (kb.status === 'completed') {
+        const exchanges = kb.activitiesCompleted || 0;
+        if (exchanges >= hardLimit && kb.progress < 10) {
+          hitHardLimit++;
+          totalExchangesOver += exchanges;
+        } else if (exchanges <= MAX_EXCHANGES) {
+          withinTarget++;
+          totalExchangesWithin += exchanges;
+        } else {
+          overTarget++;
+          totalExchangesOver += exchanges;
+        }
+        // Compute duration if timestamps are available
+        if (kb.startedAt && kb.completedAt) {
+          durations.push((kb.completedAt - kb.startedAt) / 60000);
+        } else {
+          // Fallback: try to get duration from message timestamps
+          const courseId = item.dataKey.replace('courseKB:', '');
+          const msgItem = syncItems.find(s => s.dataKey === `messages:${courseId}`);
+          const msgs = msgItem?.data;
+          if (Array.isArray(msgs) && msgs.length >= 2) {
+            const first = msgs[0]?.timestamp;
+            const last = msgs[msgs.length - 1]?.timestamp;
+            if (first && last) durations.push((last - first) / 60000);
+          }
+        }
+      } else {
+        activeCourses++;
+      }
+    }
+  }
+
+  const totalCompletions = withinTarget + overTarget + hitHardLimit;
+  const avgDurationMinutes = durations.length
+    ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1)
+    : null;
+  return c.json({
+    totalCompletions,
+    withinTarget,
+    overTarget,
+    hitHardLimit,
+    exchangeTarget: MAX_EXCHANGES,
+    hardLimit,
+    avgExchangesPerCompletion: totalCompletions ? +((totalExchangesWithin + totalExchangesOver) / totalCompletions).toFixed(1) : null,
+    avgExchangesWithinTarget: withinTarget ? +(totalExchangesWithin / withinTarget).toFixed(1) : null,
+    avgExchangesOverTarget: (overTarget + hitHardLimit) ? +(totalExchangesOver / (overTarget + hitHardLimit)).toFixed(1) : null,
+    avgDurationMinutes,
+    activeCourses,
+  });
 });
 
 export default admin;

@@ -4,7 +4,7 @@ Project-level instructions for Claude Code sessions working on plato.
 
 ## Project overview
 
-plato is an open-source, AI-powered learning platform. Learners work through courses in a continuous conversation with an AI coach.
+plato is an open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused courses in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
 
 - `client/` — React 18 + Vite SPA
 - `server/` — Node.js + Hono, deployed as AWS Lambda (SAM)
@@ -21,8 +21,10 @@ plato is an open-source, AI-powered learning platform. Learners work through cou
 - Content change management: when bundled files (`client/prompts/`, `client/data/`) differ from DB, admins see an alert on the dashboard and can accept or dismiss each update
 - User-created courses stored under user's own sync-data: `courses:custom-*`
 - 6 AI agents via Bedrock or Anthropic API: coach, course-owner, course-creator, course-extractor, learner-profile-owner, learner-profile-update
+- Microlearning constraints defined in `client/src/lib/constants.js`: MAX_EXCHANGES=11, MIN_OBJECTIVES=2, MAX_OBJECTIVES=4. Server mirrors in `server/src/lib/course-limits.js`. Prompts reference these as literal numbers (update both if changed).
+- Pacing: courses target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
-- Admin dashboard at `/plato` (lazy-loaded, role-gated)
+- Admin dashboard at `/plato` (lazy-loaded, role-gated) with Course Pacing KPIs (on-target rate, over-target count, hard-limit hits)
 
 ## Development
 
@@ -40,7 +42,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-93 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+98 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
@@ -112,4 +114,6 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/js/orchestrator.js` — AI agent orchestration
 - `server/src/lib/content-updates.js` — content change detection (hash comparison, bundled file reading)
 - `client/src/pages/admin/AdminContentUpdates.jsx` — admin review page for upstream content changes
+- `client/src/lib/constants.js` — microlearning limits (MAX_EXCHANGES, MIN/MAX_OBJECTIVES) and shared constants
+- `server/src/lib/course-limits.js` — server-side mirror of microlearning limits
 - `version.json` — current version (Beta-RC-X), auto-bumped on PR merge
