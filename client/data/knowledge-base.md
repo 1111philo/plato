@@ -16,7 +16,7 @@ The program's core philosophy is "learn by doing." Participants don't just study
 
 - **Orientation:** Two synchronous Zoom sessions held the week of March 17–19, 2026, plus an asynchronous option (slideshow + recorded video) for those who couldn't attend live.
 - **Course Launch:** Wednesday, April 1, 2026 at 11:11 AM CST.
-- **Course Duration:** April through May 2026 (approximately 8 weeks).
+- **Program Duration:** April through May 2026 (approximately 8 weeks). Note: this is the overall program timeline, not individual course length. Each course on the platform is a microlearning experience designed for ~20 minutes.
 - **Cohort Size:** ~200+ participants accepted. The program was originally scoped for 80 but was expanded.
 - **Job Placement Track:** 40 participants will be selected for paid job placements and mentorship based on portfolio quality. A rubric for selection will be released in April.
 - **Graduation Paths:** Participants "graduate" from AI Leaders one of two ways: (1) completing courses and building their portfolio, or (2) being selected for a job placement.
