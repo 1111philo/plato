@@ -29,7 +29,7 @@ export default function AdminLayout() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <aside
-        className="w-full md:w-56 md:h-screen md:sticky md:top-0 bg-primary text-primary-foreground flex md:flex-col shrink-0"
+        className="w-full md:w-56 md:h-screen md:fixed md:top-0 md:left-0 bg-primary text-primary-foreground flex md:flex-col shrink-0"
         aria-label="Admin sidebar"
       >
         <div className="px-4 py-4 hidden md:block">
@@ -89,7 +89,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-6 md:ml-56">
         <div className="max-w-4xl">
           <Outlet />
         </div>
