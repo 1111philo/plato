@@ -8,6 +8,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 
+import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
@@ -29,6 +30,7 @@ export default function AdminLessons() {
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   useEffect(() => {
     document.title = 'Lessons — Admin';
@@ -60,21 +62,38 @@ export default function AdminLessons() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function toggleLessonStatus(lessonId, newStatus) {
-    try {
-      await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { status: newStatus });
-      setMessage({ text: newStatus === 'published' ? 'Lesson published.' : 'Lesson unpublished.', type: 'success' });
-      loadLessons();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  function toggleLessonStatus(lessonId, newStatus) {
+    const action = newStatus === 'published' ? 'Publish' : 'Unpublish';
+    setConfirmModal({
+      title: `${action} Lesson?`,
+      message: newStatus === 'published'
+        ? 'This lesson will become visible to all learners.'
+        : 'This lesson will be hidden from learners.',
+      confirmLabel: action,
+      variant: newStatus === 'published' ? 'success' : 'destructive',
+      onConfirm: async () => {
+        try {
+          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { status: newStatus });
+          setMessage({ text: `Lesson ${newStatus === 'published' ? 'published' : 'unpublished'}.`, type: 'success' });
+          loadLessons();
+        } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+      },
+    });
   }
 
-  async function deleteLesson(lessonId) {
-    if (!confirm(`Delete lesson "${lessonId}"?`)) return;
-    try {
-      await adminApi('DELETE', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
-      setMessage({ text: 'Lesson deleted.', type: 'success' });
-      loadLessons();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  function deleteLesson(lessonId) {
+    setConfirmModal({
+      title: 'Delete Lesson?',
+      message: 'This will permanently delete this lesson. This cannot be undone.',
+      confirmLabel: 'Delete Lesson',
+      onConfirm: async () => {
+        try {
+          await adminApi('DELETE', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
+          setMessage({ text: 'Lesson deleted.', type: 'success' });
+          loadLessons();
+        } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+      },
+    });
   }
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
@@ -158,7 +177,7 @@ export default function AdminLessons() {
                   <TableCell>
                     <span className="flex items-center gap-2">
                       {c.name || c.lessonId}
-                      {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
+                      <Badge variant="outline" className={`text-xs ${isDraft ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}>{isDraft ? 'Draft' : 'Published'}</Badge>
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
@@ -176,7 +195,9 @@ export default function AdminLessons() {
                         </Button>
                       )}
                       <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editLesson(c.lessonId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -190,6 +211,18 @@ export default function AdminLessons() {
           </TableBody>
         </Table>
       </Card>
+
+      {confirmModal && (
+        <ConfirmModal
+          open={!!confirmModal}
+          onOpenChange={(open) => { if (!open) setConfirmModal(null); }}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmLabel={confirmModal.confirmLabel}
+          variant={confirmModal.variant}
+          onConfirm={() => { setConfirmModal(null); confirmModal.onConfirm(); }}
+        />
+      )}
     </div>
   );
 }
@@ -394,7 +427,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
 
       {/* Chat + compose in a single container */}
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
-        <div className="mb-3 [&>div]:max-h-[500px]">
+        <div className="mb-3">
           <ChatArea lessonName="Lesson Creator">
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (

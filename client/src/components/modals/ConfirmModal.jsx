@@ -24,7 +24,11 @@ export default function ConfirmModal({
         <AlertDialogFooter>
           <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
-            className={variant === 'destructive' ? 'bg-destructive/10 text-destructive hover:bg-destructive/20' : undefined}
+            className={
+              variant === 'destructive' ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
+              : variant === 'success' ? 'bg-green-600 text-white hover:bg-green-700'
+              : undefined
+            }
             onClick={() => { onConfirm(); }}
           >
             {confirmLabel}

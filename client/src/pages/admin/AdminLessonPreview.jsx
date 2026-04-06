@@ -15,6 +15,10 @@ import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 import ProgressBar from '../../components/chat/ProgressBar.jsx';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 
 export default function AdminLessonPreview() {
   const { lessonId } = useParams();
@@ -24,6 +28,7 @@ export default function AdminLessonPreview() {
   const [lessonKB, setLessonKB] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState('');
+  const [showObjectives, setShowObjectives] = useState(false);
   const [error, setError] = useState('');
   const [isDraft, setIsDraft] = useState(false);
 
@@ -159,8 +164,10 @@ export default function AdminLessonPreview() {
   return (
     <main className="flex flex-col h-full" aria-label="Lesson preview">
       {/* Preview banner */}
-      <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800" role="status" aria-live="polite">
-        Preview Mode — this conversation is not saved
+      <div className="px-4 pt-4 mb-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800" role="status" aria-live="polite">
+          <strong>Preview Mode</strong> — this conversation is not saved
+        </div>
       </div>
 
       {/* Header */}
@@ -170,9 +177,20 @@ export default function AdminLessonPreview() {
             &larr;
           </Button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold truncate">{lesson?.name || 'Loading...'}</h1>
-              {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <h1 className="text-sm font-semibold truncate">{lesson?.name || 'Loading...'}</h1>
+                {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
+              </div>
+              {lesson && (
+                <button
+                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+                  onClick={() => setShowObjectives(true)}
+                  aria-label={`View ${lesson.learningObjectives.length} objectives`}
+                >
+                  Lesson Overview ({lesson.learningObjectives.length} Objectives)
+                </button>
+              )}
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
@@ -200,6 +218,33 @@ export default function AdminLessonPreview() {
           onSend={handleSend}
           disabled={busy}
         />
+      )}
+
+      {/* Objectives dialog */}
+      {lesson && (
+        <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{lesson.name}</DialogTitle>
+              {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
+            </DialogHeader>
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Exemplar</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Learning Objectives</h3>
+              <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
+                {lesson.learningObjectives.map((obj, i) => (
+                  <li key={i}>{obj}</li>
+                ))}
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </main>
   );

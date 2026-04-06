@@ -222,7 +222,7 @@ export default function LessonChat() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
                 <button
-                  className="text-xs text-primary hover:underline shrink-0"
+                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowObjectives(true)}
                 >
                   Lesson Overview ({lesson.learningObjectives.length} Objectives)
@@ -259,7 +259,7 @@ export default function LessonChat() {
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
               <button
-                className="text-xs text-primary hover:underline shrink-0"
+                className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowObjectives(true)}
                 aria-label={`View ${lesson.learningObjectives.length} objectives`}
               >

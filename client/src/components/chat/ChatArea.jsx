@@ -12,14 +12,17 @@ const ChatArea = forwardRef(function ChatArea({ children, lessonName }, ref) {
     const el = typeof scrollRef === 'function' ? null : scrollRef.current;
     if (!el) return;
 
-    // Find the nearest scrolling ancestor for auto-scroll behavior
-    let sc = el.parentElement;
+    // Find the scroll container — could be the element itself or a parent
+    let scrollContainer = document.documentElement;
+    let sc = el;
     while (sc && sc !== document.documentElement) {
       const { overflowY } = getComputedStyle(sc);
-      if (overflowY === 'auto' || overflowY === 'scroll') break;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        scrollContainer = sc;
+        break;
+      }
       sc = sc.parentElement;
     }
-    const scrollContainer = sc || document.documentElement;
 
     function isNearBottom() {
       return scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < NEAR_BOTTOM_PX;

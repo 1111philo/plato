@@ -33,6 +33,38 @@ async function loadKnowledgeBase() {
 }
 
 const KB_AGENTS = ['coach', 'lesson-creator', 'knowledge-base-editor'];
+// Agents that see published lessons only (learner-facing)
+const PUBLISHED_CATALOG_AGENTS = ['coach'];
+// Agents that see all lessons including drafts (admin-only)
+const ADMIN_CATALOG_AGENTS = ['lesson-creator', 'knowledge-base-editor'];
+
+let publishedCatalog = null;
+let adminCatalog = null;
+
+async function loadPublishedCatalog() {
+  if (publishedCatalog) return publishedCatalog;
+  try {
+    const resp = await authenticatedFetch('/v1/lessons');
+    const lessons = resp.ok ? await resp.json() : [];
+    if (!lessons.length) { publishedCatalog = ''; return ''; }
+    publishedCatalog = lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
+  } catch { publishedCatalog = ''; }
+  return publishedCatalog;
+}
+
+async function loadAdminCatalog() {
+  if (adminCatalog) return adminCatalog;
+  try {
+    const resp = await authenticatedFetch('/v1/admin/lessons');
+    const lessons = resp.ok ? await resp.json() : [];
+    if (!lessons.length) { adminCatalog = ''; return ''; }
+    adminCatalog = lessons.map(l => {
+      const status = l.status === 'draft' ? ' [DRAFT]' : '';
+      return `- ${l.name || l.lessonId}${status}`;
+    }).join('\n');
+  } catch { adminCatalog = ''; }
+  return adminCatalog;
+}
 
 function parseJSON(text) {
   const trimmed = text.trim();
@@ -82,6 +114,8 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
   throw lastError;
 }
 
+export function invalidateLessonCatalog() { publishedCatalog = null; adminCatalog = null; }
+
 export async function isReady() {
   return true;
 }
@@ -93,6 +127,13 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   if (KB_AGENTS.includes(promptName)) {
     const kb = await loadKnowledgeBase();
     if (kb) systemPrompt = `${systemPrompt}\n\n---\n\n## Program Knowledge Base\n\n${kb}`;
+  }
+  if (ADMIN_CATALOG_AGENTS.includes(promptName)) {
+    const catalog = await loadAdminCatalog();
+    if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Current Lessons in This Classroom\n\n${catalog}`;
+  } else if (PUBLISHED_CATALOG_AGENTS.includes(promptName)) {
+    const catalog = await loadPublishedCatalog();
+    if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
 
   const resp = await authenticatedFetch('/v1/ai/messages', {
