@@ -112,10 +112,7 @@ export async function saveLearnerProfileSummary(summary) {
 // -- Lesson KB ----------------------------------------------------------------
 
 export async function getLessonKB(lessonId) {
-  // Try new key first, fall back to legacy courseKB: key for unmigrated data
-  const data = await fetchSyncData(`lessonKB:${lessonId}`);
-  if (data) return data;
-  return fetchSyncData(`courseKB:${lessonId}`);
+  return fetchSyncData(`lessonKB:${lessonId}`);
 }
 
 export async function saveLessonKB(lessonId, kb) {
@@ -248,10 +245,9 @@ export async function saveUserLesson(lessonId, markdown) {
 }
 
 export async function getUserLessons() {
-  // Scan cache for all lessons:* and legacy courses:* keys
   const lessons = [];
   for (const [key, data] of _cache.entries()) {
-    if ((key.startsWith('lessons:') || key.startsWith('courses:')) && data) {
+    if (key.startsWith('lessons:') && data) {
       lessons.push(data);
     }
   }
@@ -259,7 +255,7 @@ export async function getUserLessons() {
 }
 
 export async function getUserLessonMarkdown(lessonId) {
-  const data = await fetchSyncData(`lessons:${lessonId}`) || await fetchSyncData(`courses:${lessonId}`);
+  const data = await fetchSyncData(`lessons:${lessonId}`);
   return data?.markdown || null;
 }
 
