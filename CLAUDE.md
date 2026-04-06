@@ -51,7 +51,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-98 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+85 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
@@ -68,7 +68,7 @@ cp ../version.json .aws-sam/build/PlatoStreamFunction/
 sam deploy
 ```
 
-The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt/lesson/KB source files for seeding and content change management.
+The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt and lesson source files for seeding.
 
 Deploy config: `server/samconfig.toml` (copy from `samconfig.toml.example`, gitignored). See README.md for full deploy guide including CI/CD setup.
 
@@ -107,7 +107,11 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Footer text: "Powered by plato." (with period, with GitHub link)
 - User-created lesson IDs start with `custom-`
 - `loadLessons()` merges system lessons (`/v1/lessons`) with user lessons from sync-data
-- Favicon is generated dynamically via canvas: classroom logo on rounded-rect with primary color background
+- Favicon: defaults to plato's; generated dynamically when admin uploads a logo image (logo on rounded-rect with primary color)
+- Lesson drafts: admins can save lessons as drafts (hidden from learners), preview in sandbox mode, then publish
+- Lesson editing: conversation-based via the Lesson Creator agent (no raw markdown editor)
+- Knowledge base: created/edited by admins via the KB Editor agent in the Customizer (not directly editable)
+- Admin nav order: Home, Lessons, Users, Customizer, Integrations
 
 ## Key files
 

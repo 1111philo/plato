@@ -30,7 +30,7 @@ Lessons are designed for completion within 11 exchanges, but the system never cu
 
 The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target, helping educators tune lesson design.
 
-Admins manage everything from `/plato`: users, lessons, system prompts, a program knowledge base, and visual theming.
+Admins manage everything from `/plato`: lessons, users, a classroom customizer (styles + knowledge base), and integrations.
 
 ## Repository structure
 
@@ -71,7 +71,7 @@ node dev-sqlite.js
 
 Open [http://localhost:3000](http://localhost:3000).
 
-On first visit you'll create an admin account. Prompts, lessons, and the knowledge base are seeded automatically.
+On first visit you'll name your classroom and create an admin account. Prompts and lessons are seeded automatically. The knowledge base is created by admins through the conversational KB Editor in the Customizer.
 
 ### AI provider
 
@@ -138,7 +138,7 @@ Hono framework on AWS Lambda with DynamoDB (or SQLite for local dev). Two Lambda
 
 **DynamoDB tables:** users, invites, refresh-tokens, sync-data, audit-log
 
-All content (system prompts, lessons, knowledge base, theme/branding) is stored in the sync-data table under a `_system` user — no additional tables needed.
+All content (system prompts, lessons, knowledge base, theme/branding, classroom identity) is stored in the sync-data table under a `_system` user — no additional tables needed.
 
 **Auth:** JWT access tokens (15 min) + refresh tokens (30 day, rotated). Invite-based registration. First-time setup creates the initial admin via a UI flow.
 
@@ -148,12 +148,14 @@ All content (system prompts, lessons, knowledge base, theme/branding) is stored 
 |-------|------|
 | **Coach** | Learner's companion in one continuous conversation — coaches, creates activities, evaluates submissions, tracks progress |
 | **Lesson Owner** | Initializes a lesson knowledge base from the lesson prompt + learner profile |
-| **Lesson Creator** | Guides users through designing custom lessons via chat |
+| **Lesson Creator** | Guides admins through designing lessons via conversation |
 | **Lesson Extractor** | Extracts lesson markdown from a creation conversation |
+| **Knowledge Base Editor** | Helps admins create and edit the program knowledge base via conversation |
+| **Knowledge Base Extractor** | Merges existing KB with conversation changes to produce updated markdown |
 | **Learner Profile Owner** | Deep profile update on lesson completion |
 | **Learner Profile Update** | Incremental profile update from feedback/observations |
 
-System prompts are stored in the database and editable by admins at `/plato/prompts`. Changes take effect immediately.
+System prompts are bundled in `client/prompts/` and upserted to the database on every server startup. Admins cannot edit prompts directly — prompt changes are deployed through code updates.
 
 ## Deploying to AWS
 
@@ -201,7 +203,7 @@ cd server && sam build
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 
-# Bundle content source files (prompts, lessons, KB) for seeding and change management
+# Bundle content source files (prompts, lessons) for seeding
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/

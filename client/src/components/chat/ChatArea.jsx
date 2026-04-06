@@ -1,6 +1,6 @@
 import { useRef, useEffect, forwardRef } from 'react';
 
-const NEAR_BOTTOM_PX = 80;
+const NEAR_BOTTOM_PX = 150; // accounts for fixed compose bar + spacer
 
 const ChatArea = forwardRef(function ChatArea({ children, lessonName }, ref) {
   const localRef = useRef(null);
@@ -12,13 +12,22 @@ const ChatArea = forwardRef(function ChatArea({ children, lessonName }, ref) {
     const el = typeof scrollRef === 'function' ? null : scrollRef.current;
     if (!el) return;
 
+    // Find the nearest scrolling ancestor for auto-scroll behavior
+    let sc = el.parentElement;
+    while (sc && sc !== document.documentElement) {
+      const { overflowY } = getComputedStyle(sc);
+      if (overflowY === 'auto' || overflowY === 'scroll') break;
+      sc = sc.parentElement;
+    }
+    const scrollContainer = sc || document.documentElement;
+
     function isNearBottom() {
-      return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+      return scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < NEAR_BOTTOM_PX;
     }
 
     function scrollToBottom() {
       programmaticScroll.current = true;
-      el.scrollTop = el.scrollHeight;
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
     }
 
     function handleScroll() {
@@ -34,17 +43,17 @@ const ChatArea = forwardRef(function ChatArea({ children, lessonName }, ref) {
     });
 
     observer.observe(el, { childList: true, subtree: true, characterData: true });
-    el.addEventListener('scroll', handleScroll);
+    scrollContainer.addEventListener('scroll', handleScroll);
 
     return () => {
       observer.disconnect();
-      el.removeEventListener('scroll', handleScroll);
+      scrollContainer.removeEventListener('scroll', handleScroll);
     };
   }, [scrollRef]);
 
   return (
     <div
-      className="flex-1 overflow-y-auto p-4 text-base"
+      className="p-4 text-base"
       role="log"
       aria-live="polite"
       aria-label={lessonName ? `${lessonName} conversation` : 'Lesson conversation'}
