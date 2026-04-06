@@ -210,7 +210,7 @@ export default function LessonChat() {
   };
 
   return (
-    <div>
+    <div className="flex flex-col min-h-[calc(100vh-theme(spacing.20))]">
       {/* Fixed header clone — appears when inline header scrolls out of view */}
       {headerPinned && (
         <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
@@ -225,7 +225,7 @@ export default function LessonChat() {
                   className="text-xs text-primary hover:underline shrink-0"
                   onClick={() => setShowObjectives(true)}
                 >
-                  Overview ({lesson.learningObjectives.length} Objectives)
+                  Lesson Overview ({lesson.learningObjectives.length} Objectives)
                 </button>
               </div>
               <ProgressBar lessonKB={lessonKB} />
@@ -263,7 +263,7 @@ export default function LessonChat() {
                 onClick={() => setShowObjectives(true)}
                 aria-label={`View ${lesson.learningObjectives.length} objectives`}
               >
-                Overview ({lesson.learningObjectives.length} Objectives)
+                Lesson Overview ({lesson.learningObjectives.length} Objectives)
               </button>
             </div>
             <ProgressBar lessonKB={lessonKB} />
@@ -286,6 +286,7 @@ export default function LessonChat() {
         </div>
       </div>
 
+      <div className="flex-1">
       <ChatArea lessonName={lesson?.name}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
@@ -295,6 +296,7 @@ export default function LessonChat() {
         {loading === 'qa' && !displayText && <ThinkingSpinner />}
         {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
       </ChatArea>
+      </div>
 
       {/* Inline compose — always in document flow for layout; invisible when pinned */}
       {phase && (

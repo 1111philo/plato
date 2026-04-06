@@ -88,7 +88,7 @@ export default function LessonsList() {
                   onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); setDetailLesson(c); } }}
                   aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}>
-                  {c.learningObjectives.length} objectives
+                  Lesson Overview ({c.learningObjectives.length} Objectives)
                 </span>
               </div>
             </div>
