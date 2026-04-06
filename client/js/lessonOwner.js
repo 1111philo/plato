@@ -1,59 +1,59 @@
 /**
- * Course Owner — loads course prompts from markdown files,
- * manages course KB updates after assessments.
+ * Lesson Owner — loads lesson prompts from markdown files,
+ * manages lesson KB updates after assessments.
  */
 
 import { authenticatedFetch } from './auth.js';
-import { getUserCourses } from './storage.js';
+import { getUserLessons } from './storage.js';
 
 /** Max recent insights to keep in full. Older ones get summarized. */
 const MAX_RECENT_INSIGHTS = 10;
 
-let coursesCache = null;
+let lessonsCache = null;
 
 /**
- * Load all courses from the server.
- * Returns an array of { courseId, name, description, exemplar, learningObjectives }.
+ * Load all lessons from the server.
+ * Returns an array of { lessonId, name, description, exemplar, learningObjectives }.
  */
-export async function loadCourses() {
-  if (coursesCache) return coursesCache;
+export async function loadLessons() {
+  if (lessonsCache) return lessonsCache;
 
-  const courses = [];
+  const lessons = [];
   try {
-    const resp = await authenticatedFetch('/v1/courses');
+    const resp = await authenticatedFetch('/v1/lessons');
     if (resp.ok) {
-      const serverCourses = await resp.json();
-      for (const course of serverCourses) {
-        if (course.markdown) {
-          courses.push(parseCoursePrompt(course.courseId, course.markdown));
+      const serverLessons = await resp.json();
+      for (const lesson of serverLessons) {
+        if (lesson.markdown) {
+          lessons.push(parseLessonPrompt(lesson.lessonId, lesson.markdown));
         }
       }
     }
   } catch { /* server unavailable */ }
 
-  // Merge user-created courses from sync-data
+  // Merge user-created lessons from sync-data
   try {
-    const userCourses = await getUserCourses();
-    for (const uc of userCourses) {
-      if (uc.markdown && !courses.some(c => c.courseId === uc.courseId)) {
-        courses.push(parseCoursePrompt(uc.courseId, uc.markdown));
+    const userLessons = await getUserLessons();
+    for (const uc of userLessons) {
+      if (uc.markdown && !lessons.some(c => c.lessonId === uc.lessonId)) {
+        lessons.push(parseLessonPrompt(uc.lessonId, uc.markdown));
       }
     }
   } catch { /* ignore */ }
 
-  coursesCache = courses;
-  return courses;
+  lessonsCache = lessons;
+  return lessons;
 }
 
-/** Clear the cache so loadCourses() re-fetches on next call. */
-export function invalidateCoursesCache() {
-  coursesCache = null;
+/** Clear the cache so loadLessons() re-fetches on next call. */
+export function invalidateLessonsCache() {
+  lessonsCache = null;
 }
 
 /**
- * Parse a course prompt markdown file into structured data.
+ * Parse a lesson prompt markdown file into structured data.
  */
-export function parseCoursePrompt(courseId, markdown) {
+export function parseLessonPrompt(lessonId, markdown) {
   const lines = markdown.split('\n');
   let name = '';
   let description = '';
@@ -96,19 +96,19 @@ export function parseCoursePrompt(courseId, markdown) {
     exemplar = sectionBuffer.join('\n').trim();
   }
 
-  return { courseId, name, description, exemplar, learningObjectives: objectives };
+  return { lessonId, name, description, exemplar, learningObjectives: objectives };
 }
 
 /**
- * Update the course KB after an assessment.
- * Merges new insights and learner position from the assessor's courseKBUpdate.
+ * Update the lesson KB after an assessment.
+ * Merges new insights and learner position from the assessor's lessonKBUpdate.
  * Prunes old insights to keep context manageable for long learning loops.
  */
-export function updateCourseKBFromAssessment(courseKB, assessmentResult) {
-  const update = assessmentResult.courseKBUpdate;
-  if (!update) return courseKB;
+export function updateLessonKBFromAssessment(lessonKB, assessmentResult) {
+  const update = assessmentResult.lessonKBUpdate;
+  if (!update) return lessonKB;
 
-  const newKB = { ...courseKB };
+  const newKB = { ...lessonKB };
 
   // Append new insights, then prune if needed
   if (update.insights?.length) {

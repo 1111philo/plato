@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
-import { getCourseKB } from '../../js/storage.js';
+import { getLessonKB } from '../../js/storage.js';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,49 +10,49 @@ import {
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 
-export default function CoursesList() {
+export default function LessonsList() {
   const { state, dispatch } = useApp();
   const navigate = useNavigate();
-  const { courses } = state;
-  const [courseData, setCourseData] = useState({});
-  const [detailCourse, setDetailCourse] = useState(null);
+  const { lessons } = state;
+  const [lessonData, setLessonData] = useState({});
+  const [detailLesson, setDetailLesson] = useState(null);
 
   useEffect(() => {
     (async () => {
       const data = {};
-      for (const c of courses) {
-        const kb = await getCourseKB(c.courseId);
-        data[c.courseId] = {
+      for (const c of lessons) {
+        const kb = await getLessonKB(c.lessonId);
+        data[c.lessonId] = {
           status: kb?.status || null,
           progress: kb?.progress ?? null,
         };
       }
-      setCourseData(data);
+      setLessonData(data);
     })();
-  }, [courses]);
+  }, [lessons]);
 
-  function statusIcon(courseId) {
-    const d = courseData[courseId];
+  function statusIcon(lessonId) {
+    const d = lessonData[lessonId];
     if (d?.status === 'completed') return '\u2713';
     if (d?.status) return '\u25B6';
     return '\u25CB';
   }
 
-  function progressLabel(course) {
-    const d = courseData[course.courseId];
+  function progressLabel(lesson) {
+    const d = lessonData[lesson.lessonId];
     if (d?.status === 'completed') return 'Completed';
     if (d?.progress != null) return `${d.progress * 10}% toward exemplar`;
     if (d?.status) return 'In progress';
     return null;
   }
 
-  const CourseIcon = ({ children }) => (
+  const LessonIcon = ({ children }) => (
     <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
       {children}
     </span>
   );
 
-  const CourseItem = ({ index, onClick, dashed, children }) => (
+  const LessonItem = ({ index, onClick, dashed, children }) => (
     <li
       className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
       style={{ animationDelay: `${index * 40}ms` }}
@@ -72,50 +72,50 @@ export default function CoursesList() {
 
   return (
     <div className="mx-auto max-w-lg p-4">
-      <h2 className="text-xl font-semibold mb-4">Courses</h2>
+      <h2 className="text-xl font-semibold mb-4">Lessons</h2>
       <ul className="space-y-3" role="list">
-        {courses.map((c, i) => (
-          <CourseItem key={c.courseId} index={i} onClick={() => navigate(`/courses/${c.courseId}`)}>
-            <CourseIcon>{statusIcon(c.courseId)}</CourseIcon>
+        {lessons.map((c, i) => (
+          <LessonItem key={c.lessonId} index={i} onClick={() => navigate(`/lessons/${c.lessonId}`)}>
+            <LessonIcon>{statusIcon(c.lessonId)}</LessonIcon>
             <div className="min-w-0 flex-1 space-y-1">
               <strong className="text-sm font-medium">{c.name}</strong>
               {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
               <div className="flex items-center gap-2 flex-wrap">
-                {c.courseId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Course</Badge>}
+                {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
                 {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
                 <button className="text-xs text-primary hover:underline"
-                  onClick={(e) => { e.stopPropagation(); setDetailCourse(c); }}>
+                  onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}>
                   {c.learningObjectives.length} objectives
                 </button>
               </div>
             </div>
-          </CourseItem>
+          </LessonItem>
         ))}
 
       </ul>
 
-      {detailCourse && (
-        <CourseDetailDialog
-          course={detailCourse}
-          progress={courseData[detailCourse.courseId]}
-          open={!!detailCourse}
-          onOpenChange={(open) => { if (!open) setDetailCourse(null); }}
+      {detailLesson && (
+        <LessonDetailDialog
+          lesson={detailLesson}
+          progress={lessonData[detailLesson.lessonId]}
+          open={!!detailLesson}
+          onOpenChange={(open) => { if (!open) setDetailLesson(null); }}
         />
       )}
     </div>
   );
 }
 
-function CourseDetailDialog({ course, progress, open, onOpenChange }) {
+function LessonDetailDialog({ lesson, progress, open, onOpenChange }) {
   const pct = progress?.status === 'completed' ? 100 : (progress?.progress != null ? progress.progress * 10 : null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{course.name}</DialogTitle>
-          {course.description && (
-            <DialogDescription>{course.description}</DialogDescription>
+          <DialogTitle>{lesson.name}</DialogTitle>
+          {lesson.description && (
+            <DialogDescription>{lesson.description}</DialogDescription>
           )}
         </DialogHeader>
 
@@ -126,7 +126,7 @@ function CourseDetailDialog({ course, progress, open, onOpenChange }) {
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={pct}
-            aria-label={`Course progress: ${pct}%`}
+            aria-label={`Lesson progress: ${pct}%`}
           >
             <div className="flex justify-between text-xs text-muted-foreground" aria-hidden="true">
               <span>Starting</span>
@@ -140,13 +140,13 @@ function CourseDetailDialog({ course, progress, open, onOpenChange }) {
 
         <div className="space-y-2">
           <h3 className="text-sm font-medium">Exemplar</h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">{course.exemplar}</p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
         </div>
 
         <div className="space-y-2">
           <h3 className="text-sm font-medium">Learning Objectives</h3>
           <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
-            {course.learningObjectives.map((obj, i) => (
+            {lesson.learningObjectives.map((obj, i) => (
               <li key={i}>{obj}</li>
             ))}
           </ul>

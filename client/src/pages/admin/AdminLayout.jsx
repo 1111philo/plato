@@ -6,10 +6,10 @@ import { Separator } from '@/components/ui/separator';
 
 const NAV_LINKS = [
   { to: '/plato', label: 'Home', end: true },
+  { to: '/plato/lessons', label: 'Lessons' },
   { to: '/plato/users', label: 'Users' },
-  { to: '/plato/courses', label: 'Courses' },
-  { to: '/plato/agents', label: 'Agents & Knowledge' },
-  { to: '/plato/settings', label: 'Settings' },
+  { to: '/plato/customizer', label: 'Customizer' },
+  { to: '/plato/integrations', label: 'Integrations' },
 ];
 
 function NavItems({ onClick }) {
@@ -107,7 +107,7 @@ export default function AdminLayout() {
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() => { setMenuOpen(false); navigate('/courses'); }}
+                onClick={() => { setMenuOpen(false); navigate('/lessons'); }}
               >
                 Visit Classroom
               </Button>
@@ -156,7 +156,7 @@ export default function AdminLayout() {
           <Button
             variant="secondary"
             className="w-full"
-            onClick={() => navigate('/courses')}
+            onClick={() => navigate('/lessons')}
           >
             Visit Classroom
           </Button>

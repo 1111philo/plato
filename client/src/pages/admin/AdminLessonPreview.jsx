@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
-import { parseCoursePrompt } from '../../../js/courseOwner.js';
+import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import * as orchestrator from '../../../js/orchestrator.js';
-import { buildContext, parseCoachResponse, cleanStream } from '../../lib/courseEngine.js';
+import { buildContext, parseCoachResponse, cleanStream } from '../../lib/lessonEngine.js';
 import { useStreamedText } from '../../hooks/useStreamedText.js';
-import { COURSE_PHASES, MSG_TYPES, MAX_EXCHANGES } from '../../lib/constants.js';
+import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from '../../lib/constants.js';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
@@ -16,12 +16,12 @@ import ProgressBar from '../../components/chat/ProgressBar.jsx';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-export default function AdminCoursePreview() {
-  const { courseId } = useParams();
+export default function AdminLessonPreview() {
+  const { lessonId } = useParams();
   const navigate = useNavigate();
 
-  const [course, setCourse] = useState(null);
-  const [courseKB, setCourseKB] = useState(null);
+  const [lesson, setLesson] = useState(null);
+  const [lessonKB, setLessonKB] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
@@ -32,7 +32,7 @@ export default function AdminCoursePreview() {
   const pendingRef = useRef(null);
 
   useEffect(() => {
-    document.title = 'Preview Course — Admin';
+    document.title = 'Preview Lesson — Admin';
   }, []);
 
   // Handle stream drain completing
@@ -41,12 +41,12 @@ export default function AdminCoursePreview() {
       const { msgs, kb, p } = pendingRef.current;
       pendingRef.current = null;
       if (msgs) setMessages(prev => [...prev, ...msgs]);
-      if (kb) setCourseKB(kb);
+      if (kb) setLessonKB(kb);
       setLoading('');
     }
   }, [displayText]);
 
-  // Load course and start preview
+  // Load lesson and start preview
   useEffect(() => {
     let cancelled = false;
 
@@ -54,26 +54,26 @@ export default function AdminCoursePreview() {
       setLoading('starting');
       setStreamingText('');
       try {
-        const data = await adminApi('GET', `/v1/admin/courses/${encodeURIComponent(courseId)}`);
+        const data = await adminApi('GET', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
         if (cancelled) return;
-        const parsed = parseCoursePrompt(courseId, data.markdown);
-        setCourse(parsed);
+        const parsed = parseLessonPrompt(lessonId, data.markdown);
+        setLesson(parsed);
         setIsDraft(data.status === 'draft');
 
         // Initialize KB in-memory (no persistence)
-        const kb = await orchestrator.initializeCourseKB(parsed, 'Preview user — no real profile.');
+        const kb = await orchestrator.initializeLessonKB(parsed, 'Preview user — no real profile.');
         if (cancelled) return;
-        kb.courseId = courseId;
+        kb.lessonId = lessonId;
         kb.name = parsed.name;
         kb.progress = 0;
         kb.activitiesCompleted = 0;
-        setCourseKB(kb);
+        setLessonKB(kb);
 
         // Start coaching conversation
         const context = buildContext(parsed, kb, 'Preview user — no real profile.', 'Preview User');
         const coachMsg = await orchestrator.converseStream(
           'coach',
-          [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the course.' }],
+          [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
           cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
           512
         );
@@ -84,36 +84,36 @@ export default function AdminCoursePreview() {
         if (progress != null) updatedKB.progress = progress;
         if (kbUpdate?.insights?.length) updatedKB.insights = [...(updatedKB.insights || []), ...kbUpdate.insights];
 
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: COURSE_PHASES.LEARNING, timestamp: Date.now() };
+        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: Date.now() };
         pendingRef.current = { msgs: [msg], kb: updatedKB };
         setStreamingText(null);
       } catch (e) {
-        if (!cancelled) { setError(e.message || 'Failed to load course.'); setLoading(''); setStreamingText(null); }
+        if (!cancelled) { setError(e.message || 'Failed to load lesson.'); setLoading(''); setStreamingText(null); }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [courseId]);
+  }, [lessonId]);
 
   const messagesRef = useRef(messages);
   useEffect(() => { messagesRef.current = messages; }, [messages]);
 
-  const courseKBRef = useRef(courseKB);
-  useEffect(() => { courseKBRef.current = courseKB; }, [courseKB]);
+  const lessonKBRef = useRef(lessonKB);
+  useEffect(() => { lessonKBRef.current = lessonKB; }, [lessonKB]);
 
   const handleSend = useCallback(async ({ text }) => {
-    if (!text?.trim() || !course) return;
+    if (!text?.trim() || !lesson) return;
     setError('');
     setLoading('qa');
     setStreamingText('');
 
-    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, phase: COURSE_PHASES.LEARNING, timestamp: Date.now() };
+    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const kb = courseKBRef.current;
+      const kb = lessonKBRef.current;
       const tail = [...messagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
-      const context = buildContext(course, kb, 'Preview user — no real profile.', 'Preview User');
+      const context = buildContext(lesson, kb, 'Preview user — no real profile.', 'Preview User');
       const apiMessages = [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, ...tail];
 
       const coachMsg = await orchestrator.converseStream(
@@ -132,7 +132,7 @@ export default function AdminCoursePreview() {
       if (parsed.progress != null) updatedKB.progress = parsed.progress;
       updatedKB.activitiesCompleted = (updatedKB.activitiesCompleted || 0) + 1;
 
-      const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase: COURSE_PHASES.LEARNING, timestamp: Date.now() };
+      const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: Date.now() };
       pendingRef.current = { msgs: [assistantMsg], kb: updatedKB };
       setStreamingText(null);
     } catch (e) {
@@ -140,12 +140,12 @@ export default function AdminCoursePreview() {
       setStreamingText(null);
       setLoading('');
     }
-  }, [course]);
+  }, [lesson]);
 
   async function handlePublish() {
     try {
-      await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { status: 'published' });
-      navigate('/plato/courses');
+      await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { status: 'published' });
+      navigate('/plato/lessons');
     } catch (e) { setError(e.message || 'Failed to publish.'); }
   }
 
@@ -157,7 +157,7 @@ export default function AdminCoursePreview() {
   const busy = !!loading;
 
   return (
-    <main className="flex flex-col h-full" aria-label="Course preview">
+    <main className="flex flex-col h-full" aria-label="Lesson preview">
       {/* Preview banner */}
       <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800" role="status" aria-live="polite">
         Preview Mode — this conversation is not saved
@@ -165,25 +165,25 @@ export default function AdminCoursePreview() {
 
       {/* Header */}
       <header className="border-b border-border bg-background px-4 py-2">
-        <nav className="mx-auto max-w-5xl flex items-center gap-2" aria-label="Course preview navigation">
-          <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/plato/courses')}>
+        <nav className="mx-auto max-w-5xl flex items-center gap-2" aria-label="Lesson preview navigation">
+          <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/plato/lessons')}>
             &larr;
           </Button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold truncate">{course?.name || 'Loading...'}</h1>
+              <h1 className="text-sm font-semibold truncate">{lesson?.name || 'Loading...'}</h1>
               {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
             </div>
-            <ProgressBar courseKB={courseKB} />
+            <ProgressBar lessonKB={lessonKB} />
           </div>
           {isDraft && (
-            <Button size="sm" onClick={handlePublish} aria-label={`Publish ${course?.name || 'course'} — make visible to learners`}>Publish</Button>
+            <Button size="sm" onClick={handlePublish} aria-label={`Publish ${lesson?.name || 'lesson'} — make visible to learners`}>Publish</Button>
           )}
         </nav>
       </header>
 
       {/* Chat area */}
-      <ChatArea courseName={course?.name}>
+      <ChatArea lessonName={lesson?.name}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
           <AssistantMessage content={displayText} />
@@ -193,8 +193,8 @@ export default function AdminCoursePreview() {
         {error && <div className="px-3 py-2 text-sm text-destructive" role="alert" aria-live="assertive">{error}</div>}
       </ChatArea>
 
-      {/* Compose bar — only show once course is loaded */}
-      {course && (
+      {/* Compose bar — only show once lesson is loaded */}
+      {lesson && (
         <ComposeBar
           placeholder="Try chatting as a learner..."
           onSend={handleSend}

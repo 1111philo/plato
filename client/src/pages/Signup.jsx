@@ -64,7 +64,7 @@ export default function Signup() {
       if (!res.ok) throw new Error(data.error || 'Signup failed');
       // Log in with the returned credentials
       await login(data.user?.email || '', password);
-      navigate('/courses', { replace: true });
+      navigate('/lessons', { replace: true });
     } catch (e) {
       setError(e.message || 'Signup failed');
     } finally {
@@ -76,11 +76,11 @@ export default function Signup() {
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-start py-12 p-4 overflow-y-auto" style={{ backgroundColor: branding.primary }}>
-      <img src={branding.logo} alt={branding.logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
+      {branding.logo ? (<img src={branding.logo} alt={branding.classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />) : (<h1 className="text-2xl font-bold text-white mb-6">{branding.classroomName}</h1>)}
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>You've been invited to join {branding.logoAlt}.</CardDescription>
+          <CardDescription>You've been invited to join {branding.classroomName}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (

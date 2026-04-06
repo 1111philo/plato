@@ -1,7 +1,7 @@
 /**
- * Course engine — conversational coaching toward the exemplar.
+ * Lesson engine — conversational coaching toward the exemplar.
  *
- * 1. Course starts: Course Owner generates KB, Coach opens conversation
+ * 1. Lesson starts: Lesson Owner generates KB, Coach opens conversation
  * 2. Learner responds (text or image)
  * 3. Coach evaluates, coaches forward, updates KB + progress
  * 4. Repeat until exemplar achieved
@@ -9,14 +9,14 @@
 
 import {
   getLearnerProfileSummary, getPreferences,
-  getCourseKB, saveCourseKB,
+  getLessonKB, saveLessonKB,
   saveScreenshot,
-  saveCourseMessages, getCourseMessages,
+  saveLessonMessages, getLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileInBackground, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
-import { COURSE_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
 
@@ -73,30 +73,30 @@ export function cleanStream(onStream) {
   };
 }
 
-// -- Course lifecycle ---------------------------------------------------------
+// -- Lesson lifecycle ---------------------------------------------------------
 
 /**
- * Start a new course: Course Owner generates KB, Coach opens conversation.
+ * Start a new lesson: Lesson Owner generates KB, Coach opens conversation.
  */
-export async function startCourse(courseId, course, onStream) {
+export async function startLesson(lessonId, lesson, onStream) {
   await ensureProfileExists();
   const profileSummary = await getLearnerProfileSummary();
 
-  // Course Owner generates the KB
-  const courseKB = await orchestrator.initializeCourseKB(course, profileSummary);
-  courseKB.courseId = courseId;
-  courseKB.name = course.name;
-  courseKB.progress = 0;
-  courseKB.startedAt = ts();
-  await saveCourseKB(courseId, courseKB);
-  syncInBackground(`courseKB:${courseId}`);
+  // Lesson Owner generates the KB
+  const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary);
+  lessonKB.lessonId = lessonId;
+  lessonKB.name = lesson.name;
+  lessonKB.progress = 0;
+  lessonKB.startedAt = ts();
+  await saveLessonKB(lessonId, lessonKB);
+  syncInBackground(`lessonKB:${lessonId}`);
 
   // Coach opens the conversation
   const prefs = await getPreferences();
-  const context = buildContext(course, courseKB, profileSummary, prefs.name);
+  const context = buildContext(lesson, lessonKB, profileSummary, prefs.name);
   const coachMsg = await orchestrator.converseStream(
     'coach',
-    [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the course.' }],
+    [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
     cleanStream(onStream),
     512
   );
@@ -104,35 +104,35 @@ export async function startCourse(courseId, course, onStream) {
   const { text, progress, kbUpdate } = parseCoachResponse(coachMsg);
 
   if (progress != null) {
-    courseKB.progress = progress;
-    await saveCourseKB(courseId, courseKB);
+    lessonKB.progress = progress;
+    await saveLessonKB(lessonId, lessonKB);
   }
 
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: COURSE_PHASES.LEARNING, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
-  await saveCourseMessages(courseId, messages);
-  syncInBackground(`courseKB:${courseId}`, `messages:${courseId}`);
-  return { messages, courseKB, phase: COURSE_PHASES.LEARNING };
+  await saveLessonMessages(lessonId, messages);
+  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+  return { messages, lessonKB, phase: LESSON_PHASES.LEARNING };
 }
 
 /**
- * Send a message in the course conversation.
+ * Send a message in the lesson conversation.
  */
-export async function sendMessage(courseId, course, text, imageDataUrl, onStream) {
-  let courseKB = await getCourseKB(courseId);
+export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream) {
+  let lessonKB = await getLessonKB(lessonId);
   const profileSummary = await getLearnerProfileSummary();
 
   // Save image if provided
   let imageKey = null;
   if (imageDataUrl) {
-    imageKey = `course-${courseId}-${ts()}`;
+    imageKey = `lesson-${lessonId}-${ts()}`;
     await saveScreenshot(imageKey, imageDataUrl);
   }
 
   // Build conversation tail
-  const allMsgs = await getCourseMessages(courseId);
+  const allMsgs = await getLessonMessages(lessonId);
   const tail = allMsgs.slice(-15).map(m => ({ role: m.role, content: m.content }));
 
   // Build user message content
@@ -145,9 +145,9 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
     }
   }
 
-  // Always include context as first message so coach has course + profile info
+  // Always include context as first message so coach has lesson + profile info
   const prefs = await getPreferences();
-  const contextMsg = buildContext(course, courseKB, profileSummary, prefs.name);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name);
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
 
@@ -162,96 +162,96 @@ export async function sendMessage(courseId, course, text, imageDataUrl, onStream
 
   const parsed = parseCoachResponse(coachMsg);
 
-  // Update course KB
+  // Update lesson KB
   if (parsed.kbUpdate) {
     if (parsed.kbUpdate.insights?.length) {
-      courseKB.insights = [...(courseKB.insights || []), ...parsed.kbUpdate.insights];
+      lessonKB.insights = [...(lessonKB.insights || []), ...parsed.kbUpdate.insights];
       // Prune old insights (keep last 10)
-      if (courseKB.insights.length > 10) {
-        const older = courseKB.insights.slice(0, courseKB.insights.length - 10);
-        courseKB.insights = [`[Earlier: ${older.join('; ')}]`, ...courseKB.insights.slice(-10)];
+      if (lessonKB.insights.length > 10) {
+        const older = lessonKB.insights.slice(0, lessonKB.insights.length - 10);
+        lessonKB.insights = [`[Earlier: ${older.join('; ')}]`, ...lessonKB.insights.slice(-10)];
       }
     }
     if (parsed.kbUpdate.learnerPosition) {
-      courseKB.learnerPosition = parsed.kbUpdate.learnerPosition;
+      lessonKB.learnerPosition = parsed.kbUpdate.learnerPosition;
     }
   }
   if (parsed.progress != null) {
-    courseKB.progress = parsed.progress;
+    lessonKB.progress = parsed.progress;
   }
-  courseKB.activitiesCompleted = (courseKB.activitiesCompleted || 0) + 1;
+  lessonKB.activitiesCompleted = (lessonKB.activitiesCompleted || 0) + 1;
 
   // Check completion — the learner achieves the exemplar (progress 10),
-  // or the system gracefully closes the course at 2x the exchange target
+  // or the system gracefully closes the lesson at 2x the exchange target
   // as a safety net (the coach is instructed to wrap up well before this).
   const hardLimit = MAX_EXCHANGES * 2;
-  const achieved = parsed.progress >= 10 || courseKB.activitiesCompleted >= hardLimit;
-  if (achieved && courseKB.status !== 'completed') {
-    courseKB.status = 'completed';
-    courseKB.completedAt = ts();
+  const achieved = parsed.progress >= 10 || lessonKB.activitiesCompleted >= hardLimit;
+  if (achieved && lessonKB.status !== 'completed') {
+    lessonKB.status = 'completed';
+    lessonKB.completedAt = ts();
   }
 
-  await saveCourseKB(courseId, courseKB);
-  syncInBackground(`courseKB:${courseId}`);
+  await saveLessonKB(lessonId, lessonKB);
+  syncInBackground(`lessonKB:${lessonId}`);
 
   // Profile updates — from explicit tag or from KB insights as fallback
   if (parsed.profileUpdate?.observation) {
-    updateProfileFromObservation(courseKB, parsed.profileUpdate.observation);
+    updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
     // Use KB insights as a profile signal if no explicit profile update
     const insightText = parsed.kbUpdate.insights.join('. ');
-    updateProfileFromObservation(courseKB, insightText);
+    updateProfileFromObservation(lessonKB, insightText);
   }
   if (achieved) {
-    updateProfileOnCompletionInBackground(courseKB, course);
+    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
   // Save messages
   const newMessages = [
-    { role: 'user', content: text || '', msgType: MSG_TYPES.USER, phase: COURSE_PHASES.LEARNING,
+    { role: 'user', content: text || '', msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
       metadata: imageKey ? { imageKey } : null, timestamp: ts() },
     { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
-      phase: achieved ? COURSE_PHASES.COMPLETED : COURSE_PHASES.LEARNING, timestamp: ts() },
+      phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
-  await saveCourseMessages(courseId, newMessages);
-  syncInBackground(`messages:${courseId}`);
+  await saveLessonMessages(lessonId, newMessages);
+  syncInBackground(`messages:${lessonId}`);
 
-  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? COURSE_PHASES.COMPLETED : COURSE_PHASES.LEARNING };
+  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
 }
 
 /**
- * Resume an existing course. Loads messages and KB.
+ * Resume an existing lesson. Loads messages and KB.
  */
-export async function resumeCourse(courseId) {
-  const messages = await getCourseMessages(courseId);
-  const courseKB = await getCourseKB(courseId);
-  const progress = courseKB?.progress ?? 0;
-  const phase = courseKB?.status === 'completed' ? COURSE_PHASES.COMPLETED : COURSE_PHASES.LEARNING;
-  return { messages, courseKB, progress, phase };
+export async function resumeLesson(lessonId) {
+  const messages = await getLessonMessages(lessonId);
+  const lessonKB = await getLessonKB(lessonId);
+  const progress = lessonKB?.progress ?? 0;
+  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { messages, lessonKB, progress, phase };
 }
 
 // -- Helpers ------------------------------------------------------------------
 
-export function buildContext(course, courseKB, profileSummary, learnerName) {
-  const completed = courseKB?.activitiesCompleted || 0;
+export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
+  const completed = lessonKB?.activitiesCompleted || 0;
   const context = {
     learnerName: learnerName || '',
-    courseName: course.name,
-    courseDescription: course.description,
-    exemplar: course.exemplar,
-    objectives: courseKB?.objectives || [],
-    insights: courseKB?.insights || [],
+    lessonName: lesson.name,
+    lessonDescription: lesson.description,
+    exemplar: lesson.exemplar,
+    objectives: lessonKB?.objectives || [],
+    insights: lessonKB?.insights || [],
     learnerProfile: profileSummary || 'No profile yet',
-    learnerPosition: courseKB?.learnerPosition || 'New learner',
-    progress: courseKB?.progress ?? 0,
+    learnerPosition: lessonKB?.learnerPosition || 'New learner',
+    progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
   // Escalating pacing directives when over the exchange target
   const over = completed - MAX_EXCHANGES;
   if (over >= 9) {
     // 20+ exchanges: wrap up — accept where the learner is
-    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the course. Award progress 10. Do not assign new work.';
+    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the lesson. Award progress 10. Do not assign new work.';
   } else if (over >= 4) {
     // 15-19 exchanges: aggressive focus — drop non-essential objectives
     context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';

@@ -1,5 +1,5 @@
 /**
- * Confetti burst — fires when the learner achieves the course exemplar.
+ * Confetti burst — fires when the learner achieves the lesson exemplar.
  */
 export function launchConfetti() {
   const colors = ['#fcd34d', '#60a5fa', '#f472b6', '#34d399', '#a78bfa'];

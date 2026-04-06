@@ -8,9 +8,9 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
 
-import { converseStream, extractCourseMarkdown } from '../../../js/orchestrator.js';
-import { parseCoursePrompt } from '../../../js/courseOwner.js';
-import { parseResponse, cleanStream } from '../../lib/courseCreationEngine.js';
+import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
+import { parseLessonPrompt } from '../../../js/lessonOwner.js';
+import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
 import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 
@@ -20,95 +20,95 @@ import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 
-export default function AdminCourses() {
+export default function AdminLessons() {
   const navigate = useNavigate();
   const location = useLocation();
   const isNewRoute = location.pathname.endsWith('/new');
 
-  const [courses, setCourses] = useState([]);
-  const [editing, setEditing] = useState(null); // { courseId, conversation, readiness, needsAgentReply }
+  const [lessons, setLessons] = useState([]);
+  const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    document.title = 'Courses — Admin';
-    loadCourses();
+    document.title = 'Lessons — Admin';
+    loadLessons();
   }, []);
 
-  async function loadCourses() {
+  async function loadLessons() {
     setLoading(true);
     try {
-      const data = await adminApi('GET', '/v1/admin/courses');
-      setCourses(Array.isArray(data) ? data : []);
+      const data = await adminApi('GET', '/v1/admin/lessons');
+      setLessons(Array.isArray(data) ? data : []);
     } catch { /* ignore */ }
     setLoading(false);
   }
 
-  async function editCourse(courseId) {
+  async function editLesson(lessonId) {
     try {
-      const data = await adminApi('GET', `/v1/admin/courses/${encodeURIComponent(courseId)}`);
+      const data = await adminApi('GET', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
       if (data.conversation?.length) {
         // Resume the creation conversation
-        setEditing({ courseId, conversation: data.conversation, readiness: data.readiness ?? 8 });
+        setEditing({ lessonId, conversation: data.conversation, readiness: data.readiness ?? 8 });
       } else {
         // No conversation — seed one with the existing markdown so the agent has context
         const seedConversation = [
-          { role: 'user', content: `I want to edit an existing course. Here is the current course markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
+          { role: 'user', content: `I want to edit an existing lesson. Here is the current lesson markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
         ];
-        setEditing({ courseId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true });
+        setEditing({ lessonId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true });
       }
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function toggleCourseStatus(courseId, newStatus) {
+  async function toggleLessonStatus(lessonId, newStatus) {
     try {
-      await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { status: newStatus });
-      setMessage({ text: newStatus === 'published' ? 'Course published.' : 'Course unpublished.', type: 'success' });
-      loadCourses();
+      await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { status: newStatus });
+      setMessage({ text: newStatus === 'published' ? 'Lesson published.' : 'Lesson unpublished.', type: 'success' });
+      loadLessons();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function deleteCourse(courseId) {
-    if (!confirm(`Delete course "${courseId}"?`)) return;
+  async function deleteLesson(lessonId) {
+    if (!confirm(`Delete lesson "${lessonId}"?`)) return;
     try {
-      await adminApi('DELETE', `/v1/admin/courses/${encodeURIComponent(courseId)}`);
-      setMessage({ text: 'Course deleted.', type: 'success' });
-      loadCourses();
+      await adminApi('DELETE', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
+      setMessage({ text: 'Lesson deleted.', type: 'success' });
+      loadLessons();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
-  // New course creation via AI Chat
+  // New lesson creation via AI Chat
   if (isNewRoute) {
     return (
-      <NewCourseView
+      <NewLessonView
         onSave={async (name, markdown, conversation, readiness) => {
-          const courseId = name.trim().replace(/\s+/g, '-').toLowerCase();
-          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { markdown, name, status: 'draft', conversation, readiness });
-          setMessage({ text: 'Course saved as draft.', type: 'success' });
-          await loadCourses();
-          navigate('/plato/courses');
+          const lessonId = name.trim().replace(/\s+/g, '-').toLowerCase();
+          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { markdown, name, status: 'draft', conversation, readiness });
+          setMessage({ text: 'Lesson saved as draft.', type: 'success' });
+          await loadLessons();
+          navigate('/plato/lessons');
         }}
-        onCancel={() => navigate('/plato/courses')}
+        onCancel={() => navigate('/plato/lessons')}
         onError={(text) => setMessage({ text, type: 'error' })}
       />
     );
   }
 
-  // Edit existing course — always via conversation
+  // Edit existing lesson — always via conversation
   if (editing) {
     return (
-      <NewCourseView
-        editingCourseId={editing.courseId}
+      <NewLessonView
+        editingLessonId={editing.lessonId}
         initialMessages={editing.conversation}
         initialReadiness={editing.readiness}
         needsAgentReply={editing.needsAgentReply}
         onSave={async (name, markdown, conversation, readiness) => {
-          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(editing.courseId)}`, { markdown, name, conversation, readiness });
-          setMessage({ text: 'Course updated.', type: 'success' });
+          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, { markdown, name, conversation, readiness });
+          setMessage({ text: 'Lesson updated.', type: 'success' });
           setEditing(null);
-          loadCourses();
+          loadLessons();
         }}
         onCancel={() => setEditing(null)}
         onError={(text) => setMessage({ text, type: 'error' })}
@@ -116,10 +116,10 @@ export default function AdminCourses() {
     );
   }
 
-  // Course list
+  // Lesson list
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Courses</h1>
+      <h1 className="text-2xl font-bold mb-4">Lessons</h1>
 
       {message && (
         <div
@@ -135,13 +135,13 @@ export default function AdminCourses() {
         </div>
       )}
 
-      <Button className="mb-4" onClick={() => navigate('/plato/courses/new')}>
+      <Button className="mb-4" onClick={() => navigate('/plato/lessons/new')}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add Course
+        Add Lesson
       </Button>
 
       <Card className="p-0 overflow-hidden">
-        <Table aria-label="Courses">
+        <Table aria-label="Lessons">
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
@@ -151,13 +151,13 @@ export default function AdminCourses() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {courses.map(c => {
+            {lessons.map(c => {
               const isDraft = c.status === 'draft';
               return (
-                <TableRow key={c.courseId}>
+                <TableRow key={c.lessonId}>
                   <TableCell>
                     <span className="flex items-center gap-2">
-                      {c.name || c.courseId}
+                      {c.name || c.lessonId}
                       {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
                     </span>
                   </TableCell>
@@ -165,26 +165,26 @@ export default function AdminCourses() {
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
                   <TableCell>
                     <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
-                      <Button variant="ghost" size="icon-xs" title="Preview" onClick={() => navigate(`/plato/courses/${encodeURIComponent(c.courseId)}/preview`)} aria-label={`Preview ${c.name}`}>&#9655;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Preview" onClick={() => navigate(`/plato/lessons/${encodeURIComponent(c.lessonId)}/preview`)} aria-label={`Preview ${c.name}`}>&#9655;</Button>
                       {isDraft ? (
-                        <Button variant="ghost" size="icon-xs" title="Publish — make visible to learners" onClick={() => toggleCourseStatus(c.courseId, 'published')} aria-label={`Publish ${c.name} — make visible to learners`}>
+                        <Button variant="ghost" size="icon-xs" title="Publish — make visible to learners" onClick={() => toggleLessonStatus(c.lessonId, 'published')} aria-label={`Publish ${c.name} — make visible to learners`}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </Button>
                       ) : (
-                        <Button variant="ghost" size="icon-xs" title="Unpublish — hide from learners" onClick={() => toggleCourseStatus(c.courseId, 'draft')} aria-label={`Unpublish ${c.name} — hide from learners`}>
+                        <Button variant="ghost" size="icon-xs" title="Unpublish — hide from learners" onClick={() => toggleLessonStatus(c.lessonId, 'draft')} aria-label={`Unpublish ${c.name} — hide from learners`}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editCourse(c.courseId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteCourse(c.courseId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editLesson(c.lessonId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
                     </div>
                   </TableCell>
                 </TableRow>
               );
             })}
-            {courses.length === 0 && (
+            {lessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No courses yet.</TableCell>
+                <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -194,11 +194,11 @@ export default function AdminCourses() {
   );
 }
 
-// -- Course creation/editing view with AI Chat --------------------------------
+// -- Lesson creation/editing view with AI Chat --------------------------------
 
-function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMessages, initialReadiness, needsAgentReply }) {
-  const isEditing = !!editingCourseId;
-  useEffect(() => { document.title = isEditing ? 'Edit Course — Admin' : 'New Course — Admin'; }, [isEditing]);
+function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMessages, initialReadiness, needsAgentReply }) {
+  const isEditing = !!editingLessonId;
+  useEffect(() => { document.title = isEditing ? 'Edit Lesson — Admin' : 'New Lesson — Admin'; }, [isEditing]);
   const [chatMessages, setChatMessages] = useState(initialMessages || []);
   const [readiness, setReadiness] = useState(initialReadiness ?? 0);
   const [busy, setBusy] = useState('');
@@ -221,7 +221,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
     }
   }, [displayText]);
 
-  // Start conversation on mount (and on key change after course creation)
+  // Start conversation on mount (and on key change after lesson creation)
   // Skip when resuming an existing conversation that already has an agent reply
   const skipInitRef = useRef(!!initialMessages?.length && !needsAgentReply);
   useEffect(() => {
@@ -234,7 +234,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
     // Determine the opening message(s) to send to the agent
     const openingMessages = (needsAgentReply && initialMessages?.length)
       ? initialMessages.map(m => ({ role: m.role, content: m.content }))
-      : [{ role: 'user', content: 'I want to create a new course.' }];
+      : [{ role: 'user', content: 'I want to create a new lesson.' }];
 
     if (!needsAgentReply) {
       setChatMessages([]);
@@ -247,7 +247,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
     (async () => {
       try {
         const raw = await converseStream(
-          'course-creator',
+          'lesson-creator',
           openingMessages,
           cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
           512
@@ -282,7 +282,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
       const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
 
       const raw = await converseStream(
-        'course-creator',
+        'lesson-creator',
         tail,
         cleanStream((partial) => setStreamingText(partial)),
         512
@@ -304,22 +304,22 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
     setBusy('creating');
     try {
       const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
-      const md = await extractCourseMarkdown(conversationText);
-      const courseId = `admin-${Date.now()}`;
-      const course = parseCoursePrompt(courseId, md);
+      const md = await extractLessonMarkdown(conversationText);
+      const lessonId = `admin-${Date.now()}`;
+      const lesson = parseLessonPrompt(lessonId, md);
 
-      if (!course.name || !course.exemplar || !course.learningObjectives.length) {
-        setError('Could not build a complete course. Keep refining with the agent.');
+      if (!lesson.name || !lesson.exemplar || !lesson.learningObjectives.length) {
+        setError('Could not build a complete lesson. Keep refining with the agent.');
         setBusy('');
         return;
       }
 
       // Save conversation alongside the markdown so it can be resumed later
       const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
-      await onSave(course.name, md, conversation, readiness);
-      if (!isEditing) setKey(k => k + 1); // Reset for next course (new only)
+      await onSave(lesson.name, md, conversation, readiness);
+      if (!isEditing) setKey(k => k + 1); // Reset for next lesson (new only)
     } catch (e) {
-      setError(e.message || 'Failed to create course.');
+      setError(e.message || 'Failed to create lesson.');
       setBusy('');
     }
   }
@@ -334,8 +334,8 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
-        <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to courses">&larr; Back</Button>
-        <h1 className="text-2xl font-bold">{isEditing ? 'Edit Course' : 'New Course'}</h1>
+        <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to lessons">&larr; Back</Button>
+        <h1 className="text-2xl font-bold">{isEditing ? 'Edit Lesson' : 'New Lesson'}</h1>
       </div>
 
       {error && (
@@ -345,7 +345,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
         </div>
       )}
 
-      {/* Readiness bar + Create Course button */}
+      {/* Readiness bar + Create Lesson button */}
       {(chatMessages.length > 0 || displayText != null) && (
         <div className="flex items-end gap-4 mb-4">
           <div
@@ -354,7 +354,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
             aria-valuemin={0}
             aria-valuemax={10}
             aria-valuenow={readiness}
-            aria-label={`Course readiness: ${readiness} out of 10`}
+            aria-label={`Lesson readiness: ${readiness} out of 10`}
           >
             <div className="flex justify-between text-xs text-muted-foreground mb-1" aria-hidden="true">
               <span>Not ready</span>
@@ -386,7 +386,7 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
               disabled={isBusy}
               size="sm"
             >
-              {busy === 'creating' ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Course' : 'Create Course')}
+              {busy === 'creating' ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Lesson' : 'Create Lesson')}
             </Button>
           </div>
         </div>
@@ -395,13 +395,13 @@ function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMess
       {/* Chat + compose in a single container */}
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
         <div className="mb-3 [&>div]:max-h-[500px]">
-          <ChatArea courseName="Course Creator">
+          <ChatArea lessonName="Lesson Creator">
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (
               <AssistantMessage content={displayText} />
             )}
             {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
-            {busy === 'creating' && <ThinkingSpinner text="Generating course..." />}
+            {busy === 'creating' && <ThinkingSpinner text="Generating lesson..." />}
             {busy === 'qa' && !displayText && <ThinkingSpinner />}
           </ChatArea>
         </div>

@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useStreamedText } from '../hooks/useStreamedText.js';
-import { COURSE_PHASES, MSG_TYPES } from '../lib/constants.js';
+import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
 import { launchConfetti } from '../lib/confetti.js';
 import {
-  getCourseKB, deleteCourseProgress,
-  getUserCourseMarkdown, deleteUserCourse,
+  getLessonKB, deleteLessonProgress,
+  getUserLessonMarkdown, deleteUserLesson,
 } from '../../js/storage.js';
-import { invalidateCoursesCache, loadCourses } from '../../js/courseOwner.js';
-import * as engine from '../lib/courseEngine.js';
+import { invalidateLessonsCache, loadLessons } from '../../js/lessonOwner.js';
+import * as engine from '../lib/lessonEngine.js';
 
 import ChatArea from '../components/chat/ChatArea.jsx';
 import ThinkingSpinner from '../components/chat/ThinkingSpinner.jsx';
@@ -20,16 +20,16 @@ import ComposeBar from '../components/chat/ComposeBar.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
 
-export default function CourseChat() {
-  const { courseGroupId } = useParams();
+export default function LessonChat() {
+  const { lessonGroupId } = useParams();
   const navigate = useNavigate();
   const { state, dispatch } = useApp();
-  const { courses } = state;
-  const course = courses.find(c => c.courseId === courseGroupId);
+  const { lessons } = state;
+  const lesson = lessons.find(c => c.lessonId === lessonGroupId);
 
   const [phase, setPhase] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [courseKB, setCourseKB] = useState(null);
+  const [lessonKB, setLessonKB] = useState(null);
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
 
@@ -52,36 +52,36 @@ export default function CourseChat() {
   }, [displayText]);
 
   useEffect(() => {
-    if (!course) return;
+    if (!lesson) return;
     let cancelled = false;
 
     (async () => {
-      const existing = await engine.resumeCourse(courseGroupId);
+      const existing = await engine.resumeLesson(lessonGroupId);
 
       if (existing.messages.length > 0) {
         setMessages(existing.messages);
-        setCourseKB(existing.courseKB);
+        setLessonKB(existing.lessonKB);
         setPhase(existing.phase);
       } else {
         setLoading('starting');
         setStreamingText('');
         try {
-          const result = await engine.startCourse(
-            courseGroupId, course,
+          const result = await engine.startLesson(
+            lessonGroupId, lesson,
             (partial) => { if (!cancelled) setStreamingText(partial); }
           );
           if (cancelled) return;
-          setCourseKB(result.courseKB);
+          setLessonKB(result.lessonKB);
           pendingAfterStreamRef.current = { msgs: result.messages, p: result.phase };
           setStreamingText(null);
         } catch (e) {
-          if (!cancelled) { setError(e.message || 'Failed to start course.'); setLoading(''); setStreamingText(null); }
+          if (!cancelled) { setError(e.message || 'Failed to start lesson.'); setLoading(''); setStreamingText(null); }
         }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [courseGroupId]);
+  }, [lessonGroupId]);
 
   const handleSend = useCallback(async ({ text, imageDataUrl }) => {
     if (!text && !imageDataUrl) return;
@@ -91,68 +91,68 @@ export default function CourseChat() {
 
     setMessages(prev => [...prev, {
       role: 'user', content: text || '', msgType: MSG_TYPES.USER,
-      phase: COURSE_PHASES.LEARNING,
+      phase: LESSON_PHASES.LEARNING,
       metadata: imageDataUrl ? { imageDataUrl } : null,
       timestamp: Date.now(),
     }]);
 
     try {
       const result = await engine.sendMessage(
-        courseGroupId, course, text, imageDataUrl,
+        lessonGroupId, lesson, text, imageDataUrl,
         (partial) => setStreamingText(partial)
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
       pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
       setStreamingText(null);
 
-      const freshKB = await getCourseKB(courseGroupId);
-      setCourseKB(freshKB);
+      const freshKB = await getLessonKB(lessonGroupId);
+      setLessonKB(freshKB);
     } catch (e) {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
     }
-  }, [courseGroupId, course]);
+  }, [lessonGroupId, lesson]);
 
-  const isCustomCourse = courseGroupId?.startsWith('custom-');
+  const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
   const handleExport = useCallback(async () => {
-    const markdown = await getUserCourseMarkdown(courseGroupId);
+    const markdown = await getUserLessonMarkdown(lessonGroupId);
     if (!markdown) return;
     const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${course?.name || 'course'}.md`;
+    a.download = `${lesson?.name || 'lesson'}.md`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [courseGroupId, course]);
+  }, [lessonGroupId, lesson]);
 
   const handleReset = () => {
     setConfirmModal({
-      title: 'Reset Course?',
+      title: 'Reset Lesson?',
       message: "This will delete all progress. You'll start from scratch.",
-      confirmLabel: 'Reset Course',
-      onConfirm: async () => { await deleteCourseProgress(courseGroupId); navigate('/courses'); },
+      confirmLabel: 'Reset Lesson',
+      onConfirm: async () => { await deleteLessonProgress(lessonGroupId); navigate('/lessons'); },
     });
   };
 
   const handleDelete = () => {
     setConfirmModal({
-      title: 'Delete Course?',
-      message: 'This will permanently delete this course and all its progress.',
-      confirmLabel: 'Delete Course',
+      title: 'Delete Lesson?',
+      message: 'This will permanently delete this lesson and all its progress.',
+      confirmLabel: 'Delete Lesson',
       onConfirm: async () => {
-        await deleteCourseProgress(courseGroupId);
-        await deleteUserCourse(courseGroupId);
-        invalidateCoursesCache();
-        dispatch({ type: 'REFRESH_COURSES', courses: await loadCourses() });
-        navigate('/courses');
+        await deleteLessonProgress(lessonGroupId);
+        await deleteUserLesson(lessonGroupId);
+        invalidateLessonsCache();
+        dispatch({ type: 'REFRESH_LESSONS', lessons: await loadLessons() });
+        navigate('/lessons');
       },
     });
   };
 
-  if (!course) return <p className="p-4 text-muted-foreground">Course not found.</p>;
+  if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
   const busy = !!loading;
 
   const renderMessage = (msg, idx) => {
@@ -181,44 +181,44 @@ export default function CourseChat() {
     <div className="flex flex-col h-full">
       <div className="border-b border-border bg-background px-4 py-2">
       <div className="mx-auto max-w-5xl flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to courses" onClick={() => navigate('/courses')}>
+        <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
           &larr;
         </Button>
         <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold truncate">{course.name}</h2>
-          <ProgressBar courseKB={courseKB} />
+          <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
+          <ProgressBar lessonKB={lessonKB} />
         </div>
-        {isCustomCourse && (
-          <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export course" title="Export course markdown">
+        {isCustomLesson && (
+          <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export lesson" title="Export lesson markdown">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </Button>
         )}
         {phase && (
-          <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset course" title="Reset course">
+          <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset lesson" title="Reset lesson">
             &#8635;
           </Button>
         )}
-        {isCustomCourse && (
-          <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete course" title="Delete course">
+        {isCustomLesson && (
+          <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete lesson" title="Delete lesson">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </Button>
         )}
       </div>
       </div>
 
-      <ChatArea courseName={course?.name}>
+      <ChatArea lessonName={lesson?.name}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
           <AssistantMessage content={displayText} />
         )}
-        {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your course..." />}
+        {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your lesson..." />}
         {loading === 'qa' && !displayText && <ThinkingSpinner />}
         {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
       </ChatArea>
 
       {phase && (
         <ComposeBar
-          placeholder={phase === COURSE_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+          placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
           onSend={handleSend}
           disabled={busy}
           allowImages

@@ -15,7 +15,7 @@ export function BrandingProvider({ children }) {
   const [branding, setBranding] = useState({
     theme: null,
     logoBase64: null,
-    logoAlt: '',
+    classroomName: '',
     loaded: false,
   });
 
@@ -32,7 +32,7 @@ export function BrandingProvider({ children }) {
       .catch(() => setBranding(prev => ({ ...prev, loaded: true })));
   }, []);
 
-  // Generate and set favicon (regular users only — admins keep plato favicon)
+  // Generate and set favicon — only when classroom has a logo image; otherwise use plato default
   useEffect(() => {
     if (!branding.logoBase64 || !branding.theme?.primary || isAdmin) return;
     let cancelled = false;

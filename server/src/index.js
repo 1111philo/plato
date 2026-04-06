@@ -13,6 +13,8 @@ import db from './lib/db.js';
 import { generateUserId } from './lib/crypto.js';
 import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
+import { migrateCoursesToLessons } from './lib/migrate.js';
+import { seedDefaultContent } from './lib/seed.js';
 
 const server = new Hono();
 
@@ -22,27 +24,44 @@ server.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Admin bootstrap: auto-create admin on first request if env vars set and no users exist
-let bootstrapChecked = false;
+// First-request initialization: admin bootstrap, data migration, content seeding
+let initChecked = false;
 server.use('*', async (c, next) => {
-  if (!bootstrapChecked && ADMIN_EMAIL && ADMIN_PASSWORD) {
-    bootstrapChecked = true;
-    try {
-      const count = await db.countUsers();
-      if (count === 0) {
-        const userId = generateUserId();
-        const passwordHash = await hashPassword(ADMIN_PASSWORD);
-        await db.createUser({
-          userId,
-          email: ADMIN_EMAIL.toLowerCase(),
-          passwordHash,
-          name: 'Admin',
-          role: 'admin',
-        });
-        console.log(`Admin bootstrapped: ${ADMIN_EMAIL}`);
+  if (!initChecked) {
+    initChecked = true;
+    // Admin bootstrap
+    if (ADMIN_EMAIL && ADMIN_PASSWORD) {
+      try {
+        const count = await db.countUsers();
+        if (count === 0) {
+          const userId = generateUserId();
+          const passwordHash = await hashPassword(ADMIN_PASSWORD);
+          await db.createUser({
+            userId,
+            email: ADMIN_EMAIL.toLowerCase(),
+            passwordHash,
+            name: 'Admin',
+            role: 'admin',
+          });
+          console.log(`Admin bootstrapped: ${ADMIN_EMAIL}`);
+        }
+      } catch (err) {
+        console.error('Admin bootstrap failed:', err.message);
       }
+    }
+    // Migrate course → lesson data keys (idempotent)
+    try {
+      const migrated = await migrateCoursesToLessons();
+      if (migrated > 0) console.log(`Migrated ${migrated} lesson → lesson key(s)`);
     } catch (err) {
-      console.error('Admin bootstrap failed:', err.message);
+      console.error('Migration failed (non-fatal):', err.message);
+    }
+    // Seed/update prompts and lessons
+    try {
+      const seeded = await seedDefaultContent();
+      if (seeded > 0) console.log(`Seeded ${seeded} content item(s)`);
+    } catch (err) {
+      console.error('Seed failed (non-fatal):', err.message);
     }
   }
   await next();

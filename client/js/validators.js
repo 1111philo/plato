@@ -10,9 +10,9 @@ export function validateSafety(text) {
 }
 
 /**
- * Validate a course owner response (course KB initialization).
+ * Validate a lesson owner response (lesson KB initialization).
  */
-export function validateCourseKB(parsed) {
+export function validateLessonKB(parsed) {
   if (!parsed.exemplar || typeof parsed.exemplar !== 'string') return 'Missing exemplar.';
   if (!Array.isArray(parsed.objectives) || parsed.objectives.length === 0) return 'Missing objectives array.';
   for (let i = 0; i < parsed.objectives.length; i++) {

@@ -4,7 +4,7 @@
 
 # plato
 
-An open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused, exemplar-driven courses in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery — all in under 20 minutes.
+An open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused, exemplar-driven lessons in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery — all in under 20 minutes.
 
 Built by [11:11 Philosopher's Group](https://github.com/1111philo).
 
@@ -12,25 +12,25 @@ Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source
 
 ## How it works
 
-plato applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each course is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
+plato applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each lesson is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
 
-A **course** defines an exemplar (the mastery-level outcome a learner produces) and a set of learning objectives. When a learner starts a course, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
+A **lesson** defines an exemplar (the mastery-level outcome a learner produces) and a set of learning objectives. When a learner starts a lesson, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
 
 ### Microlearning pacing
 
-Courses are designed for completion within 11 exchanges, but the system never cuts a learner off. Instead, the coach adapts its approach as exchanges accumulate:
+Lessons are designed for completion within 11 exchanges, but the system never cuts a learner off. Instead, the coach adapts its approach as exchanges accumulate:
 
 | Exchanges | Coach behavior |
 |-----------|---------------|
 | 1-10 | Normal coaching — diagnostics, practice, assessment |
 | 11-14 | Pivots to the exemplar — no new concepts, direct scaffolding |
 | 15-19 | Drops to single objective — one concrete, completable task |
-| 20-21 | Celebrates progress and closes the course |
-| 22 | Hard limit — system completes the course (safety net) |
+| 20-21 | Celebrates progress and closes the lesson |
+| 22 | Hard limit — system completes the lesson (safety net) |
 
-The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of courses complete within the 11-exchange target, helping educators tune course design.
+The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target, helping educators tune lesson design.
 
-Admins manage everything from `/plato`: users, courses, system prompts, a program knowledge base, and visual theming.
+Admins manage everything from `/plato`: users, lessons, system prompts, a program knowledge base, and visual theming.
 
 ## Repository structure
 
@@ -71,7 +71,7 @@ node dev-sqlite.js
 
 Open [http://localhost:3000](http://localhost:3000).
 
-On first visit you'll create an admin account. Prompts, courses, and the knowledge base are seeded automatically.
+On first visit you'll create an admin account. Prompts, lessons, and the knowledge base are seeded automatically.
 
 ### AI provider
 
@@ -86,7 +86,7 @@ The Anthropic API key is the easiest way to get started. Get one at [console.ant
 
 If `ANTHROPIC_API_KEY` is set, plato uses it automatically. For Bedrock, set `AI_PROVIDER=bedrock` and configure AWS credentials.
 
-Then log in and navigate to `/plato` to see the admin dashboard, or `/courses` to start learning.
+Then log in and navigate to `/plato` to see the admin dashboard, or `/lessons` to start learning.
 
 ### Development workflow
 
@@ -104,15 +104,15 @@ cd server && node dev-sqlite.js    # API server on :3000
 
 When developing the client with Vite's dev server, API calls go to `localhost:3000` — configure your browser or use a proxy.
 
-> **AI features** require the server to proxy to Amazon Bedrock. Without it, the app is fully navigable but course conversations won't work.
+> **AI features** require the server to proxy to Amazon Bedrock. Without it, the app is fully navigable but lesson conversations won't work.
 
 ## Architecture
 
 ### Overview
 
 - **Login required** — all data is server-side, no browser storage beyond auth tokens
-- **6 AI agents** via Amazon Bedrock: coach, course-owner, course-creator, course-extractor, learner-profile-owner, learner-profile-update
-- **Admin dashboard** at `/plato` — manage users, courses, system prompts, knowledge base, and theme
+- **8 AI agents** via Amazon Bedrock: coach, lesson-owner, lesson-creator, lesson-extractor, knowledge-base-editor, knowledge-base-extractor, learner-profile-owner, learner-profile-update
+- **Admin dashboard** at `/plato` — manage lessons, users, classroom customizer (styles + knowledge base), and integrations
 - **Single-tenant** — one instance per deployment, global settings, multiple admins
 
 ### Client
@@ -121,11 +121,11 @@ React SPA built with Vite. Key areas:
 
 | Directory | Purpose |
 |-----------|---------|
-| `src/pages/` | Route-level components (courses, settings, login, admin) |
+| `src/pages/` | Route-level components (lessons, settings, login, admin) |
 | `src/components/` | Shared UI (AppShell, chat, modals) |
 | `src/contexts/` | React contexts (auth, app state, modals) |
-| `src/lib/` | Engines (course loop, course creation, profile queue, sync) |
-| `js/` | Service modules (storage, orchestrator, auth, API, course parsing, validators) |
+| `src/lib/` | Engines (lesson loop, lesson creation, profile queue, sync) |
+| `js/` | Service modules (storage, orchestrator, auth, API, lesson parsing, validators) |
 
 Admin pages under `src/pages/admin/` are lazy-loaded and role-gated.
 
@@ -138,7 +138,7 @@ Hono framework on AWS Lambda with DynamoDB (or SQLite for local dev). Two Lambda
 
 **DynamoDB tables:** users, invites, refresh-tokens, sync-data, audit-log
 
-All content (system prompts, courses, knowledge base, theme/branding) is stored in the sync-data table under a `_system` user — no additional tables needed.
+All content (system prompts, lessons, knowledge base, theme/branding) is stored in the sync-data table under a `_system` user — no additional tables needed.
 
 **Auth:** JWT access tokens (15 min) + refresh tokens (30 day, rotated). Invite-based registration. First-time setup creates the initial admin via a UI flow.
 
@@ -147,10 +147,10 @@ All content (system prompts, courses, knowledge base, theme/branding) is stored 
 | Agent | Role |
 |-------|------|
 | **Coach** | Learner's companion in one continuous conversation — coaches, creates activities, evaluates submissions, tracks progress |
-| **Course Owner** | Initializes a course knowledge base from the course prompt + learner profile |
-| **Course Creator** | Guides users through designing custom courses via chat |
-| **Course Extractor** | Extracts course markdown from a creation conversation |
-| **Learner Profile Owner** | Deep profile update on course completion |
+| **Lesson Owner** | Initializes a lesson knowledge base from the lesson prompt + learner profile |
+| **Lesson Creator** | Guides users through designing custom lessons via chat |
+| **Lesson Extractor** | Extracts lesson markdown from a creation conversation |
+| **Learner Profile Owner** | Deep profile update on lesson completion |
 | **Learner Profile Update** | Incremental profile update from feedback/observations |
 
 System prompts are stored in the database and editable by admins at `/plato/prompts`. Changes take effect immediately.
@@ -201,7 +201,7 @@ cd server && sam build
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 
-# Bundle content source files (prompts, courses, KB) for seeding and change management
+# Bundle content source files (prompts, lessons, KB) for seeding and change management
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/

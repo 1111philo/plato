@@ -36,7 +36,7 @@ auth.post('/v1/auth/setup', async (c) => {
     return c.json({ error: 'Setup already completed' }, 400);
   }
 
-  const { email, name, password, username: rawUsername } = await c.req.json();
+  const { email, name, password, username: rawUsername, classroomName } = await c.req.json();
   if (!email || !name || !password) {
     return c.json({ error: 'email, name, and password are required' }, 400);
   }
@@ -64,9 +64,21 @@ auth.post('/v1/auth/setup', async (c) => {
     role: 'admin',
   });
 
-  // Seed default prompts, courses, and knowledge base
+  // Seed default prompts and lessons
   try { await seedDefaultContent(); } catch (e) {
     console.error('Content seed failed (non-fatal):', e.message);
+  }
+
+  // Save classroom name if provided
+  if (classroomName?.trim()) {
+    try {
+      const current = await db.getSyncData('_system', 'settings');
+      const settings = { ...(current?.data || {}), classroomName: classroomName.trim(), logoAlt: classroomName.trim() };
+      if (!settings.theme) settings.theme = { primary: '#8b1a1a', accent: '#dc2626' };
+      await db.putSyncData('_system', 'settings', settings, current?.version || 0);
+    } catch (e) {
+      console.error('Classroom name save failed (non-fatal):', e.message);
+    }
   }
 
   const accessToken = await signAccessToken(userId, 'admin');

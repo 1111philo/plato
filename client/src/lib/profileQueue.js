@@ -20,7 +20,7 @@ export function queueProfileUpdate(fn) {
 function defaultProfile() {
   return {
     name: '', goal: '',
-    masteredCourses: [], activeCourses: [],
+    masteredLessons: [], activeLessons: [],
     strengths: [], weaknesses: [],
     preferences: {},
     createdAt: Date.now(), updatedAt: Date.now(),
@@ -32,7 +32,7 @@ export function mergeProfile(existing, returned) {
   for (const key of ['name', 'goal']) {
     if (returned[key]) merged[key] = returned[key];
   }
-  for (const key of ['masteredCourses', 'activeCourses']) {
+  for (const key of ['masteredLessons', 'activeLessons']) {
     const combined = [...(existing[key] || []), ...(returned[key] || [])];
     merged[key] = [...new Set(combined)];
   }
@@ -70,23 +70,23 @@ export async function ensureProfileExists(name = '') {
 /**
  * Incremental profile update after assessment (code, no LLM call).
  */
-export function updateProfileInBackground(courseId, assessmentResult) {
+export function updateProfileInBackground(lessonId, assessmentResult) {
   queueProfileUpdate(async () => {
     const profile = await ensureProfileExists();
-    const updated = orchestrator.incrementalProfileUpdate(profile, courseId, assessmentResult);
+    const updated = orchestrator.incrementalProfileUpdate(profile, lessonId, assessmentResult);
     await saveLearnerProfile(updated);
     syncInBackground('profile');
   });
 }
 
 /**
- * Deep profile update on course completion (LLM call).
+ * Deep profile update on lesson completion (LLM call).
  */
-export function updateProfileOnCompletionInBackground(courseKB, course) {
+export function updateProfileOnCompletionInBackground(lessonKB, lesson) {
   queueProfileUpdate(async () => {
     const profile = await ensureProfileExists();
     const result = await orchestrator.updateProfileOnCompletion(
-      profile, courseKB, course.name, course.courseId, courseKB.activitiesCompleted
+      profile, lessonKB, lesson.name, lesson.lessonId, lessonKB.activitiesCompleted
     );
     await saveProfileResult(profile, result);
   });
@@ -95,11 +95,11 @@ export function updateProfileOnCompletionInBackground(courseKB, course) {
 /**
  * Profile update from a coach observation (LLM call).
  */
-export function updateProfileFromObservation(courseKB, observation) {
+export function updateProfileFromObservation(lessonKB, observation) {
   queueProfileUpdate(async () => {
     const profile = await ensureProfileExists();
     const result = await orchestrator.updateProfileFromFeedback(profile, observation, {
-      courseName: courseKB.name || 'Course', activityType: 'coaching', activityGoal: 'Coach observation',
+      lessonName: lessonKB.name || 'Lesson', activityType: 'coaching', activityGoal: 'Coach observation',
     });
     await saveProfileResult(profile, result);
   });

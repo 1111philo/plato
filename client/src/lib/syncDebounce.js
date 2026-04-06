@@ -7,8 +7,8 @@ import {
   putSyncData,
   getLearnerProfile, getLearnerProfileSummary,
   getPreferences,
-  getCourseKB, getActivities, getActivityKBsForCourse,
-  getDrafts, getCourseMessages, getUserCourseMarkdown,
+  getLessonKB, getActivities, getActivityKBsForLesson,
+  getDrafts, getLessonMessages, getUserLessonMarkdown,
 } from '../../js/storage.js';
 
 const _pendingSyncKeys = new Set();
@@ -21,14 +21,14 @@ async function getCacheData(syncKey) {
     return s || null;
   }
   if (syncKey === 'preferences') return getPreferences();
-  if (syncKey.startsWith('courseKB:')) return getCourseKB(syncKey.slice('courseKB:'.length));
+  if (syncKey.startsWith('lessonKB:')) return getLessonKB(syncKey.slice('lessonKB:'.length));
   if (syncKey.startsWith('activities:')) return getActivities(syncKey.slice('activities:'.length));
-  if (syncKey.startsWith('activityKBs:')) return getActivityKBsForCourse(syncKey.slice('activityKBs:'.length));
+  if (syncKey.startsWith('activityKBs:')) return getActivityKBsForLesson(syncKey.slice('activityKBs:'.length));
   if (syncKey.startsWith('drafts:')) return getDrafts(syncKey.slice('drafts:'.length));
-  if (syncKey.startsWith('messages:')) return getCourseMessages(syncKey.slice('messages:'.length));
-  if (syncKey.startsWith('courses:')) {
-    const md = await getUserCourseMarkdown(syncKey.slice('courses:'.length));
-    return md ? { courseId: syncKey.slice('courses:'.length), markdown: md } : null;
+  if (syncKey.startsWith('messages:')) return getLessonMessages(syncKey.slice('messages:'.length));
+  if (syncKey.startsWith('lessons:')) {
+    const md = await getUserLessonMarkdown(syncKey.slice('lessons:'.length));
+    return md ? { lessonId: syncKey.slice('lessons:'.length), markdown: md } : null;
   }
   return null;
 }

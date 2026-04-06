@@ -7,7 +7,7 @@ function PacingSection({ stats }) {
   const {
     totalCompletions = 0, withinTarget = 0, overTarget = 0, hitHardLimit = 0,
     exchangeTarget = 11, hardLimit = 22, avgExchangesWithinTarget,
-    avgDurationMinutes, activeCourses = 0,
+    avgDurationMinutes, activeLessons = 0,
   } = stats;
 
   const hasCompletions = totalCompletions > 0;
@@ -18,19 +18,19 @@ function PacingSection({ stats }) {
   if (rate !== null) {
     if (rate >= 75) {
       cardClasses = 'border-green-300 bg-green-50 ring-2 ring-green-200';
-      signal = 'Course pacing is healthy';
+      signal = 'Lesson pacing is healthy';
     } else if (rate >= 50) {
       cardClasses = 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200';
-      signal = 'Some courses are running long — review objectives or coach pacing';
+      signal = 'Some lessons are running long — review objectives or coach pacing';
     } else {
       cardClasses = 'border-red-300 bg-red-50 ring-2 ring-red-200';
-      signal = 'Most courses exceed the target — simplify objectives or raise the target';
+      signal = 'Most lessons exceed the target — simplify objectives or raise the target';
     }
   }
 
   return (
     <>
-      <h2 className="text-lg font-semibold mt-8 mb-4">Course Pacing</h2>
+      <h2 className="text-lg font-semibold mt-8 mb-4">Lesson Pacing</h2>
 
       <Card className={`mb-4 ${cardClasses}`}>
         <CardContent>
@@ -47,14 +47,14 @@ function PacingSection({ stats }) {
           {hasCompletions ? (
             <>
               <div className="text-sm mt-2">
-                {withinTarget} of {totalCompletions} completed course{totalCompletions !== 1 ? 's' : ''} finished
+                {withinTarget} of {totalCompletions} completed lesson{totalCompletions !== 1 ? 's' : ''} finished
                 within {exchangeTarget} exchanges
               </div>
               <div className="text-sm font-semibold mt-1">{signal}</div>
             </>
           ) : (
             <div className="text-sm text-muted-foreground mt-2">
-              No completed courses yet. Stats will appear once learners finish courses.
+              No completed lessons yet. Stats will appear once learners finish lessons.
             </div>
           )}
         </CardContent>
@@ -87,8 +87,8 @@ function PacingSection({ stats }) {
         </Card>
         <Card>
           <CardContent>
-            <div className="text-2xl font-bold">{activeCourses}</div>
-            <div className="text-sm text-muted-foreground">Active courses</div>
+            <div className="text-2xl font-bold">{activeLessons}</div>
+            <div className="text-sm text-muted-foreground">Active lessons</div>
           </CardContent>
         </Card>
       </div>
@@ -99,21 +99,21 @@ function PacingSection({ stats }) {
 export default function AdminHome() {
   const [activeCount, setActiveCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
-  const [contentUpdateCount, setContentUpdateCount] = useState(0);
-  const [courseStats, setCourseStats] = useState(null);
+  const [hasKB, setHasKB] = useState(true);
+  const [lessonStats, setLessonStats] = useState(null);
 
   useEffect(() => {
     document.title = 'Admin — plato';
     Promise.all([
       adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
-      adminApi('GET', '/v1/admin/content-updates'),
-      adminApi('GET', '/v1/admin/stats/courses'),
-    ]).then(([users, invites, contentUpdates, stats]) => {
+      adminApi('GET', '/v1/admin/knowledge-base'),
+      adminApi('GET', '/v1/admin/stats/lessons'),
+    ]).then(([users, invites, kb, stats]) => {
       setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setContentUpdateCount(contentUpdates?.count || 0);
-      setCourseStats(stats);
+      setHasKB(!!kb?.content);
+      setLessonStats(stats);
     }).catch(() => {});
   }, []);
 
@@ -122,11 +122,11 @@ export default function AdminHome() {
       <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
       <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
 
-      {contentUpdateCount > 0 && (
-        <Link to="/plato/content-updates" className="block no-underline mb-6">
-          <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 hover:bg-blue-100 transition-colors" role="alert">
-            <strong>{contentUpdateCount} content update{contentUpdateCount !== 1 ? 's' : ''} available</strong> from the latest version of plato.{' '}
-            <span className="underline">Review updates</span>
+      {!hasKB && (
+        <Link to="/plato/setup-kb" className="block no-underline mb-6">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors" role="alert">
+            <strong>Set up your knowledge base</strong> — tell plato about your program so the AI can give learners informed answers.{' '}
+            <span className="underline">Get started</span>
           </div>
         </Link>
       )}
@@ -150,7 +150,7 @@ export default function AdminHome() {
         </Link>
       </div>
 
-      {courseStats && <PacingSection stats={courseStats} />}
+      {lessonStats && <PacingSection stats={lessonStats} />}
     </div>
   );
 }

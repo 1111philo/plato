@@ -18,7 +18,7 @@ export default function usePublicBranding(pageTitle) {
   // Set document title using classroom name
   useEffect(() => {
     if (!branding) return;
-    const name = branding.logoAlt || 'plato';
+    const name = branding.classroomName || 'plato';
     document.title = `${pageTitle} — ${name}`;
   }, [branding, pageTitle]);
 
@@ -40,7 +40,7 @@ export default function usePublicBranding(pageTitle) {
     };
   }, [branding?.theme]);
 
-  // Generate and set favicon
+  // Generate and set favicon — only when classroom has a logo image; otherwise use plato default
   useEffect(() => {
     if (!branding?.logoBase64 || !branding?.theme?.primary) return;
     let cancelled = false;
@@ -55,8 +55,8 @@ export default function usePublicBranding(pageTitle) {
 
   return {
     primary: branding.theme?.primary || '#8b1a1a',
-    logo: branding.logoBase64 || '/assets/academy-logo.png',
-    logoAlt: branding.logoAlt || "Plato's Academy",
+    logo: branding.logoBase64 || null,
+    classroomName: branding.classroomName || 'plato',
     theme: branding.theme,
   };
 }

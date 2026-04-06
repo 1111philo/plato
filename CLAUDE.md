@@ -4,7 +4,7 @@ Project-level instructions for Claude Code sessions working on plato.
 
 ## Project overview
 
-plato is an open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused courses in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
+plato is an open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused lessons in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
 
 - `client/` — React 18 + Vite SPA
 - `server/` — Node.js + Hono, deployed as AWS Lambda (SAM)
@@ -17,14 +17,23 @@ plato is an open-source, AI-powered [microlearning](https://philosophers.group/p
 - Users have a unique `username` (auto-generated if not set, editable, 3-30 chars alphanumeric/hyphens/underscores)
 - 2 Lambda functions: API Gateway (buffered CRUD) + Function URL (streaming SSE for AI chat)
 - 5 DynamoDB tables: users, invites, refresh-tokens, sync-data, audit-log
-- Content stored as `_system` sync-data: `prompt:*`, `course:*`, `knowledgeBase`, `settings` — each record includes a `bundledHash` for change management
-- Content change management: when bundled files (`client/prompts/`, `client/data/`) differ from DB, admins see an alert on the dashboard and can accept or dismiss each update
-- User-created courses stored under user's own sync-data: `courses:custom-*`
-- 6 AI agents via Bedrock or Anthropic API: coach, course-owner, course-creator, course-extractor, learner-profile-owner, learner-profile-update
-- Microlearning constraints defined in `client/src/lib/constants.js`: MAX_EXCHANGES=11, MIN_OBJECTIVES=2, MAX_OBJECTIVES=4. Server mirrors in `server/src/lib/course-limits.js`. Prompts reference these as literal numbers (update both if changed).
-- Pacing: courses target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
+- Content stored as `_system` sync-data: `prompt:*`, `lesson:*`, `knowledgeBase`, `settings`
+- Prompts are bundled in `client/prompts/*.md` and upserted to DB on every server startup — admins cannot edit prompts directly
+- User-created lessons stored under user's own sync-data: `lessons:custom-*`
+- 8 AI agents via Bedrock or Anthropic API (prompt files in `client/prompts/`). Each prompt file has an HTML comment header documenting what it reads, who calls it, and its purpose:
+  - **coach** — Reads: lesson prompt, lesson KB, learner profile, program KB. The main learner-facing agent.
+  - **lesson-creator** — Reads: program KB. Helps admins design lessons via conversation.
+  - **lesson-owner** — Reads: lesson prompt, learner profile. Initializes per-lesson KB.
+  - **lesson-extractor** — Reads: conversation text only. Extracts lesson markdown from creation chat.
+  - **knowledge-base-editor** — Reads: program KB. Helps admins create/edit the KB via conversation.
+  - **knowledge-base-extractor** — Reads: existing KB + conversation. Merges changes into updated KB markdown.
+  - **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion.
+  - **learner-profile-update** — Reads: learner profile, activity context. Incremental profile updates during lessons.
+- Program Knowledge Base is appended to agent system prompts at runtime for agents in `KB_AGENTS` (`client/js/orchestrator.js`)
+- Microlearning constraints defined in `client/src/lib/constants.js`: MAX_EXCHANGES=11, MIN_OBJECTIVES=2, MAX_OBJECTIVES=4. Server mirrors in `server/src/lib/lesson-limits.js`. Prompts reference these as literal numbers (update both if changed).
+- Pacing: lessons target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
-- Admin dashboard at `/plato` (lazy-loaded, role-gated) with Course Pacing KPIs (on-target rate, over-target count, hard-limit hits)
+- Admin dashboard at `/plato` (lazy-loaded, role-gated) with Lesson Pacing KPIs (on-target rate, over-target count, hard-limit hits)
 
 ## Development
 
@@ -59,7 +68,7 @@ cp ../version.json .aws-sam/build/PlatoStreamFunction/
 sam deploy
 ```
 
-The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt/course/KB source files for seeding and content change management.
+The copy steps are required — SAM doesn't build the client. `client-dist` serves the SPA; `client-content` provides prompt/lesson/KB source files for seeding and content change management.
 
 Deploy config: `server/samconfig.toml` (copy from `samconfig.toml.example`, gitignored). See README.md for full deploy guide including CI/CD setup.
 
@@ -96,8 +105,8 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Classroom pages use `BrandingProvider` context
 - Admin pages (`/plato/*`) are never themed with classroom branding
 - Footer text: "Powered by plato." (with period, with GitHub link)
-- User-created course IDs start with `custom-`
-- `loadCourses()` merges system courses (`/v1/courses`) with user courses from sync-data
+- User-created lesson IDs start with `custom-`
+- `loadLessons()` merges system lessons (`/v1/lessons`) with user lessons from sync-data
 - Favicon is generated dynamically via canvas: classroom logo on rounded-rect with primary color background
 
 ## Key files
@@ -108,12 +117,10 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/src/contexts/BrandingContext.jsx` — classroom branding for authenticated pages
 - `client/src/hooks/usePublicBranding.js` — classroom branding for auth pages
 - `client/src/lib/branding.js` — shared branding utilities (CSS vars, favicon gen)
-- `client/src/lib/courseCreationEngine.js` — course creation conversation flow
-- `client/js/courseOwner.js` — course loading, parsing, KB management
+- `client/src/lib/lessonCreationEngine.js` — lesson creation conversation flow
+- `client/js/lessonOwner.js` — lesson loading, parsing, KB management
 - `client/js/storage.js` — sync-data cache and persistence
 - `client/js/orchestrator.js` — AI agent orchestration
-- `server/src/lib/content-updates.js` — content change detection (hash comparison, bundled file reading)
-- `client/src/pages/admin/AdminContentUpdates.jsx` — admin review page for upstream content changes
 - `client/src/lib/constants.js` — microlearning limits (MAX_EXCHANGES, MIN/MAX_OBJECTIVES) and shared constants
-- `server/src/lib/course-limits.js` — server-side mirror of microlearning limits
+- `server/src/lib/lesson-limits.js` — server-side mirror of microlearning limits
 - `version.json` — current version (Beta-RC-X), auto-bumped on PR merge
