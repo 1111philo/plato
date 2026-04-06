@@ -14,6 +14,7 @@ import { generateUserId } from './lib/crypto.js';
 import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
+import { migrateCoursesToLessons } from './lib/migrate.js';
 
 const server = new Hono();
 
@@ -47,6 +48,13 @@ server.use('*', async (c, next) => {
       } catch (err) {
         console.error('Admin bootstrap failed:', err.message);
       }
+    }
+    // Migrate course → lesson data keys (idempotent)
+    try {
+      const migrated = await migrateCoursesToLessons();
+      if (migrated > 0) console.log(`Migrated ${migrated} course → lesson key(s)`);
+    } catch (err) {
+      console.error('Migration failed (non-fatal):', err.message);
     }
     // Seed/update prompts and lessons
     try {
