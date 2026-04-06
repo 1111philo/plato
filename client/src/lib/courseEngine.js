@@ -26,7 +26,7 @@ const PROGRESS_REGEX = /\[PROGRESS:\s*(\d+)\]\s*/g;
 const KB_UPDATE_REGEX = /\[KB_UPDATE:\s*(\{[\s\S]*?\})\]\s*/g;
 const PROFILE_UPDATE_REGEX = /\[PROFILE_UPDATE:\s*(\{[\s\S]*?\})\]\s*/g;
 
-function parseCoachResponse(raw) {
+export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
   let profileUpdate = null;
@@ -58,7 +58,7 @@ function parseCoachResponse(raw) {
 }
 
 /** Wrap a stream callback to strip tags from partial text. */
-function cleanStream(onStream) {
+export function cleanStream(onStream) {
   if (!onStream) return () => {};
   return (partial) => {
     // Strip any fully-formed tags
@@ -233,7 +233,7 @@ export async function resumeCourse(courseId) {
 
 // -- Helpers ------------------------------------------------------------------
 
-function buildContext(course, courseKB, profileSummary, learnerName) {
+export function buildContext(course, courseKB, profileSummary, learnerName) {
   const completed = courseKB?.activitiesCompleted || 0;
   const context = {
     learnerName: learnerName || '',

@@ -20,6 +20,7 @@ const AdminCourses = lazy(() => import('./pages/admin/AdminCourses.jsx'));
 const AdminAgents = lazy(() => import('./pages/admin/AdminAgents.jsx'));
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'));
 const AdminContentUpdates = lazy(() => import('./pages/admin/AdminContentUpdates.jsx'));
+const AdminCoursePreview = lazy(() => import('./pages/admin/AdminCoursePreview.jsx'));
 
 function RequireAuth({ children }) {
   const { loggedIn, loading } = useAuth();
@@ -108,6 +109,7 @@ export default function App() {
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="courses" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
           <Route path="courses/new" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
+          <Route path="courses/:courseId/preview" element={<Suspense fallback={<AdminFallback />}><AdminCoursePreview /></Suspense>} />
           <Route path="agents" element={<Suspense fallback={<AdminFallback />}><AdminAgents /></Suspense>} />
           <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
           <Route path="content-updates" element={<Suspense fallback={<AdminFallback />}><AdminContentUpdates /></Suspense>} />

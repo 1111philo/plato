@@ -382,6 +382,8 @@ admin.get('/v1/admin/courses', async (c) => {
       courseId: i.dataKey.slice('course:'.length),
       name: i.data.name || i.dataKey.slice('course:'.length),
       isBuiltIn: i.data.isBuiltIn || false,
+      status: i.data.status || 'published',
+      createdByName: i.data.createdByName || null,
       updatedAt: i.updatedAt,
     }));
   return c.json(courses);
@@ -399,16 +401,28 @@ admin.get('/v1/admin/courses/:courseId', async (c) => {
 admin.put('/v1/admin/courses/:courseId', async (c) => {
   const courseId = c.req.param('courseId');
   const body = await c.req.json();
-  if (!body.markdown) return c.json({ error: 'markdown is required' }, 400);
-  const mdError = validateCourseMarkdown(body.markdown);
-  if (mdError) return c.json({ error: mdError }, 400);
   const adminUser = c.get('user');
   const current = await db.getSyncData('_system', `course:${courseId}`);
+  // Validate markdown when it's new/changed, or when publishing
+  const hasMarkdown = body.markdown || current?.data?.markdown;
+  if (!hasMarkdown) return c.json({ error: 'markdown is required' }, 400);
+  const markdownToValidate = body.markdown || current?.data?.markdown;
+  const isPublishing = body.status === 'published' && current?.data?.status !== 'published';
+  const markdownChanged = body.markdown && body.markdown !== current?.data?.markdown;
+  if (markdownChanged || isPublishing) {
+    const mdError = validateCourseMarkdown(markdownToValidate);
+    if (mdError) return c.json({ error: mdError }, 400);
+  }
   const data = {
-    markdown: body.markdown,
-    name: body.name || courseId,
+    markdown: body.markdown || current?.data?.markdown,
+    name: body.name || current?.data?.name || courseId,
     isBuiltIn: body.isBuiltIn || false,
+    status: body.status || current?.data?.status || 'published',
+    conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
+    readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
+    createdBy: current?.data?.createdBy || adminUser.userId,
+    createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
   };
   await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);

@@ -2,18 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@/components/ui/table';
-import {
-  AlertDialog, AlertDialogContent, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogAction, AlertDialogCancel,
-} from '@/components/ui/alert-dialog';
 
 import { converseStream, extractCourseMarkdown } from '../../../js/orchestrator.js';
 import { parseCoursePrompt } from '../../../js/courseOwner.js';
@@ -33,10 +26,9 @@ export default function AdminCourses() {
   const isNewRoute = location.pathname.endsWith('/new');
 
   const [courses, setCourses] = useState([]);
-  const [editing, setEditing] = useState(null); // { courseId, name, markdown }
+  const [editing, setEditing] = useState(null); // { courseId, conversation, readiness, needsAgentReply }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [confirmSave, setConfirmSave] = useState(false);
 
   useEffect(() => {
     document.title = 'Courses — Admin';
@@ -55,20 +47,23 @@ export default function AdminCourses() {
   async function editCourse(courseId) {
     try {
       const data = await adminApi('GET', `/v1/admin/courses/${encodeURIComponent(courseId)}`);
-      setEditing({ courseId, name: data.name || courseId, markdown: data.markdown || '', isNew: false });
+      if (data.conversation?.length) {
+        // Resume the creation conversation
+        setEditing({ courseId, conversation: data.conversation, readiness: data.readiness ?? 8 });
+      } else {
+        // No conversation — seed one with the existing markdown so the agent has context
+        const seedConversation = [
+          { role: 'user', content: `I want to edit an existing course. Here is the current course markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
+        ];
+        setEditing({ courseId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true });
+      }
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  async function saveCourse() {
-    if (!editing) return;
-    const courseId = editing.isNew ? editing.name.trim().replace(/\s+/g, '-').toLowerCase() : editing.courseId;
+  async function toggleCourseStatus(courseId, newStatus) {
     try {
-      await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, {
-        markdown: editing.markdown,
-        name: editing.name,
-      });
-      setMessage({ text: 'Course saved.', type: 'success' });
-      setEditing(null);
+      await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { status: newStatus });
+      setMessage({ text: newStatus === 'published' ? 'Course published.' : 'Course unpublished.', type: 'success' });
       loadCourses();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -88,11 +83,12 @@ export default function AdminCourses() {
   if (isNewRoute) {
     return (
       <NewCourseView
-        onSave={async (name, markdown) => {
+        onSave={async (name, markdown, conversation, readiness) => {
           const courseId = name.trim().replace(/\s+/g, '-').toLowerCase();
-          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { markdown, name });
-          setMessage({ text: 'Course created.', type: 'success' });
-          loadCourses();
+          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(courseId)}`, { markdown, name, status: 'draft', conversation, readiness });
+          setMessage({ text: 'Course saved as draft.', type: 'success' });
+          await loadCourses();
+          navigate('/plato/courses');
         }}
         onCancel={() => navigate('/plato/courses')}
         onError={(text) => setMessage({ text, type: 'error' })}
@@ -100,35 +96,23 @@ export default function AdminCourses() {
     );
   }
 
-  // Edit existing course — markdown only
+  // Edit existing course — always via conversation
   if (editing) {
     return (
-      <div>
-        <h1 className="text-2xl font-bold mb-4">Edit: {editing.name}</h1>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800" role="alert">
-          <strong>Caution:</strong> Changes to courses affect all learners immediately. Verify content before saving.
-        </div>
-        <MarkdownEditor
-          name={editing.name}
-          markdown={editing.markdown}
-          onNameChange={(name) => setEditing({ ...editing, name })}
-          onMarkdownChange={(markdown) => setEditing({ ...editing, markdown })}
-          onSave={() => setConfirmSave(true)}
-          onCancel={() => setEditing(null)}
-        />
-        <AlertDialog open={confirmSave} onOpenChange={setConfirmSave}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-              <AlertDialogDescription>This will update the course for all learners immediately.</AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => { setConfirmSave(false); saveCourse(); }}>Save Changes</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
+      <NewCourseView
+        editingCourseId={editing.courseId}
+        initialMessages={editing.conversation}
+        initialReadiness={editing.readiness}
+        needsAgentReply={editing.needsAgentReply}
+        onSave={async (name, markdown, conversation, readiness) => {
+          await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(editing.courseId)}`, { markdown, name, conversation, readiness });
+          setMessage({ text: 'Course updated.', type: 'success' });
+          setEditing(null);
+          loadCourses();
+        }}
+        onCancel={() => setEditing(null)}
+        onError={(text) => setMessage({ text, type: 'error' })}
+      />
     );
   }
 
@@ -161,26 +145,46 @@ export default function AdminCourses() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Created by</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead><span className="sr-only">Actions</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {courses.map(c => (
-              <TableRow key={c.courseId}>
-                <TableCell>{c.name || c.courseId}</TableCell>
-                <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editCourse(c.courseId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
-                    <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteCourse(c.courseId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {courses.map(c => {
+              const isDraft = c.status === 'draft';
+              return (
+                <TableRow key={c.courseId}>
+                  <TableCell>
+                    <span className="flex items-center gap-2">
+                      {c.name || c.courseId}
+                      {isDraft && <Badge variant="outline" className="text-xs">Draft</Badge>}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
+                  <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
+                      <Button variant="ghost" size="icon-xs" title="Preview" onClick={() => navigate(`/plato/courses/${encodeURIComponent(c.courseId)}/preview`)} aria-label={`Preview ${c.name}`}>&#9655;</Button>
+                      {isDraft ? (
+                        <Button variant="ghost" size="icon-xs" title="Publish — make visible to learners" onClick={() => toggleCourseStatus(c.courseId, 'published')} aria-label={`Publish ${c.name} — make visible to learners`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </Button>
+                      ) : (
+                        <Button variant="ghost" size="icon-xs" title="Unpublish — hide from learners" onClick={() => toggleCourseStatus(c.courseId, 'draft')} aria-label={`Unpublish ${c.name} — hide from learners`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editCourse(c.courseId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
+                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteCourse(c.courseId)} aria-label={`Delete ${c.name}`}>&#10005;</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
             {courses.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-center py-6 text-muted-foreground">No courses yet.</TableCell>
+                <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No courses yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -190,47 +194,13 @@ export default function AdminCourses() {
   );
 }
 
-// -- Markdown editor (shared between new + edit) ------------------------------
+// -- Course creation/editing view with AI Chat --------------------------------
 
-function MarkdownEditor({ name, markdown, onNameChange, onMarkdownChange, onSave, onCancel }) {
-  return (
-    <Card>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="course-name">Course Name</Label>
-          <Input
-            id="course-name"
-            type="text"
-            value={name}
-            onChange={e => onNameChange(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="course-md">Course Markdown</Label>
-          <Textarea
-            id="course-md"
-            className="font-mono text-sm min-h-[400px]"
-            rows={20}
-            value={markdown}
-            onChange={e => onMarkdownChange(e.target.value)}
-            placeholder={"# Course Title\n\nOne-line description.\n\n## Exemplar\n\nWhat the learner will produce...\n\n## Learning Objectives\n\n- Can objective one\n- Can objective two"}
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={onSave}>Save</Button>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// -- New course view with AI Chat / Markdown tabs -----------------------------
-
-function NewCourseView({ onSave, onCancel, onError }) {
-  useEffect(() => { document.title = 'New Course — Admin'; }, []);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [readiness, setReadiness] = useState(0);
+function NewCourseView({ onSave, onCancel, onError, editingCourseId, initialMessages, initialReadiness, needsAgentReply }) {
+  const isEditing = !!editingCourseId;
+  useEffect(() => { document.title = isEditing ? 'Edit Course — Admin' : 'New Course — Admin'; }, [isEditing]);
+  const [chatMessages, setChatMessages] = useState(initialMessages || []);
+  const [readiness, setReadiness] = useState(initialReadiness ?? 0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [key, setKey] = useState(0); // increment to restart conversation
@@ -252,10 +222,24 @@ function NewCourseView({ onSave, onCancel, onError }) {
   }, [displayText]);
 
   // Start conversation on mount (and on key change after course creation)
+  // Skip when resuming an existing conversation that already has an agent reply
+  const skipInitRef = useRef(!!initialMessages?.length && !needsAgentReply);
   useEffect(() => {
+    if (skipInitRef.current) {
+      skipInitRef.current = false;
+      return;
+    }
     let cancelled = false;
-    setChatMessages([]);
-    setReadiness(0);
+
+    // Determine the opening message(s) to send to the agent
+    const openingMessages = (needsAgentReply && initialMessages?.length)
+      ? initialMessages.map(m => ({ role: m.role, content: m.content }))
+      : [{ role: 'user', content: 'I want to create a new course.' }];
+
+    if (!needsAgentReply) {
+      setChatMessages([]);
+      setReadiness(0);
+    }
     setBusy('starting');
     setStreamingText('');
     setError('');
@@ -264,14 +248,14 @@ function NewCourseView({ onSave, onCancel, onError }) {
       try {
         const raw = await converseStream(
           'course-creator',
-          [{ role: 'user', content: 'I want to create a new course.' }],
+          openingMessages,
           cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
           512
         );
         if (cancelled) return;
         const { text, readiness: r } = parseResponse(raw);
         const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
-        pendingRef.current = { msgs: [msg], r: r ?? 1 };
+        pendingRef.current = { msgs: [msg], r: r ?? readiness };
         setStreamingText(null);
       } catch (e) {
         if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
@@ -330,9 +314,10 @@ function NewCourseView({ onSave, onCancel, onError }) {
         return;
       }
 
-      await onSave(course.name, md);
-      // Reset chat for another course
-      setKey(k => k + 1);
+      // Save conversation alongside the markdown so it can be resumed later
+      const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+      await onSave(course.name, md, conversation, readiness);
+      if (!isEditing) setKey(k => k + 1); // Reset for next course (new only)
     } catch (e) {
       setError(e.message || 'Failed to create course.');
       setBusy('');
@@ -350,7 +335,7 @@ function NewCourseView({ onSave, onCancel, onError }) {
     <div>
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to courses">&larr; Back</Button>
-        <h1 className="text-2xl font-bold">New Course</h1>
+        <h1 className="text-2xl font-bold">{isEditing ? 'Edit Course' : 'New Course'}</h1>
       </div>
 
       {error && (
@@ -401,7 +386,7 @@ function NewCourseView({ onSave, onCancel, onError }) {
               disabled={isBusy}
               size="sm"
             >
-              {busy === 'creating' ? 'Creating...' : 'Create Course'}
+              {busy === 'creating' ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Course' : 'Create Course')}
             </Button>
           </div>
         </div>

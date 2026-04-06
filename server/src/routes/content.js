@@ -56,7 +56,7 @@ content.get('/v1/prompts/:name', async (c) => {
 content.get('/v1/courses', async (c) => {
   const items = await db.getAllSyncData('_system');
   const courses = items
-    .filter(i => i.dataKey.startsWith('course:'))
+    .filter(i => i.dataKey.startsWith('course:') && i.data.status !== 'draft')
     .map(i => ({
       courseId: i.dataKey.slice('course:'.length),
       ...i.data,
