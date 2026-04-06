@@ -23,7 +23,7 @@ server.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// First-request initialization: admin bootstrap, data migration, content seeding
+// First-request initialization: admin bootstrap, content seeding
 let initChecked = false;
 server.use('*', async (c, next) => {
   if (!initChecked) {
