@@ -56,9 +56,9 @@ content.get('/v1/prompts/:name', async (c) => {
 content.get('/v1/lessons', async (c) => {
   const items = await db.getAllSyncData('_system');
   const lessons = items
-    .filter(i => i.dataKey.startsWith('lesson:') && i.data.status !== 'draft')
+    .filter(i => (i.dataKey.startsWith('lesson:') || i.dataKey.startsWith('course:')) && i.data.status !== 'draft')
     .map(i => ({
-      lessonId: i.dataKey.slice('lesson:'.length),
+      lessonId: i.dataKey.replace(/^(lesson:|course:)/, ''),
       ...i.data,
       updatedAt: i.updatedAt,
     }));

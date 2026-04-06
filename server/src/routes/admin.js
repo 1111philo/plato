@@ -375,10 +375,10 @@ admin.put('/v1/admin/prompts/:name', async (c) => {
 admin.get('/v1/admin/lessons', async (c) => {
   const items = await db.getAllSyncData('_system');
   const lessons = items
-    .filter(i => i.dataKey.startsWith('lesson:'))
+    .filter(i => i.dataKey.startsWith('lesson:') || i.dataKey.startsWith('course:'))
     .map(i => ({
-      lessonId: i.dataKey.slice('lesson:'.length),
-      name: i.data.name || i.dataKey.slice('lesson:'.length),
+      lessonId: i.dataKey.replace(/^(lesson:|course:)/, ''),
+      name: i.data.name || i.dataKey.replace(/^(lesson:|course:)/, ''),
       isBuiltIn: i.data.isBuiltIn || false,
       status: i.data.status || 'published',
       createdByName: i.data.createdByName || null,
