@@ -7,6 +7,7 @@ export default function ComposeBar({
   onSend,
   disabled = false,
   allowImages = false,
+  elevated = false,
 }) {
   const [text, setText] = useState('');
   const [image, setImage] = useState(null);
@@ -38,7 +39,7 @@ export default function ComposeBar({
 
   return (
     <div className="px-4 pb-4 pt-2">
-      <div className="mx-auto max-w-3xl rounded-lg border border-input bg-background">
+      <div className={`mx-auto max-w-3xl rounded-lg border border-input bg-background ${elevated ? 'shadow-lg' : ''}`}>
         {image && (
           <div className="relative m-2 inline-block">
             <img src={image.dataUrl} alt={image.name} className="h-20 rounded-md object-cover" />

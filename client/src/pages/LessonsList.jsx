@@ -83,10 +83,13 @@ export default function LessonsList() {
               <div className="flex items-center gap-2 flex-wrap">
                 {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
                 {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
-                <button className="text-xs text-primary hover:underline"
-                  onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}>
+                <span className="text-xs text-primary hover:underline cursor-pointer"
+                  role="button" tabIndex={0}
+                  onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); setDetailLesson(c); } }}
+                  aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}>
                   {c.learningObjectives.length} objectives
-                </button>
+                </span>
               </div>
             </div>
           </LessonItem>

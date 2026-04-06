@@ -19,6 +19,10 @@ import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 
 export default function LessonChat() {
   const { lessonGroupId } = useParams();
@@ -39,6 +43,33 @@ export default function LessonChat() {
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
+  const [showObjectives, setShowObjectives] = useState(false);
+  const [headerPinned, setHeaderPinned] = useState(false);
+  const headerRef = useRef(null);
+  const [composePinned, setComposePinned] = useState(true);
+  const composeAnchorRef = useRef(null);
+
+  // Pin header when its top edge reaches the viewport top
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const check = () => {
+      const rect = el.getBoundingClientRect();
+      setHeaderPinned(rect.top < 0);
+    };
+    const checkCompose = () => {
+      const anchor = composeAnchorRef.current;
+      if (anchor) {
+        const rect = anchor.getBoundingClientRect();
+        // Unpin only when the bottom of the inline compose is fully visible
+        setComposePinned(rect.bottom > window.innerHeight);
+      }
+    };
+    const checkAll = () => { check(); checkCompose(); };
+    window.addEventListener('scroll', checkAll, true);
+    checkAll();
+    return () => window.removeEventListener('scroll', checkAll, true);
+  }, []);
 
   useEffect(() => {
     if (displayText === null && pendingAfterStreamRef.current) {
@@ -81,7 +112,7 @@ export default function LessonChat() {
     })();
 
     return () => { cancelled = true; };
-  }, [lessonGroupId]);
+  }, [lessonGroupId, lesson]);
 
   const handleSend = useCallback(async ({ text, imageDataUrl }) => {
     if (!text && !imageDataUrl) return;
@@ -152,6 +183,7 @@ export default function LessonChat() {
     });
   };
 
+  if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
   const busy = !!loading;
 
@@ -178,32 +210,80 @@ export default function LessonChat() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b border-border bg-background px-4 py-2">
-      <div className="mx-auto max-w-5xl flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
-          &larr;
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
-          <ProgressBar lessonKB={lessonKB} />
+    <div>
+      {/* Fixed header clone — appears when inline header scrolls out of view */}
+      {headerPinned && (
+        <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
+          <div className="mx-auto max-w-5xl flex items-center gap-2">
+            <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
+              &larr;
+            </Button>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
+                <button
+                  className="text-xs text-primary hover:underline shrink-0"
+                  onClick={() => setShowObjectives(true)}
+                >
+                  Overview ({lesson.learningObjectives.length} Objectives)
+                </button>
+              </div>
+              <ProgressBar lessonKB={lessonKB} />
+            </div>
+            {isCustomLesson && (
+              <Button variant="ghost" size="icon-sm" onClick={handleExport} title="Export lesson markdown">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              </Button>
+            )}
+            {phase && (
+              <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset lesson">
+                &#8635;
+              </Button>
+            )}
+            {isCustomLesson && (
+              <Button variant="ghost" size="icon-sm" onClick={handleDelete} title="Delete lesson">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              </Button>
+            )}
+          </div>
         </div>
-        {isCustomLesson && (
-          <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export lesson" title="Export lesson markdown">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      )}
+
+      {/* Inline header — observed for scroll position */}
+      <div ref={headerRef} id="lesson-header" className="border-b border-border bg-background px-4 py-2">
+        <div className="mx-auto max-w-5xl flex items-center gap-2">
+          <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
+            &larr;
           </Button>
-        )}
-        {phase && (
-          <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset lesson" title="Reset lesson">
-            &#8635;
-          </Button>
-        )}
-        {isCustomLesson && (
-          <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete lesson" title="Delete lesson">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </Button>
-        )}
-      </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
+              <button
+                className="text-xs text-primary hover:underline shrink-0"
+                onClick={() => setShowObjectives(true)}
+                aria-label={`View ${lesson.learningObjectives.length} objectives`}
+              >
+                Overview ({lesson.learningObjectives.length} Objectives)
+              </button>
+            </div>
+            <ProgressBar lessonKB={lessonKB} />
+          </div>
+          {isCustomLesson && (
+            <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export lesson" title="Export lesson markdown">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </Button>
+          )}
+          {phase && (
+            <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset lesson" title="Reset lesson">
+              &#8635;
+            </Button>
+          )}
+          {isCustomLesson && (
+            <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete lesson" title="Delete lesson">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </Button>
+          )}
+        </div>
       </div>
 
       <ChatArea lessonName={lesson?.name}>
@@ -216,14 +296,55 @@ export default function LessonChat() {
         {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
       </ChatArea>
 
+      {/* Inline compose — always in document flow for layout; invisible when pinned */}
       {phase && (
-        <ComposeBar
-          placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
-          onSend={handleSend}
-          disabled={busy}
-          allowImages
-        />
+        <div ref={composeAnchorRef} aria-hidden={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
+          <ComposeBar
+            placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+            onSend={handleSend}
+            disabled={busy}
+            allowImages
+          />
+        </div>
       )}
+
+      {/* Fixed compose overlay — interactive when pinned */}
+      {phase && composePinned && (
+        <div className="fixed bottom-0 left-0 right-0 z-50">
+          <ComposeBar
+            placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+            onSend={handleSend}
+            disabled={busy}
+            allowImages
+            elevated
+          />
+        </div>
+      )}
+
+      {/* Objectives dialog */}
+      <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{lesson.name}</DialogTitle>
+            {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
+          </DialogHeader>
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Exemplar</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Learning Objectives</h3>
+            <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
+              {lesson.learningObjectives.map((obj, i) => (
+                <li key={i}>{obj}</li>
+              ))}
+            </ul>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {confirmModal && (
         <ConfirmModal
