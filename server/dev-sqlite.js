@@ -38,6 +38,8 @@ const { default: db } = await import('./src/lib/db.js');
 const { generateUserId } = await import('./src/lib/crypto.js');
 const { hashPassword } = await import('./src/lib/password.js');
 const { ADMIN_EMAIL, ADMIN_PASSWORD } = await import('./src/config.js');
+const { seedDefaultContent } = await import('./src/lib/seed.js');
+const { migrateCoursesToLessons } = await import('./src/lib/migrate.js');
 
 const server = new Hono();
 
@@ -66,6 +68,22 @@ if (ADMIN_EMAIL && ADMIN_PASSWORD) {
   } catch (err) {
     console.error('Admin bootstrap failed:', err.message);
   }
+}
+
+// Migrate course → lesson data keys (idempotent)
+try {
+  const migrated = await migrateCoursesToLessons();
+  if (migrated > 0) console.log(`Migrated ${migrated} course → lesson key(s)`);
+} catch (err) {
+  console.error('Migration failed:', err.message);
+}
+
+// Seed/update prompts, lessons on every startup
+try {
+  const seeded = await seedDefaultContent();
+  if (seeded > 0) console.log(`Seeded ${seeded} content item(s)`);
+} catch (err) {
+  console.error('Seed failed:', err.message);
 }
 
 server.route('/', health);

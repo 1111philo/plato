@@ -1,10 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateSafety, validateCourseKB } from '../js/validators.js';
+import { validateSafety, validateLessonKB } from '../js/validators.js';
 
 // -- Helpers ------------------------------------------------------------------
 
-function validCourseKB(overrides = {}) {
+function validLessonKB(overrides = {}) {
   return {
     exemplar: 'A professional portfolio published on WordPress...',
     objectives: [
@@ -33,44 +33,44 @@ describe('validateSafety', () => {
   });
 });
 
-// -- validateCourseKB ---------------------------------------------------------
+// -- validateLessonKB ---------------------------------------------------------
 
-describe('validateCourseKB', () => {
-  it('accepts a valid course KB', () => {
-    assert.equal(validateCourseKB(validCourseKB()), null);
+describe('validateLessonKB', () => {
+  it('accepts a valid lesson KB', () => {
+    assert.equal(validateLessonKB(validLessonKB()), null);
   });
 
   it('rejects missing exemplar', () => {
-    assert.ok(validateCourseKB(validCourseKB({ exemplar: '' })));
+    assert.ok(validateLessonKB(validLessonKB({ exemplar: '' })));
   });
 
   it('rejects empty objectives', () => {
-    assert.ok(validateCourseKB(validCourseKB({ objectives: [] })));
+    assert.ok(validateLessonKB(validLessonKB({ objectives: [] })));
   });
 
   it('rejects objective missing evidence', () => {
-    assert.ok(validateCourseKB(validCourseKB({
+    assert.ok(validateLessonKB(validLessonKB({
       objectives: [{ objective: 'Can do X', evidence: '' }],
     })));
   });
 
   it('rejects missing learnerPosition', () => {
-    assert.ok(validateCourseKB(validCourseKB({ learnerPosition: '' })));
+    assert.ok(validateLessonKB(validLessonKB({ learnerPosition: '' })));
   });
 
   it('rejects missing insights array', () => {
-    assert.ok(validateCourseKB(validCourseKB({ insights: 'not array' })));
+    assert.ok(validateLessonKB(validLessonKB({ insights: 'not array' })));
   });
 
   it('rejects missing activitiesCompleted', () => {
-    assert.ok(validateCourseKB(validCourseKB({ activitiesCompleted: 'zero' })));
+    assert.ok(validateLessonKB(validLessonKB({ activitiesCompleted: 'zero' })));
   });
 
   it('rejects missing status', () => {
-    assert.ok(validateCourseKB(validCourseKB({ status: '' })));
+    assert.ok(validateLessonKB(validLessonKB({ status: '' })));
   });
 
   it('rejects unsafe content in exemplar', () => {
-    assert.ok(validateCourseKB(validCourseKB({ exemplar: 'how to hack a database' })));
+    assert.ok(validateLessonKB(validLessonKB({ exemplar: 'how to hack a database' })));
   });
 });

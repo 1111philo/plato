@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const ROUTE_NAMES = {
-  '/courses': 'Courses',
+  '/lessons': 'Lessons',
   '/settings': 'Settings',
   '/onboarding': 'Welcome',
 };
@@ -14,8 +14,8 @@ export default function ScreenReaderAnnounce() {
   useEffect(() => {
     const path = location.pathname;
     let name = ROUTE_NAMES[path];
-    if (!name && path.startsWith('/courses/create')) name = 'Create Course';
-    else if (!name && path.startsWith('/courses/')) name = 'Course';
+    if (!name && path.startsWith('/lessons/create')) name = 'Create Lesson';
+    else if (!name && path.startsWith('/lessons/')) name = 'Lesson';
 
     if (name) {
       setMessage(`Navigated to ${name}`);

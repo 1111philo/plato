@@ -31,8 +31,8 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
-  const classroomLogo = branding?.logoBase64 || '/assets/logo-white.svg';
-  const classroomAlt = branding?.logoAlt || 'plato';
+  const classroomLogo = branding?.logoBase64 || null;
+  const classroomName = branding?.classroomName || branding?.logoAlt || 'plato';
 
   return (
     <>
@@ -66,8 +66,12 @@ export default function AppShell({ children }) {
         role="banner"
       >
         <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <a href="/courses" onClick={e => { e.preventDefault(); navigate('/courses'); }} className="shrink-0">
-            <img src={classroomLogo} alt={classroomAlt} className="h-8 w-auto" />
+          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0">
+            {classroomLogo ? (
+              <img src={classroomLogo} alt={classroomName} className="h-8 w-auto" />
+            ) : (
+              <span className="text-sm font-semibold">{classroomName}</span>
+            )}
           </a>
           <div className="flex-1" />
           <DropdownMenuRadix.Root>
@@ -121,7 +125,7 @@ export default function AppShell({ children }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Sign Out?</AlertDialogTitle>
             <AlertDialogDescription>
-              You'll need to sign in again to access your courses.
+              You'll need to sign in again to access your lessons.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

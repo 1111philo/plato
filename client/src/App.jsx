@@ -2,8 +2,8 @@ import { lazy, Suspense, useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
-import CoursesList from './pages/CoursesList.jsx';
-import CourseChat from './pages/CourseChat.jsx';
+import LessonsList from './pages/LessonsList.jsx';
+import LessonChat from './pages/LessonChat.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
@@ -16,10 +16,11 @@ import { BrandingProvider } from './contexts/BrandingContext.jsx';
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
-const AdminCourses = lazy(() => import('./pages/admin/AdminCourses.jsx'));
-const AdminAgents = lazy(() => import('./pages/admin/AdminAgents.jsx'));
-const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'));
-const AdminContentUpdates = lazy(() => import('./pages/admin/AdminContentUpdates.jsx'));
+const AdminLessons = lazy(() => import('./pages/admin/AdminLessons.jsx'));
+const AdminCustomizer = lazy(() => import('./pages/admin/AdminCustomizer.jsx'));
+const AdminIntegrations = lazy(() => import('./pages/admin/AdminIntegrations.jsx'));
+const AdminLessonPreview = lazy(() => import('./pages/admin/AdminLessonPreview.jsx'));
+const AdminKBSetup = lazy(() => import('./pages/admin/AdminKBSetup.jsx'));
 
 function RequireAuth({ children }) {
   const { loggedIn, loading } = useAuth();
@@ -37,14 +38,14 @@ function RequireAuth({ children }) {
 
 function RequireAdmin({ children }) {
   const { user } = useAuth();
-  if (user?.role !== 'admin') return <Navigate to="/courses" replace />;
+  if (user?.role !== 'admin') return <Navigate to="/lessons" replace />;
   return children;
 }
 
 function RequireGuest({ children }) {
   const { loggedIn, loading } = useAuth();
   if (loading) return null;
-  if (loggedIn) return <Navigate to="/courses" replace />;
+  if (loggedIn) return <Navigate to="/lessons" replace />;
   return children;
 }
 
@@ -106,11 +107,14 @@ export default function App() {
         }>
           <Route index element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
-          <Route path="courses" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
-          <Route path="courses/new" element={<Suspense fallback={<AdminFallback />}><AdminCourses /></Suspense>} />
-          <Route path="agents" element={<Suspense fallback={<AdminFallback />}><AdminAgents /></Suspense>} />
-          <Route path="settings" element={<Suspense fallback={<AdminFallback />}><AdminSettings /></Suspense>} />
-          <Route path="content-updates" element={<Suspense fallback={<AdminFallback />}><AdminContentUpdates /></Suspense>} />
+          <Route path="lessons" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
+          <Route path="lessons/new" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
+          <Route path="lessons/:lessonId/preview" element={<Suspense fallback={<AdminFallback />}><AdminLessonPreview /></Suspense>} />
+          <Route path="customizer" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
+          <Route path="customizer/knowledge" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
+          <Route path="customizer/knowledge/edit" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
+          <Route path="integrations" element={<Suspense fallback={<AdminFallback />}><AdminIntegrations /></Suspense>} />
+          <Route path="setup-kb" element={<Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense>} />
         </Route>
 
         {/* Classroom routes — custom theme/branding applied here */}
@@ -119,12 +123,12 @@ export default function App() {
             <BrandingProvider>
             <AppShell>
               <Routes>
-                <Route path="/courses" element={<CoursesList />} />
-                <Route path="/courses/create" element={<Navigate to="/courses" replace />} />
-                <Route path="/courses/:courseGroupId" element={<CourseChat />} />
+                <Route path="/lessons" element={<LessonsList />} />
+                <Route path="/lessons/create" element={<Navigate to="/lessons" replace />} />
+                <Route path="/lessons/:lessonGroupId" element={<LessonChat />} />
                 <Route path="/settings" element={<Settings />} />
-                <Route path="/" element={<Navigate to="/courses" replace />} />
-                <Route path="*" element={<Navigate to="/courses" replace />} />
+                <Route path="/" element={<Navigate to="/lessons" replace />} />
+                <Route path="*" element={<Navigate to="/lessons" replace />} />
               </Routes>
             </AppShell>
             </BrandingProvider>

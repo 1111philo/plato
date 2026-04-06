@@ -1,13 +1,13 @@
 import { createContext, useContext, useReducer, useEffect } from 'react';
 import { getPreferences } from '../../js/storage.js';
-import { loadCourses, invalidateCoursesCache } from '../../js/courseOwner.js';
+import { loadLessons, invalidateLessonsCache } from '../../js/lessonOwner.js';
 import * as sync from '../../js/sync.js';
 import { useAuth } from './AuthContext.jsx';
 
 const AppContext = createContext(null);
 
 const initialState = {
-  courses: [],
+  lessons: [],
   preferences: { name: '' },
   generating: null,
   loaded: false,
@@ -21,8 +21,8 @@ function reducer(state, action) {
       return { ...state, preferences: action.preferences };
     case 'SET_GENERATING':
       return { ...state, generating: action.generating };
-    case 'REFRESH_COURSES':
-      return { ...state, courses: action.courses };
+    case 'REFRESH_LESSONS':
+      return { ...state, lessons: action.lessons };
     default:
       return state;
   }
@@ -36,9 +36,9 @@ export function AppProvider({ children }) {
     if (!loggedIn) return;
     async function load() {
       try { await sync.loadAll(); } catch { /* offline or error */ }
-      const courses = await loadCourses();
+      const lessons = await loadLessons();
       const preferences = await getPreferences();
-      dispatch({ type: 'INIT_DATA', payload: { preferences, courses } });
+      dispatch({ type: 'INIT_DATA', payload: { preferences, lessons } });
     }
     load();
   }, [loggedIn]);
@@ -50,10 +50,10 @@ export function AppProvider({ children }) {
       if (document.visibilityState !== 'visible') return;
       try {
         await sync.loadAll();
-        invalidateCoursesCache();
+        invalidateLessonsCache();
         const preferences = await getPreferences();
-        const courses = await loadCourses();
-        dispatch({ type: 'INIT_DATA', payload: { preferences, courses } });
+        const lessons = await loadLessons();
+        dispatch({ type: 'INIT_DATA', payload: { preferences, lessons } });
       } catch { /* offline or session expired */ }
     };
     document.addEventListener('visibilitychange', handleVisibility);

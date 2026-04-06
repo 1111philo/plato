@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Seed prompts, courses, and knowledge base into the database.
+ * Seed prompts, lessons, and knowledge base into the database.
  * Reads MD files from client/ and inserts as _system sync data.
  *
  * Usage:
@@ -18,7 +18,6 @@ const clientDir = resolve(__dirname, '../../client');
 
 // Dynamic import to pick up env-driven backend
 const { default: db } = await import('../src/lib/db.js');
-const { hashContent } = await import('../src/lib/content-updates.js');
 
 async function seed() {
   console.log('Seeding content...');
@@ -33,39 +32,28 @@ async function seed() {
     await db.putSyncData('_system', `prompt:${name}`, {
       content,
       updatedBy: 'seed-script',
-      bundledHash: hashContent(content),
     }, existing?.version || 0);
     console.log(`  prompt: ${name}`);
   }
 
-  // Seed courses
-  const coursesDir = join(clientDir, 'data/courses');
-  const courseFiles = readdirSync(coursesDir).filter(f => f.endsWith('.md'));
-  for (const file of courseFiles) {
-    const courseId = file.replace(/\.md$/, '');
-    const markdown = readFileSync(join(coursesDir, file), 'utf-8');
-    const existing = await db.getSyncData('_system', `course:${courseId}`);
-    await db.putSyncData('_system', `course:${courseId}`, {
+  // Seed lessons
+  const lessonsDir = join(clientDir, 'data/lessons');
+  const lessonFiles = readdirSync(lessonsDir).filter(f => f.endsWith('.md'));
+  for (const file of lessonFiles) {
+    const lessonId = file.replace(/\.md$/, '');
+    const markdown = readFileSync(join(lessonsDir, file), 'utf-8');
+    const existing = await db.getSyncData('_system', `lesson:${lessonId}`);
+    await db.putSyncData('_system', `lesson:${lessonId}`, {
       markdown,
-      name: courseId,
+      name: lessonId,
       isBuiltIn: true,
       updatedBy: 'seed-script',
       createdAt: existing?.data?.createdAt || new Date().toISOString(),
-      bundledHash: hashContent(markdown),
     }, existing?.version || 0);
-    console.log(`  course: ${courseId}`);
+    console.log(`  lesson: ${lessonId}`);
   }
 
-  // Seed knowledge base
-  const kbPath = join(clientDir, 'data/knowledge-base.md');
-  const kbContent = readFileSync(kbPath, 'utf-8');
-  const existingKb = await db.getSyncData('_system', 'knowledgeBase');
-  await db.putSyncData('_system', 'knowledgeBase', {
-    content: kbContent,
-    updatedBy: 'seed-script',
-    bundledHash: hashContent(kbContent),
-  }, existingKb?.version || 0);
-  console.log('  knowledge base');
+  // Knowledge base is NOT seeded — admins create their own via the KB Editor agent
 
   console.log('Done!');
 }

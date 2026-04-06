@@ -5,7 +5,7 @@
 
 import { parseSSEStream, parseResponse, MODEL_LIGHT, MODEL_HEAVY, ApiError } from './api.js';
 import { authenticatedFetch } from './auth.js';
-import { validateCourseKB } from './validators.js';
+import { validateLessonKB } from './validators.js';
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -32,7 +32,7 @@ async function loadKnowledgeBase() {
   return knowledgeBase;
 }
 
-const KB_AGENTS = ['coach', 'course-creator'];
+const KB_AGENTS = ['coach', 'lesson-creator', 'knowledge-base-editor'];
 
 function parseJSON(text) {
   const trimmed = text.trim();
@@ -112,14 +112,14 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   return content;
 }
 
-// -- Course Owner (LLM) -------------------------------------------------------
+// -- Lesson Owner (LLM) -------------------------------------------------------
 
-export async function initializeCourseKB(course, profileSummary) {
-  const systemPrompt = await loadPrompt('course-owner');
+export async function initializeLessonKB(lesson, profileSummary) {
+  const systemPrompt = await loadPrompt('lesson-owner');
   const userContent = JSON.stringify({
-    courseId: course.courseId, courseName: course.name,
-    courseDescription: course.description, exemplar: course.exemplar,
-    learningObjectives: course.learningObjectives,
+    lessonId: lesson.lessonId, lessonName: lesson.name,
+    lessonDescription: lesson.description, exemplar: lesson.exemplar,
+    learningObjectives: lesson.learningObjectives,
     learnerProfile: profileSummary || 'New learner, no profile yet.',
   });
   const callAgent = async () => {
@@ -129,14 +129,14 @@ export async function initializeCourseKB(course, profileSummary) {
     });
     return parseJSON(content);
   };
-  return callWithValidation(callAgent, validateCourseKB);
+  return callWithValidation(callAgent, validateLessonKB);
 }
 
-// -- Learner Profile Owner (LLM — deep update on course completion) -----------
+// -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
 
-export async function updateProfileOnCompletion(fullProfile, courseKB, courseName, courseId, activitiesCompleted) {
+export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
   const systemPrompt = await loadPrompt('learner-profile-owner');
-  const userContent = JSON.stringify({ currentProfile: fullProfile, courseKB, activitiesCompleted, courseName, courseId });
+  const userContent = JSON.stringify({ currentProfile: fullProfile, lessonKB, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
     model: MODEL_LIGHT, systemPrompt,
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
@@ -146,10 +146,10 @@ export async function updateProfileOnCompletion(fullProfile, courseKB, courseNam
 
 // -- Learner Profile Owner (code — incremental merge) -------------------------
 
-export function incrementalProfileUpdate(profile, courseId) {
+export function incrementalProfileUpdate(profile, lessonId) {
   const updated = { ...profile };
-  if (!updated.activeCourses) updated.activeCourses = [];
-  if (!updated.activeCourses.includes(courseId)) updated.activeCourses.push(courseId);
+  if (!updated.activeLessons) updated.activeLessons = [];
+  if (!updated.activeLessons.includes(lessonId)) updated.activeLessons.push(lessonId);
   updated.updatedAt = Date.now();
   return updated;
 }
@@ -160,7 +160,7 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
   const systemPrompt = await loadPrompt('learner-profile-update');
   const userContent = JSON.stringify({
     currentProfile: fullProfile, learnerFeedback: feedbackText,
-    context: { courseName: activityContext.courseName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
+    context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
   });
   const { content } = await callApi({
     model: MODEL_LIGHT, systemPrompt,
@@ -169,13 +169,27 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
   return parseJSON(content);
 }
 
-// -- Course markdown extraction (from conversation) ---------------------------
+// -- Lesson markdown extraction (from conversation) ---------------------------
 
-export async function extractCourseMarkdown(conversationText) {
-  const systemPrompt = await loadPrompt('course-extractor');
+export async function extractLessonMarkdown(conversationText) {
+  const systemPrompt = await loadPrompt('lesson-extractor');
   const { content } = await callApi({
     model: MODEL_LIGHT, systemPrompt,
     messages: [{ role: 'user', content: conversationText }], maxTokens: 1536,
+  });
+  return content.trim();
+}
+
+// -- Knowledge base markdown extraction (from conversation) -------------------
+
+export async function extractKBMarkdown(conversationText, existingKB = '') {
+  const systemPrompt = await loadPrompt('knowledge-base-extractor');
+  const userContent = existingKB
+    ? `## EXISTING KNOWLEDGE BASE\n\n${existingKB}\n\n## CONVERSATION\n\n${conversationText}`
+    : `## EXISTING KNOWLEDGE BASE\n\n(none — creating from scratch)\n\n## CONVERSATION\n\n${conversationText}`;
+  const { content } = await callApi({
+    model: MODEL_LIGHT, systemPrompt,
+    messages: [{ role: 'user', content: userContent }], maxTokens: 4096,
   });
   return content.trim();
 }

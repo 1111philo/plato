@@ -2,7 +2,7 @@ import { useRef, useEffect, forwardRef } from 'react';
 
 const NEAR_BOTTOM_PX = 80;
 
-const ChatArea = forwardRef(function ChatArea({ children, courseName }, ref) {
+const ChatArea = forwardRef(function ChatArea({ children, lessonName }, ref) {
   const localRef = useRef(null);
   const scrollRef = ref || localRef;
   const programmaticScroll = useRef(false);
@@ -47,7 +47,7 @@ const ChatArea = forwardRef(function ChatArea({ children, courseName }, ref) {
       className="flex-1 overflow-y-auto p-4 text-base"
       role="log"
       aria-live="polite"
-      aria-label={courseName ? `${courseName} conversation` : 'Course conversation'}
+      aria-label={lessonName ? `${lessonName} conversation` : 'Lesson conversation'}
       ref={scrollRef}
     >
       <div className="mx-auto max-w-3xl space-y-3">

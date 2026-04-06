@@ -68,7 +68,7 @@ describe('PUT /v1/sync/:dataKey', () => {
     assert.equal(res.status, 400);
   });
 
-  it('accepts progress:courseId keys', async () => {
+  it('accepts progress:lessonId keys', async () => {
     db.putSyncData = async () => ({ version: 1, updatedAt: '2024-01-01T00:00:00Z' });
     const app = new Hono();
     app.route('/', sync);

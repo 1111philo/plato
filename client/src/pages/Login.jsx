@@ -29,7 +29,7 @@ export default function Login() {
     setError('');
     try {
       await login(email.trim(), password);
-      navigate('/courses', { replace: true });
+      navigate('/lessons', { replace: true });
     } catch (e) {
       setError(e.message || 'Login failed');
     } finally {
@@ -39,11 +39,15 @@ export default function Login() {
 
   if (!branding) return null;
 
-  const { primary: headerBg, logo, logoAlt } = branding;
+  const { primary: headerBg, logo, classroomName } = branding;
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
-      <img src={logo} alt={logoAlt} className="h-16 w-16 mb-6 rounded-lg object-contain" />
+      {logo ? (
+        <img src={logo} alt={classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />
+      ) : (
+        <h1 className="text-2xl font-bold text-white mb-6">{classroomName}</h1>
+      )}
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in</CardTitle>

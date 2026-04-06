@@ -109,24 +109,24 @@ export async function saveLearnerProfileSummary(summary) {
   await putSyncData('profileSummary', summary);
 }
 
-// -- Course KB ----------------------------------------------------------------
+// -- Lesson KB ----------------------------------------------------------------
 
-export async function getCourseKB(courseId) {
-  return fetchSyncData(`courseKB:${courseId}`);
+export async function getLessonKB(lessonId) {
+  return fetchSyncData(`lessonKB:${lessonId}`);
 }
 
-export async function saveCourseKB(courseId, kb) {
-  await putSyncData(`courseKB:${courseId}`, kb);
+export async function saveLessonKB(lessonId, kb) {
+  await putSyncData(`lessonKB:${lessonId}`, kb);
 }
 
-export async function deleteCourseKB(courseId) {
-  await deleteSyncData(`courseKB:${courseId}`);
+export async function deleteLessonKB(lessonId) {
+  await deleteSyncData(`lessonKB:${lessonId}`);
 }
 
 // -- Activity KB --------------------------------------------------------------
 
 export async function getActivityKB(activityId) {
-  // Activity KBs are stored as part of the course's activityKBs collection.
+  // Activity KBs are stored as part of the lesson's activityKBs collection.
   // Individual lookups scan the cache.
   for (const [key, data] of _cache.entries()) {
     if (!key.startsWith('activityKBs:')) continue;
@@ -138,35 +138,35 @@ export async function getActivityKB(activityId) {
   return null;
 }
 
-export async function saveActivityKB(activityId, courseId, kb) {
-  const key = `activityKBs:${courseId}`;
+export async function saveActivityKB(activityId, lessonId, kb) {
+  const key = `activityKBs:${lessonId}`;
   let all = await fetchSyncData(key);
   if (!Array.isArray(all)) all = [];
   const idx = all.findIndex(k => k.activityId === activityId);
-  const entry = { activityId, courseId, ...kb };
+  const entry = { activityId, lessonId, ...kb };
   if (idx >= 0) all[idx] = entry; else all.push(entry);
   await putSyncData(key, all);
 }
 
-export async function getActivityKBsForCourse(courseId) {
-  const data = await fetchSyncData(`activityKBs:${courseId}`);
+export async function getActivityKBsForLesson(lessonId) {
+  const data = await fetchSyncData(`activityKBs:${lessonId}`);
   return Array.isArray(data) ? data : [];
 }
 
-export async function deleteActivityKBsForCourse(courseId) {
-  await deleteSyncData(`activityKBs:${courseId}`);
+export async function deleteActivityKBsForLesson(lessonId) {
+  await deleteSyncData(`activityKBs:${lessonId}`);
 }
 
 // -- Activities ---------------------------------------------------------------
 
-export async function getActivities(courseId) {
-  const data = await fetchSyncData(`activities:${courseId}`);
+export async function getActivities(lessonId) {
+  const data = await fetchSyncData(`activities:${lessonId}`);
   return Array.isArray(data) ? data : [];
 }
 
 export async function saveActivity(activity) {
-  const courseId = activity.courseId;
-  const key = `activities:${courseId}`;
+  const lessonId = activity.lessonId;
+  const key = `activities:${lessonId}`;
   let all = await fetchSyncData(key);
   if (!Array.isArray(all)) all = [];
   const idx = all.findIndex(a => a.id === activity.id);
@@ -174,14 +174,14 @@ export async function saveActivity(activity) {
   await putSyncData(key, all);
 }
 
-export async function deleteActivitiesForCourse(courseId) {
-  await deleteSyncData(`activities:${courseId}`);
+export async function deleteActivitiesForLesson(lessonId) {
+  await deleteSyncData(`activities:${lessonId}`);
 }
 
 // -- Drafts -------------------------------------------------------------------
 
-export async function getDrafts(courseId) {
-  const data = await fetchSyncData(`drafts:${courseId}`);
+export async function getDrafts(lessonId) {
+  const data = await fetchSyncData(`drafts:${lessonId}`);
   return Array.isArray(data) ? data : [];
 }
 
@@ -198,8 +198,8 @@ export async function getDraftsForActivity(activityId) {
 }
 
 export async function saveDraft(draft) {
-  const courseId = draft.courseId;
-  const key = `drafts:${courseId}`;
+  const lessonId = draft.lessonId;
+  const key = `drafts:${lessonId}`;
   let all = await fetchSyncData(key);
   if (!Array.isArray(all)) all = [];
   const idx = all.findIndex(d => d.id === draft.id);
@@ -207,64 +207,64 @@ export async function saveDraft(draft) {
   await putSyncData(key, all);
 }
 
-export async function deleteDraftsForCourse(courseId) {
-  await deleteSyncData(`drafts:${courseId}`);
+export async function deleteDraftsForLesson(lessonId) {
+  await deleteSyncData(`drafts:${lessonId}`);
 }
 
-// -- Course messages (unified conversation per course) ------------------------
+// -- Lesson messages (unified conversation per lesson) ------------------------
 
-export async function getCourseMessages(courseId) {
-  const data = await fetchSyncData(`messages:${courseId}`);
+export async function getLessonMessages(lessonId) {
+  const data = await fetchSyncData(`messages:${lessonId}`);
   return Array.isArray(data) ? data : [];
 }
 
-export async function saveCourseMessage(courseId, msg) {
-  const key = `messages:${courseId}`;
+export async function saveLessonMessage(lessonId, msg) {
+  const key = `messages:${lessonId}`;
   let all = _cache.get(key);
-  if (!Array.isArray(all)) all = await getCourseMessages(courseId);
+  if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
   all = [...all, { ...msg, timestamp: msg.timestamp || Date.now() }];
   _cache.set(key, all);
   // Don't await — debounced sync handles persistence
 }
 
-export async function saveCourseMessages(courseId, msgs) {
-  const key = `messages:${courseId}`;
+export async function saveLessonMessages(lessonId, msgs) {
+  const key = `messages:${lessonId}`;
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
   _cache.set(key, withTimestamps);
   await putSyncData(key, withTimestamps);
 }
 
-export async function clearCourseMessages(courseId) {
-  await deleteSyncData(`messages:${courseId}`);
+export async function clearLessonMessages(lessonId) {
+  await deleteSyncData(`messages:${lessonId}`);
 }
 
-// -- User-created courses -----------------------------------------------------
+// -- User-created lessons -----------------------------------------------------
 
-export async function saveUserCourse(courseId, markdown) {
-  await putSyncData(`courses:${courseId}`, { courseId, markdown, createdAt: Date.now() });
+export async function saveUserLesson(lessonId, markdown) {
+  await putSyncData(`lessons:${lessonId}`, { lessonId, markdown, createdAt: Date.now() });
 }
 
-export async function getUserCourses() {
-  // Scan cache for all courses:* keys, or fetch from loadAll
-  const courses = [];
+export async function getUserLessons() {
+  // Scan cache for all lessons:* keys, or fetch from loadAll
+  const lessons = [];
   for (const [key, data] of _cache.entries()) {
-    if (key.startsWith('courses:') && data) {
-      courses.push(data);
+    if (key.startsWith('lessons:') && data) {
+      lessons.push(data);
     }
   }
-  return courses;
+  return lessons;
 }
 
-export async function getUserCourseMarkdown(courseId) {
-  const data = await fetchSyncData(`courses:${courseId}`);
+export async function getUserLessonMarkdown(lessonId) {
+  const data = await fetchSyncData(`lessons:${lessonId}`);
   return data?.markdown || null;
 }
 
-export async function deleteUserCourse(courseId) {
-  await deleteSyncData(`courses:${courseId}`);
+export async function deleteUserLesson(lessonId) {
+  await deleteSyncData(`lessons:${lessonId}`);
 }
 
-export async function getDraftCourseId() {
+export async function getDraftLessonId() {
   // Check cache for create:* message keys
   for (const key of _cache.keys()) {
     if (key.startsWith('messages:create:')) {
@@ -331,7 +331,7 @@ export async function saveOnboardingComplete() {
   // No-op — login replaces onboarding
 }
 
-// -- Delete functions (used by sync.js and course reset) ----------------------
+// -- Delete functions (used by sync.js and lesson reset) ----------------------
 
 export async function deleteProfile() {
   await deleteSyncData('profile');
@@ -345,12 +345,12 @@ export async function deletePreferences() {
   await deleteSyncData('preferences');
 }
 
-export async function deleteCourseProgress(courseId) {
-  await deleteDraftsForCourse(courseId);
-  await deleteActivitiesForCourse(courseId);
-  await deleteActivityKBsForCourse(courseId);
-  await deleteCourseKB(courseId);
-  await clearCourseMessages(courseId);
+export async function deleteLessonProgress(lessonId) {
+  await deleteDraftsForLesson(lessonId);
+  await deleteActivitiesForLesson(lessonId);
+  await deleteActivityKBsForLesson(lessonId);
+  await deleteLessonKB(lessonId);
+  await clearLessonMessages(lessonId);
 }
 
 // -- Screenshots (embedded in drafts as base64) -------------------------------

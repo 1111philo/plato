@@ -5,26 +5,24 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMembers, sendSlackDM } from '../lib/slack.js';
-import { getPendingUpdates, readBundledContent, hashContent } from '../lib/content-updates.js';
 import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
-import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/course-limits.js';
+import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-limits.js';
 
 const admin = new Hono();
 
-/** Validate course markdown for microlearning constraints. Returns error string or null. */
-function validateCourseMarkdown(markdown) {
+/** Validate lesson markdown for microlearning constraints. Returns error string or null. */
+function validateLessonMarkdown(markdown) {
   const objSection = markdown.split(/^## Learning Objectives$/m)[1];
-  if (!objSection) return 'Course must have a "## Learning Objectives" section.';
-  // Count objective lines before the next section header
+  if (!objSection) return 'Lesson must have a "## Learning Objectives" section.';
   const lines = objSection.split('\n');
   const objectives = [];
   for (const line of lines) {
     if (/^## /.test(line)) break;
     if (/^- Can .+/.test(line)) objectives.push(line);
   }
-  if (objectives.length < MIN_OBJECTIVES) return `Too few objectives (${objectives.length}). Courses need at least ${MIN_OBJECTIVES}.`;
-  if (objectives.length > MAX_OBJECTIVES) return `Too many objectives (${objectives.length}). Microlearning courses need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives.`;
+  if (objectives.length < MIN_OBJECTIVES) return `Too few objectives (${objectives.length}). Lessons need at least ${MIN_OBJECTIVES}.`;
+  if (objectives.length > MAX_OBJECTIVES) return `Too many objectives (${objectives.length}). Microlearning lessons need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives.`;
   return null;
 }
 
@@ -336,7 +334,7 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Content management (prompts, courses, knowledge base, theme) ──
+// ── Content management (prompts, lessons, knowledge base, theme) ──
 
 // GET /v1/admin/prompts — list all prompts
 admin.get('/v1/admin/prompts', async (c) => {
@@ -373,71 +371,99 @@ admin.put('/v1/admin/prompts/:name', async (c) => {
   return c.json({ name, ok: true });
 });
 
-// GET /v1/admin/courses — list all courses
-admin.get('/v1/admin/courses', async (c) => {
+// GET /v1/admin/lessons — list all lessons
+admin.get('/v1/admin/lessons', async (c) => {
   const items = await db.getAllSyncData('_system');
-  const courses = items
-    .filter(i => i.dataKey.startsWith('course:'))
+  const lessons = items
+    .filter(i => i.dataKey.startsWith('lesson:'))
     .map(i => ({
-      courseId: i.dataKey.slice('course:'.length),
-      name: i.data.name || i.dataKey.slice('course:'.length),
+      lessonId: i.dataKey.slice('lesson:'.length),
+      name: i.data.name || i.dataKey.slice('lesson:'.length),
       isBuiltIn: i.data.isBuiltIn || false,
+      status: i.data.status || 'published',
+      createdByName: i.data.createdByName || null,
       updatedAt: i.updatedAt,
     }));
-  return c.json(courses);
+  return c.json(lessons);
 });
 
-// GET /v1/admin/courses/:courseId
-admin.get('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-  return c.json({ courseId, ...item.data, updatedAt: item.updatedAt });
+// GET /v1/admin/lessons/:lessonId
+admin.get('/v1/admin/lessons/:lessonId', async (c) => {
+  const lessonId = c.req.param('lessonId');
+  const item = await db.getSyncData('_system', `lesson:${lessonId}`);
+  if (!item) return c.json({ error: 'Lesson not found' }, 404);
+  return c.json({ lessonId, ...item.data, updatedAt: item.updatedAt });
 });
 
-// PUT /v1/admin/courses/:courseId
-admin.put('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
+// PUT /v1/admin/lessons/:lessonId
+admin.put('/v1/admin/lessons/:lessonId', async (c) => {
+  const lessonId = c.req.param('lessonId');
   const body = await c.req.json();
-  if (!body.markdown) return c.json({ error: 'markdown is required' }, 400);
-  const mdError = validateCourseMarkdown(body.markdown);
-  if (mdError) return c.json({ error: mdError }, 400);
   const adminUser = c.get('user');
-  const current = await db.getSyncData('_system', `course:${courseId}`);
+  const current = await db.getSyncData('_system', `lesson:${lessonId}`);
+  // Validate markdown when it's new/changed, or when publishing
+  const hasMarkdown = body.markdown || current?.data?.markdown;
+  if (!hasMarkdown) return c.json({ error: 'markdown is required' }, 400);
+  const markdownToValidate = body.markdown || current?.data?.markdown;
+  const isPublishing = body.status === 'published' && current?.data?.status !== 'published';
+  const markdownChanged = body.markdown && body.markdown !== current?.data?.markdown;
+  if (markdownChanged || isPublishing) {
+    const mdError = validateLessonMarkdown(markdownToValidate);
+    if (mdError) return c.json({ error: mdError }, 400);
+  }
   const data = {
-    markdown: body.markdown,
-    name: body.name || courseId,
+    markdown: body.markdown || current?.data?.markdown,
+    name: body.name || current?.data?.name || lessonId,
     isBuiltIn: body.isBuiltIn || false,
+    status: body.status || current?.data?.status || 'published',
+    conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
+    readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
+    createdBy: current?.data?.createdBy || adminUser.userId,
+    createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
   };
-  await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);
-  return c.json({ courseId, ok: true });
+  await db.putSyncData('_system', `lesson:${lessonId}`, data, current?.version || 0);
+  return c.json({ lessonId, ok: true });
 });
 
-// DELETE /v1/admin/courses/:courseId
-admin.delete('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-  await db.deleteSyncData('_system', `course:${courseId}`);
+// DELETE /v1/admin/lessons/:lessonId
+admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
+  const lessonId = c.req.param('lessonId');
+  const item = await db.getSyncData('_system', `lesson:${lessonId}`);
+  if (!item) return c.json({ error: 'Lesson not found' }, 404);
+  await db.deleteSyncData('_system', `lesson:${lessonId}`);
   return c.json({ ok: true });
 });
 
 // GET /v1/admin/knowledge-base
 admin.get('/v1/admin/knowledge-base', async (c) => {
   const item = await db.getSyncData('_system', 'knowledgeBase');
-  return c.json({ content: item?.data?.content || '' });
+  const data = item?.data || {};
+  let updatedByName = null;
+  if (data.updatedBy && data.updatedBy !== 'setup') {
+    const user = await db.getUserById(data.updatedBy);
+    updatedByName = user?.name || user?.username || user?.email || null;
+  }
+  return c.json({
+    content: data.content || '',
+    conversation: data.conversation || null,
+    readiness: data.readiness ?? null,
+    updatedAt: item?.updatedAt || null,
+    updatedByName,
+  });
 });
 
 // PUT /v1/admin/knowledge-base
 admin.put('/v1/admin/knowledge-base', async (c) => {
-  const { content } = await c.req.json();
-  if (content === undefined) return c.json({ error: 'content is required' }, 400);
+  const body = await c.req.json();
+  if (body.content === undefined) return c.json({ error: 'content is required' }, 400);
   const current = await db.getSyncData('_system', 'knowledgeBase');
   const adminUser = c.get('user');
   await db.putSyncData('_system', 'knowledgeBase', {
-    content,
+    content: body.content,
+    conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
+    readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
   }, current?.version || 0);
   return c.json({ ok: true });
@@ -450,7 +476,7 @@ admin.get('/v1/admin/theme', async (c) => {
   return c.json({
     theme: settings.theme || {},
     logoBase64: settings.logoBase64 || null,
-    logoAlt: settings.logoAlt || 'plato',
+    classroomName: settings.classroomName || settings.logoAlt || '',
   });
 });
 
@@ -461,67 +487,14 @@ admin.put('/v1/admin/theme', async (c) => {
   const settings = { ...(current?.data || {}) };
   if (body.theme !== undefined) settings.theme = body.theme;
   if (body.logoBase64 !== undefined) settings.logoBase64 = body.logoBase64;
-  if (body.logoAlt !== undefined) settings.logoAlt = body.logoAlt;
+  if (body.classroomName !== undefined) {
+    settings.classroomName = body.classroomName;
+    settings.logoAlt = body.classroomName; // backward compat
+  }
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
   return c.json({ ok: true });
 });
 
-// ── Content updates (change management) ──
-
-// GET /v1/admin/content-updates — list pending upstream changes
-admin.get('/v1/admin/content-updates', async (c) => {
-  const updates = await getPendingUpdates();
-  return c.json({ updates, count: updates.length });
-});
-
-// POST /v1/admin/content-updates/accept — apply bundled content to DB
-admin.post('/v1/admin/content-updates/accept', async (c) => {
-  const { dataKey } = await c.req.json();
-  if (!dataKey) return c.json({ error: 'dataKey is required' }, 400);
-
-  const bundled = readBundledContent().find(b => b.dataKey === dataKey);
-  if (!bundled) return c.json({ error: 'Unknown content key' }, 404);
-
-  const current = await db.getSyncData('_system', dataKey);
-  const adminUser = c.get('user');
-
-  if (bundled.type === 'course') {
-    await db.putSyncData('_system', dataKey, {
-      ...(current?.data || {}),
-      markdown: bundled.content,
-      updatedBy: adminUser.userId,
-      bundledHash: bundled.hash,
-    }, current?.version || 0);
-  } else {
-    await db.putSyncData('_system', dataKey, {
-      ...(current?.data || {}),
-      content: bundled.content,
-      updatedBy: adminUser.userId,
-      bundledHash: bundled.hash,
-    }, current?.version || 0);
-  }
-
-  return c.json({ ok: true, dataKey });
-});
-
-// POST /v1/admin/content-updates/dismiss — mark update as seen without changing content
-admin.post('/v1/admin/content-updates/dismiss', async (c) => {
-  const { dataKey } = await c.req.json();
-  if (!dataKey) return c.json({ error: 'dataKey is required' }, 400);
-
-  const bundled = readBundledContent().find(b => b.dataKey === dataKey);
-  if (!bundled) return c.json({ error: 'Unknown content key' }, 404);
-
-  const current = await db.getSyncData('_system', dataKey);
-  if (!current) return c.json({ error: 'Content not found in database' }, 404);
-
-  await db.putSyncData('_system', dataKey, {
-    ...current.data,
-    bundledHash: bundled.hash,
-  }, current.version);
-
-  return c.json({ ok: true, dataKey });
-});
 
 // ── Slack integration ──
 
@@ -644,11 +617,11 @@ admin.post('/v1/admin/slack/invites', async (c) => {
   return c.json({ sent, skipped, total: results.length, results }, 201);
 });
 
-// GET /v1/admin/stats/courses — course pacing KPIs
-// MAX_EXCHANGES is not a hard cutoff — it's the target for good course pacing.
-// Courses always run until the exemplar is achieved (progress >= 10).
-admin.get('/v1/admin/stats/courses', async (c) => {
-  // MAX_EXCHANGES imported at top from course-limits.js
+// GET /v1/admin/stats/lessons — lesson pacing KPIs
+// MAX_EXCHANGES is not a hard cutoff — it's the target for good lesson pacing.
+// Lessons always run until the exemplar is achieved (progress >= 10).
+admin.get('/v1/admin/stats/lessons', async (c) => {
+  // MAX_EXCHANGES imported at top from lesson-limits.js
   const hardLimit = MAX_EXCHANGES * 2;
   const users = await db.listAllUsers();
   let withinTarget = 0;
@@ -656,13 +629,13 @@ admin.get('/v1/admin/stats/courses', async (c) => {
   let hitHardLimit = 0;
   let totalExchangesWithin = 0;
   let totalExchangesOver = 0;
-  let activeCourses = 0;
+  let activeLessons = 0;
   const durations = []; // in minutes
 
   for (const user of users) {
     const syncItems = await db.getAllSyncData(user.userId);
     for (const item of syncItems) {
-      if (!item.dataKey?.startsWith('courseKB:')) continue;
+      if (!item.dataKey?.startsWith('lessonKB:')) continue;
       const kb = item.data;
       if (!kb) continue;
       if (kb.status === 'completed') {
@@ -682,8 +655,8 @@ admin.get('/v1/admin/stats/courses', async (c) => {
           durations.push((kb.completedAt - kb.startedAt) / 60000);
         } else {
           // Fallback: try to get duration from message timestamps
-          const courseId = item.dataKey.replace('courseKB:', '');
-          const msgItem = syncItems.find(s => s.dataKey === `messages:${courseId}`);
+          const lessonId = item.dataKey.replace('lessonKB:', '');
+          const msgItem = syncItems.find(s => s.dataKey === `messages:${lessonId}`);
           const msgs = msgItem?.data;
           if (Array.isArray(msgs) && msgs.length >= 2) {
             const first = msgs[0]?.timestamp;
@@ -692,7 +665,7 @@ admin.get('/v1/admin/stats/courses', async (c) => {
           }
         }
       } else {
-        activeCourses++;
+        activeLessons++;
       }
     }
   }
@@ -712,7 +685,7 @@ admin.get('/v1/admin/stats/courses', async (c) => {
     avgExchangesWithinTarget: withinTarget ? +(totalExchangesWithin / withinTarget).toFixed(1) : null,
     avgExchangesOverTarget: (overTarget + hitHardLimit) ? +(totalExchangesOver / (overTarget + hitHardLimit)).toFixed(1) : null,
     avgDurationMinutes,
-    activeCourses,
+    activeLessons,
   });
 });
 

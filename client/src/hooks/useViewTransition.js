@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 
 const DEPTH = {
   onboarding: 0,
-  courses: 1,
+  lessons: 1,
   units: 2,
   unit: 3,
   work: 1,
@@ -12,7 +12,7 @@ const DEPTH = {
 };
 
 function getDepth(pathname) {
-  const segment = pathname.split('/').filter(Boolean)[0] || 'courses';
+  const segment = pathname.split('/').filter(Boolean)[0] || 'lessons';
   return DEPTH[segment] ?? 1;
 }
 

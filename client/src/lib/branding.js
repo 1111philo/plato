@@ -53,10 +53,13 @@ export function buildThemeVars(theme) {
 }
 
 /**
- * Generate a favicon: classroom logo on a rounded-rect background using the primary color.
+ * Generate a favicon: classroom logo (or text initial) on a rounded-rect background.
  * Returns a data URL suitable for <link rel="icon">.
+ * @param {string|null} logoBase64 - logo image data URL, or null for text-based
+ * @param {string} primaryColor - background color
+ * @param {string} classroomName - used for text initial when no logo image
  */
-export function generateFavicon(logoBase64, primaryColor) {
+export function generateFavicon(logoBase64, primaryColor, classroomName = '') {
   return new Promise((resolve) => {
     const size = 32;
     const canvas = document.createElement('canvas');
@@ -80,20 +83,40 @@ export function generateFavicon(logoBase64, primaryColor) {
     ctx.fillStyle = primaryColor;
     ctx.fill();
 
-    // Draw logo centered with padding
-    const img = new Image();
-    img.onload = () => {
-      const pad = 4;
-      const area = size - pad * 2;
-      const scale = Math.min(area / img.width, area / img.height);
-      const w = img.width * scale;
-      const h = img.height * scale;
-      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+    if (logoBase64) {
+      // Draw logo image centered with padding
+      const img = new Image();
+      img.onload = () => {
+        const pad = 4;
+        const area = size - pad * 2;
+        const scale = Math.min(area / img.width, area / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(null);
+      img.src = logoBase64;
+    } else {
+      // Draw text initial
+      const initial = (classroomName || 'P').charAt(0).toUpperCase();
+      const textColor = lum(primaryColor) < 0.4 ? '#ffffff' : '#1a1a1a';
+      ctx.fillStyle = textColor;
+      ctx.font = 'bold 20px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(initial, size / 2, size / 2 + 1);
       resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = () => resolve(null);
-    img.src = logoBase64;
+    }
   });
+}
+
+function lum(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 }
 
 /** Set (or restore) the favicon link element. Returns a cleanup function. */

@@ -208,7 +208,7 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     try {
       const profile = await ensureProfileExists();
       const result = await orchestrator.updateProfileFromFeedback(profile, text.trim(), {
-        courseName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
+        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
       });
       if (result?.profile) {
         const merged = mergeProfile(profile, result.profile);

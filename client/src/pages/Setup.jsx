@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/card';
 
 export default function Setup() {
+  const [classroomName, setClassroomName] = useState('');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +40,7 @@ export default function Setup() {
       const res = await fetch('/v1/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: name.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), name: name.trim(), password, classroomName: classroomName.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Setup failed');
@@ -58,8 +59,8 @@ export default function Setup() {
       <img src="/assets/logo-white.svg" alt="plato" className="h-10 mb-6" />
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl">Build your Academy.</CardTitle>
-          <CardDescription>Create your admin account to get started.</CardDescription>
+          <CardTitle className="text-2xl">Build your Classroom.</CardTitle>
+          <CardDescription>Name your classroom and create your admin account.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -68,7 +69,14 @@ export default function Setup() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="setup-name">Name</Label>
+            <Label htmlFor="setup-classroom">Classroom Name</Label>
+            <Input id="setup-classroom" type="text" placeholder="e.g. AI Leaders Academy" autoComplete="organization"
+              value={classroomName} onChange={e => setClassroomName(e.target.value)} />
+            <p className="text-xs text-muted-foreground">This appears in the header and on login pages. You can change it later.</p>
+          </div>
+          <hr className="border-border" />
+          <div className="space-y-2">
+            <Label htmlFor="setup-name">Your Name</Label>
             <Input id="setup-name" type="text" placeholder="Your name" autoComplete="name"
               value={name} onChange={e => setName(e.target.value)} />
           </div>
