@@ -174,7 +174,7 @@ export default function AdminKBSetup() {
       )}
 
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
-        <div className="mb-3 [&>div]:max-h-[500px]">
+        <div className="mb-3">
           <ChatArea lessonName="Knowledge Base Editor">
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (

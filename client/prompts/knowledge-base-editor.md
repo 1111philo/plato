@@ -1,6 +1,6 @@
 <!--
   AGENT: Knowledge Base Editor
-  READS: Program Knowledge Base (appended to this prompt at runtime)
+  READS: Program Knowledge Base + Lesson Catalog (both appended to this prompt at runtime)
   CALLED BY: AdminCustomizer (Knowledge tab), AdminKBSetup (post-login setup)
   PURPOSE: Help admins create and maintain the program knowledge base through conversation
   

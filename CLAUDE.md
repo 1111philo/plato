@@ -30,6 +30,7 @@ plato is an open-source, AI-powered [microlearning](https://philosophers.group/p
   - **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion.
   - **learner-profile-update** — Reads: learner profile, activity context. Incremental profile updates during lessons.
 - Program Knowledge Base is appended to agent system prompts at runtime for agents in `KB_AGENTS` (`client/js/orchestrator.js`)
+- Lesson Catalog appended at runtime: published-only for `PUBLISHED_CATALOG_AGENTS` (coach), full list with draft status for `ADMIN_CATALOG_AGENTS` (lesson-creator, knowledge-base-editor)
 - Microlearning constraints defined in `client/src/lib/constants.js`: MAX_EXCHANGES=11, MIN_OBJECTIVES=2, MAX_OBJECTIVES=4. Server mirrors in `server/src/lib/lesson-limits.js`. Prompts reference these as literal numbers (update both if changed).
 - Pacing: lessons target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
