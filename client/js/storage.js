@@ -214,25 +214,23 @@ export async function deleteDraftsForLesson(lessonId) {
 // -- Lesson messages (unified conversation per lesson) ------------------------
 
 export async function getLessonMessages(lessonId) {
-  const data = await fetchSyncData(`messages:${lessonId}`);
-  return Array.isArray(data) ? data : [];
-}
-
-export async function saveLessonMessage(lessonId, msg) {
   const key = `messages:${lessonId}`;
-  let all = _cache.get(key);
-  if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
-  all = [...all, { ...msg, timestamp: msg.timestamp || Date.now() }];
-  _cache.set(key, all);
-  // Don't await — debounced sync handles persistence
+  const hadCache = _cache.has(key);
+  const data = await fetchSyncData(key);
+  const msgs = Array.isArray(data) ? data : [];
+  console.log(`[getLessonMessages] ${key}: ${msgs.length} messages (from ${hadCache ? 'cache' : 'server'})`);
+  return msgs;
 }
 
 export async function saveLessonMessages(lessonId, msgs) {
   const key = `messages:${lessonId}`;
   let all = _cache.get(key);
-  if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
+  const fromCache = Array.isArray(all);
+  if (!fromCache) all = await getLessonMessages(lessonId);
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
+  const before = all.length;
   all = [...all, ...withTimestamps];
+  console.log(`[saveLessonMessages] ${key}: ${before} existing (${fromCache ? 'cache' : 'server'}) + ${msgs.length} new = ${all.length} total`);
   _cache.set(key, all);
   await putSyncData(key, all);
 }
