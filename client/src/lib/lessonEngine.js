@@ -131,9 +131,11 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     await saveScreenshot(imageKey, imageDataUrl);
   }
 
-  // Build conversation tail
+  // Build conversation tail — filter out messages with empty content (e.g. image-only)
   const allMsgs = await getLessonMessages(lessonId);
-  const tail = allMsgs.slice(-15).map(m => ({ role: m.role, content: m.content }));
+  const tail = allMsgs.slice(-15)
+    .map(m => ({ role: m.role, content: m.content }))
+    .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : m.content.length));
 
   // Build user message content
   const userParts = [];
@@ -208,7 +210,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
 
   // Save messages
   const newMessages = [
-    { role: 'user', content: text || '', msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
       metadata: imageKey ? { imageKey } : null, timestamp: ts() },
     { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
       phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },

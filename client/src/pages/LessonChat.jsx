@@ -48,6 +48,8 @@ export default function LessonChat() {
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
   const composeAnchorRef = useRef(null);
+  const [composeText, setComposeText] = useState('');
+  const [composeImage, setComposeImage] = useState(null);
 
   // Pin header when its top edge reaches the viewport top
   useEffect(() => {
@@ -306,6 +308,10 @@ export default function LessonChat() {
             onSend={handleSend}
             disabled={busy}
             allowImages
+            text={composeText}
+            onTextChange={setComposeText}
+            image={composeImage}
+            onImageChange={setComposeImage}
           />
         </div>
       )}
@@ -319,6 +325,10 @@ export default function LessonChat() {
             disabled={busy}
             allowImages
             elevated
+            text={composeText}
+            onTextChange={setComposeText}
+            image={composeImage}
+            onImageChange={setComposeImage}
           />
         </div>
       )}

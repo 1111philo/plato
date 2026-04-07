@@ -14,6 +14,13 @@ aiRoute.post('/v1/ai/messages', async (c) => {
   if (!model) return c.json({ error: 'model is required' }, 400);
   if (!messages || !Array.isArray(messages)) return c.json({ error: 'messages array is required' }, 400);
 
+  // Reject messages with empty content — Bedrock returns ValidationException for these
+  for (const msg of messages) {
+    if (!msg.content || (typeof msg.content === 'string' && !msg.content.trim()) || (Array.isArray(msg.content) && msg.content.length === 0)) {
+      return c.json({ error: 'messages must have non-empty content' }, 400);
+    }
+  }
+
   const aiBody = {
     max_tokens: max_tokens || 1024,
     ...(system ? { system } : {}),

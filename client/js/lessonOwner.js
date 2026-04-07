@@ -41,6 +41,7 @@ export async function loadLessons() {
     }
   } catch { /* ignore */ }
 
+  lessons.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   lessonsCache = lessons;
   return lessons;
 }
