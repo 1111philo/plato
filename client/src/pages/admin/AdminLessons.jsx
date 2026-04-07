@@ -105,12 +105,14 @@ export default function AdminLessons() {
         onSave={async (name, markdown, conversation, readiness) => {
           const lessonId = name.trim().replace(/\s+/g, '-').toLowerCase();
           await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { markdown, name, status: 'draft', conversation, readiness });
+          adminApi('DELETE', '/v1/admin/draft-conversation').catch(() => {});
           setMessage({ text: 'Lesson saved as draft.', type: 'success' });
           await loadLessons();
           navigate('/plato/lessons');
         }}
         onCancel={() => navigate('/plato/lessons')}
         onError={(text) => setMessage({ text, type: 'error' })}
+        loadDraft
       />
     );
   }
@@ -229,7 +231,7 @@ export default function AdminLessons() {
 
 // -- Lesson creation/editing view with AI Chat --------------------------------
 
-function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMessages, initialReadiness, needsAgentReply }) {
+function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMessages, initialReadiness, needsAgentReply, loadDraft }) {
   const isEditing = !!editingLessonId;
   useEffect(() => { document.title = isEditing ? 'Edit Lesson — Admin' : 'New Lesson — Admin'; }, [isEditing]);
   const [chatMessages, setChatMessages] = useState(initialMessages || []);
@@ -237,11 +239,26 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [key, setKey] = useState(0); // increment to restart conversation
+  const [draftLoaded, setDraftLoaded] = useState(!loadDraft); // skip loading if not needed
 
   // Streaming
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
+
+  // Auto-save conversation after each exchange
+  const readinessRef = useRef(readiness);
+  useEffect(() => { readinessRef.current = readiness; }, [readiness]);
+  useEffect(() => {
+    if (chatMessages.length === 0) return;
+    const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+    const r = readinessRef.current;
+    if (isEditing) {
+      adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editingLessonId)}/conversation`, { conversation, readiness: r }).catch(() => {});
+    } else {
+      adminApi('PUT', '/v1/admin/draft-conversation', { conversation, readiness: r }).catch(() => {});
+    }
+  }, [chatMessages, isEditing, editingLessonId]);
 
   // Handle stream drain completing
   useEffect(() => {
@@ -254,14 +271,34 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     }
   }, [displayText]);
 
+  // Load draft conversation for new lessons (if one exists from a previous session)
+  useEffect(() => {
+    if (!loadDraft) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await adminApi('GET', '/v1/admin/draft-conversation');
+        if (!cancelled && data.conversation?.length) {
+          setChatMessages(data.conversation);
+          setReadiness(data.readiness ?? 0);
+        }
+      } catch { /* no draft */ }
+      if (!cancelled) setDraftLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [loadDraft]);
+
   // Start conversation on mount (and on key change after lesson creation)
   // Skip when resuming an existing conversation that already has an agent reply
   const skipInitRef = useRef(!!initialMessages?.length && !needsAgentReply);
   useEffect(() => {
+    if (!draftLoaded) return; // wait for draft check to complete
     if (skipInitRef.current) {
       skipInitRef.current = false;
       return;
     }
+    // If we loaded a draft, skip the initial agent call — conversation is already populated
+    if (chatMessages.length > 0 && key === 0) return;
     let cancelled = false;
 
     // Determine the opening message(s) to send to the agent
@@ -276,6 +313,9 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     setBusy('starting');
     setStreamingText('');
     setError('');
+
+    // Clear draft when starting fresh
+    if (!isEditing) adminApi('DELETE', '/v1/admin/draft-conversation').catch(() => {});
 
     (async () => {
       try {
@@ -296,7 +336,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     })();
 
     return () => { cancelled = true; };
-  }, [key]);
+  }, [key, draftLoaded]);
 
   // Keep a ref to chatMessages so handleSend always has the latest
   const chatMessagesRef = useRef(chatMessages);

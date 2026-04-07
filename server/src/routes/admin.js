@@ -428,6 +428,43 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   return c.json({ lessonId, ok: true });
 });
 
+// PUT /v1/admin/lessons/:lessonId/conversation — auto-save conversation without requiring markdown
+admin.put('/v1/admin/lessons/:lessonId/conversation', async (c) => {
+  const lessonId = c.req.param('lessonId');
+  const body = await c.req.json();
+  const current = await db.getSyncData('_system', `lesson:${lessonId}`);
+  if (!current) return c.json({ error: 'Lesson not found' }, 404);
+  const data = { ...current.data };
+  data.conversation = body.conversation || null;
+  if (body.readiness !== undefined) data.readiness = body.readiness;
+  await db.putSyncData('_system', `lesson:${lessonId}`, data, current.version);
+  return c.json({ ok: true });
+});
+
+// PUT /v1/admin/draft-conversation — auto-save new lesson conversation (before lesson exists)
+admin.put('/v1/admin/draft-conversation', async (c) => {
+  const body = await c.req.json();
+  const current = await db.getSyncData('_system', 'draft:lesson-conversation');
+  await db.putSyncData('_system', 'draft:lesson-conversation', {
+    conversation: body.conversation || null,
+    readiness: body.readiness ?? 0,
+  }, current?.version || 0);
+  return c.json({ ok: true });
+});
+
+// GET /v1/admin/draft-conversation — resume new lesson conversation
+admin.get('/v1/admin/draft-conversation', async (c) => {
+  const item = await db.getSyncData('_system', 'draft:lesson-conversation');
+  if (!item?.data?.conversation?.length) return c.json({ conversation: null, readiness: 0 });
+  return c.json({ conversation: item.data.conversation, readiness: item.data.readiness ?? 0 });
+});
+
+// DELETE /v1/admin/draft-conversation — clear draft after lesson is created
+admin.delete('/v1/admin/draft-conversation', async (c) => {
+  await db.deleteSyncData('_system', 'draft:lesson-conversation');
+  return c.json({ ok: true });
+});
+
 // DELETE /v1/admin/lessons/:lessonId
 admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
@@ -464,6 +501,20 @@ admin.put('/v1/admin/knowledge-base', async (c) => {
   await db.putSyncData('_system', 'knowledgeBase', {
     content: body.content,
     conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
+    readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
+    updatedBy: adminUser.userId,
+  }, current?.version || 0);
+  return c.json({ ok: true });
+});
+
+// PUT /v1/admin/knowledge-base/conversation — auto-save KB editor conversation
+admin.put('/v1/admin/knowledge-base/conversation', async (c) => {
+  const body = await c.req.json();
+  const current = await db.getSyncData('_system', 'knowledgeBase');
+  const adminUser = c.get('user');
+  await db.putSyncData('_system', 'knowledgeBase', {
+    content: current?.data?.content || '',
+    conversation: body.conversation || null,
     readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
   }, current?.version || 0);
