@@ -214,23 +214,16 @@ export async function deleteDraftsForLesson(lessonId) {
 // -- Lesson messages (unified conversation per lesson) ------------------------
 
 export async function getLessonMessages(lessonId) {
-  const key = `messages:${lessonId}`;
-  const hadCache = _cache.has(key);
-  const data = await fetchSyncData(key);
-  const msgs = Array.isArray(data) ? data : [];
-  console.log(`[getLessonMessages] ${key}: ${msgs.length} messages (from ${hadCache ? 'cache' : 'server'})`);
-  return msgs;
+  const data = await fetchSyncData(`messages:${lessonId}`);
+  return Array.isArray(data) ? data : [];
 }
 
 export async function saveLessonMessages(lessonId, msgs) {
   const key = `messages:${lessonId}`;
   let all = _cache.get(key);
-  const fromCache = Array.isArray(all);
-  if (!fromCache) all = await getLessonMessages(lessonId);
+  if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
-  const before = all.length;
   all = [...all, ...withTimestamps];
-  console.log(`[saveLessonMessages] ${key}: ${before} existing (${fromCache ? 'cache' : 'server'}) + ${msgs.length} new = ${all.length} total`);
   _cache.set(key, all);
   await putSyncData(key, all);
 }
