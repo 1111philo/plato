@@ -61,7 +61,8 @@ content.get('/v1/lessons', async (c) => {
       lessonId: i.dataKey.slice('lesson:'.length),
       ...i.data,
       updatedAt: i.updatedAt,
-    }));
+    }))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
   return c.json(lessons);
 });
 

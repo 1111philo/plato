@@ -383,7 +383,8 @@ admin.get('/v1/admin/lessons', async (c) => {
       status: i.data.status || 'published',
       createdByName: i.data.createdByName || null,
       updatedAt: i.updatedAt,
-    }));
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   return c.json(lessons);
 });
 
