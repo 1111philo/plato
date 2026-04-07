@@ -229,6 +229,69 @@ Produce a thing.
   });
 });
 
+describe('PUT /v1/admin/lessons/:lessonId/conversation — auto-save', () => {
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+  });
+
+  it('saves conversation to existing lesson without touching markdown', async () => {
+    const existing = { markdown: '# Test\n\nDesc\n\n## Exemplar\n\nDo it\n\n## Learning Objectives\n\n- Can do A\n- Can do B', name: 'Test', status: 'published' };
+    db.getSyncData = async () => ({ data: existing, version: 1 });
+    let savedData;
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const convo = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }];
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test/conversation', { conversation: convo, readiness: 5 });
+    assert.equal(res.status, 200);
+    assert.deepEqual(savedData.conversation, convo);
+    assert.equal(savedData.readiness, 5);
+    assert.equal(savedData.markdown, existing.markdown, 'markdown must not be modified');
+    assert.equal(savedData.status, 'published', 'status must not be modified');
+  });
+
+  it('returns 404 for non-existent lesson', async () => {
+    db.getSyncData = async () => null;
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/nope/conversation', { conversation: [] });
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('draft conversation endpoints', () => {
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+  });
+
+  it('saves and retrieves a draft conversation', async () => {
+    let stored = null;
+    db.getSyncData = async () => stored ? { data: stored, version: 1 } : null;
+    db.putSyncData = async (uid, key, data) => { stored = data; };
+    db.deleteSyncData = async () => { stored = null; };
+    const app = new Hono(); app.route('/', admin);
+
+    // Save draft
+    const convo = [{ role: 'user', content: 'new lesson' }];
+    const putRes = await adminReq(app, 'PUT', '/v1/admin/draft-conversation', { conversation: convo, readiness: 3 });
+    assert.equal(putRes.status, 200);
+
+    // Get draft
+    const getRes = await adminReq(app, 'GET', '/v1/admin/draft-conversation');
+    assert.equal(getRes.status, 200);
+    const data = await getRes.json();
+    assert.deepEqual(data.conversation, convo);
+    assert.equal(data.readiness, 3);
+
+    // Delete draft
+    const delRes = await adminReq(app, 'DELETE', '/v1/admin/draft-conversation');
+    assert.equal(delRes.status, 200);
+
+    // Get after delete returns null
+    const emptyRes = await adminReq(app, 'GET', '/v1/admin/draft-conversation');
+    const emptyData = await emptyRes.json();
+    assert.equal(emptyData.conversation, null);
+  });
+});
+
 describe('GET /v1/admin/stats/lessons', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });

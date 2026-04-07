@@ -40,6 +40,8 @@ export default function AdminCustomizer() {
 
   // KB state
   const [kbContent, setKbContent] = useState('');
+  const [kbConversation, setKbConversation] = useState(null);
+  const [kbReadiness, setKbReadiness] = useState(null);
   const [kbUpdatedAt, setKbUpdatedAt] = useState(null);
   const [kbUpdatedByName, setKbUpdatedByName] = useState(null);
   const [kbEditing, setKbEditing] = useState(isEditKBRoute);
@@ -62,6 +64,8 @@ export default function AdminCustomizer() {
       setLogoBase64(themeData.logoBase64 || null);
       setClassroomName(themeData.classroomName || '');
       setKbContent(kbData.content || '');
+      setKbConversation(kbData.conversation || null);
+      setKbReadiness(kbData.readiness ?? null);
       setKbUpdatedAt(kbData.updatedAt || null);
       setKbUpdatedByName(kbData.updatedByName || null);
     } catch { /* ignore */ }
@@ -203,6 +207,8 @@ export default function AdminCustomizer() {
           {kbEditing ? (
             <KBEditor
               initialContent={kbContent}
+              initialConversation={kbConversation}
+              initialReadiness={kbReadiness}
               onSave={async (content, conversation, readiness) => {
                 await adminApi('PUT', '/v1/admin/knowledge-base', { content, conversation, readiness });
                 const fresh = await adminApi('GET', '/v1/admin/knowledge-base');
@@ -272,16 +278,25 @@ function KBViewer({ content, updatedAt, updatedByName, onEdit }) {
 
 // -- KB Editor (conversational AI editor) -------------------------------------
 
-function KBEditor({ initialContent, onSave, onCancel }) {
+function KBEditor({ initialContent, onSave, onCancel, initialConversation, initialReadiness }) {
   const isEditing = !!initialContent;
-  const [chatMessages, setChatMessages] = useState([]);
-  const [readiness, setReadiness] = useState(0);
+  const [chatMessages, setChatMessages] = useState(initialConversation || []);
+  const [readiness, setReadiness] = useState(initialReadiness ?? 0);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
+
+  // Auto-save KB conversation after each exchange
+  const readinessRef = useRef(readiness);
+  useEffect(() => { readinessRef.current = readiness; }, [readiness]);
+  useEffect(() => {
+    if (chatMessages.length === 0) return;
+    const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+    adminApi('PUT', '/v1/admin/knowledge-base/conversation', { conversation, readiness: readinessRef.current }).catch(() => {});
+  }, [chatMessages]);
 
   useEffect(() => {
     if (displayText === null && pendingRef.current) {
@@ -293,8 +308,9 @@ function KBEditor({ initialContent, onSave, onCancel }) {
     }
   }, [displayText]);
 
-  // Start conversation
+  // Start conversation — skip if resuming from a saved conversation
   useEffect(() => {
+    if (initialConversation?.length) return;
     let cancelled = false;
     setBusy('starting');
     setStreamingText('');
