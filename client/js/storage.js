@@ -229,9 +229,12 @@ export async function saveLessonMessage(lessonId, msg) {
 
 export async function saveLessonMessages(lessonId, msgs) {
   const key = `messages:${lessonId}`;
+  let all = _cache.get(key);
+  if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
-  _cache.set(key, withTimestamps);
-  await putSyncData(key, withTimestamps);
+  all = [...all, ...withTimestamps];
+  _cache.set(key, all);
+  await putSyncData(key, all);
 }
 
 export async function clearLessonMessages(lessonId) {
