@@ -98,6 +98,28 @@ describe('POST /v1/ai/messages', () => {
     assert.equal(res.status, 401);
   });
 
+  it('returns 400 when a message has empty string content', async () => {
+    const app = new Hono();
+    app.route('/', ai);
+    const res = await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'claude-haiku-4-5-20251001',
+      messages: [{ role: 'user', content: '' }],
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, 'messages must have non-empty content');
+  });
+
+  it('returns 400 when a message has empty array content', async () => {
+    const app = new Hono();
+    app.route('/', ai);
+    const res = await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'claude-haiku-4-5-20251001',
+      messages: [{ role: 'user', content: [] }],
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, 'messages must have non-empty content');
+  });
+
   it('omits system from body when not provided', async () => {
     let receivedBody;
     aiProvider.invoke = async (model, body) => {

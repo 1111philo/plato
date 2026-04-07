@@ -52,7 +52,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-85 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+87 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 

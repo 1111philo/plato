@@ -8,9 +8,17 @@ export default function ComposeBar({
   disabled = false,
   allowImages = false,
   elevated = false,
+  text: textProp,
+  onTextChange,
+  image: imageProp,
+  onImageChange,
 }) {
-  const [text, setText] = useState('');
-  const [image, setImage] = useState(null);
+  const [localText, setLocalText] = useState('');
+  const [localImage, setLocalImage] = useState(null);
+  const text = textProp !== undefined ? textProp : localText;
+  const setText = onTextChange || setLocalText;
+  const image = imageProp !== undefined ? imageProp : localImage;
+  const setImage = onImageChange || setLocalImage;
   const inputRef = useRef(null);
   const fileRef = useRef(null);
   const handleResize = useAutoResize();
@@ -26,9 +34,16 @@ export default function ComposeBar({
     onSend(payload);
   };
 
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Bedrock 5 MB limit
+
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
+    if (file.size > MAX_IMAGE_BYTES) {
+      alert('Image must be under 5 MB.');
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => setImage({ dataUrl: reader.result, name: file.name });
     reader.readAsDataURL(file);
