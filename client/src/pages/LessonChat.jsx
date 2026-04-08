@@ -289,7 +289,7 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      <ChatArea lessonName={lesson?.name}>
+      <ChatArea lessonName={lesson?.name} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
           <AssistantMessage content={displayText} />
@@ -318,7 +318,7 @@ export default function LessonChat() {
 
       {/* Fixed compose overlay — interactive when pinned */}
       {phase && composePinned && (
-        <div className="fixed bottom-0 left-0 right-0 z-50">
+        <div className="fixed bottom-9 left-0 right-0 z-50">
           <ComposeBar
             placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
             onSend={handleSend}
