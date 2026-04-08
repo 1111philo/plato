@@ -3,15 +3,31 @@ import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
 
+// Estimate active lesson time from exchange count.
+// Wall-clock duration (completedAt - startedAt) is unreliable because learners
+// often leave tabs open between sessions. 1.8 min/exchange matches observed
+// pacing for the ~20 min / 11 exchange target.
+const MINS_PER_EXCHANGE = 1.8;
+
+function estimateDuration(avgExchangesPerCompletion) {
+  if (avgExchangesPerCompletion == null) return null;
+  return Math.round(avgExchangesPerCompletion * MINS_PER_EXCHANGE * 10) / 10;
+}
+
 function PacingSection({ stats }) {
   const {
     totalCompletions = 0, withinTarget = 0, overTarget = 0, hitHardLimit = 0,
     exchangeTarget = 11, hardLimit = 22, avgExchangesWithinTarget,
-    avgDurationMinutes, activeLessons = 0,
+    avgExchangesPerCompletion, activeLessons = 0,
   } = stats;
 
   const hasCompletions = totalCompletions > 0;
   const rate = hasCompletions ? Math.round((withinTarget / totalCompletions) * 100) : null;
+
+  // Use exchange-based estimated duration instead of wall-clock avgDurationMinutes
+  // to avoid inflation from multi-session or abandoned-then-resumed lessons.
+  const estimatedDuration = estimateDuration(avgExchangesPerCompletion);
+  const durationWarning = estimatedDuration != null && estimatedDuration > 25;
 
   let cardClasses = '';
   let signal = '';
@@ -61,10 +77,10 @@ function PacingSection({ stats }) {
       </Card>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-        <Card className={avgDurationMinutes != null && avgDurationMinutes > 20 ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
+        <Card className={durationWarning ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
           <CardContent>
-            <div className="text-2xl font-bold">{avgDurationMinutes != null ? `${avgDurationMinutes} min` : '—'}</div>
-            <div className="text-sm text-muted-foreground">Avg time to complete</div>
+            <div className="text-2xl font-bold">{estimatedDuration != null ? `${estimatedDuration} min` : '—'}</div>
+            <div className="text-sm text-muted-foreground">Est. active time</div>
           </CardContent>
         </Card>
         <Card>
