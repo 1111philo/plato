@@ -5,6 +5,10 @@ export const MAX_EXCHANGES = 11;
 export const MIN_OBJECTIVES = 2;
 export const MAX_OBJECTIVES = 4;
 
+// Exchange count at which the coach receives an early "approaching target" warning,
+// giving a 2-exchange runway to begin wrapping up before the 11-exchange target.
+export const PACING_WARNING_THRESHOLD = 9;
+
 export const VIEW_DEPTH = {
   '/onboarding': 0,
   '/lessons': 1,
