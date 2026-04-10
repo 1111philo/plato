@@ -1,0 +1,85 @@
+name: Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: cd server && npm ci && npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::380610849750:role/plato-deploy
+          aws-region: us-east-2
+      - name: Backup prod DynamoDB tables
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TABLES="plato-users plato-invites plato-refresh-tokens plato-sync-data plato-audit-log"
+          for TABLE in $TABLES; do
+            echo "Backing up $TABLE..."
+            aws dynamodb create-backup \
+              --table-name "$TABLE" \
+              --backup-name "${TABLE}-predeploy-${TIMESTAMP}" \
+              --region us-east-2
+          done
+      - name: Prune old backups (keep last 5 per table)
+        run: |
+          TABLES="plato-users plato-invites plato-refresh-tokens plato-sync-data plato-audit-log"
+          for TABLE in $TABLES; do
+            aws dynamodb list-backups \
+              --table-name "$TABLE" \
+              --backup-type USER \
+              --region us-east-2 \
+              --query 'BackupSummaries | sort_by(@, &BackupCreationDateTime) | reverse(@) | [5:].BackupArn' \
+              --output text | tr '\t' '\n' | while read ARN; do
+                [ -z "$ARN" ] && continue
+                echo "Deleting old backup: $ARN"
+                aws dynamodb delete-backup --backup-arn "$ARN" --region us-east-2
+              done
+          done
+      - run: cd client && npm ci && npm run build
+      - run: cd server && sam build
+      - run: |
+          cp -r client/dist server/.aws-sam/build/PlatoApiFunction/client-dist
+          cp -r client/dist server/.aws-sam/build/PlatoStreamFunction/client-dist
+      - run: |
+          mkdir -p server/.aws-sam/build/PlatoApiFunction/client-content server/.aws-sam/build/PlatoStreamFunction/client-content
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
+          cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
+      - run: |
+          cp version.json server/.aws-sam/build/PlatoApiFunction/
+          cp version.json server/.aws-sam/build/PlatoStreamFunction/
+      - run: >
+          cd server && sam deploy
+          --config-env ci
+          --stack-name plato
+          --region us-east-2
+          --s3-bucket aws-sam-cli-managed-default-samclisourcebucket-kicjbl4qiddh
+          --s3-prefix plato
+          --capabilities CAPABILITY_IAM
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+          --parameter-overrides Stage=prod
+          --tags Application=plato
