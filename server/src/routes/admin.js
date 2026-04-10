@@ -403,31 +403,27 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   const body = await c.req.json();
   const adminUser = c.get('user');
   const current = await db.getSyncData('_system', `lesson:${lessonId}`);
-  // Validate markdown when it's new/changed, or when publishing/making private
+  // Validate markdown when it's new/changed, or when publishing
   const hasMarkdown = body.markdown || current?.data?.markdown;
   if (!hasMarkdown) return c.json({ error: 'markdown is required' }, 400);
   const markdownToValidate = body.markdown || current?.data?.markdown;
-  const newStatus = body.status || current?.data?.status || 'published';
-  const wasLive = current?.data?.status === 'published' || current?.data?.status === 'private';
-  const isGoingLive = (newStatus === 'published' || newStatus === 'private') && !wasLive;
+  const isPublishing = body.status === 'published' && current?.data?.status !== 'published';
   const markdownChanged = body.markdown && body.markdown !== current?.data?.markdown;
-  if (markdownChanged || isGoingLive) {
+  if (markdownChanged || isPublishing) {
     const mdError = validateLessonMarkdown(markdownToValidate);
     if (mdError) return c.json({ error: mdError }, 400);
   }
-  // Validate sharedWith for private lessons
+  // sharedWith is independent of status — validate format if provided
   const sharedWith = body.sharedWith !== undefined ? body.sharedWith : (current?.data?.sharedWith || []);
-  if (newStatus === 'private') {
-    if (!Array.isArray(sharedWith) || sharedWith.length === 0 || !sharedWith.every(id => typeof id === 'string')) {
-      return c.json({ error: 'Private lessons require a non-empty sharedWith list of user IDs' }, 400);
-    }
+  if (sharedWith.length > 0 && (!Array.isArray(sharedWith) || !sharedWith.every(id => typeof id === 'string'))) {
+    return c.json({ error: 'sharedWith must be an array of user ID strings' }, 400);
   }
   const data = {
     markdown: body.markdown || current?.data?.markdown,
     name: body.name || current?.data?.name || lessonId,
     isBuiltIn: body.isBuiltIn || false,
-    status: newStatus,
-    sharedWith: newStatus === 'private' ? sharedWith : [],
+    status: body.status || current?.data?.status || 'published',
+    sharedWith,
     conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
     readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,

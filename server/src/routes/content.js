@@ -52,7 +52,8 @@ content.get('/v1/prompts/:name', async (c) => {
   return c.json({ name, content: item.data.content, updatedAt: item.updatedAt });
 });
 
-// GET /v1/lessons — list published + private lessons the user has access to
+// GET /v1/lessons — list lessons the user has access to
+// Published lessons are visible to all; draft lessons are visible only to users in sharedWith
 content.get('/v1/lessons', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData('_system');
@@ -60,9 +61,9 @@ content.get('/v1/lessons', async (c) => {
     .filter(i => {
       if (!i.dataKey.startsWith('lesson:')) return false;
       const status = i.data.status || 'published';
-      if (status === 'draft') return false;
-      if (status === 'private') return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
-      return true; // published
+      if (status === 'published') return true;
+      // Draft lessons: only visible if user is in sharedWith
+      return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
       const { sharedWith, ...data } = i.data;
@@ -76,14 +77,13 @@ content.get('/v1/lessons', async (c) => {
   return c.json(lessons);
 });
 
-// GET /v1/lessons/:lessonId — get a lesson (published or private if user has access)
+// GET /v1/lessons/:lessonId — get a lesson (published, or draft if user is in sharedWith)
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
   const status = item.data.status || 'published';
-  if (status === 'draft') return c.json({ error: 'Lesson not found' }, 404);
-  if (status === 'private') {
+  if (status !== 'published') {
     const userId = c.get('userId');
     if (!Array.isArray(item.data.sharedWith) || !item.data.sharedWith.includes(userId)) {
       return c.json({ error: 'Lesson not found' }, 404);

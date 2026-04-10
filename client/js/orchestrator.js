@@ -59,8 +59,11 @@ async function loadAdminCatalog() {
     const lessons = resp.ok ? await resp.json() : [];
     if (!lessons.length) { adminCatalog = ''; return ''; }
     adminCatalog = lessons.map(l => {
-      const tag = l.status === 'draft' ? ' [DRAFT]' : l.status === 'private' ? ' [PRIVATE]' : '';
-      return `- ${l.name || l.lessonId}${tag}`;
+      const tags = [];
+      if (l.status === 'draft') tags.push('[DRAFT]');
+      if (l.sharedWith?.length) tags.push(`[SHARED: ${l.sharedWith.length}]`);
+      const suffix = tags.length ? ` ${tags.join(' ')}` : '';
+      return `- ${l.name || l.lessonId}${suffix}`;
     }).join('\n');
   } catch { adminCatalog = ''; }
   return adminCatalog;

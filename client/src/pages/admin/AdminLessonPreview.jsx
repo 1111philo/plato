@@ -31,7 +31,7 @@ export default function AdminLessonPreview() {
   const [showObjectives, setShowObjectives] = useState(false);
   const [error, setError] = useState('');
   const [isDraft, setIsDraft] = useState(false);
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [isShared, setIsShared] = useState(false);
 
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
@@ -65,7 +65,7 @@ export default function AdminLessonPreview() {
         const parsed = parseLessonPrompt(lessonId, data.markdown);
         setLesson(parsed);
         setIsDraft(data.status === 'draft');
-        setIsPrivate(data.status === 'private');
+        setIsShared(data.sharedWith?.length > 0);
 
         // Initialize KB in-memory (no persistence)
         const kb = await orchestrator.initializeLessonKB(parsed, 'Preview user — no real profile.');
@@ -183,7 +183,7 @@ export default function AdminLessonPreview() {
               <div className="flex items-center gap-2 min-w-0">
                 <h1 className="text-sm font-semibold truncate">{lesson?.name || 'Loading...'}</h1>
                 {isDraft && <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>}
-                {isPrivate && <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private</Badge>}
+                {isShared && <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Shared</Badge>}
               </div>
               {lesson && (
                 <button
@@ -197,7 +197,7 @@ export default function AdminLessonPreview() {
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
-          {(isDraft || isPrivate) && (
+          {isDraft && (
             <Button size="sm" onClick={handlePublish} aria-label={`Publish ${lesson?.name || 'lesson'} — make visible to learners`}>Publish</Button>
           )}
         </nav>
