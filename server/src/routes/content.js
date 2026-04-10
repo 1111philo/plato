@@ -9,6 +9,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const content = new Hono();
 
+/** Map legacy statuses to public/private. */
+function normalizeStatus(status) {
+  if (status === 'published' || status === 'public') return 'public';
+  return 'private'; // draft, private, undefined → private
+}
+
 // All content routes require authentication
 content.use('/v1/prompts/*', authenticate);
 content.use('/v1/lessons', authenticate);
@@ -52,26 +58,46 @@ content.get('/v1/prompts/:name', async (c) => {
   return c.json({ name, content: item.data.content, updatedAt: item.updatedAt });
 });
 
-// GET /v1/lessons — list all published lessons
+// GET /v1/lessons — list lessons the user has access to
+// Public lessons visible to all; private lessons visible only to users in sharedWith
 content.get('/v1/lessons', async (c) => {
+  const userId = c.get('userId');
   const items = await db.getAllSyncData('_system');
   const lessons = items
-    .filter(i => i.dataKey.startsWith('lesson:') && i.data.status !== 'draft')
-    .map(i => ({
-      lessonId: i.dataKey.slice('lesson:'.length),
-      ...i.data,
-      updatedAt: i.updatedAt,
-    }))
+    .filter(i => {
+      if (!i.dataKey.startsWith('lesson:')) return false;
+      // Treat legacy 'draft' and 'published' as 'private' and 'public' respectively
+      const status = normalizeStatus(i.data.status);
+      if (status === 'public') return true;
+      // Private lessons: only visible if user is in sharedWith
+      return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
+    })
+    .map(i => {
+      const { sharedWith, ...data } = i.data;
+      return {
+        lessonId: i.dataKey.slice('lesson:'.length),
+        ...data,
+        updatedAt: i.updatedAt,
+      };
+    })
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
   return c.json(lessons);
 });
 
-// GET /v1/lessons/:lessonId — get a lesson
+// GET /v1/lessons/:lessonId — get a lesson (public, or private if user is in sharedWith)
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
-  return c.json({ lessonId, ...item.data, updatedAt: item.updatedAt });
+  const status = normalizeStatus(item.data.status);
+  if (status !== 'public') {
+    const userId = c.get('userId');
+    if (!Array.isArray(item.data.sharedWith) || !item.data.sharedWith.includes(userId)) {
+      return c.json({ error: 'Lesson not found' }, 404);
+    }
+  }
+  const { sharedWith, ...data } = item.data;
+  return c.json({ lessonId, ...data, updatedAt: item.updatedAt });
 });
 
 // GET /v1/knowledge-base — get the knowledge base content

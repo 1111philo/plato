@@ -366,3 +366,87 @@ describe('DELETE /v1/admin/users/:userId', () => {
     assert.ok(deleted);
   });
 });
+
+describe('PUT /v1/admin/lessons/:lessonId — sharedWith + public/private', () => {
+  const validMarkdown = `# Test Lesson\n\nA test.\n\n## Exemplar\nProduce a thing.\n\n## Learning Objectives\n- Can do A\n- Can do B`;
+
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+  });
+
+  it('persists sharedWith on a private lesson', async () => {
+    let savedData;
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-share', {
+      markdown: validMarkdown, name: 'Private Test', status: 'private', sharedWith: ['usr_1', 'usr_2'],
+    });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.status, 'private');
+    assert.deepEqual(savedData.sharedWith, ['usr_1', 'usr_2']);
+  });
+
+  it('validates markdown when going public', async () => {
+    const badMd = `# Test\n\n## Exemplar\nDo it\n\n## Learning Objectives\n- Can do one thing`;
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-share', {
+      markdown: badMd, name: 'Bad', status: 'public',
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('preserves sharedWith when updating status to public', async () => {
+    let savedData;
+    db.getSyncData = async () => ({
+      data: { markdown: validMarkdown, name: 'Test', status: 'private', sharedWith: ['usr_1', 'usr_2'] },
+      version: 1,
+    });
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-share', { status: 'public' });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.status, 'public');
+    assert.deepEqual(savedData.sharedWith, ['usr_1', 'usr_2']);
+  });
+
+  it('allows clearing sharedWith', async () => {
+    let savedData;
+    db.getSyncData = async () => ({
+      data: { markdown: validMarkdown, name: 'Test', status: 'private', sharedWith: ['usr_1'] },
+      version: 1,
+    });
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-share', { sharedWith: [] });
+    assert.equal(res.status, 200);
+    assert.deepEqual(savedData.sharedWith, []);
+  });
+
+  it('normalizes legacy draft to private in admin list', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:old-1',
+      data: { name: 'Old Draft', status: 'draft', sharedWith: ['usr_1'] },
+      updatedAt: '2025-01-01',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].status, 'private');
+    assert.deepEqual(data[0].sharedWith, ['usr_1']);
+  });
+
+  it('returns sharedWith in admin lesson list', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:priv-1',
+      data: { name: 'Private', status: 'private', sharedWith: ['usr_1', 'usr_2'] },
+      updatedAt: '2025-01-01',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].status, 'private');
+    assert.deepEqual(data[0].sharedWith, ['usr_1', 'usr_2']);
+  });
+});
