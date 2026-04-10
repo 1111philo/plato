@@ -33,23 +33,23 @@ async function loadKnowledgeBase() {
 }
 
 const KB_AGENTS = ['coach', 'lesson-creator', 'knowledge-base-editor'];
-// Agents that see published lessons only (learner-facing)
-const PUBLISHED_CATALOG_AGENTS = ['coach'];
-// Agents that see all lessons including drafts (admin-only)
+// Agents that see only lessons the current user can access (learner-facing)
+const PUBLIC_CATALOG_AGENTS = ['coach'];
+// Agents that see all lessons including private (admin-only)
 const ADMIN_CATALOG_AGENTS = ['lesson-creator', 'knowledge-base-editor'];
 
-let publishedCatalog = null;
+let publicCatalog = null;
 let adminCatalog = null;
 
-async function loadPublishedCatalog() {
-  if (publishedCatalog) return publishedCatalog;
+async function loadPublicCatalog() {
+  if (publicCatalog) return publicCatalog;
   try {
     const resp = await authenticatedFetch('/v1/lessons');
     const lessons = resp.ok ? await resp.json() : [];
-    if (!lessons.length) { publishedCatalog = ''; return ''; }
-    publishedCatalog = lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
-  } catch { publishedCatalog = ''; }
-  return publishedCatalog;
+    if (!lessons.length) { publicCatalog = ''; return ''; }
+    publicCatalog = lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
+  } catch { publicCatalog = ''; }
+  return publicCatalog;
 }
 
 async function loadAdminCatalog() {
@@ -114,7 +114,7 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
   throw lastError;
 }
 
-export function invalidateLessonCatalog() { publishedCatalog = null; adminCatalog = null; }
+export function invalidateLessonCatalog() { publicCatalog = null; adminCatalog = null; }
 
 export async function isReady() {
   return true;
@@ -131,8 +131,8 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   if (ADMIN_CATALOG_AGENTS.includes(promptName)) {
     const catalog = await loadAdminCatalog();
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Current Lessons in This Classroom\n\n${catalog}`;
-  } else if (PUBLISHED_CATALOG_AGENTS.includes(promptName)) {
-    const catalog = await loadPublishedCatalog();
+  } else if (PUBLIC_CATALOG_AGENTS.includes(promptName)) {
+    const catalog = await loadPublicCatalog();
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
 

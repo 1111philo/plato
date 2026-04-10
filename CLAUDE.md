@@ -30,7 +30,8 @@ plato is an open-source, AI-powered [microlearning](https://philosophers.group/p
   - **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion.
   - **learner-profile-update** — Reads: learner profile, activity context. Incremental profile updates during lessons.
 - Program Knowledge Base is appended to agent system prompts at runtime for agents in `KB_AGENTS` (`client/js/orchestrator.js`)
-- Lesson Catalog appended at runtime: published-only for `PUBLISHED_CATALOG_AGENTS` (coach), full list with draft status for `ADMIN_CATALOG_AGENTS` (lesson-creator, knowledge-base-editor)
+- Lesson visibility: lessons are either `public` (visible to all) or `private` (visible only to users in `sharedWith` array). Legacy `draft`/`published` statuses are auto-normalized to `private`/`public`.
+- Lesson Catalog appended at runtime: public lessons for `PUBLIC_CATALOG_AGENTS` (coach), all lessons with `[PRIVATE]` tags for `ADMIN_CATALOG_AGENTS` (lesson-creator, knowledge-base-editor)
 - Microlearning constraints defined in `client/src/lib/constants.js`: MAX_EXCHANGES=11, MIN_OBJECTIVES=2, MAX_OBJECTIVES=4. Server mirrors in `server/src/lib/lesson-limits.js`. Prompts reference these as literal numbers (update both if changed).
 - Pacing: lessons target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
@@ -52,7 +53,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-90 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+104 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
@@ -109,7 +110,8 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - User-created lesson IDs start with `custom-`
 - `loadLessons()` merges system lessons (`/v1/lessons`) with user lessons from sync-data
 - Favicon: defaults to plato's; generated dynamically when admin uploads a logo image (logo on rounded-rect with primary color)
-- Lesson drafts: admins can save lessons as drafts (hidden from learners), preview in sandbox mode, then publish
+- Lesson visibility: new lessons default to private (shared only with author). Admins toggle public/private and manage shared users via the Share modal.
+- No admin lesson preview — admins preview lessons by sharing with themselves and viewing in the classroom
 - Lesson editing: conversation-based via the Lesson Creator agent (no raw markdown editor)
 - Knowledge base: created/edited by admins via the KB Editor agent in the Customizer (not directly editable)
 - Admin nav order: Home, Lessons, Users, Customizer, Integrations
