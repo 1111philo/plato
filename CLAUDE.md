@@ -100,7 +100,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Always commit and push after changes
 - Run `npm test` before deploying
 - Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main
-- Deploy workflow lives only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo
+- Deploy workflows live only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo. **Never force-push** to the deploy remote — always merge so the workflow files aren't overwritten. To deploy: `git fetch deploy && git merge deploy/main --no-edit && git push deploy main` (or `playground` for playground)
 - API responses for user groups use `{ userGroups: [...] }` consistently
 - Emails use classroom name/colors from settings, with "Powered by plato." footer linking to GitHub
 - Auth pages (login, signup, forgot-password, reset-password) use `usePublicBranding` hook for classroom theming
