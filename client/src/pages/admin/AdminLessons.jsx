@@ -9,6 +9,10 @@ import {
 } from '@/components/ui/table';
 
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
+import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
@@ -62,8 +66,15 @@ export default function AdminLessons() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  function toggleLessonStatus(lessonId, newStatus) {
-    const action = newStatus === 'published' ? 'Publish' : 'Unpublish';
+  const [shareModal, setShareModal] = useState(null); // { lessonId, lessonName, sharedWith }
+
+  function changeLessonStatus(lessonId, lessonName, newStatus, currentSharedWith) {
+    if (newStatus === 'private') {
+      setShareModal({ lessonId, lessonName, sharedWith: currentSharedWith || [] });
+      return;
+    }
+    const labels = { published: 'Publish', draft: 'Unpublish' };
+    const action = labels[newStatus] || newStatus;
     setConfirmModal({
       title: `${action} Lesson?`,
       message: newStatus === 'published'
@@ -74,11 +85,21 @@ export default function AdminLessons() {
       onConfirm: async () => {
         try {
           await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { status: newStatus });
-          setMessage({ text: `Lesson ${newStatus === 'published' ? 'published' : 'unpublished'}.`, type: 'success' });
+          setMessage({ text: `Lesson ${newStatus === 'published' ? 'published' : 'moved to draft'}.`, type: 'success' });
           loadLessons();
         } catch (e) { setMessage({ text: e.message, type: 'error' }); }
       },
     });
+  }
+
+  async function handleShareConfirm(userIds) {
+    if (!shareModal) return;
+    try {
+      await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(shareModal.lessonId)}`, { status: 'private', sharedWith: userIds });
+      setMessage({ text: `Lesson shared with ${userIds.length} ${userIds.length === 1 ? 'user' : 'users'}.`, type: 'success' });
+      setShareModal(null);
+      loadLessons();
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
   function deleteLesson(lessonId) {
@@ -173,13 +194,17 @@ export default function AdminLessons() {
           </TableHeader>
           <TableBody>
             {lessons.map(c => {
-              const isDraft = c.status === 'draft';
+              const statusBadge = c.status === 'draft'
+                ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
+                : c.status === 'private'
+                ? <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
+                : <Badge variant="outline" className="text-xs">Published</Badge>;
               return (
                 <TableRow key={c.lessonId}>
                   <TableCell>
                     <span className="flex items-center gap-2">
                       {c.name || c.lessonId}
-                      <Badge variant="outline" className={`text-xs ${isDraft ? 'border-amber-300 bg-amber-50 text-amber-800' : ''}`}>{isDraft ? 'Draft' : 'Published'}</Badge>
+                      {statusBadge}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
@@ -187,15 +212,24 @@ export default function AdminLessons() {
                   <TableCell>
                     <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
                       <Button variant="ghost" size="icon-xs" title="Preview" onClick={() => navigate(`/plato/lessons/${encodeURIComponent(c.lessonId)}/preview`)} aria-label={`Preview ${c.name}`}>&#9655;</Button>
-                      {isDraft ? (
-                        <Button variant="ghost" size="icon-xs" title="Publish — make visible to learners" onClick={() => toggleLessonStatus(c.lessonId, 'published')} aria-label={`Publish ${c.name} — make visible to learners`}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </Button>
-                      ) : (
-                        <Button variant="ghost" size="icon-xs" title="Unpublish — hide from learners" onClick={() => toggleLessonStatus(c.lessonId, 'draft')} aria-label={`Unpublish ${c.name} — hide from learners`}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-                        </Button>
-                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon-xs" title="Change status" aria-label={`Change status of ${c.name}`}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem disabled={c.status === 'draft'} onSelect={() => changeLessonStatus(c.lessonId, c.name, 'draft', c.sharedWith)}>
+                            Draft — hidden from everyone
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => changeLessonStatus(c.lessonId, c.name, 'private', c.sharedWith)}>
+                            {c.status === 'private' ? 'Private — edit shared users' : 'Private — share with specific users'}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem disabled={c.status === 'published'} onSelect={() => changeLessonStatus(c.lessonId, c.name, 'published', c.sharedWith)}>
+                            Published — visible to all learners
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editLesson(c.lessonId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
                       <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -223,6 +257,16 @@ export default function AdminLessons() {
           confirmLabel={confirmModal.confirmLabel}
           variant={confirmModal.variant}
           onConfirm={() => { setConfirmModal(null); confirmModal.onConfirm(); }}
+        />
+      )}
+
+      {shareModal && (
+        <ShareLessonModal
+          open={!!shareModal}
+          onOpenChange={(open) => { if (!open) setShareModal(null); }}
+          lessonName={shareModal.lessonName}
+          initialSharedWith={shareModal.sharedWith}
+          onConfirm={handleShareConfirm}
         />
       )}
     </div>

@@ -366,3 +366,70 @@ describe('DELETE /v1/admin/users/:userId', () => {
     assert.ok(deleted);
   });
 });
+
+describe('PUT /v1/admin/lessons/:lessonId — private status + sharedWith', () => {
+  const validMarkdown = `# Test Lesson\n\nA test.\n\n## Exemplar\nProduce a thing.\n\n## Learning Objectives\n- Can do A\n- Can do B`;
+
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+  });
+
+  it('rejects private status without sharedWith', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-priv', {
+      markdown: validMarkdown, name: 'Private Test', status: 'private',
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error.includes('sharedWith'));
+  });
+
+  it('rejects private status with empty sharedWith', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-priv', {
+      markdown: validMarkdown, name: 'Private Test', status: 'private', sharedWith: [],
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('accepts private status with valid sharedWith', async () => {
+    let savedData;
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-priv', {
+      markdown: validMarkdown, name: 'Private Test', status: 'private', sharedWith: ['usr_1', 'usr_2'],
+    });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.status, 'private');
+    assert.deepEqual(savedData.sharedWith, ['usr_1', 'usr_2']);
+  });
+
+  it('clears sharedWith when status changes to published', async () => {
+    let savedData;
+    db.getSyncData = async () => ({
+      data: { markdown: validMarkdown, name: 'Test', status: 'private', sharedWith: ['usr_1'] },
+      version: 1,
+    });
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-priv', { status: 'published' });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.status, 'published');
+    assert.deepEqual(savedData.sharedWith, []);
+  });
+
+  it('returns sharedWith in admin lesson list', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:priv-1',
+      data: { name: 'Private', status: 'private', sharedWith: ['usr_1', 'usr_2'] },
+      updatedAt: '2025-01-01',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].status, 'private');
+    assert.deepEqual(data[0].sharedWith, ['usr_1', 'usr_2']);
+  });
+});

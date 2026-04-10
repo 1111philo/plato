@@ -59,8 +59,8 @@ async function loadAdminCatalog() {
     const lessons = resp.ok ? await resp.json() : [];
     if (!lessons.length) { adminCatalog = ''; return ''; }
     adminCatalog = lessons.map(l => {
-      const status = l.status === 'draft' ? ' [DRAFT]' : '';
-      return `- ${l.name || l.lessonId}${status}`;
+      const tag = l.status === 'draft' ? ' [DRAFT]' : l.status === 'private' ? ' [PRIVATE]' : '';
+      return `- ${l.name || l.lessonId}${tag}`;
     }).join('\n');
   } catch { adminCatalog = ''; }
   return adminCatalog;
