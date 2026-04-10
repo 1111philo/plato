@@ -13,29 +13,29 @@ async function userReq(app, method, path, userId = 'usr_1') {
   });
 }
 
-describe('GET /v1/lessons — shared lesson visibility', () => {
+describe('GET /v1/lessons — visibility filtering', () => {
   beforeEach(() => {
     db.getUserById = async (id) => ({ userId: id, role: 'user', name: 'User' });
   });
 
   const lessons = [
-    { dataKey: 'lesson:pub-1', data: { name: 'Public', markdown: '# P', status: 'published' }, updatedAt: '2025-01-01' },
-    { dataKey: 'lesson:draft-1', data: { name: 'Draft Unshared', markdown: '# D', status: 'draft' }, updatedAt: '2025-01-01' },
-    { dataKey: 'lesson:draft-shared', data: { name: 'Draft Shared', markdown: '# DS', status: 'draft', sharedWith: ['usr_1', 'usr_3'] }, updatedAt: '2025-01-01' },
-    { dataKey: 'lesson:draft-other', data: { name: 'Draft Other', markdown: '# DO', status: 'draft', sharedWith: ['usr_2'] }, updatedAt: '2025-01-01' },
+    { dataKey: 'lesson:pub-1', data: { name: 'Public Lesson', markdown: '# P', status: 'public' }, updatedAt: '2025-01-01' },
+    { dataKey: 'lesson:priv-1', data: { name: 'Private Shared', markdown: '# PS', status: 'private', sharedWith: ['usr_1', 'usr_3'] }, updatedAt: '2025-01-01' },
+    { dataKey: 'lesson:priv-2', data: { name: 'Private Other', markdown: '# PO', status: 'private', sharedWith: ['usr_2'] }, updatedAt: '2025-01-01' },
+    { dataKey: 'lesson:priv-3', data: { name: 'Private No Share', markdown: '# PN', status: 'private' }, updatedAt: '2025-01-01' },
   ];
 
-  it('returns published lessons and draft lessons shared with user', async () => {
+  it('returns public lessons and private lessons shared with user', async () => {
     db.getAllSyncData = async () => lessons;
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons', 'usr_1');
     assert.equal(res.status, 200);
     const data = await res.json();
     const ids = data.map(l => l.lessonId);
-    assert.ok(ids.includes('pub-1'), 'should include published');
-    assert.ok(ids.includes('draft-shared'), 'should include draft shared with user');
-    assert.ok(!ids.includes('draft-1'), 'should exclude unshared drafts');
-    assert.ok(!ids.includes('draft-other'), 'should exclude draft shared with other user');
+    assert.ok(ids.includes('pub-1'), 'should include public');
+    assert.ok(ids.includes('priv-1'), 'should include private shared with user');
+    assert.ok(!ids.includes('priv-2'), 'should exclude private not shared with user');
+    assert.ok(!ids.includes('priv-3'), 'should exclude private with no sharedWith');
   });
 
   it('strips sharedWith from response', async () => {
@@ -43,12 +43,12 @@ describe('GET /v1/lessons — shared lesson visibility', () => {
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons', 'usr_1');
     const data = await res.json();
-    const shared = data.find(l => l.lessonId === 'draft-shared');
-    assert.ok(shared, 'shared draft should be in response');
-    assert.equal(shared.sharedWith, undefined, 'sharedWith should be stripped');
+    const priv = data.find(l => l.lessonId === 'priv-1');
+    assert.ok(priv, 'private lesson should be in response');
+    assert.equal(priv.sharedWith, undefined, 'sharedWith should be stripped');
   });
 
-  it('excludes all drafts for user not in any sharedWith', async () => {
+  it('shows only public for user not in any sharedWith', async () => {
     db.getAllSyncData = async () => lessons;
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons', 'usr_99');
@@ -56,41 +56,55 @@ describe('GET /v1/lessons — shared lesson visibility', () => {
     assert.equal(data.length, 1);
     assert.equal(data[0].lessonId, 'pub-1');
   });
+
+  it('normalizes legacy "published" status as public', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'lesson:legacy', data: { name: 'Legacy', markdown: '# L', status: 'published' }, updatedAt: '2025-01-01' },
+    ];
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons', 'usr_99');
+    const data = await res.json();
+    assert.equal(data.length, 1);
+    assert.equal(data[0].lessonId, 'legacy');
+  });
+
+  it('normalizes legacy "draft" status as private', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'lesson:old-draft', data: { name: 'Old Draft', markdown: '# D', status: 'draft', sharedWith: ['usr_1'] }, updatedAt: '2025-01-01' },
+    ];
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons', 'usr_1');
+    const data = await res.json();
+    assert.equal(data.length, 1);
+    assert.equal(data[0].lessonId, 'old-draft');
+  });
 });
 
-describe('GET /v1/lessons/:lessonId — shared lesson access', () => {
+describe('GET /v1/lessons/:lessonId — access control', () => {
   beforeEach(() => {
     db.getUserById = async (id) => ({ userId: id, role: 'user', name: 'User' });
   });
 
-  it('returns 404 for unshared draft lesson', async () => {
-    db.getSyncData = async () => ({ data: { name: 'Draft', status: 'draft', markdown: '# D' }, version: 1 });
-    const app = new Hono(); app.route('/', content);
-    const res = await userReq(app, 'GET', '/v1/lessons/draft-1');
-    assert.equal(res.status, 404);
-  });
-
-  it('returns 404 for draft lesson when user not in sharedWith', async () => {
-    db.getSyncData = async () => ({ data: { name: 'Draft Shared', status: 'draft', sharedWith: ['usr_2'], markdown: '# D' }, version: 1 });
-    const app = new Hono(); app.route('/', content);
-    const res = await userReq(app, 'GET', '/v1/lessons/draft-1', 'usr_99');
-    assert.equal(res.status, 404);
-  });
-
-  it('returns draft lesson when user is in sharedWith', async () => {
-    db.getSyncData = async () => ({ data: { name: 'Draft Shared', status: 'draft', sharedWith: ['usr_1'], markdown: '# D' }, version: 1 });
-    const app = new Hono(); app.route('/', content);
-    const res = await userReq(app, 'GET', '/v1/lessons/draft-1', 'usr_1');
-    assert.equal(res.status, 200);
-    const data = await res.json();
-    assert.equal(data.name, 'Draft Shared');
-    assert.equal(data.sharedWith, undefined, 'sharedWith should be stripped');
-  });
-
-  it('returns published lesson normally', async () => {
-    db.getSyncData = async () => ({ data: { name: 'Public', status: 'published', markdown: '# P' }, version: 1 });
+  it('returns public lesson to any user', async () => {
+    db.getSyncData = async () => ({ data: { name: 'Public', status: 'public', markdown: '# P' }, version: 1 });
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons/pub-1');
     assert.equal(res.status, 200);
+  });
+
+  it('returns 404 for private lesson when user not in sharedWith', async () => {
+    db.getSyncData = async () => ({ data: { name: 'Private', status: 'private', sharedWith: ['usr_2'], markdown: '# P' }, version: 1 });
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/priv-1', 'usr_99');
+    assert.equal(res.status, 404);
+  });
+
+  it('returns private lesson when user is in sharedWith', async () => {
+    db.getSyncData = async () => ({ data: { name: 'Private', status: 'private', sharedWith: ['usr_1'], markdown: '# P' }, version: 1 });
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/priv-1', 'usr_1');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.sharedWith, undefined, 'sharedWith should be stripped');
   });
 });

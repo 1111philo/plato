@@ -26,6 +26,12 @@ function validateLessonMarkdown(markdown) {
   return null;
 }
 
+/** Map legacy statuses to public/private. */
+function normalizeStatus(status) {
+  if (status === 'published' || status === 'public') return 'public';
+  return 'private'; // draft, private, undefined → private
+}
+
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
@@ -380,7 +386,7 @@ admin.get('/v1/admin/lessons', async (c) => {
       lessonId: i.dataKey.slice('lesson:'.length),
       name: i.data.name || i.dataKey.slice('lesson:'.length),
       isBuiltIn: i.data.isBuiltIn || false,
-      status: i.data.status || 'published',
+      status: normalizeStatus(i.data.status),
       sharedWith: i.data.sharedWith || [],
       createdByName: i.data.createdByName || null,
       updatedAt: i.updatedAt,
@@ -403,13 +409,15 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   const body = await c.req.json();
   const adminUser = c.get('user');
   const current = await db.getSyncData('_system', `lesson:${lessonId}`);
-  // Validate markdown when it's new/changed, or when publishing
+  // Validate markdown when it's new/changed, or when making public
   const hasMarkdown = body.markdown || current?.data?.markdown;
   if (!hasMarkdown) return c.json({ error: 'markdown is required' }, 400);
   const markdownToValidate = body.markdown || current?.data?.markdown;
-  const isPublishing = body.status === 'published' && current?.data?.status !== 'published';
+  const newStatus = normalizeStatus(body.status || current?.data?.status);
+  const currentStatus = normalizeStatus(current?.data?.status);
+  const isGoingPublic = newStatus === 'public' && currentStatus !== 'public';
   const markdownChanged = body.markdown && body.markdown !== current?.data?.markdown;
-  if (markdownChanged || isPublishing) {
+  if (markdownChanged || isGoingPublic) {
     const mdError = validateLessonMarkdown(markdownToValidate);
     if (mdError) return c.json({ error: mdError }, 400);
   }
@@ -422,7 +430,7 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     markdown: body.markdown || current?.data?.markdown,
     name: body.name || current?.data?.name || lessonId,
     isBuiltIn: body.isBuiltIn || false,
-    status: body.status || current?.data?.status || 'published',
+    status: newStatus,
     sharedWith,
     conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
     readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),

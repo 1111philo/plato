@@ -9,6 +9,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const content = new Hono();
 
+/** Map legacy statuses to public/private. */
+function normalizeStatus(status) {
+  if (status === 'published' || status === 'public') return 'public';
+  return 'private'; // draft, private, undefined → private
+}
+
 // All content routes require authentication
 content.use('/v1/prompts/*', authenticate);
 content.use('/v1/lessons', authenticate);
@@ -53,16 +59,17 @@ content.get('/v1/prompts/:name', async (c) => {
 });
 
 // GET /v1/lessons — list lessons the user has access to
-// Published lessons are visible to all; draft lessons are visible only to users in sharedWith
+// Public lessons visible to all; private lessons visible only to users in sharedWith
 content.get('/v1/lessons', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData('_system');
   const lessons = items
     .filter(i => {
       if (!i.dataKey.startsWith('lesson:')) return false;
-      const status = i.data.status || 'published';
-      if (status === 'published') return true;
-      // Draft lessons: only visible if user is in sharedWith
+      // Treat legacy 'draft' and 'published' as 'private' and 'public' respectively
+      const status = normalizeStatus(i.data.status);
+      if (status === 'public') return true;
+      // Private lessons: only visible if user is in sharedWith
       return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
@@ -77,13 +84,13 @@ content.get('/v1/lessons', async (c) => {
   return c.json(lessons);
 });
 
-// GET /v1/lessons/:lessonId — get a lesson (published, or draft if user is in sharedWith)
+// GET /v1/lessons/:lessonId — get a lesson (public, or private if user is in sharedWith)
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
-  const status = item.data.status || 'published';
-  if (status !== 'published') {
+  const status = normalizeStatus(item.data.status);
+  if (status !== 'public') {
     const userId = c.get('userId');
     if (!Array.isArray(item.data.sharedWith) || !item.data.sharedWith.includes(userId)) {
       return c.json({ error: 'Lesson not found' }, 404);
