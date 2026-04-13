@@ -97,6 +97,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 ## Conventions
 
 - Accessibility is required: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.)
+- Chat accessibility: the chat log uses `role="log"` with `aria-live="off"` to prevent VoiceOver hijacking. New message announcements go through a separate `role="status"` live region. Streaming `AssistantMessage` components must set `streaming` prop to hide from screen readers. Messages use sr-only sender labels ("Coach says:" / "You said:") and `data-chat-message` attributes for Alt+Arrow keyboard navigation (`useChatKeyboardNav` hook). `useTitleNotification` hook flashes document title for background tab notifications.
 - Always commit and push after changes
 - Run `npm test` before deploying
 - Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main
@@ -128,6 +129,8 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/js/lessonOwner.js` — lesson loading, parsing, KB management
 - `client/js/storage.js` — sync-data cache and persistence
 - `client/js/orchestrator.js` — AI agent orchestration
+- `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow keyboard navigation between chat messages
+- `client/src/hooks/useTitleNotification.js` — document title flash for new-message notifications
 - `client/src/lib/constants.js` — microlearning limits (MAX_EXCHANGES, MIN/MAX_OBJECTIVES) and shared constants
 - `server/src/lib/lesson-limits.js` — server-side mirror of microlearning limits
 - `version.json` — current version (Beta-RC-X), auto-bumped on PR merge

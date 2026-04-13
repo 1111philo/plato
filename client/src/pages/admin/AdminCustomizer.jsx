@@ -11,6 +11,7 @@ import { renderMd } from '../../lib/helpers.js';
 import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
 import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
 import { useStreamedText } from '../../hooks/useStreamedText.js';
+import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -288,6 +289,8 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
+  const [srAnnouncement, setSrAnnouncement] = useState('');
+  const notifyTitle = useTitleNotification('Customizer — Admin');
 
   // Auto-save KB conversation after each exchange
   const readinessRef = useRef(readiness);
@@ -302,7 +305,14 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     if (displayText === null && pendingRef.current) {
       const { msgs, r } = pendingRef.current;
       pendingRef.current = null;
-      if (msgs) setChatMessages(prev => [...prev, ...msgs]);
+      if (msgs) {
+        setChatMessages(prev => [...prev, ...msgs]);
+        if (msgs.some(m => m.role === 'assistant')) {
+          setSrAnnouncement('');
+          requestAnimationFrame(() => setSrAnnouncement('New message received'));
+          notifyTitle();
+        }
+      }
       if (r != null) setReadiness(r);
       setBusy('');
     }
@@ -452,10 +462,10 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
 
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
         <div className="mb-3">
-          <ChatArea lessonName="Knowledge Base Editor">
+          <ChatArea lessonName="Knowledge Base Editor" announcement={srAnnouncement}>
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (
-              <AssistantMessage content={displayText} />
+              <AssistantMessage content={displayText} streaming />
             )}
             {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
             {busy === 'creating' && <ThinkingSpinner text="Generating knowledge base..." />}

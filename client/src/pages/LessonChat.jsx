@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useStreamedText } from '../hooks/useStreamedText.js';
+import { useTitleNotification } from '../hooks/useTitleNotification.js';
 import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
 import { launchConfetti } from '../lib/confetti.js';
 import {
@@ -40,6 +41,11 @@ export default function LessonChat() {
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
   const pendingAfterStreamRef = useRef(null);
+  const [srAnnouncement, setSrAnnouncement] = useState('');
+  const chatAreaRef = useRef(null);
+  const notifyTitle = useTitleNotification(
+    lesson ? `${lesson.name} — plato` : 'Lesson — plato'
+  );
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
@@ -77,7 +83,25 @@ export default function LessonChat() {
     if (displayText === null && pendingAfterStreamRef.current) {
       const { msgs, p, confetti } = pendingAfterStreamRef.current;
       pendingAfterStreamRef.current = null;
-      if (msgs) setMessages(prev => [...prev, ...msgs]);
+      if (msgs) {
+        setMessages(prev => [...prev, ...msgs]);
+        const hasAssistant = msgs.some(m => m.role === 'assistant');
+        if (hasAssistant) {
+          // Clear first so repeated identical announcements still trigger
+          setSrAnnouncement('');
+          requestAnimationFrame(() => setSrAnnouncement('New message from coach'));
+          notifyTitle();
+          // Focus the new message if the user's focus is inside the chat log
+          requestAnimationFrame(() => {
+            const log = chatAreaRef.current;
+            if (log && (log.contains(document.activeElement) || document.activeElement === log)) {
+              const msgs = log.querySelectorAll('[data-chat-message="assistant"]');
+              const last = msgs[msgs.length - 1];
+              if (last) last.focus();
+            }
+          });
+        }
+      }
       if (p) setPhase(p);
       if (confetti) launchConfetti();
       setLoading('');
@@ -289,10 +313,10 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      <ChatArea lessonName={lesson?.name} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`}>
+      <ChatArea ref={chatAreaRef} lessonName={lesson?.name} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
-          <AssistantMessage content={displayText} />
+          <AssistantMessage content={displayText} streaming />
         )}
         {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your lesson..." />}
         {loading === 'qa' && !displayText && <ThinkingSpinner />}

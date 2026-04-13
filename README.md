@@ -373,6 +373,26 @@ plato uses a `Beta-RC-X` version scheme stored in `version.json`. The version is
 The `main` branch is protected — all changes require a pull request.
 
 
+## Accessibility
+
+plato is designed to be fully accessible with screen readers (VoiceOver, NVDA, JAWS) and keyboard-only navigation.
+
+- All interactive elements have accessible names and are keyboard-operable
+- Route changes are announced via a global `ScreenReaderAnnounce` component
+- Skip-to-content link on every page
+
+### Chat interface
+
+The AI chat is built for screen reader compatibility following the [MITRE Chatbot Accessibility Playbook](https://mitre.github.io/chatbot-accessibility-playbook/) and [Orange accessibility guidelines](https://a11y-guidelines.orange.com/en/articles/chatbot/):
+
+- **Silent by default** — the chat log uses `role="log"` with `aria-live="off"` so VoiceOver never reads messages unprompted
+- **Controlled announcements** — a separate `role="status"` live region announces "New message from coach" only when a complete response arrives
+- **Streaming content hidden** — in-progress AI responses are `aria-hidden` to prevent screen readers from reading partial text
+- **Sender identification** — each message includes a screen-reader-only prefix ("Coach says:" / "You said:")
+- **Keyboard navigation** — `Alt+ArrowUp` / `Alt+ArrowDown` to jump between messages in the chat log
+- **Focus management** — when focus is in the chat log, new messages receive focus automatically; when focus is elsewhere, only the status announcement fires
+- **Tab notification** — document title flashes "(New message)" when the browser tab is in the background
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, guidelines, and how to submit changes.

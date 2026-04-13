@@ -15,6 +15,7 @@ import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
 import { useStreamedText } from '../../hooks/useStreamedText.js';
+import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -243,7 +244,9 @@ export default function AdminLessons() {
 
 function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMessages, initialReadiness, needsAgentReply, loadDraft }) {
   const isEditing = !!editingLessonId;
-  useEffect(() => { document.title = isEditing ? 'Edit Lesson — Admin' : 'New Lesson — Admin'; }, [isEditing]);
+  const pageTitle = isEditing ? 'Edit Lesson — Admin' : 'New Lesson — Admin';
+  useEffect(() => { document.title = pageTitle; }, [pageTitle]);
+  const notifyTitle = useTitleNotification(pageTitle);
   const [chatMessages, setChatMessages] = useState(initialMessages || []);
   const [readiness, setReadiness] = useState(initialReadiness ?? 0);
   const [busy, setBusy] = useState('');
@@ -255,6 +258,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
+  const [srAnnouncement, setSrAnnouncement] = useState('');
 
   // Auto-save conversation after each exchange
   const readinessRef = useRef(readiness);
@@ -275,11 +279,18 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     if (displayText === null && pendingRef.current) {
       const { msgs, r } = pendingRef.current;
       pendingRef.current = null;
-      if (msgs) setChatMessages(prev => [...prev, ...msgs]);
+      if (msgs) {
+        setChatMessages(prev => [...prev, ...msgs]);
+        if (msgs.some(m => m.role === 'assistant')) {
+          setSrAnnouncement('');
+          requestAnimationFrame(() => setSrAnnouncement('New message received'));
+          notifyTitle();
+        }
+      }
       if (r != null) setReadiness(r);
       setBusy('');
     }
-  }, [displayText]);
+  }, [displayText, notifyTitle]);
 
   // Load draft conversation for new lessons (if one exists from a previous session)
   useEffect(() => {
@@ -478,10 +489,10 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
       {/* Chat + compose in a single container */}
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
         <div className="mb-3">
-          <ChatArea lessonName="Lesson Creator">
+          <ChatArea lessonName="Lesson Creator" announcement={srAnnouncement}>
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (
-              <AssistantMessage content={displayText} />
+              <AssistantMessage content={displayText} streaming />
             )}
             {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
             {busy === 'creating' && <ThinkingSpinner text="Generating lesson..." />}
