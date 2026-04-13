@@ -73,6 +73,57 @@ export function cleanStream(onStream) {
   };
 }
 
+// -- Pacing directives --------------------------------------------------------
+
+/**
+ * Returns an escalating pacing directive based on how many exchanges have
+ * occurred. These strings are injected into the coach context JSON so the
+ * LLM receives explicit, actionable guidance about urgency.
+ *
+ * Thresholds (exchanges completed by the learner, i.e. activitiesCompleted):
+ *   >= 20  absolute hard-stop — close NOW, no new questions
+ *   >= 15  close in this very response
+ *   >= 11  begin closing, finish within 1-2 more exchanges
+ */
+function getPacingDirective(activitiesCompleted) {
+  if (activitiesCompleted >= 20) {
+    return 'CRITICAL: This lesson has reached the absolute limit. You MUST deliver a final closing summary right now and award PROGRESS:10 immediately. Do NOT ask any more questions or introduce any new topics. Close the lesson in this response.';
+  }
+  if (activitiesCompleted >= 15) {
+    return 'URGENT: The lesson is significantly over target. You MUST wrap up and close the lesson in your very next response. Deliver a brief closing summary, award an appropriate PROGRESS score, and do not introduce any new topics or ask any more questions.';
+  }
+  if (activitiesCompleted >= 11) {
+    return 'IMPORTANT: The lesson has reached its target length. You MUST now begin guiding the learner toward the exemplar and close the lesson within the next 1-2 exchanges. Avoid introducing new topics — focus only on consolidating what has been learned and reaching a conclusion.';
+  }
+  return null;
+}
+
+// -- Context builder ----------------------------------------------------------
+
+function buildContext(lesson, lessonKB, profileSummary, learnerName) {
+  const activitiesCompleted = lessonKB.activitiesCompleted || 0;
+  const pacingDirective = getPacingDirective(activitiesCompleted);
+
+  const ctx = {
+    lessonId: lesson.lessonId,
+    lessonName: lesson.name,
+    lessonDescription: lesson.description,
+    exemplar: lesson.exemplar,
+    learningObjectives: lesson.learningObjectives,
+    lessonKB,
+    learnerProfile: profileSummary || 'New learner, no profile yet.',
+    learnerName: learnerName || 'Learner',
+    exchangesCompleted: activitiesCompleted,
+    targetExchanges: MAX_EXCHANGES,
+  };
+
+  if (pacingDirective) {
+    ctx.pacingDirective = pacingDirective;
+  }
+
+  return JSON.stringify(ctx);
+}
+
 // -- Lesson lifecycle ---------------------------------------------------------
 
 /**
@@ -216,50 +267,13 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
       phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
-  await saveLessonMessages(lessonId, newMessages);
-  syncInBackground(`messages:${lessonId}`);
+  const updatedMessages = [...allMsgs, ...newMessages];
+  await saveLessonMessages(lessonId, updatedMessages);
+  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
 
-  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
-}
-
-/**
- * Resume an existing lesson. Loads messages and KB.
- */
-export async function resumeLesson(lessonId) {
-  const messages = await getLessonMessages(lessonId);
-  const lessonKB = await getLessonKB(lessonId);
-  const progress = lessonKB?.progress ?? 0;
-  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-  return { messages, lessonKB, progress, phase };
-}
-
-// -- Helpers ------------------------------------------------------------------
-
-export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const completed = lessonKB?.activitiesCompleted || 0;
-  const context = {
-    learnerName: learnerName || '',
-    lessonName: lesson.name,
-    lessonDescription: lesson.description,
-    exemplar: lesson.exemplar,
-    objectives: lessonKB?.objectives || [],
-    insights: lessonKB?.insights || [],
-    learnerProfile: profileSummary || 'No profile yet',
-    learnerPosition: lessonKB?.learnerPosition || 'New learner',
-    progress: lessonKB?.progress ?? 0,
-    activitiesCompleted: completed,
+  return {
+    messages: newMessages,
+    lessonKB,
+    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
   };
-  // Escalating pacing directives when over the exchange target
-  const over = completed - MAX_EXCHANGES;
-  if (over >= 9) {
-    // 20+ exchanges: wrap up — accept where the learner is
-    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the lesson. Award progress 10. Do not assign new work.';
-  } else if (over >= 4) {
-    // 15-19 exchanges: aggressive focus — drop non-essential objectives
-    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';
-  } else if (over >= 0) {
-    // 11-14 exchanges: gentle pivot
-    context.pacingDirective = 'OVER TARGET — Briefly acknowledge the pivot to the learner (e.g. "Let\'s pull together everything you\'ve built so far and focus on the exemplar."). Then stop introducing new concepts. Scaffold the learner directly to the exemplar using only what they have already demonstrated. Be directive, not exploratory. Break the exemplar into the smallest step they can complete right now.';
-  }
-  return JSON.stringify(context);
 }
