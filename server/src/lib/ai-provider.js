@@ -11,6 +11,10 @@
 const provider = process.env.AI_PROVIDER
   || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'bedrock');
 
+// Timeout for Bedrock requests — set just under the Lambda function timeout
+// (60 s) so errors propagate cleanly rather than causing a hard Lambda kill.
+const BEDROCK_TIMEOUT_MS = 55_000;
+
 let ai;
 
 if (provider === 'anthropic') {
@@ -84,29 +88,41 @@ if (provider === 'anthropic') {
   ai = {
     async invoke(model, body) {
       const modelId = MODEL_MAP[model] || model;
-      const command = new InvokeModelCommand({
-        modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
-      });
-      const response = await client.send(command);
-      return JSON.parse(new TextDecoder().decode(response.body));
+      const abortController = new AbortController();
+      const timer = setTimeout(() => abortController.abort(new Error(`Bedrock invoke timed out after ${BEDROCK_TIMEOUT_MS}ms`)), BEDROCK_TIMEOUT_MS);
+      try {
+        const command = new InvokeModelCommand({
+          modelId,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
+        });
+        const response = await client.send(command, { abortSignal: abortController.signal });
+        return JSON.parse(new TextDecoder().decode(response.body));
+      } finally {
+        clearTimeout(timer);
+      }
     },
 
     async *invokeStream(model, body) {
       const modelId = MODEL_MAP[model] || model;
-      const command = new InvokeModelWithResponseStreamCommand({
-        modelId,
-        contentType: 'application/json',
-        accept: 'application/json',
-        body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
-      });
-      const response = await client.send(command);
-      for await (const event of response.body) {
-        if (event.chunk) {
-          yield JSON.parse(new TextDecoder().decode(event.chunk.bytes));
+      const abortController = new AbortController();
+      const timer = setTimeout(() => abortController.abort(new Error(`Bedrock stream timed out after ${BEDROCK_TIMEOUT_MS}ms`)), BEDROCK_TIMEOUT_MS);
+      try {
+        const command = new InvokeModelWithResponseStreamCommand({
+          modelId,
+          contentType: 'application/json',
+          accept: 'application/json',
+          body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
+        });
+        const response = await client.send(command, { abortSignal: abortController.signal });
+        for await (const event of response.body) {
+          if (event.chunk) {
+            yield JSON.parse(new TextDecoder().decode(event.chunk.bytes));
+          }
         }
+      } finally {
+        clearTimeout(timer);
       }
     },
   };
