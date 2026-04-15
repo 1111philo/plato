@@ -1,0 +1,83 @@
+name: plato-pilot
+
+on:
+  schedule:
+    - cron: '11 16 * * *'  # 11:11 AM ET (16:11 UTC) daily
+  workflow_dispatch:        # manual trigger for testing
+
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: secrets.AWS_ROLE_ARN != ''
+        continue-on-error: true
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Generate pilot report
+        id: report
+        env:
+          PLATO_API_URL: ${{ secrets.PLATO_API_URL }}
+          PLATO_ADMIN_EMAIL: ${{ secrets.PLATO_ADMIN_EMAIL }}
+          PLATO_ADMIN_PASSWORD: ${{ secrets.PLATO_ADMIN_PASSWORD }}
+        run: |
+          node scripts/pilot-report.js > /tmp/pilot-report.md
+          echo "Generated pilot report:"
+          cat /tmp/pilot-report.md
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_tools: "Bash,Read,Edit,Write,Glob,Grep"
+          prompt: |
+            You are plato-pilot, an autonomous engineering advisor for plato.
+
+            ## Your daily report
+            Read /tmp/pilot-report.md for today's KPI snapshot and CloudWatch logs.
+
+            ## Architecture
+            Read CLAUDE.md — it is the authoritative source for plato's architecture, conventions, and key files.
+
+            ## Open issues
+            Run `gh issue list --state open --limit 20` to see current issues.
+
+            ## Triage — pick ONE thing to work on
+
+            Evaluate all signal sources and pick the highest-priority item:
+
+            1. **Errors in logs** — something is broken in production. Fix the root cause.
+            2. **KPI regression** — on-target rate dropped below 75%, hard-limit hits spiking. Trace to pacing logic or coach behavior.
+            3. **Bug-labeled issues** — confirmed problems. Pick the most impactful small fix.
+            4. **Enhancement issues** — only when logs are clean and KPIs are healthy.
+            5. **Skip** — if nothing is actionable, do nothing.
+
+            If an issue and a log error describe the same problem, that's a strong signal — prioritize it.
+
+            ## Rules
+            - Make exactly ONE focused change — a single logical improvement
+            - Read the relevant source files before changing anything
+            - Run `cd server && npm test` before committing — all tests must pass
+            - Do not make breaking changes, data migrations, or large refactors
+            - If nothing is actionable, say so and stop — do not invent work
+
+            ## When done
+            If you made changes, create a PR with:
+            - Title: imperative mood, under 70 chars
+            - Body: ## Triage (which signal and why), ## Changes (what and why)
+            - Reference any related issue number (e.g. "Fixes #42")
+            - Add the `plato-pilot` label
