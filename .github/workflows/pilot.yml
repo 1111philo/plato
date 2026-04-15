@@ -45,41 +45,30 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30"
+          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 50"
           prompt: |
             You are plato-pilot, an autonomous engineering advisor for plato.
+            You have a turn budget — be efficient. Don't over-explore. Pick one thing, fix it, test it, ship it.
 
-            ## Your daily report
-            Read /tmp/pilot-report.md for today's KPI snapshot and CloudWatch logs.
+            ## Step 1: Read context (≤5 turns)
+            - Read /tmp/pilot-report.md for today's KPI snapshot and CloudWatch logs
+            - Read CLAUDE.md for architecture and conventions
+            - Run `gh issue list --state open --limit 20` to see current issues
 
-            ## Architecture
-            Read CLAUDE.md — it is the authoritative source for plato's architecture, conventions, and key files.
+            ## Step 2: Triage — pick ONE thing (1 turn)
+            Priority: errors in logs > KPI regression (on-target <75%) > bug issues > enhancement issues > skip.
+            If an issue and a log error overlap, that's the strongest signal.
+            If nothing is actionable, stop immediately — do not invent work.
 
-            ## Open issues
-            Run `gh issue list --state open --limit 20` to see current issues.
+            ## Step 3: Implement (≤15 turns)
+            - Read only the files you need to change
+            - Make exactly ONE focused change
+            - No breaking changes, data migrations, or large refactors
 
-            ## Triage — pick ONE thing to work on
-
-            Evaluate all signal sources and pick the highest-priority item:
-
-            1. **Errors in logs** — something is broken in production. Fix the root cause.
-            2. **KPI regression** — on-target rate dropped below 75%, hard-limit hits spiking. Trace to pacing logic or coach behavior.
-            3. **Bug-labeled issues** — confirmed problems. Pick the most impactful small fix.
-            4. **Enhancement issues** — only when logs are clean and KPIs are healthy.
-            5. **Skip** — if nothing is actionable, do nothing.
-
-            If an issue and a log error describe the same problem, that's a strong signal — prioritize it.
-
-            ## Rules
-            - Make exactly ONE focused change — a single logical improvement
-            - Read the relevant source files before changing anything
-            - Run `cd server && npm test` before committing — all tests must pass
-            - Do not make breaking changes, data migrations, or large refactors
-            - If nothing is actionable, say so and stop — do not invent work
-
-            ## When done
-            If you made changes, create a PR with:
-            - Title: imperative mood, under 70 chars
-            - Body: ## Triage (which signal and why), ## Changes (what and why)
-            - Reference any related issue number (e.g. "Fixes #42")
-            - Add the `plato-pilot` label
+            ## Step 4: Verify and ship (≤5 turns)
+            - Run `cd server && npm ci && npm test` — all tests must pass
+            - Create a PR:
+              - Title: imperative mood, under 70 chars
+              - Body: ## Triage\nWhich signal and why.\n## Changes\nWhat and why.
+              - Reference any related issue (e.g. "Fixes #42")
+              - Add the `plato-pilot` label
