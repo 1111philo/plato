@@ -22,9 +22,42 @@ function ts() { return Date.now(); }
 
 // -- Tag parsing --------------------------------------------------------------
 
-const PROGRESS_REGEX = /\[PROGRESS:\s*(\d+)\]\s*/g;
-const KB_UPDATE_REGEX = /\[KB_UPDATE:\s*(\{[\s\S]*?\})\]\s*/g;
-const PROFILE_UPDATE_REGEX = /\[PROFILE_UPDATE:\s*(\{[\s\S]*?\})\]\s*/g;
+// Detects where the coach tag section begins (tags always come at the end)
+const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
+
+/**
+ * Extract a JSON object from text starting after startPos, using bracket
+ * counting so that }] inside string values doesn't confuse the parser.
+ */
+function extractBracketedJSON(text, startPos) {
+  let i = startPos;
+  while (i < text.length && /\s/.test(text[i])) i++; // skip whitespace
+  if (text[i] !== '{') return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  const start = i;
+
+  while (i < text.length) {
+    const ch = text[i];
+    if (escape) { escape = false; }
+    else if (ch === '\\' && inString) { escape = true; }
+    else if (ch === '"') { inString = !inString; }
+    else if (!inString) {
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) return text.slice(start, i + 1); }
+    }
+    i++;
+  }
+  return null;
+}
+
+/** Strip the tag section from raw coach output, returning only the visible text. */
+function stripTags(text) {
+  const tagStart = text.search(TAG_SECTION_REGEX);
+  return (tagStart !== -1 ? text.slice(0, tagStart) : text).trim();
+}
 
 export function parseCoachResponse(raw) {
   let progress = null;
@@ -35,45 +68,30 @@ export function parseCoachResponse(raw) {
   const progressMatch = raw.match(/\[PROGRESS:\s*(\d+)\]/);
   if (progressMatch) progress = parseInt(progressMatch[1], 10);
 
-  // Extract KB update
-  const kbMatch = raw.match(/\[KB_UPDATE:\s*(\{[\s\S]*?\})\]/);
-  if (kbMatch) {
-    try { kbUpdate = JSON.parse(kbMatch[1]); } catch { /* ignore */ }
+  // Extract KB update — bracket-aware so }] inside string values don't mislead
+  const kbIdx = raw.indexOf('[KB_UPDATE:');
+  if (kbIdx !== -1) {
+    const jsonStr = extractBracketedJSON(raw, kbIdx + '[KB_UPDATE:'.length);
+    if (jsonStr) { try { kbUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
   }
 
   // Extract profile update
-  const profileMatch = raw.match(/\[PROFILE_UPDATE:\s*(\{[\s\S]*?\})\]/);
-  if (profileMatch) {
-    try { profileUpdate = JSON.parse(profileMatch[1]); } catch { /* ignore */ }
+  const profIdx = raw.indexOf('[PROFILE_UPDATE:');
+  if (profIdx !== -1) {
+    const jsonStr = extractBracketedJSON(raw, profIdx + '[PROFILE_UPDATE:'.length);
+    if (jsonStr) { try { profileUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
   }
 
-  // Strip all tags from display text
-  let text = raw
-    .replace(PROGRESS_REGEX, '')
-    .replace(KB_UPDATE_REGEX, '')
-    .replace(PROFILE_UPDATE_REGEX, '');
-  // Safety net: truncate at any remaining tag the regex missed (e.g. malformed JSON in tag)
-  const tagStart = text.search(/\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/);
-  if (tagStart !== -1) text = text.slice(0, tagStart);
-  text = text.trim();
-
-  return { text, progress, kbUpdate, profileUpdate };
+  return { text: stripTags(raw), progress, kbUpdate, profileUpdate };
 }
 
-/** Wrap a stream callback to strip tags from partial text. */
+/**
+ * Wrap a stream callback to strip tags from partial accumulated text.
+ * Tags always appear at the end of the response — truncate there.
+ */
 export function cleanStream(onStream) {
   if (!onStream) return () => {};
-  return (partial) => {
-    // Strip any fully-formed tags
-    let cleaned = partial
-      .replace(PROGRESS_REGEX, '')
-      .replace(KB_UPDATE_REGEX, '')
-      .replace(PROFILE_UPDATE_REGEX, '');
-    // Truncate at any partial tag still being streamed (tags always come at the end)
-    const tagStart = cleaned.search(/\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/);
-    if (tagStart !== -1) cleaned = cleaned.slice(0, tagStart);
-    onStream(cleaned.trim());
-  };
+  return (partial) => onStream(stripTags(partial));
 }
 
 // -- Lesson lifecycle ---------------------------------------------------------
