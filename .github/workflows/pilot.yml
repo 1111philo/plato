@@ -23,8 +23,10 @@ jobs:
           node-version: 20
 
       - uses: aws-actions/configure-aws-credentials@v4
-        if: secrets.AWS_ROLE_ARN != ''
+        if: ${{ env.AWS_ROLE_ARN != '' }}
         continue-on-error: true
+        env:
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
