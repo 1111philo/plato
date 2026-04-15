@@ -249,7 +249,8 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
-  // Escalating pacing directives when over the exchange target
+  // Escalating pacing directives — pre-warning when approaching the target,
+  // then increasingly decisive once over it.
   const over = completed - MAX_EXCHANGES;
   if (over >= 9) {
     // 20+ exchanges: wrap up — accept where the learner is
@@ -258,8 +259,12 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     // 15-19 exchanges: aggressive focus — drop non-essential objectives
     context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';
   } else if (over >= 0) {
-    // 11-14 exchanges: gentle pivot
-    context.pacingDirective = 'OVER TARGET — Briefly acknowledge the pivot to the learner (e.g. "Let\'s pull together everything you\'ve built so far and focus on the exemplar."). Then stop introducing new concepts. Scaffold the learner directly to the exemplar using only what they have already demonstrated. Be directive, not exploratory. Break the exemplar into the smallest step they can complete right now.';
+    // 11-14 exchanges: decisive pivot — no new concepts, close it out
+    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE concrete task that most directly demonstrates the exemplar using only what the learner has already shown. If they complete it, award progress 10. Keep your response to 2 sentences.';
+  } else if (completed >= MAX_EXCHANGES - 3) {
+    // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
+    const remaining = MAX_EXCHANGES - completed;
+    context.pacingDirective = `NEAR LIMIT — ${remaining} exchange${remaining === 1 ? '' : 's'} remaining before target. Do not introduce any new concepts or objectives. Give ONE focused task that most directly demonstrates the exemplar using what the learner has already shown.`;
   }
   return JSON.stringify(context);
 }
