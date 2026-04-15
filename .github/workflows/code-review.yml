@@ -28,6 +28,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
+          display_report: true
           claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 20"
           prompt: |
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
@@ -57,7 +58,8 @@ jobs:
             - Things that are already correct
 
             ## Output
-            If tests fail, that's your review — say what failed and stop.
-            If you find blocking issues, list them clearly with file:line references.
-            If everything looks good, say so in one sentence — don't pad with praise.
+            ALWAYS post a review comment on the PR using `gh pr review` with your findings.
+            If tests fail: `gh pr review --request-changes --body "Tests fail: ..."`
+            If blocking issues: `gh pr review --request-changes --body "..."` with file:line references.
+            If clean: `gh pr review --approve --body "Tests pass. No bugs, security, or accessibility issues found."`
             Be direct. Short is better than thorough.
