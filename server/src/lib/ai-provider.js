@@ -81,6 +81,10 @@ if (provider === 'anthropic') {
     'claude-sonnet-4-6': 'us.anthropic.claude-sonnet-4-6',
   };
 
+  // Abort timeout in ms — set below Lambda's 60s limit so we get a clean error
+  // frame to the client rather than a hard Lambda timeout disconnect.
+  const BEDROCK_TIMEOUT_MS = 55_000;
+
   ai = {
     async invoke(model, body) {
       const modelId = MODEL_MAP[model] || model;
@@ -90,7 +94,9 @@ if (provider === 'anthropic') {
         accept: 'application/json',
         body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
       });
-      const response = await client.send(command);
+      const response = await client.send(command, {
+        abortSignal: AbortSignal.timeout(BEDROCK_TIMEOUT_MS),
+      });
       return JSON.parse(new TextDecoder().decode(response.body));
     },
 
@@ -102,7 +108,9 @@ if (provider === 'anthropic') {
         accept: 'application/json',
         body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...body }),
       });
-      const response = await client.send(command);
+      const response = await client.send(command, {
+        abortSignal: AbortSignal.timeout(BEDROCK_TIMEOUT_MS),
+      });
       for await (const event of response.body) {
         if (event.chunk) {
           yield JSON.parse(new TextDecoder().decode(event.chunk.bytes));
