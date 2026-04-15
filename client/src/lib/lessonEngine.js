@@ -48,11 +48,14 @@ export function parseCoachResponse(raw) {
   }
 
   // Strip all tags from display text
-  const text = raw
+  let text = raw
     .replace(PROGRESS_REGEX, '')
     .replace(KB_UPDATE_REGEX, '')
-    .replace(PROFILE_UPDATE_REGEX, '')
-    .trim();
+    .replace(PROFILE_UPDATE_REGEX, '');
+  // Safety net: truncate at any remaining tag the regex missed (e.g. malformed JSON in tag)
+  const tagStart = text.search(/\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/);
+  if (tagStart !== -1) text = text.slice(0, tagStart);
+  text = text.trim();
 
   return { text, progress, kbUpdate, profileUpdate };
 }
