@@ -21,11 +21,43 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 20"
           prompt: |
-            Review this PR following the guidelines in REVIEW.md and CLAUDE.md.
-            Focus on accessibility, security, and test coverage.
-            Be concise — flag real issues, skip style nitpicks.
+            You are a skeptical code reviewer. Your job is to find real problems the author missed.
+            Read REVIEW.md and CLAUDE.md for project conventions.
+
+            ## What to do
+            1. Read the PR diff and understand what changed and why
+            2. Read the FULL source files that were modified (not just the diff) to check context
+            3. Run `cd server && npm ci && npm test` to verify tests pass on this branch
+            4. Actively look for these problems:
+
+            ### Must flag (blocking)
+            - **Bugs**: edge cases, off-by-one errors, null/undefined paths, race conditions
+            - **Regressions**: does this change break any existing behavior?
+            - **Security**: XSS, injection, leaked secrets, auth bypass
+            - **Accessibility**: missing aria labels, keyboard traps, broken screen reader support
+            - **Missing tests**: server route/lib changes without test coverage
+
+            ### Should flag (non-blocking)
+            - Logic that's correct but fragile (will break on the next change)
+            - Inconsistency with patterns used elsewhere in the codebase
+            - CLAUDE.md conventions not followed
+
+            ### Do NOT flag
+            - Style preferences (formatting, naming, semicolons)
+            - "You could also do X" suggestions with no concrete benefit
+            - Things that are already correct
+
+            ## Output
+            If tests fail, that's your review — say what failed and stop.
+            If you find blocking issues, list them clearly with file:line references.
+            If everything looks good, say so in one sentence — don't pad with praise.
+            Be direct. Short is better than thorough.
