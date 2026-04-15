@@ -8,4 +8,5 @@ server/samconfig.toml
 server/client-dist/
 server/client-content/
 .github/workflows/deploy.yml
+.github/workflows/deploy-playground.yml
 .DS_Store

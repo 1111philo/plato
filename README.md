@@ -324,7 +324,7 @@ jobs:
 
 Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, and `YOUR_SAM_S3_BUCKET` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
 
-**Pre-deploy backups:** Add a step before `sam deploy` to back up your DynamoDB tables. The actual deploy workflow in this repo creates on-demand backups of all prod tables and prunes old ones (keeping the last 5). See `.github/workflows/deploy.yml` for the full backup step.
+**Pre-deploy backups:** Add a step before `sam deploy` to back up your DynamoDB tables. For example, loop over your table names and call `aws dynamodb create-backup` for each, then prune old backups (keeping the last 5 per table).
 
 **Multiple environments:** To add a staging environment (e.g., `playground`), create a second workflow triggered on a different branch that deploys with `--stack-name plato-playground --parameter-overrides Stage=playground`. Each stage gets its own DynamoDB tables and SSM parameters.
 
