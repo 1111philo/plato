@@ -273,15 +273,12 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   // Escalating pacing directives — pre-warning when approaching the target,
   // then increasingly decisive once over it.
   const over = completed - MAX_EXCHANGES;
-  if (over >= 9) {
-    // 20+ exchanges: wrap up — accept where the learner is
-    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the lesson. Award progress 10. Do not assign new work.';
-  } else if (over >= 4) {
-    // 15-19 exchanges: aggressive focus — drop non-essential objectives
-    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';
+  if (over >= 4) {
+    // 15+ exchanges: close unconditionally — learner has put in sufficient effort
+    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Do not assign any new work or ask any new questions. Look at what this learner has already demonstrated across all exchanges. Award progress 10 now, close the lesson warmly in 1-2 sentences, and ask for feedback.';
   } else if (over >= 0) {
-    // 11-14 exchanges: decisive pivot — no new concepts, close it out
-    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE concrete task that most directly demonstrates the exemplar using only what the learner has already shown. If they complete it, award progress 10. Keep your response to 2 sentences.';
+    // 11-14 exchanges: one final task, then close regardless of outcome
+    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE final task in a single sentence using only what the learner has already shown. Accept any reasonable attempt as sufficient — award progress 10 on their next response. Keep your response to 2 sentences.';
   } else if (completed >= MAX_EXCHANGES - 3) {
     // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
     const remaining = MAX_EXCHANGES - completed;
