@@ -94,6 +94,58 @@ export function cleanStream(onStream) {
   return (partial) => onStream(stripTags(partial));
 }
 
+// -- Pacing directives --------------------------------------------------------
+
+/**
+ * Returns a pacing directive string based on how many exchanges have occurred.
+ * Thresholds are set relative to MAX_EXCHANGES (11):
+ *   - At target (11+):  begin closing — start wrapping up this exchange
+ *   - Over target (15+): hard close — deliver closing summary now, this reply
+ *   - Emergency (20+):  emergency close — end immediately regardless of progress
+ */
+function getPacingDirective(exchangeCount) {
+  const hardLimit = MAX_EXCHANGES * 2; // 22
+  const emergencyThreshold = Math.round(hardLimit * 0.9); // 20
+  const hardCloseThreshold = Math.round(MAX_EXCHANGES * 1.35); // ~15
+
+  if (exchangeCount >= emergencyThreshold) {
+    return 'CRITICAL: The lesson has significantly exceeded its target length. You MUST end the lesson immediately in this reply. Deliver a one-sentence affirmation of what the learner accomplished and set [PROGRESS: 10] now, regardless of how far they have come. Do not ask any more questions.';
+  }
+  if (exchangeCount >= hardCloseThreshold) {
+    return 'URGENT: The lesson has run well over its target. In THIS reply you must: (1) stop introducing new content or asking exploratory questions, (2) deliver a brief closing summary of what the learner achieved, and (3) set [PROGRESS: 10] to complete the lesson. This is the final coaching exchange.';
+  }
+  if (exchangeCount >= MAX_EXCHANGES) {
+    return 'The lesson has reached its target length. Begin closing NOW: acknowledge what the learner has done, give a concise wrap-up, and set [PROGRESS: 10] if they have made meaningful progress. Do not open new topics or ask questions that would extend the conversation further.';
+  }
+  return null;
+}
+
+// -- Context builder ----------------------------------------------------------
+
+/**
+ * Build the context object passed to the coach as the first user message.
+ * Includes lesson info, learner KB, profile summary, and an optional pacing directive.
+ */
+export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
+  const exchangeCount = lessonKB.activitiesCompleted || 0;
+  const pacingDirective = getPacingDirective(exchangeCount);
+
+  const ctx = {
+    lessonId: lesson.lessonId,
+    lessonName: lesson.name,
+    lessonDescription: lesson.description,
+    exemplar: lesson.exemplar,
+    learningObjectives: lesson.learningObjectives,
+    learnerName: learnerName || 'Learner',
+    lessonKB,
+    learnerProfile: profileSummary || 'New learner, no profile yet.',
+    exchangeCount,
+    ...(pacingDirective ? { pacingDirective } : {}),
+  };
+
+  return JSON.stringify(ctx);
+}
+
 // -- Lesson lifecycle ---------------------------------------------------------
 
 /**
@@ -218,74 +270,44 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   syncInBackground(`lessonKB:${lessonId}`);
 
   // Profile updates — from explicit tag or from KB insights as fallback
-  if (parsed.profileUpdate?.observation) {
-    updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
+  if (parsed.profileUpdate) {
+    updateProfileInBackground(parsed.profileUpdate);
   } else if (parsed.kbUpdate?.insights?.length) {
-    // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join('. ');
-    updateProfileFromObservation(lessonKB, insightText);
-  }
-  if (achieved) {
-    updateProfileOnCompletionInBackground(lessonKB, lesson);
+    updateProfileFromObservation(lessonId, lesson.name, parsed.kbUpdate.insights);
   }
 
-  // Save messages
-  const newMessages = [
-    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
-      metadata: imageKey ? { imageKey } : null, timestamp: ts() },
-    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
-      phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },
-  ];
+  // On completion, trigger deep profile update
+  if (achieved && lessonKB.status === 'completed') {
+    updateProfileOnCompletionInBackground(lessonId, lesson.name);
+  }
 
-  await saveLessonMessages(lessonId, newMessages);
-  syncInBackground(`messages:${lessonId}`);
-
-  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
-}
-
-/**
- * Resume an existing lesson. Loads messages and KB.
- */
-export async function resumeLesson(lessonId) {
-  const messages = await getLessonMessages(lessonId);
-  const lessonKB = await getLessonKB(lessonId);
-  const progress = lessonKB?.progress ?? 0;
-  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-  return { messages, lessonKB, progress, phase };
-}
-
-// -- Helpers ------------------------------------------------------------------
-
-export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const completed = lessonKB?.activitiesCompleted || 0;
-  const context = {
-    learnerName: learnerName || '',
-    lessonName: lesson.name,
-    lessonDescription: lesson.description,
-    exemplar: lesson.exemplar,
-    objectives: lessonKB?.objectives || [],
-    insights: lessonKB?.insights || [],
-    learnerProfile: profileSummary || 'No profile yet',
-    learnerPosition: lessonKB?.learnerPosition || 'New learner',
-    progress: lessonKB?.progress ?? 0,
-    activitiesCompleted: completed,
+  const userMsg = {
+    role: 'user',
+    content: text || '',
+    msgType: MSG_TYPES.USER,
+    phase: LESSON_PHASES.LEARNING,
+    timestamp: ts(),
+    ...(imageKey ? { imageKey } : {}),
   };
-  // Escalating pacing directives — pre-warning when approaching the target,
-  // then increasingly decisive once over it.
-  const over = completed - MAX_EXCHANGES;
-  if (over >= 9) {
-    // 20+ exchanges: wrap up — accept where the learner is
-    context.pacingDirective = 'WELL OVER TARGET — The learner has worked hard. Acknowledge what they HAVE demonstrated, celebrate their specific progress, and close the lesson. Award progress 10. Do not assign new work.';
-  } else if (over >= 4) {
-    // 15-19 exchanges: aggressive focus — drop non-essential objectives
-    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Drop all but the single most important objective. Give the learner one concrete, completable task that demonstrates the core of the exemplar. If they complete it, award progress 10. Keep your response to 2 sentences.';
-  } else if (over >= 0) {
-    // 11-14 exchanges: decisive pivot — no new concepts, close it out
-    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE concrete task that most directly demonstrates the exemplar using only what the learner has already shown. If they complete it, award progress 10. Keep your response to 2 sentences.';
-  } else if (completed >= MAX_EXCHANGES - 3) {
-    // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
-    const remaining = MAX_EXCHANGES - completed;
-    context.pacingDirective = `NEAR LIMIT — ${remaining} exchange${remaining === 1 ? '' : 's'} remaining before target. Do not introduce any new concepts or objectives. Give ONE focused task that most directly demonstrates the exemplar using what the learner has already shown.`;
-  }
-  return JSON.stringify(context);
+
+  const assistantMsg = {
+    role: 'assistant',
+    content: parsed.text,
+    msgType: MSG_TYPES.GUIDE,
+    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
+    timestamp: ts(),
+    progress: parsed.progress,
+  };
+
+  const newMessages = [userMsg, assistantMsg];
+  const updatedMessages = [...allMsgs, ...newMessages];
+  await saveLessonMessages(lessonId, updatedMessages);
+  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+
+  return {
+    messages: newMessages,
+    lessonKB,
+    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
+    progress: parsed.progress,
+  };
 }
