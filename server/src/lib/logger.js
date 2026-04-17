@@ -59,9 +59,9 @@ function push(level, rawCode, rawMeta) {
   }
 
   // Mirror to stdout as structured JSON so Lambda → CloudWatch captures the
-  // same shape. The endpoint can reconstruct a `code` from CloudWatch events
-  // that were emitted through the logger.
-  const payload = JSON.stringify({ level, code, ...meta });
+  // same shape. logId is included so the endpoint can dedupe when the same
+  // event is retrieved from both the buffer and CloudWatch.
+  const payload = JSON.stringify({ logId: entry.logId, level, code, ...meta });
   if (level === 'error') console.error(payload);
   else console.warn(payload);
 

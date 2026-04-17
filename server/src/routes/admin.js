@@ -792,14 +792,32 @@ admin.get('/v1/admin/logs', async (c) => {
     cwEntries = (cw.entries || []).filter((e) => !level || e.level === level);
   }
 
-  // Merge, dedupe by logId, sort newest-first.
-  const merged = new Map();
-  for (const e of [...bufferEntries, ...cwEntries]) merged.set(e.logId, e);
-  const entries = [...merged.values()].sort((a, b) => b.ts.localeCompare(a.ts));
+  // Merge, dedupe by logId (logger emits logId to stdout so events appearing
+  // in both the buffer and CloudWatch share an ID). Track per-logId sources
+  // so groups can report "buffer", "cloudwatch", or both accurately.
+  const byLogId = new Map();
+  const sourcesByLogId = new Map();
+  function recordSource(logId, source) {
+    let set = sourcesByLogId.get(logId);
+    if (!set) { set = new Set(); sourcesByLogId.set(logId, set); }
+    set.add(source);
+  }
+  for (const e of bufferEntries) {
+    byLogId.set(e.logId, e); // buffer wins on meta
+    recordSource(e.logId, 'buffer');
+  }
+  for (const e of cwEntries) {
+    if (!byLogId.has(e.logId)) byLogId.set(e.logId, e);
+    recordSource(e.logId, 'cloudwatch');
+  }
+  const entries = [...byLogId.values()]
+    .map((e) => ({ ...e, source: [...sourcesByLogId.get(e.logId)].join('+') }))
+    .sort((a, b) => b.ts.localeCompare(a.ts));
 
   // Build groups across both sources.
   const groups = new Map();
   for (const e of entries) {
+    const srcSet = sourcesByLogId.get(e.logId);
     const g = groups.get(e.code);
     if (!g) {
       groups.set(e.code, {
@@ -808,14 +826,14 @@ admin.get('/v1/admin/logs', async (c) => {
         count: 1,
         firstSeen: e.ts,
         lastSeen: e.ts,
-        sources: [e.source],
+        sources: [...srcSet],
         sample: e,
       });
     } else {
       g.count++;
       if (e.ts < g.firstSeen) g.firstSeen = e.ts;
       if (e.ts > g.lastSeen) { g.lastSeen = e.ts; g.sample = e; }
-      if (!g.sources.includes(e.source)) g.sources.push(e.source);
+      for (const s of srcSet) if (!g.sources.includes(s)) g.sources.push(s);
     }
   }
   const groupsList = [...groups.values()].sort((a, b) => b.count - a.count);

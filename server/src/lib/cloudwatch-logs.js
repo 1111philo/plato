@@ -2,8 +2,13 @@
 // silently — a failure populates `error` in the returned shape so callers
 // (plato-pilot in particular) can treat the outage as a distinct signal.
 
-const ERROR_PATTERN = '?ERROR ?Error ?error ?WARN ?warn ?TimeoutError ?"Task timed out"';
-const PER_GROUP_LIMIT = 100;
+// CloudWatch filter patterns must have at least one required term; a pattern
+// where every term is optional (prefixed with `?`) matches ALL events. We run
+// two independent queries and merge — one for generic ERROR lines (which also
+// matches logger's structured emissions that Lambda prefixes with "ERROR"),
+// one for Lambda runtime timeouts that don't carry an ERROR prefix.
+const FILTER_PATTERNS = ['ERROR', '"Task timed out"'];
+const PER_PATTERN_LIMIT = 100;
 
 function stage() {
   return process.env.STAGE || 'prod';
@@ -15,19 +20,29 @@ function logGroupPrefix() {
 
 function parseMessage(message) {
   if (typeof message !== 'string') return null;
-  const trimmed = message.trim();
-  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
-  try { return JSON.parse(trimmed); }
+  const start = message.indexOf('{');
+  const end = message.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return null;
+  try { return JSON.parse(message.slice(start, end + 1)); }
   catch { return null; }
 }
 
-function normalizeEvent(event, logGroupName) {
+// Lambda-internal noise we never want to surface as errors.
+function isLifecycleLine(message) {
+  if (typeof message !== 'string') return false;
+  return /^(START|END|REPORT|INIT_START|EXTENSION) /.test(message.trim());
+}
+
+export function normalizeEvent(event, logGroupName) {
+  if (isLifecycleLine(event.message)) return null;
   const ts = new Date(event.timestamp).toISOString();
   const parsed = parseMessage(event.message);
   if (parsed && typeof parsed.code === 'string') {
-    const { level, code, ...meta } = parsed;
+    const { logId, level, code, ...meta } = parsed;
     return {
-      logId: `cw_${event.eventId}`,
+      // Use the original logId emitted by the logger so the endpoint can
+      // dedupe against the in-process ring buffer.
+      logId: logId || `cw_${event.eventId}`,
       ts,
       level: level === 'error' || level === 'warn' ? level : 'error',
       code,
@@ -49,11 +64,10 @@ export async function fetchCloudWatchLogs({ since }) {
   if (!process.env.AWS_REGION) {
     return { entries: [], logGroups: [], error: 'AWS_REGION not set' };
   }
-  let client;
   try {
     const mod = await import('@aws-sdk/client-cloudwatch-logs');
     const { CloudWatchLogsClient, DescribeLogGroupsCommand, FilterLogEventsCommand } = mod;
-    client = new CloudWatchLogsClient({});
+    const client = new CloudWatchLogsClient({});
     const prefix = logGroupPrefix();
 
     const groupsRes = await client.send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix, limit: 20 }));
@@ -63,17 +77,25 @@ export async function fetchCloudWatchLogs({ since }) {
     }
 
     const startTime = since ? new Date(since).getTime() : Date.now() - 24 * 60 * 60 * 1000;
-    const perGroup = await Promise.all(logGroups.map(async (name) => {
+    const queries = logGroups.flatMap((name) =>
+      FILTER_PATTERNS.map((pattern) => ({ name, pattern })),
+    );
+    const results = await Promise.all(queries.map(async ({ name, pattern }) => {
       const res = await client.send(new FilterLogEventsCommand({
         logGroupName: name,
-        filterPattern: ERROR_PATTERN,
+        filterPattern: pattern,
         startTime,
-        limit: PER_GROUP_LIMIT,
+        limit: PER_PATTERN_LIMIT,
       }));
-      return (res.events || []).map((e) => normalizeEvent(e, name));
+      return (res.events || []).map((e) => normalizeEvent(e, name)).filter(Boolean);
     }));
 
-    const entries = perGroup.flat().sort((a, b) => b.ts.localeCompare(a.ts));
+    // Dedupe across pattern queries (same event can match both patterns).
+    const byEventId = new Map();
+    for (const entry of results.flat()) {
+      if (!byEventId.has(entry.logId)) byEventId.set(entry.logId, entry);
+    }
+    const entries = [...byEventId.values()].sort((a, b) => b.ts.localeCompare(a.ts));
     return { entries, logGroups, error: null };
   } catch (err) {
     return { entries: [], logGroups: [], error: err?.message || String(err) };

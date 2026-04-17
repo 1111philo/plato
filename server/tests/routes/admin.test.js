@@ -552,4 +552,5 @@ describe('GET /v1/admin/logs', () => {
     assert.equal(data.cloudwatch.error, null);
     assert.deepEqual(data.cloudwatch.logGroups, []);
   });
+
 });
