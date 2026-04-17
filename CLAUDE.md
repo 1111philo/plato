@@ -36,7 +36,7 @@ plato is an open-source, AI-powered [microlearning](https://philosophers.group/p
 - Pacing: lessons target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
 - Admin dashboard at `/plato` (lazy-loaded, role-gated) with Lesson Pacing KPIs (on-target rate, over-target count, hard-limit hits)
-- Server logging: `server/src/lib/logger.js` — ring-buffer logger keyed by snake_case `code` strings (not free-form messages). Each call mirrors a structured JSON line to stdout that includes `logId`, so Lambda → CloudWatch captures the same shape and the endpoint can dedupe events retrieved from both lanes. `GET /v1/admin/logs` merges the in-process buffer with CloudWatch (Lambda has `logs:FilterLogEvents` scoped to `/aws/lambda/plato-${Stage}-*`). CloudWatch is queried with two required-term patterns (`ERROR` and `"Task timed out"`) — never the all-optional `?FOO ?BAR` form, which CloudWatch treats as match-everything. The pilot agent is the primary consumer: response is pre-aggregated into `groups` by code with counts, firstSeen/lastSeen, and a sample entry. CloudWatch failures populate `cloudwatch.error` instead of silently returning empty.
+- Server logging: `server/src/lib/logger.js` — ring-buffer logger keyed by snake_case `code` strings (not free-form messages). Each call mirrors a structured JSON line to stdout that includes `logId`, so Lambda → CloudWatch captures the same shape and the endpoint can dedupe events retrieved from both lanes. `GET /v1/admin/logs` merges the in-process buffer with CloudWatch (Lambda has `logs:FilterLogEvents` scoped to `/aws/lambda/${AWS::StackName}-*` plus `logs:DescribeLogGroups` on `*` since that action doesn't support per-group scoping). The log-group prefix for queries is derived from stage (prod → `/aws/lambda/plato-`, playground → `/aws/lambda/plato-playground-`) to match CloudFormation's naming — the prod stack is bare `plato`, not `plato-prod`. CloudWatch is queried with two required-term patterns (`ERROR` and `"Task timed out"`) — never the all-optional `?FOO ?BAR` form, which CloudWatch treats as match-everything. The pilot agent (via `scripts/pilot-report.js`) is the primary consumer: response is pre-aggregated into `groups` by code with counts, firstSeen/lastSeen, and a sample entry, and the pilot workflow itself no longer needs AWS credentials (no `AWS_ROLE_ARN` secret, no `aws-actions/configure-aws-credentials` step — all log reads are proxied through the endpoint via admin JWT). CloudWatch failures populate `cloudwatch.error` instead of silently returning empty.
 
 ## Development
 
@@ -54,7 +54,7 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000)
 cd server && npm test
 ```
 
-122 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
+124 tests. AI route tests mock `ai-provider.js` (not `bedrock.js`).
 
 ## Deploy to AWS
 
