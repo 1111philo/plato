@@ -15,6 +15,7 @@ function bufferSize() {
 
 const buffer = [];
 let cursor = 0;
+let seq = 0;
 
 function coerceCode(raw) {
   if (typeof raw !== 'string' || !raw.length) return 'unknown';
@@ -48,7 +49,10 @@ function push(level, rawCode, rawMeta) {
   const originalCode = typeof rawCode === 'string' ? rawCode : '';
   const code = coerceCode(originalCode);
   const meta = sanitizeMeta(rawMeta);
-  const entry = { logId: nextLogId(), ts: new Date().toISOString(), level, code, meta };
+  // `seq` provides a monotonic ordering that doesn't collapse when multiple
+  // entries land within the same millisecond (which ts alone does on fast
+  // runners — CI hits this routinely).
+  const entry = { logId: nextLogId(), seq: ++seq, ts: new Date().toISOString(), level, code, meta };
 
   const size = bufferSize();
   if (buffer.length < size) {
@@ -84,7 +88,8 @@ export const logger = {
       if (sinceMs && new Date(e.ts).getTime() < sinceMs) continue;
       result.push(e);
     }
-    result.sort((a, b) => b.ts.localeCompare(a.ts));
+    // Newest first. Use ts primarily, fall back to seq for same-ms ties.
+    result.sort((a, b) => b.ts.localeCompare(a.ts) || b.seq - a.seq);
     return result.slice(0, limit);
   },
 
@@ -108,6 +113,7 @@ export const logger = {
   _reset() {
     buffer.length = 0;
     cursor = 0;
+    seq = 0;
   },
 
   _bufferSize: bufferSize,
