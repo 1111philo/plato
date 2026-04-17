@@ -147,7 +147,7 @@ The `main` branch is protected — direct pushes are not allowed. All changes go
 1. Create a branch from `main`.
 2. Make focused, well-described commits.
 3. Run tests — they must pass.
-4. Open a pull request with a clear summary of what changed and why.
+4. Open a pull request with a clear summary of what changed and why. An automated reviewer (`claude[bot]`) will post a review; the `review` status check must pass before merging.
 
 When a PR is merged to `main`, a new `Beta-RC-N` git tag and GitHub release are created automatically. Version is tag-based — `version.json` is not tracked in git and is generated at deploy time.
 

@@ -21,10 +21,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Skip re-review of plato-pilot fixup commits
+        id: guard
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        run: |
+          AUTHOR_EMAIL=$(git log -1 --format='%ae' "${{ github.event.pull_request.head.sha }}")
+          echo "author=$AUTHOR_EMAIL" >> "$GITHUB_OUTPUT"
+          if [ "$AUTHOR_EMAIL" = "plato-pilot@users.noreply.github.com" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Head commit authored by plato-pilot; skipping re-review to avoid duplicate reviews on revise fixups."
+          fi
       - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip != 'true'
         with:
           node-version: 20
       - uses: anthropics/claude-code-action@v1
+        if: steps.guard.outputs.skip != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
