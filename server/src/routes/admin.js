@@ -687,15 +687,18 @@ admin.post('/v1/admin/slack/invites', async (c) => {
 });
 
 // GET /v1/admin/stats/lessons — lesson pacing KPIs
-// MAX_EXCHANGES is not a hard cutoff — it's the target for good lesson pacing.
-// Lessons always run until the exemplar is achieved (progress >= 10).
+// MAX_EXCHANGES is a design target, never a cutoff. Lessons always run until
+// the coach awards progress 10 — the system does not force-complete anyone.
+// `extendedThreshold` (2x target) is informational only: a lesson that runs
+// that long usually means the lesson design mismatched the learner, not that
+// the coach should close harder.
 admin.get('/v1/admin/stats/lessons', async (c) => {
   // MAX_EXCHANGES imported at top from lesson-limits.js
-  const hardLimit = MAX_EXCHANGES * 2;
+  const extendedThreshold = MAX_EXCHANGES * 2;
   const users = await db.listAllUsers();
   let withinTarget = 0;
   let overTarget = 0;
-  let hitHardLimit = 0;
+  let extendedLessons = 0; // completed lessons that ran past 2× target
   let totalExchangesWithin = 0;
   let totalExchangesOver = 0;
   let activeLessons = 0;
@@ -709,15 +712,13 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
       if (!kb) continue;
       if (kb.status === 'completed') {
         const exchanges = kb.activitiesCompleted || 0;
-        if (exchanges >= hardLimit && kb.progress < 10) {
-          hitHardLimit++;
-          totalExchangesOver += exchanges;
-        } else if (exchanges <= MAX_EXCHANGES) {
+        if (exchanges <= MAX_EXCHANGES) {
           withinTarget++;
           totalExchangesWithin += exchanges;
         } else {
           overTarget++;
           totalExchangesOver += exchanges;
+          if (exchanges >= extendedThreshold) extendedLessons++;
         }
         // Compute duration if timestamps are available
         if (kb.startedAt && kb.completedAt) {
@@ -739,7 +740,7 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     }
   }
 
-  const totalCompletions = withinTarget + overTarget + hitHardLimit;
+  const totalCompletions = withinTarget + overTarget;
   const avgDurationMinutes = durations.length
     ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1)
     : null;
@@ -747,12 +748,12 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     totalCompletions,
     withinTarget,
     overTarget,
-    hitHardLimit,
+    extendedLessons, // subset of overTarget that ran past 2× target — informational
     exchangeTarget: MAX_EXCHANGES,
-    hardLimit,
+    extendedThreshold,
     avgExchangesPerCompletion: totalCompletions ? +((totalExchangesWithin + totalExchangesOver) / totalCompletions).toFixed(1) : null,
     avgExchangesWithinTarget: withinTarget ? +(totalExchangesWithin / withinTarget).toFixed(1) : null,
-    avgExchangesOverTarget: (overTarget + hitHardLimit) ? +(totalExchangesOver / (overTarget + hitHardLimit)).toFixed(1) : null,
+    avgExchangesOverTarget: overTarget ? +(totalExchangesOver / overTarget).toFixed(1) : null,
     avgDurationMinutes,
     activeLessons,
   });

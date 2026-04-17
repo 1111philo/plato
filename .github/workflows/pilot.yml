@@ -48,11 +48,16 @@ jobs:
             - Run `gh issue list --state open --limit 20` to see current issues
 
             ## Step 2: Triage — pick ONE thing (1 turn)
-            Priority: high-count error codes > KPI regression (on-target <75%) > bug issues > enhancement issues > skip.
+            Priority: high-count error codes > open bug issues > open enhancement issues > skip.
             The errors table is keyed by `code` (e.g. `unhandled_error`, `ai_stream_error`, `cloudwatch_raw`) with counts and first/last seen. Pick the code with the highest count that looks actionable.
             If the report shows `CloudWatch fetch failed`, the in-process buffer errors are still reliable but Lambda runtime errors (timeouts etc.) may be missing — factor that uncertainty in.
             If an issue and a log error overlap, that's the strongest signal.
             If nothing is actionable, stop immediately — do not invent work.
+
+            ### Anti-goals (hard rules — never violate)
+            - **Lessons never have hard stops.** plato's coaching philosophy is "move people, not force people." Do NOT introduce any change that cuts a learner off mid-lesson, auto-completes a lesson based on exchange count, or tells the coach to award progress 10 regardless of what the learner has demonstrated. The coach always decides when the exemplar has been met.
+            - **Over-target completions are a design signal, not a bug.** A low on-target rate means the lesson design or coach prompt may need tuning. NEVER fix it by tightening pacing directives into forced closures. If you're tempted to touch `pacingDirective` strings or the `MAX_EXCHANGES`-based completion logic in `client/src/lib/lessonEngine.js` to "reduce over-target," stop and pick a different signal.
+            - The `extendedLessons` KPI is informational. Do not treat it as a metric to drive to zero.
 
             ## Step 3: Implement (≤15 turns)
             - BEFORE editing any file, create a working branch:
