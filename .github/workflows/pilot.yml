@@ -62,14 +62,19 @@ jobs:
             If nothing is actionable, stop immediately — do not invent work.
 
             ## Step 3: Implement (≤15 turns)
+            - BEFORE editing any file, create a working branch:
+              `BRANCH="pilot/$(date +%Y-%m-%d)-<short-slug>" && git checkout -b "$BRANCH"`
+            - Do NOT commit directly to main under any circumstances. If `gh pr create` fails
+              with "you must first push the current branch to a remote," STOP — do not push
+              to main. Start over on a branch.
             - Read only the files you need to change
             - Make exactly ONE focused change
             - No breaking changes, data migrations, or large refactors
 
             ## Step 4: Verify and ship (≤5 turns)
             - Run `cd server && npm ci && npm test` — all tests must pass
-            - Create a PR:
+            - Commit on your branch, then push: `git push -u origin "$BRANCH"`
+            - Create a PR with `gh pr create --head "$BRANCH" --label plato-pilot`:
               - Title: imperative mood, under 70 chars
               - Body: ## Triage\nWhich signal and why.\n## Changes\nWhat and why.
               - Reference any related issue (e.g. "Fixes #42")
-              - Add the `plato-pilot` label
