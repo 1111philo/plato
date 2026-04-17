@@ -49,7 +49,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
-          display_report: true
+          # display_report intentionally disabled: it auto-posts an aggregated
+          # review from buffered inline annotations at end of session, which
+          # races with the explicit `gh pr review` call in the prompt and
+          # double-submits. See PR #73 (2026-04-17) where two reviews were
+          # posted 6s apart with slightly different bodies.
           claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 20"
           prompt: |
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
