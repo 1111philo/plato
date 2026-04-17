@@ -58,6 +58,16 @@ jobs:
               both)       EVENTS="deploy-prod deploy-playground" ;;
               *)          echo "::error::Unknown target '$TARGET'"; exit 1 ;;
             esac
+            # Warn if deploying prod from a branch that's not main — the
+            # dispatched SHA is this branch's HEAD, which may not be what
+            # you want.
+            case "$TARGET" in
+              prod|both)
+                if [ "$REF_NAME" != "main" ]; then
+                  echo "::warning::Deploying to prod from '$REF_NAME' (not main). SHA $SHA will go live."
+                fi
+                ;;
+            esac
           else
             case "$REF_NAME" in
               main)       EVENTS="deploy-prod" ;;
