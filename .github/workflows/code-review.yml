@@ -21,15 +21,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Skip re-review of plato-pilot fixup commits
+      - name: Skip if a claude review already exists for this commit
         id: guard
-        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          AUTHOR_EMAIL=$(git log -1 --format='%ae' "${{ github.event.pull_request.head.sha }}")
-          echo "author=$AUTHOR_EMAIL" >> "$GITHUB_OUTPUT"
-          if [ "$AUTHOR_EMAIL" = "plato-pilot@users.noreply.github.com" ]; then
+          # Per-commit idempotency. If a claude[bot] review already exists
+          # for the current HEAD sha, don't post another one. New commits
+          # (different sha) still get reviewed as normal.
+          EXISTING=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.user.login==\"claude[bot]\") | select(.commit_id==\"$HEAD_SHA\")] | length")
+          if [ "${EXISTING:-0}" -gt 0 ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Head commit authored by plato-pilot; skipping re-review to avoid duplicate reviews on revise fixups."
+            echo "A claude[bot] review already exists for $HEAD_SHA; skipping."
           fi
       - uses: actions/setup-node@v4
         if: steps.guard.outputs.skip != 'true'
@@ -37,6 +44,8 @@ jobs:
           node-version: 20
       - uses: anthropics/claude-code-action@v1
         if: steps.guard.outputs.skip != 'true'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
@@ -70,8 +79,13 @@ jobs:
             - Things that are already correct
 
             ## Output
-            ALWAYS post a review comment on the PR using `gh pr review` with your findings.
-            If tests fail: `gh pr review --request-changes --body "Tests fail: ..."`
-            If blocking issues: `gh pr review --request-changes --body "..."` with file:line references.
-            If clean: `gh pr review --approve --body "Tests pass. No bugs, security, or accessibility issues found."`
+            Submit exactly ONE review via `gh pr review`, then stop. Do not retry,
+            update, amend, or supplement it with extra `gh pr review`, `gh pr comment`,
+            or `gh api` calls — if the first call succeeded you are done.
+
+            Pick one outcome:
+            - Tests fail → `gh pr review $PR_NUMBER --request-changes --body "Tests fail: ..."`
+            - Blocking issues → `gh pr review $PR_NUMBER --request-changes --body "..."` with file:line references
+            - Clean → `gh pr review $PR_NUMBER --approve --body "Tests pass. No bugs, security, or accessibility issues found."`
+
             Be direct. Short is better than thorough.
