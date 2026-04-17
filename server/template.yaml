@@ -65,11 +65,17 @@ Resources:
                 - bedrock:InvokeModelWithResponseStream
               Resource: '*'
         - Statement:
+            # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow
-              Action:
-                - logs:FilterLogEvents
-                - logs:DescribeLogGroups
+              Action: logs:FilterLogEvents
               Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
+            # DescribeLogGroups lists groups — AWS requires Resource: * for
+            # this action even when the caller only wants to see a subset.
+            # The caller applies a logGroupNamePrefix filter, so we only see
+            # plato log groups in practice.
+            - Effect: Allow
+              Action: logs:DescribeLogGroups
+              Resource: "*"
       Events:
         ApiCatchAll:
           Type: HttpApi
@@ -118,11 +124,17 @@ Resources:
                 - bedrock:InvokeModelWithResponseStream
               Resource: '*'
         - Statement:
+            # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow
-              Action:
-                - logs:FilterLogEvents
-                - logs:DescribeLogGroups
+              Action: logs:FilterLogEvents
               Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
+            # DescribeLogGroups lists groups — AWS requires Resource: * for
+            # this action even when the caller only wants to see a subset.
+            # The caller applies a logGroupNamePrefix filter, so we only see
+            # plato log groups in practice.
+            - Effect: Allow
+              Action: logs:DescribeLogGroups
+              Resource: "*"
       FunctionUrlConfig:
         AuthType: NONE
         InvokeMode: RESPONSE_STREAM
