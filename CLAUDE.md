@@ -36,6 +36,7 @@ plato is an open-source, AI-powered [microlearning](https://philosophers.group/p
 - Pacing: lessons target 11 exchanges (~20 min). No hard cutoff — coach gets escalating `pacingDirective` in context JSON at 11+, 15+, 20+ exchanges. Hard limit at 2x target (22) as safety net.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched via `/v1/branding` (public, no auth)
 - Admin dashboard at `/plato` (lazy-loaded, role-gated) with Lesson Pacing KPIs (on-target rate, over-target count, hard-limit hits)
+- Server logging: `server/src/lib/logger.js` — ring-buffer logger keyed by snake_case `code` strings (not free-form messages). Emits structured JSON to stdout so Lambda → CloudWatch captures the same shape. `GET /v1/admin/logs` merges the in-process buffer with CloudWatch (the Lambda has `logs:FilterLogEvents` scoped to `/aws/lambda/plato-${Stage}-*`). The pilot agent is the primary consumer — response is pre-aggregated into `groups` by code with counts, firstSeen/lastSeen, and a sample entry. CloudWatch failures populate `cloudwatch.error` instead of silently returning empty.
 
 ## Development
 

@@ -8,6 +8,8 @@ import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMe
 import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
 import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-limits.js';
+import { logger } from '../lib/logger.js';
+import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 
 const admin = new Hono();
 
@@ -754,6 +756,87 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     avgDurationMinutes,
     activeLessons,
   });
+});
+
+// GET /v1/admin/logs — recent server errors/warnings for the pilot agent.
+// Merges in-process ring buffer with CloudWatch (default on). Failures from
+// CloudWatch populate `cloudwatch.error` rather than silently returning empty.
+admin.get('/v1/admin/logs', async (c) => {
+  const url = new URL(c.req.url);
+  const rawSince = url.searchParams.get('since');
+  const levelParam = url.searchParams.get('level');
+  const limitParam = parseInt(url.searchParams.get('limit') || '200', 10);
+  const cloudwatchParam = url.searchParams.get('cloudwatch');
+  const view = url.searchParams.get('view') || 'both';
+
+  const level = levelParam === 'error' || levelParam === 'warn' ? levelParam : undefined;
+  const limit = Math.min(Math.max(Number.isFinite(limitParam) ? limitParam : 200, 1), 1000);
+  const includeCloudWatch = cloudwatchParam !== '0';
+
+  let since;
+  if (rawSince) {
+    const t = new Date(rawSince).getTime();
+    if (!Number.isFinite(t)) return c.json({ error: 'Invalid since parameter' }, 400);
+    since = new Date(t).toISOString();
+  } else {
+    since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  const bufferEntries = logger.recent({ since, level, limit: logger._bufferSize() }).map((e) => ({ ...e, source: 'buffer' }));
+
+  let cloudwatch = { logGroups: [], error: null };
+  let cwEntries = [];
+  if (includeCloudWatch) {
+    const cw = await fetchCloudWatchLogs({ since });
+    cloudwatch = { logGroups: cw.logGroups, error: cw.error };
+    cwEntries = (cw.entries || []).filter((e) => !level || e.level === level);
+  }
+
+  // Merge, dedupe by logId, sort newest-first.
+  const merged = new Map();
+  for (const e of [...bufferEntries, ...cwEntries]) merged.set(e.logId, e);
+  const entries = [...merged.values()].sort((a, b) => b.ts.localeCompare(a.ts));
+
+  // Build groups across both sources.
+  const groups = new Map();
+  for (const e of entries) {
+    const g = groups.get(e.code);
+    if (!g) {
+      groups.set(e.code, {
+        code: e.code,
+        level: e.level,
+        count: 1,
+        firstSeen: e.ts,
+        lastSeen: e.ts,
+        sources: [e.source],
+        sample: e,
+      });
+    } else {
+      g.count++;
+      if (e.ts < g.firstSeen) g.firstSeen = e.ts;
+      if (e.ts > g.lastSeen) { g.lastSeen = e.ts; g.sample = e; }
+      if (!g.sources.includes(e.source)) g.sources.push(e.source);
+    }
+  }
+  const groupsList = [...groups.values()].sort((a, b) => b.count - a.count);
+
+  const counts = { error: 0, warn: 0 };
+  for (const e of entries) {
+    if (e.level === 'error' || e.level === 'warn') counts[e.level]++;
+  }
+
+  const windowMs = Date.now() - new Date(since).getTime();
+  const response = {
+    windowHours: +(windowMs / 3600000).toFixed(2),
+    since,
+    counts,
+    buffer: { size: logger._bufferSize(), used: bufferEntries.length },
+    cloudwatch,
+  };
+  if (view !== 'entries') response.groups = groupsList;
+  if (view !== 'groups') response.entries = entries.slice(0, limit);
+
+  return c.json(response);
 });
 
 export default admin;
