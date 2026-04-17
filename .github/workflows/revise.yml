@@ -76,7 +76,7 @@ jobs:
               `gh pr comment $PR_NUMBER --body "Addressed review feedback in <sha>. Further changes require human review."`
 
       - name: Remove revised label if agent failed
-        if: failure()
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
