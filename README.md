@@ -419,6 +419,20 @@ The AI chat is built for screen reader compatibility following the [MITRE Chatbo
 - **Focus management** — when focus is in the chat log, new messages receive focus automatically; when focus is elsewhere, only the status announcement fires
 - **Tab notification** — document title flashes "(New message)" when the browser tab is in the background
 
+## Reporting issues
+
+Issues and feature requests go in [GitHub Issues](https://github.com/1111philo/plato/issues). An automated intake agent reads every new issue and either tags it `ready-for-pilot` (enough detail to act on) or `needs-info` (replies with a few clarifying questions). To skip the back-and-forth, include upfront:
+
+- The URL or page where it happened
+- What you did (exact steps)
+- What you expected vs. what actually happened
+- Any error message, screenshot, or browser console output
+- Your browser + OS, and whether you were signed in as a learner or admin
+
+The intake agent only asks for things you can provide. It never asks you to inspect code — that's our job.
+
+Questions, discussions, or general feedback (not tied to a specific bug or enhancement) are welcome too — the intake agent will leave those for a human to respond to.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, guidelines, and how to submit changes.
