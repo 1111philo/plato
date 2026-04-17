@@ -46,6 +46,7 @@ jobs:
             - Read /tmp/pilot-report.md for today's KPI snapshot and server errors (by code, with counts and samples)
             - Read CLAUDE.md for architecture and conventions
             - Run `gh issue list --state open --limit 20` to see current issues
+            - Run `gh pr list --label plato-pilot --state all --limit 20 --json number,title,state,mergedAt,closedAt,body` to see your own recent work
 
             ## Step 2: Triage — pick ONE thing (1 turn)
             Priority: high-count error codes > open bug issues > open enhancement issues > skip.
@@ -53,6 +54,13 @@ jobs:
             If the report shows `CloudWatch fetch failed`, the in-process buffer errors are still reliable but Lambda runtime errors (timeouts etc.) may be missing — factor that uncertainty in.
             If an issue and a log error overlap, that's the strongest signal.
             If nothing is actionable, stop immediately — do not invent work.
+
+            ### Cross-reference your own recent PRs (HARD rule)
+            Before committing to a signal, check the recent `plato-pilot` PRs you just listed:
+            - If a PR addressing the same topic is **still OPEN**, do NOT open a duplicate. Either pick a different signal or stop.
+            - If a similar PR was **CLOSED without being merged**, treat that as a strong anti-signal — the maintainer already rejected that approach. Pick a different signal or stop. Do NOT re-propose a closed-without-merge change with a different title.
+            - If a similar PR was **MERGED recently**, the fix is already shipped. Pick a different signal.
+            Only a genuinely new topic should get a new PR.
 
             ### Anti-goals (hard rules — never violate)
             - **Lessons never have hard stops.** plato's coaching philosophy is "move people, not force people." Do NOT introduce any change that cuts a learner off mid-lesson, auto-completes a lesson based on exchange count, or tells the coach to award progress 10 regardless of what the learner has demonstrated. The coach always decides when the exemplar has been met.
