@@ -1,43 +1,71 @@
-name: Bump version
+name: Tag version
+
+# On push to main (post-merge), create the next Beta-RC-N git tag and a
+# GitHub release. Tags are not covered by the branch protection ruleset,
+# so this runs with the default GITHUB_TOKEN and no bypass is needed.
+#
+# version.json lives only in builds — it's generated at deploy time from
+# the latest tag (see the private deploy fork's deploy.yml). No file is
+# tracked in git, no commits land on main from this workflow.
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  bump:
-    if: github.event.pull_request.merged == true
+  tag:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Bump RC number
-        id: version
+      - name: Skip if commit already tagged
+        id: existing
         run: |
-          current=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
-          rc_num=$(echo "$current" | grep -oP '\d+$')
-          new_num=$((rc_num + 1))
-          new_version="Beta-RC-${new_num}"
-          echo "{\"version\": \"${new_version}\"}" > version.json
-          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
-          echo "Bumped $current -> $new_version"
+          # Idempotent: if this commit already carries a Beta-RC-* tag
+          # (e.g. workflow_dispatch re-run after the initial push-trigger
+          # already tagged it), don't create a second tag.
+          existing=$(git tag --points-at HEAD | grep -E '^Beta-RC-[0-9]+$' | head -1 || true)
+          if [ -n "$existing" ]; then
+            echo "Commit already tagged as $existing — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Commit and tag
+      - name: Determine next version
+        id: version
+        if: steps.existing.outputs.skip == 'false'
+        run: |
+          # Find highest existing Beta-RC-N tag (sort numerically on the trailing number).
+          latest_num=$(git tag -l "Beta-RC-*" \
+            | sed 's/^Beta-RC-//' \
+            | grep -E '^[0-9]+$' \
+            | sort -n \
+            | tail -1)
+          next_num=$(( ${latest_num:-0} + 1 ))
+          next="Beta-RC-${next_num}"
+          echo "Latest: ${latest_num:-<none>} → Next: $next"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.existing.outputs.skip == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add version.json
-          git commit -m "Bump version to ${{ steps.version.outputs.version }}"
-          git tag "${{ steps.version.outputs.version }}"
-          git push && git push --tags
+          git tag "${{ steps.version.outputs.next }}"
+          git push origin "${{ steps.version.outputs.next }}"
 
-      - name: Create release
+      - name: Create GitHub release
+        if: steps.existing.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.version.outputs.version }}" \
-            --title "${{ steps.version.outputs.version }}" \
+          gh release create "${{ steps.version.outputs.next }}" \
+            --title "${{ steps.version.outputs.next }}" \
             --generate-notes

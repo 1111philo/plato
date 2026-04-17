@@ -207,8 +207,11 @@ cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
-cp ../version.json .aws-sam/build/PlatoApiFunction/
-cp ../version.json .aws-sam/build/PlatoStreamFunction/
+
+# Generate version.json from the latest Beta-RC-* tag
+VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')
+echo "{\"version\":\"${VERSION}\"}" > .aws-sam/build/PlatoApiFunction/version.json
+cp .aws-sam/build/PlatoApiFunction/version.json .aws-sam/build/PlatoStreamFunction/version.json
 
 # Deploy (default stage is prod)
 sam deploy
@@ -306,6 +309,7 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
+          fetch-depth: 0  # need history + tags so we can read the latest Beta-RC-* tag
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -325,9 +329,11 @@ jobs:
           mkdir -p server/.aws-sam/build/PlatoApiFunction/client-content server/.aws-sam/build/PlatoStreamFunction/client-content
           cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
           cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
-      - run: |
-          cp version.json server/.aws-sam/build/PlatoApiFunction/
-          cp version.json server/.aws-sam/build/PlatoStreamFunction/
+      - name: Generate version.json from latest tag
+        run: |
+          VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')
+          echo "{\"version\":\"${VERSION}\"}" > server/.aws-sam/build/PlatoApiFunction/version.json
+          cp server/.aws-sam/build/PlatoApiFunction/version.json server/.aws-sam/build/PlatoStreamFunction/version.json
       - run: >
           cd server && sam deploy
           --config-env ci
@@ -387,7 +393,7 @@ In both cases, DynamoDB restores to a new table — rename or swap as needed.
 
 ## Versioning
 
-plato uses a `Beta-RC-X` version scheme stored in `version.json`. The version is bumped automatically when a PR is merged to main via the `version-bump.yml` GitHub Action. The current version is displayed in the admin sidebar with a link to the GitHub repo.
+plato uses a `Beta-RC-X` version scheme tracked via git tags. On each push to `main` (typically from a merged PR), `.github/workflows/version-bump.yml` creates the next `Beta-RC-N` tag and a matching GitHub release. No version file is tracked in git — `version.json` is generated at deploy time from the latest tag and included in the Lambda bundle. The current version is displayed in the admin sidebar with a link to the GitHub repo.
 
 The `main` branch is protected — all changes require a pull request.
 
