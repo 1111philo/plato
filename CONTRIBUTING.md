@@ -167,6 +167,8 @@ When you open a new issue, the intake agent (`.github/workflows/issue-intake.yml
 - **Needs more info** — adds the `needs-info` label and posts up to 3 focused clarifying questions. Reply inline when you can.
 - **Spam, off-topic, or abusive** — closes the issue with a polite comment explaining why and inviting you to reopen if we got it wrong. Vague or low-effort issues are *not* treated as spam — those go to `needs-info`.
 
+If you reopen a closed issue, or reopen an issue after adding the details we asked for, the intake agent re-runs and re-classifies.
+
 To file the most useful bug reports up front: include the URL / page, what you did, what you expected, what happened, any error message or screenshot, and your browser + role (learner / admin). The intake agent only asks for things you (the reporter) can provide — it won't ask you to inspect code.
 
 ### After merge

@@ -2,7 +2,7 @@ name: issue-intake
 
 on:
   issues:
-    types: [opened]
+    types: [opened, reopened]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -12,12 +12,19 @@ on:
 
 jobs:
   intake:
-    # For `issues: opened` events, skip bot-authored issues (prevents loops) and
-    # issues that already carry an intake label (idempotency). For manual
-    # dispatches, always run — the operator is explicitly asking for a re-run.
+    # - `opened`: skip bot-authored issues (loop prevention) and issues already
+    #   carrying an intake label (idempotency).
+    # - `reopened`: always run. A reopen is an explicit signal from the reporter
+    #   that the previous classification needs revisiting (either "you closed
+    #   this wrongly" or "I replied to needs-info, please re-check"). The
+    #   prompt's re-run guard handles the already-labeled case.
+    # - `workflow_dispatch`: always run — the operator is explicitly asking.
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (!contains(github.event.issue.user.login, '[bot]') &&
+      (github.event_name == 'issues' && github.event.action == 'reopened' &&
+       !contains(github.event.issue.user.login, '[bot]')) ||
+      (github.event_name == 'issues' && github.event.action == 'opened' &&
+       !contains(github.event.issue.user.login, '[bot]') &&
        !contains(github.event.issue.labels.*.name, 'ready-for-pilot') &&
        !contains(github.event.issue.labels.*.name, 'needs-info'))
     runs-on: ubuntu-latest
@@ -68,14 +75,23 @@ jobs:
             **Only work on `$ISSUE_NUMBER`** — do not scan other issues. The workflow
             fires per-issue; this run's job is one issue.
 
-            ## Re-run guard (manual dispatches)
-            If the issue already carries `ready-for-pilot` or `needs-info`, you're in
-            a manual re-run. Re-engage ONLY if the existing classification is clearly
-            wrong (e.g. a `needs-info` issue where the reporter already replied with
-            everything needed, or a `ready-for-pilot` that's actually vague). Otherwise
-            print a short explanation and stop without editing the issue. When you do
-            re-engage, remove the old label first:
-            `gh issue edit $ISSUE_NUMBER --remove-label <old-label>` before adding the new one.
+            ## Re-run guard (reopens and manual dispatches)
+            If this run is a **reopen** or a **manual dispatch**, the issue may
+            already have history. Handle the likely cases:
+
+            - Issue previously closed by the intake agent (outcome C) and now
+              reopened, no intake label → the reporter is saying you misread it.
+              Treat this like a fresh classification but take the reopen as a strong
+              hint that it IS a real plato issue. Prefer outcome A or B; only close
+              again (outcome C) if it's clearly still spam/off-topic on a second read.
+            - `needs-info` label present, reporter has replied in comments → check the
+              comments. If they answered enough, remove `needs-info` and switch to
+              `ready-for-pilot`. If they still haven't, leave `needs-info` and stop.
+            - `ready-for-pilot` label present → almost always leave alone unless the
+              classification is obviously wrong.
+
+            When switching labels, remove the old one first:
+            `gh issue edit $ISSUE_NUMBER --remove-label <old-label>` before adding the new.
 
             ## Step 2: Classify and act (1 pass, idempotent)
 
