@@ -4,7 +4,7 @@ Project-level instructions for Claude Code sessions working on plato.
 
 ## Project overview
 
-plato is an open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused lessons in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
+plato is an Open Source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused lessons in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
 
 - `client/` — React 19 + Vite SPA
 - `server/` — Node.js + Hono, deployed as AWS Lambda (SAM)
