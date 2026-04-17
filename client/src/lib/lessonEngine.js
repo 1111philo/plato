@@ -274,13 +274,13 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   // then increasingly decisive once over it.
   const over = completed - MAX_EXCHANGES;
   if (over >= 4) {
-    // 15+ exchanges: close unconditionally — learner has put in sufficient effort
+    // 15+ exchanges: backup close — in case coach ignored OVER TARGET
     context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Do not assign any new work or ask any new questions. Look at what this learner has already demonstrated across all exchanges. Award progress 10 now, close the lesson warmly in 1-2 sentences, and ask for feedback.';
   } else if (over >= 0) {
-    // 11-14 exchanges: one final task, then close regardless of outcome
-    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE final task in a single sentence using only what the learner has already shown. Accept any reasonable attempt as sufficient — award progress 10 on their next response. Keep your response to 2 sentences.';
-  } else if (completed >= MAX_EXCHANGES - 3) {
-    // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
+    // 11+ exchanges: close now — do not give another task or wait for a response
+    context.pacingDirective = 'OVER TARGET — Do not give any new tasks or questions. Award [PROGRESS: 10] in this response. Acknowledge the most meaningful work this learner has demonstrated and close the lesson warmly in 1-2 sentences. Then ask for feedback.';
+  } else if (completed >= MAX_EXCHANGES - 4) {
+    // 7-10 exchanges: pre-over-target warning — converge toward exemplar now
     const remaining = MAX_EXCHANGES - completed;
     context.pacingDirective = `NEAR LIMIT — ${remaining} exchange${remaining === 1 ? '' : 's'} remaining before target. Do not introduce any new concepts or objectives. Give ONE focused task that most directly demonstrates the exemplar using what the learner has already shown.`;
   }
