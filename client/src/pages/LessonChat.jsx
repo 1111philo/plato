@@ -43,6 +43,7 @@ export default function LessonChat() {
   const pendingAfterStreamRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const srClearTimeoutRef = useRef(null);
+  const srRafRef = useRef(null);
   const chatAreaRef = useRef(null);
   const notifyTitle = useTitleNotification(
     lesson ? `${lesson.name} — plato` : 'Lesson — plato'
@@ -93,8 +94,10 @@ export default function LessonChat() {
           // then auto-clear again after ~3s so the text doesn't linger in
           // the DOM as navigable static content.
           if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
+          if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
           setSrAnnouncement('');
-          requestAnimationFrame(() => {
+          srRafRef.current = requestAnimationFrame(() => {
+            srRafRef.current = null;
             setSrAnnouncement('New message from coach');
             srClearTimeoutRef.current = setTimeout(() => setSrAnnouncement(''), 3000);
           });
@@ -118,6 +121,7 @@ export default function LessonChat() {
 
   useEffect(() => () => {
     if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
+    if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
   }, []);
 
   // Move focus to the Objectives dialog title when it opens so screen
