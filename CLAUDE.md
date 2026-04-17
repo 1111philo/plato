@@ -65,8 +65,9 @@ cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
-cp ../version.json .aws-sam/build/PlatoApiFunction/
-cp ../version.json .aws-sam/build/PlatoStreamFunction/
+# version.json is generated at deploy time from the latest Beta-RC-* tag
+echo "{\"version\":\"$(git describe --tags --abbrev=0 --match='Beta-RC-*')\"}" > .aws-sam/build/PlatoApiFunction/version.json
+cp .aws-sam/build/PlatoApiFunction/version.json .aws-sam/build/PlatoStreamFunction/version.json
 sam deploy
 ```
 
@@ -100,7 +101,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Chat accessibility: the chat log uses `role="log"` with `aria-live="off"` and `aria-label="Chat log"` to prevent VoiceOver hijacking. New message announcements go through a separate `role="status"` live region that auto-clears ~3s after each announcement so stale text doesn't persist as navigable content. Streaming `AssistantMessage` components must set `streaming` prop to hide from screen readers. Individual messages are plain `<div>`s (no `role="article"`, no per-message `aria-label`) with inline sr-only speaker prefixes ("Coach says:" / "You said:") that flow as content, plus `data-chat-message` attributes for Alt+Arrow keyboard navigation (`useChatKeyboardNav` hook). The Objectives dialog moves focus to its title on open so screen readers announce the dialog's purpose. `useTitleNotification` hook flashes document title for background tab notifications. `ComposeBar` sends on Cmd/Ctrl+Enter; plain Enter inserts a newline.
 - Always commit and push after changes
 - Run `npm test` before deploying
-- Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main
+- Version is tag-based (`Beta-RC-X`). On push to main, `.github/workflows/version-bump.yml` creates the next `Beta-RC-N` git tag + GitHub release. There's no `version.json` tracked in git — the deploy workflow generates it from the latest tag before packaging Lambda. Local dev: no version.json means the admin sidebar hides the version label; that's intentional.
 - Deploy workflows live only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo. Deploys are automated via `repository_dispatch`: pushing to `main` here triggers `.github/workflows/trigger-deploy.yml`, which fires a `deploy-prod` dispatch to the private fork; pushing to `playground` fires `deploy-playground`. The private fork's `deploy.yml` / `deploy-playground.yml` listen for those events, check this repo out at the dispatched SHA, and run SAM deploy. No more pushing to the deploy remote. One-time setup: a `DEPLOY_DISPATCH_TOKEN` secret on this repo (fine-grained PAT with `contents:write` on the deploy fork). Manual deploy: run the `Deploy to AWS` or `Deploy to Playground` workflow from the private fork's Actions tab via `workflow_dispatch` with an optional `ref` input.
 - API responses for user groups use `{ userGroups: [...] }` consistently
 - Emails use classroom name/colors from settings, with "Powered by plato." footer linking to GitHub
@@ -133,4 +134,3 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/src/hooks/useTitleNotification.js` — document title flash for new-message notifications
 - `client/src/lib/constants.js` — microlearning limits (MAX_EXCHANGES, MIN/MAX_OBJECTIVES) and shared constants
 - `server/src/lib/lesson-limits.js` — server-side mirror of microlearning limits
-- `version.json` — current version (Beta-RC-X), auto-bumped on PR merge

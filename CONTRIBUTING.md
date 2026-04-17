@@ -149,7 +149,7 @@ The `main` branch is protected — direct pushes are not allowed. All changes go
 3. Run tests — they must pass.
 4. Open a pull request with a clear summary of what changed and why.
 
-When a PR is merged, the version in `version.json` is automatically bumped.
+When a PR is merged to `main`, a new `Beta-RC-N` git tag and GitHub release are created automatically. Version is tag-based — `version.json` is not tracked in git and is generated at deploy time.
 
 ## License
 
