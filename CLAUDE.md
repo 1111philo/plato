@@ -6,7 +6,7 @@ Project-level instructions for Claude Code sessions working on plato.
 
 plato is an open-source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused lessons in a continuous conversation with an AI coach, designed for completion in ~20 minutes.
 
-- `client/` — React 18 + Vite SPA
+- `client/` — React 19 + Vite SPA
 - `server/` — Node.js + Hono, deployed as AWS Lambda (SAM)
 - Brand: "plato" (always lowercase)
 
@@ -97,7 +97,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 ## Conventions
 
 - Accessibility is required: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.)
-- Chat accessibility: the chat log uses `role="log"` with `aria-live="off"` to prevent VoiceOver hijacking. New message announcements go through a separate `role="status"` live region. Streaming `AssistantMessage` components must set `streaming` prop to hide from screen readers. Messages use sr-only sender labels ("Coach says:" / "You said:") and `data-chat-message` attributes for Alt+Arrow keyboard navigation (`useChatKeyboardNav` hook). `useTitleNotification` hook flashes document title for background tab notifications.
+- Chat accessibility: the chat log uses `role="log"` with `aria-live="off"` and `aria-label="Chat log"` to prevent VoiceOver hijacking. New message announcements go through a separate `role="status"` live region that auto-clears ~3s after each announcement so stale text doesn't persist as navigable content. Streaming `AssistantMessage` components must set `streaming` prop to hide from screen readers. Individual messages are plain `<div>`s (no `role="article"`, no per-message `aria-label`) with inline sr-only speaker prefixes ("Coach says:" / "You said:") that flow as content, plus `data-chat-message` attributes for Alt+Arrow keyboard navigation (`useChatKeyboardNav` hook). The Objectives dialog moves focus to its title on open so screen readers announce the dialog's purpose. `useTitleNotification` hook flashes document title for background tab notifications. `ComposeBar` sends on Cmd/Ctrl+Enter; plain Enter inserts a newline.
 - Always commit and push after changes
 - Run `npm test` before deploying
 - Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main

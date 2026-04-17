@@ -462,7 +462,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
 
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
         <div className="mb-3">
-          <ChatArea lessonName="Knowledge Base Editor" announcement={srAnnouncement}>
+          <ChatArea announcement={srAnnouncement}>
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (
               <AssistantMessage content={displayText} streaming />
