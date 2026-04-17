@@ -12,7 +12,6 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,15 +20,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        if: ${{ env.AWS_ROLE_ARN != '' }}
-        continue-on-error: true
-        env:
-          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-2
 
       - name: Generate pilot report
         id: report
@@ -52,12 +42,14 @@ jobs:
             You have a turn budget — be efficient. Don't over-explore. Pick one thing, fix it, test it, ship it.
 
             ## Step 1: Read context (≤5 turns)
-            - Read /tmp/pilot-report.md for today's KPI snapshot and CloudWatch logs
+            - Read /tmp/pilot-report.md for today's KPI snapshot and server errors (by code, with counts and samples)
             - Read CLAUDE.md for architecture and conventions
             - Run `gh issue list --state open --limit 20` to see current issues
 
             ## Step 2: Triage — pick ONE thing (1 turn)
-            Priority: errors in logs > KPI regression (on-target <75%) > bug issues > enhancement issues > skip.
+            Priority: high-count error codes > KPI regression (on-target <75%) > bug issues > enhancement issues > skip.
+            The errors table is keyed by `code` (e.g. `unhandled_error`, `ai_stream_error`, `cloudwatch_raw`) with counts and first/last seen. Pick the code with the highest count that looks actionable.
+            If the report shows `CloudWatch fetch failed`, the in-process buffer errors are still reliable but Lambda runtime errors (timeouts etc.) may be missing — factor that uncertainty in.
             If an issue and a log error overlap, that's the strongest signal.
             If nothing is actionable, stop immediately — do not invent work.
 
