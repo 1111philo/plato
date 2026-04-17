@@ -1,0 +1,48 @@
+name: Trigger Deploy
+
+# Fires a repository_dispatch event to the private deploy fork
+# (UIC-OSF/learn.ai-leaders.org), which hosts the actual deploy workflows
+# and AWS credentials. This lets us keep deploy internals out of the public
+# repo without the old "merge-and-push-to-deploy-fork" dance.
+#
+# Requires secret DEPLOY_DISPATCH_TOKEN — a fine-grained PAT with
+# contents:write on UIC-OSF/learn.ai-leaders.org (or a classic PAT with
+# the repo scope).
+
+on:
+  push:
+    branches: [main, playground]
+  workflow_dispatch:
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fire deploy dispatch
+        env:
+          TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "DEPLOY_DISPATCH_TOKEN secret is not set — cannot trigger deploy."
+            echo "Add a fine-grained PAT with contents:write on UIC-OSF/learn.ai-leaders.org"
+            echo "as a repository secret named DEPLOY_DISPATCH_TOKEN."
+            exit 1
+          fi
+          case "$REF_NAME" in
+            main)       EVENT_TYPE="deploy-prod" ;;
+            playground) EVENT_TYPE="deploy-playground" ;;
+            *)          echo "Unexpected branch $REF_NAME — skipping."; exit 0 ;;
+          esac
+          echo "Firing $EVENT_TYPE for $SHA"
+          HTTP_STATUS=$(curl -sS -o /tmp/dispatch-response -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/UIC-OSF/learn.ai-leaders.org/dispatches \
+            -d "{\"event_type\":\"$EVENT_TYPE\",\"client_payload\":{\"sha\":\"$SHA\",\"ref\":\"$REF_NAME\"}}")
+          echo "HTTP $HTTP_STATUS"
+          cat /tmp/dispatch-response
+          [ "$HTTP_STATUS" = "204" ]
