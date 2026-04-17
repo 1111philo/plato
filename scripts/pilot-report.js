@@ -46,7 +46,9 @@ function formatGroups(logs) {
   if (!logs.groups?.length) return 'No errors or warnings in the last 24h.';
   const rows = logs.groups.map((g) => {
     const sample = g.sample?.meta?.error || g.sample?.meta?.message || '';
-    const preview = sample.toString().replace(/\s+/g, ' ').slice(0, 120);
+    // Escape pipes so error messages containing `|` don't break the markdown
+    // table columns (the pilot agent reads these rows directly).
+    const preview = sample.toString().replace(/\s+/g, ' ').replace(/\|/g, '\\|').slice(0, 120);
     return `| \`${g.code}\` | ${g.level} | ${g.count} | ${g.firstSeen} | ${g.lastSeen} | ${g.sources.join(', ')} | ${preview} |`;
   });
   return [
