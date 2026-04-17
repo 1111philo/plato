@@ -1,43 +1,60 @@
 name: Bump version
 
+# Version bump happens on the PR branch during review so it shows up in
+# the PR diff and never needs to push to protected main.
+#
+# On push to main (after merge), a sibling workflow creates the git tag
+# and GitHub release — tags aren't covered by the branch ruleset.
+
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened]
     branches: [main]
 
 jobs:
   bump:
-    if: github.event.pull_request.merged == true
+    # Skip if the PR branch is on a fork (we can't push back to forks)
+    # and skip if this PR is from the bump workflow itself (to avoid loops).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
-      - name: Bump RC number
+      - name: Compute next version and bump if needed
         id: version
         run: |
-          current=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
-          rc_num=$(echo "$current" | grep -oP '\d+$')
-          new_num=$((rc_num + 1))
-          new_version="Beta-RC-${new_num}"
-          echo "{\"version\": \"${new_version}\"}" > version.json
-          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
-          echo "Bumped $current -> $new_version"
+          # What version does main currently have?
+          main_version=$(git show origin/${{ github.event.pull_request.base.ref }}:version.json | python3 -c "import json, sys; print(json.load(sys.stdin)['version'])")
+          pr_version=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
 
-      - name: Commit and tag
+          rc_num=$(echo "$main_version" | grep -oP '\d+$')
+          next_num=$((rc_num + 1))
+          next_version="Beta-RC-${next_num}"
+
+          echo "main=$main_version pr=$pr_version next=$next_version"
+
+          if [ "$pr_version" = "$next_version" ]; then
+            echo "PR branch already at $next_version — nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "{\"version\": \"${next_version}\"}" > version.json
+          echo "version=${next_version}" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit bump to PR branch
+        if: steps.version.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.json
           git commit -m "Bump version to ${{ steps.version.outputs.version }}"
-          git tag "${{ steps.version.outputs.version }}"
-          git push && git push --tags
-
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ steps.version.outputs.version }}" \
-            --title "${{ steps.version.outputs.version }}" \
-            --generate-notes
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}

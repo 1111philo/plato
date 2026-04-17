@@ -1,0 +1,56 @@
+name: Tag version and create release
+
+# Companion to version-bump.yml. The bump happens on the PR branch; once
+# the PR merges to main, this workflow tags the merge commit with the
+# version and creates a GitHub release. Tags are not covered by the
+# branch protection ruleset, so no bypass is needed.
+
+on:
+  push:
+    branches: [main]
+    paths: [version.json]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read current version
+        id: version
+        run: |
+          current=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
+          echo "version=$current" >> "$GITHUB_OUTPUT"
+          echo "Current version: $current"
+
+      - name: Skip if tag already exists
+        id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.version.outputs.version }} already exists — skipping."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.version }}" \
+            --title "${{ steps.version.outputs.version }}" \
+            --generate-notes
