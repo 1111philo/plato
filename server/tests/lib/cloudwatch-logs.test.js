@@ -1,6 +1,6 @@
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEvent } from '../../src/lib/cloudwatch-logs.js';
+import { normalizeEvent, logGroupPrefix } from '../../src/lib/cloudwatch-logs.js';
 
 describe('normalizeEvent', () => {
   it('preserves the logger-emitted logId so buffer + CloudWatch dedupe', () => {
@@ -42,5 +42,24 @@ describe('normalizeEvent', () => {
       const event = { eventId: 'x', timestamp: Date.now(), logStreamName: 's', message: msg };
       assert.equal(normalizeEvent(event, 'g'), null, `should drop: ${msg}`);
     }
+  });
+});
+
+describe('logGroupPrefix', () => {
+  let origStage;
+  beforeEach(() => { origStage = process.env.STAGE; });
+  afterEach(() => { if (origStage !== undefined) process.env.STAGE = origStage; else delete process.env.STAGE; });
+
+  it('matches the CloudFormation naming: prod stack is named "plato"', () => {
+    process.env.STAGE = 'prod';
+    // Actual Lambda log group is e.g. `/aws/lambda/plato-PlatoApiFunction-xIsSx1fu8kWd`.
+    // The old prefix `/aws/lambda/plato-prod-` would never match — CloudFormation
+    // gives the prod stack the bare name `plato`, not `plato-prod`.
+    assert.equal(logGroupPrefix(), '/aws/lambda/plato-');
+  });
+
+  it('includes the stage for non-prod stacks (playground → plato-playground)', () => {
+    process.env.STAGE = 'playground';
+    assert.equal(logGroupPrefix(), '/aws/lambda/plato-playground-');
   });
 });

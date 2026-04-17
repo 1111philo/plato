@@ -14,8 +14,14 @@ function stage() {
   return process.env.STAGE || 'prod';
 }
 
-function logGroupPrefix() {
-  return `/aws/lambda/plato-${stage()}-`;
+// CloudFormation names the prod stack `plato` (not `plato-prod`) and the
+// playground stack `plato-playground`. Lambda then auto-creates log groups
+// of the form `/aws/lambda/<stack-name>-<LogicalId>-<hash>`. So the prefix
+// that matches both plato Lambdas in a stage is `/aws/lambda/<stack-name>-`.
+export function logGroupPrefix() {
+  const s = stage();
+  const stack = s === 'prod' ? 'plato' : `plato-${s}`;
+  return `/aws/lambda/${stack}-`;
 }
 
 function parseMessage(message) {

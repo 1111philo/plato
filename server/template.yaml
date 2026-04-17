@@ -68,7 +68,7 @@ Resources:
             # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow
               Action: logs:FilterLogEvents
-              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*"
             # DescribeLogGroups lists groups — AWS requires Resource: * for
             # this action even when the caller only wants to see a subset.
             # The caller applies a logGroupNamePrefix filter, so we only see
@@ -127,7 +127,7 @@ Resources:
             # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow
               Action: logs:FilterLogEvents
-              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${AWS::StackName}-*"
             # DescribeLogGroups lists groups — AWS requires Resource: * for
             # this action even when the caller only wants to see a subset.
             # The caller applies a logGroupNamePrefix filter, so we only see
