@@ -142,14 +142,26 @@ Tests use Node's built-in test runner. All tests must pass before merging.
 
 ## Submitting changes
 
-The `main` branch is protected — direct pushes are not allowed. All changes go through pull requests.
+The `main` branch is protected — direct pushes are not allowed. All changes go through pull requests. Merging requires one approving review and a passing `review` status check.
 
 1. Create a branch from `main`.
 2. Make focused, well-described commits.
 3. Run tests — they must pass.
-4. Open a pull request with a clear summary of what changed and why. An automated reviewer (`claude[bot]`) will post a review; the `review` status check must pass before merging.
+4. Open a pull request with a clear summary of what changed and why.
 
-When a PR is merged to `main`, a new `Beta-RC-N` git tag and GitHub release are created automatically. Version is tag-based — `version.json` is not tracked in git and is generated at deploy time.
+### Automated review
+
+When you open or push to a PR, the Code Review workflow (`.github/workflows/code-review.yml`) runs an automated reviewer (`claude[bot]`) that reads the diff, runs the server test suite, and posts a single `gh pr review` call. The workflow is per-commit idempotent: each HEAD sha is reviewed at most once, and re-runs on the same sha are no-ops. Pushing new commits produces fresh reviews. The `review` status check must pass before merging.
+
+One caveat: if your PR modifies `.github/workflows/code-review.yml` itself, the action's own security check will fail the `review` status because the workflow file on the branch differs from the one on `main`. That failure is expected on workflow-editing PRs and requires maintainer bypass to merge.
+
+### Automated PRs (plato-pilot)
+
+You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis. If a plato-pilot PR's review requests changes, a companion workflow (`revise.yml`) tags the PR with `plato-pilot-revised` to prevent re-runs and then makes a one-shot fixup commit addressing the feedback — any further changes require human review.
+
+### After merge
+
+When a PR is merged to `main`, a new `Beta-RC-N` git tag and GitHub release are created automatically. Version is tag-based — `version.json` is not tracked in git.
 
 ## License
 
