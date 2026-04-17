@@ -421,7 +421,13 @@ The AI chat is built for screen reader compatibility following the [MITRE Chatbo
 
 ## Reporting issues
 
-Issues and feature requests go in [GitHub Issues](https://github.com/1111philo/plato/issues). An automated intake agent reads every new issue and either tags it `ready-for-pilot` (enough detail to act on) or `needs-info` (replies with a few clarifying questions). To skip the back-and-forth, include upfront:
+Issues and feature requests go in [GitHub Issues](https://github.com/1111philo/plato/issues). An automated intake agent reads every new issue and either:
+
+- Tags it `ready-for-pilot` — enough detail is present, a maintainer or the pilot agent will pick it up
+- Tags it `needs-info` and posts a few focused clarifying questions — reply inline when you can
+- Closes it politely (with an invitation to reopen) if it's spam, off-topic, or abusive
+
+To skip the `needs-info` round-trip, include upfront:
 
 - The URL or page where it happened
 - What you did (exact steps)
@@ -430,8 +436,6 @@ Issues and feature requests go in [GitHub Issues](https://github.com/1111philo/p
 - Your browser + OS, and whether you were signed in as a learner or admin
 
 The intake agent only asks for things you can provide. It never asks you to inspect code — that's our job.
-
-Questions, discussions, or general feedback (not tied to a specific bug or enhancement) are welcome too — the intake agent will leave those for a human to respond to.
 
 ## Contributing
 
