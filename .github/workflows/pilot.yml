@@ -45,7 +45,7 @@ jobs:
             ## Step 1: Read context (≤5 turns)
             - Read /tmp/pilot-report.md for today's KPI snapshot and server errors (by code, with counts and samples)
             - Read CLAUDE.md for architecture and conventions
-            - Run `gh issue list --state open --limit 20` to see current issues
+            - Run `gh issue list --state open --label ready-for-pilot --limit 20` for triaged issues. If that's empty, fall back to `gh issue list --state open --limit 20`. Prefer `ready-for-pilot` issues — they've been through the intake agent and have the detail you need. Issues labeled `needs-info` are blocked pending the reporter's reply; don't pick them.
             - Run `gh pr list --label plato-pilot --state all --limit 20 --json number,title,state,mergedAt,closedAt,body` to see your own recent work
 
             ## Step 2: Triage — pick ONE thing (1 turn)
