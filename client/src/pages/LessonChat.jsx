@@ -42,6 +42,7 @@ export default function LessonChat() {
   const displayText = useStreamedText(streamingText);
   const pendingAfterStreamRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
+  const srClearTimeoutRef = useRef(null);
   const chatAreaRef = useRef(null);
   const notifyTitle = useTitleNotification(
     lesson ? `${lesson.name} — plato` : 'Lesson — plato'
@@ -50,6 +51,7 @@ export default function LessonChat() {
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
   const [showObjectives, setShowObjectives] = useState(false);
+  const objectivesTitleRef = useRef(null);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
@@ -87,9 +89,15 @@ export default function LessonChat() {
         setMessages(prev => [...prev, ...msgs]);
         const hasAssistant = msgs.some(m => m.role === 'assistant');
         if (hasAssistant) {
-          // Clear first so repeated identical announcements still trigger
+          // Clear first so repeated identical announcements still trigger,
+          // then auto-clear again after ~3s so the text doesn't linger in
+          // the DOM as navigable static content.
+          if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
           setSrAnnouncement('');
-          requestAnimationFrame(() => setSrAnnouncement('New message from coach'));
+          requestAnimationFrame(() => {
+            setSrAnnouncement('New message from coach');
+            srClearTimeoutRef.current = setTimeout(() => setSrAnnouncement(''), 3000);
+          });
           notifyTitle();
           // Focus the new message if the user's focus is inside the chat log
           requestAnimationFrame(() => {
@@ -107,6 +115,19 @@ export default function LessonChat() {
       setLoading('');
     }
   }, [displayText]);
+
+  useEffect(() => () => {
+    if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
+  }, []);
+
+  // Move focus to the Objectives dialog title when it opens so screen
+  // readers announce the dialog's purpose instead of landing on the close
+  // button.
+  useEffect(() => {
+    if (!showObjectives) return;
+    const id = requestAnimationFrame(() => objectivesTitleRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [showObjectives]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -313,7 +334,7 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      <ChatArea ref={chatAreaRef} lessonName={lesson?.name} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
+      <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
         {messages.map(renderMessage)}
         {displayText != null && displayText.length > 0 && (
           <AssistantMessage content={displayText} streaming />
@@ -361,7 +382,7 @@ export default function LessonChat() {
       <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{lesson.name}</DialogTitle>
+            <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
             {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
           </DialogHeader>
           <div className="space-y-2">

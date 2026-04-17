@@ -489,7 +489,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
       {/* Chat + compose in a single container */}
       <div className="rounded-2xl bg-muted/40 border border-border p-4">
         <div className="mb-3">
-          <ChatArea lessonName="Lesson Creator" announcement={srAnnouncement}>
+          <ChatArea announcement={srAnnouncement}>
             {chatMessages.map(renderMessage)}
             {displayText != null && displayText.length > 0 && (
               <AssistantMessage content={displayText} streaming />

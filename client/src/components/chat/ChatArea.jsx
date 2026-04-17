@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, forwardRef } from 'react';
 import { useChatKeyboardNav } from '../../hooks/useChatKeyboardNav.js';
 
-const ChatArea = forwardRef(function ChatArea({ children, lessonName, scrollTrigger, announcement }, ref) {
+const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announcement }, ref) {
   const logRef = useRef(null);
   const bottomRef = useRef(null);
 
@@ -25,7 +25,7 @@ const ChatArea = forwardRef(function ChatArea({ children, lessonName, scrollTrig
         role="log"
         tabIndex={0}
         aria-live="off"
-        aria-label={lessonName ? `${lessonName} conversation` : 'Lesson conversation'}
+        aria-label="Chat log"
         aria-description="Use Alt plus Arrow keys to navigate between messages"
         ref={setRefs}
       >

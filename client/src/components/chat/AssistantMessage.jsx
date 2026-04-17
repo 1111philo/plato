@@ -8,7 +8,7 @@ export default function AssistantMessage({ content, streaming = false }) {
   } catch { /* plain text */ }
 
   return (
-    <div className="flex justify-start" role="article" aria-label="Coach message"
+    <div className="flex justify-start"
       data-chat-message="assistant" tabIndex={-1}
       aria-hidden={streaming || undefined}
     >

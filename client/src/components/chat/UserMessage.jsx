@@ -1,6 +1,6 @@
 export default function UserMessage({ content, label }) {
   return (
-    <div className="flex justify-end" role="article" aria-label="Your message"
+    <div className="flex justify-end"
       data-chat-message="user" tabIndex={-1}
     >
       <span className="sr-only">You said: </span>

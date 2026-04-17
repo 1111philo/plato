@@ -385,11 +385,13 @@ plato is designed to be fully accessible with screen readers (VoiceOver, NVDA, J
 
 The AI chat is built for screen reader compatibility following the [MITRE Chatbot Accessibility Playbook](https://mitre.github.io/chatbot-accessibility-playbook/) and [Orange accessibility guidelines](https://a11y-guidelines.orange.com/en/articles/chatbot/):
 
-- **Silent by default** — the chat log uses `role="log"` with `aria-live="off"` so VoiceOver never reads messages unprompted
-- **Controlled announcements** — a separate `role="status"` live region announces "New message from coach" only when a complete response arrives
+- **Silent by default** — the chat log uses `role="log"` with `aria-live="off"` and `aria-label="Chat log"` so VoiceOver never reads messages unprompted
+- **Controlled announcements** — a separate `role="status"` live region announces "New message from coach" only when a complete response arrives, then auto-clears after ~3s so the text doesn't linger as navigable DOM content
 - **Streaming content hidden** — in-progress AI responses are `aria-hidden` to prevent screen readers from reading partial text
-- **Sender identification** — each message includes a screen-reader-only prefix ("Coach says:" / "You said:")
+- **Sender identification** — each message includes a screen-reader-only prefix ("Coach says:" / "You said:") that reads inline as part of the message content, so messages aren't burdened with duplicate aria labels
 - **Keyboard navigation** — `Alt+ArrowUp` / `Alt+ArrowDown` to jump between messages in the chat log
+- **Send shortcut** — `Cmd+Return` (macOS) or `Ctrl+Enter` (Windows/Linux) sends a message; plain `Enter` inserts a newline
+- **Dialog focus** — modal dialogs (e.g., lesson Objectives) move focus to their title on open so the dialog's purpose is announced first
 - **Focus management** — when focus is in the chat log, new messages receive focus automatically; when focus is elsewhere, only the status announcement fires
 - **Tab notification** — document title flashes "(New message)" when the browser tab is in the background
 
