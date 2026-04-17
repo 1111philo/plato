@@ -24,8 +24,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Skip if commit already tagged
+        id: existing
+        run: |
+          # Idempotent: if this commit already carries a Beta-RC-* tag
+          # (e.g. workflow_dispatch re-run after the initial push-trigger
+          # already tagged it), don't create a second tag.
+          existing=$(git tag --points-at HEAD | grep -E '^Beta-RC-[0-9]+$' | head -1 || true)
+          if [ -n "$existing" ]; then
+            echo "Commit already tagged as $existing — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Determine next version
         id: version
+        if: steps.existing.outputs.skip == 'false'
         run: |
           # Find highest existing Beta-RC-N tag (sort numerically on the trailing number).
           latest_num=$(git tag -l "Beta-RC-*" \
@@ -39,6 +54,7 @@ jobs:
           echo "next=$next" >> "$GITHUB_OUTPUT"
 
       - name: Create and push tag
+        if: steps.existing.outputs.skip == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -46,6 +62,7 @@ jobs:
           git push origin "${{ steps.version.outputs.next }}"
 
       - name: Create GitHub release
+        if: steps.existing.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

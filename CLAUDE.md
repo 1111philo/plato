@@ -66,7 +66,8 @@ mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStre
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
 # version.json is generated at deploy time from the latest Beta-RC-* tag
-echo "{\"version\":\"$(git describe --tags --abbrev=0 --match='Beta-RC-*')\"}" > .aws-sam/build/PlatoApiFunction/version.json
+VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')
+echo "{\"version\":\"${VERSION}\"}" > .aws-sam/build/PlatoApiFunction/version.json
 cp .aws-sam/build/PlatoApiFunction/version.json .aws-sam/build/PlatoStreamFunction/version.json
 sam deploy
 ```
