@@ -78,8 +78,8 @@ Deploy config: `server/samconfig.toml` (copy from `samconfig.toml.example`, giti
 
 The `template.yaml` accepts a `Stage` parameter (`prod` or `playground`). Each stage gets its own DynamoDB tables and SSM parameters:
 
-- **prod** (`plato` stack) — learn.ai-leaders.org, deploys on push to `main`
-- **playground** (`plato-playground` stack) — playground.ai-leaders.org, deploys on push to `playground`
+- **prod** (`plato` stack) — learn.ai-leaders.org, auto-deploys on push to `main` (via `repository_dispatch` → private fork)
+- **playground** (`plato-playground` stack) — playground.ai-leaders.org, auto-deploys on push to `playground` (via `repository_dispatch` → private fork)
 
 SSM parameters (per stage): `/plato/{stage}/jwt-secret`, `/plato/{stage}/admin-email`, `/plato/{stage}/admin-password`, `/plato/{stage}/ses-from-email`, `/plato/{stage}/app-url`
 
@@ -101,7 +101,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - Always commit and push after changes
 - Run `npm test` before deploying
 - Version in `version.json` (Beta-RC-X format) — auto-bumped by GitHub Action on push to main
-- Deploy workflows live only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo. **Never force-push** to the deploy remote — always merge so the workflow files aren't overwritten. To deploy: `git fetch deploy && git merge deploy/main --no-edit && git push deploy main` (or `playground` for playground)
+- Deploy workflows live only in the private fork (UIC-OSF/learn.ai-leaders.org), not in the public repo. Deploys are automated via `repository_dispatch`: pushing to `main` here triggers `.github/workflows/trigger-deploy.yml`, which fires a `deploy-prod` dispatch to the private fork; pushing to `playground` fires `deploy-playground`. The private fork's `deploy.yml` / `deploy-playground.yml` listen for those events, check this repo out at the dispatched SHA, and run SAM deploy. No more pushing to the deploy remote. One-time setup: a `DEPLOY_DISPATCH_TOKEN` secret on this repo (fine-grained PAT with `contents:write` on the deploy fork). Manual deploy: run the `Deploy to AWS` or `Deploy to Playground` workflow from the private fork's Actions tab via `workflow_dispatch` with an optional `ref` input.
 - API responses for user groups use `{ userGroups: [...] }` consistently
 - Emails use classroom name/colors from settings, with "Powered by plato." footer linking to GitHub
 - Auth pages (login, signup, forgot-password, reset-password) use `usePublicBranding` hook for classroom theming
