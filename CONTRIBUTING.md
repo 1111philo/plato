@@ -159,6 +159,16 @@ One caveat: if your PR modifies `.github/workflows/code-review.yml` itself, the 
 
 You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis. If a plato-pilot PR's review requests changes, a companion workflow (`revise.yml`) tags the PR with `plato-pilot-revised` to prevent re-runs and then makes a one-shot fixup commit addressing the feedback — any further changes require human review.
 
+### Automated issue intake
+
+When you open a new issue, the intake agent (`.github/workflows/issue-intake.yml`) reads it and either:
+
+- Adds the `ready-for-pilot` label if the report already contains enough detail (reproduction steps, environment, expected vs. actual behavior) for plato-pilot or a human to act on it. You'll see a short acknowledgement comment.
+- Adds the `needs-info` label and posts up to 3 focused clarifying questions if details are missing. Reply inline when you can — a maintainer will review your reply and relabel.
+- Leaves the issue untouched (no comment, no label) if it's a question, discussion, or otherwise not something automation can act on. A human will triage.
+
+To file the most useful bug reports up front: include the URL / page, what you did, what you expected, what happened, any error message or screenshot, and your browser + role (learner / admin). The intake agent is designed to ask only for things you (the reporter) can provide — it won't ask you to inspect code.
+
 ### After merge
 
 When a PR is merged to `main`, a new `Beta-RC-N` git tag and GitHub release are created automatically. Version is tag-based — `version.json` is not tracked in git.
