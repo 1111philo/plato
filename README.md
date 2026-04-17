@@ -220,7 +220,7 @@ The `Stage` parameter controls DynamoDB table name prefixes and SSM parameter pa
 
 ### 4. Set up CI/CD (recommended)
 
-For production deployments, we recommend automating deploys from a **private fork** via GitHub Actions. This keeps your AWS credentials and deploy config separate from the public repo.
+For production deployments, we recommend automating deploys from a **private fork** via GitHub Actions. This keeps your AWS credentials and deploy config out of the public repo. The flow here uses `repository_dispatch`: pushing to the public repo fires a dispatch event to the private fork, which runs the actual deploy. No manual pushing to the deploy remote, and the deploy workflows never need to exist in the public repo.
 
 **Create a private fork:**
 
@@ -259,21 +259,37 @@ gh repo edit my-org/my-plato --visibility private --accept-visibility-change-con
 
 3. Attach a permissions policy to the role with access to CloudFormation, Lambda, S3, API Gateway, DynamoDB, IAM (for role creation), and SSM (parameter reads).
 
+**Create a dispatch token:** In GitHub, generate a fine-grained personal access token with `contents:write` permission scoped to your private fork. Add it to the **public repo** as a secret named `DEPLOY_DISPATCH_TOKEN`. The public repo's trigger workflow uses this token to fire dispatch events at the private fork.
+
+**The trigger workflow** lives in the public repo at `.github/workflows/trigger-deploy.yml` (already included in this project). On push to `main` or `playground`, it fires a `deploy-prod` or `deploy-playground` `repository_dispatch` event at the private fork with the commit SHA as payload.
+
 **Add a deploy workflow** to your private fork at `.github/workflows/deploy.yml`:
 
 ```yaml
 name: Deploy to AWS
 
 on:
-  push:
-    branches: [main]
+  repository_dispatch:
+    types: [deploy-prod]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ref on the public repo to deploy (branch / tag / SHA)'
+        required: false
+        default: 'main'
+
+env:
+  SOURCE_REPO: my-org/my-plato-source  # your public repo
+  SOURCE_REF: ${{ github.event.client_payload.sha || inputs.ref || 'main' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -287,6 +303,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ env.SOURCE_REF }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -322,13 +341,13 @@ jobs:
           --parameter-overrides Stage=prod
 ```
 
-Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, and `YOUR_SAM_S3_BUCKET` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
+Replace `YOUR_ACCOUNT_ID`, `YOUR_DEPLOY_ROLE`, `YOUR_REGION`, `YOUR_SAM_S3_BUCKET`, and `SOURCE_REPO` with your values. The S3 bucket is the one SAM creates on first manual deploy (named `aws-sam-cli-managed-default-samclisourcebucket-*`).
 
 **Pre-deploy backups:** Add a step before `sam deploy` to back up your DynamoDB tables. For example, loop over your table names and call `aws dynamodb create-backup` for each, then prune old backups (keeping the last 5 per table).
 
-**Multiple environments:** To add a staging environment (e.g., `playground`), create a second workflow triggered on a different branch that deploys with `--stack-name plato-playground --parameter-overrides Stage=playground`. Each stage gets its own DynamoDB tables and SSM parameters.
+**Multiple environments:** For a staging environment (e.g., `playground`), add a second workflow to the private fork that listens on `repository_dispatch` type `deploy-playground` and deploys with `--stack-name plato-playground --parameter-overrides Stage=playground`. Each stage gets its own DynamoDB tables and SSM parameters. The trigger workflow in the public repo already fires `deploy-playground` on push to the `playground` branch.
 
-**Workflow:** Push changes to the public repo (`origin`), then sync to your private fork (`deploy`) which triggers the CI/CD pipeline. Tests run first — deploy only happens if they pass.
+**Workflow:** Push or merge to the public repo's `main` or `playground` — the trigger workflow fires the dispatch, the private fork's deploy workflow picks it up, checks out the public repo at that SHA, runs tests, and deploys. Tests run first — deploy only happens if they pass. For re-deploying a specific SHA manually, use `workflow_dispatch` on the private fork's deploy workflow with an optional `ref` input.
 
 ### Custom domain (optional)
 
