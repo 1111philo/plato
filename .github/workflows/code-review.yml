@@ -29,20 +29,9 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          # Guard 1: avoid the plato-pilot revise loop. revise.yml pushes a
-          # one-shot fixup; skipping re-review keeps us from posting a second
-          # review on that same PR.
-          if [ "${{ github.event.action }}" = "synchronize" ]; then
-            AUTHOR_EMAIL=$(git log -1 --format='%ae' "$HEAD_SHA")
-            if [ "$AUTHOR_EMAIL" = "plato-pilot@users.noreply.github.com" ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "Head commit authored by plato-pilot; skipping re-review."
-              exit 0
-            fi
-          fi
-          # Guard 2: idempotency. If a claude[bot] review already exists for
-          # the current HEAD sha (e.g. a prior workflow run on the same
-          # commit), don't post another one.
+          # Per-commit idempotency. If a claude[bot] review already exists
+          # for the current HEAD sha, don't post another one. New commits
+          # (different sha) still get reviewed as normal.
           EXISTING=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
             --jq "[.[] | select(.user.login==\"claude[bot]\") | select(.commit_id==\"$HEAD_SHA\")] | length")
           if [ "${EXISTING:-0}" -gt 0 ]; then
