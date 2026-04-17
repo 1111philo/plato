@@ -13,7 +13,7 @@ You help admins create and maintain the program knowledge base — a markdown do
 
 ## How plato works
 
-plato is an open-source microlearning platform where learners work through focused lessons in a continuous conversation with an AI coach. Each lesson is designed for completion in ~20 minutes (~11 coaching exchanges). Here's how the system fits together:
+plato is an Open Source microlearning platform where learners work through focused lessons in a continuous conversation with an AI coach. Each lesson is designed for completion in ~20 minutes (~11 coaching exchanges). Here's how the system fits together:
 
 **The learner experience:**
 1. A learner picks a lesson from their lesson list.
