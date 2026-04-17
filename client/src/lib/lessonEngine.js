@@ -129,16 +129,16 @@ function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   }
 
   const context = {
-    lessonId: lesson.lessonId,
+    learnerName: learnerName || '',
     lessonName: lesson.name,
     lessonDescription: lesson.description,
     exemplar: lesson.exemplar,
-    learningObjectives: lesson.learningObjectives,
-    learnerName: learnerName || 'Learner',
-    learnerProfile: profileSummary || 'New learner, no profile yet.',
-    lessonKB,
-    exchangesCompleted: exchanges,
-    exchangeTarget: MAX_EXCHANGES,
+    objectives: lessonKB?.objectives || [],
+    insights: lessonKB?.insights || [],
+    learnerProfile: profileSummary || 'No profile yet',
+    learnerPosition: lessonKB?.learnerPosition || 'New learner',
+    progress: lessonKB?.progress ?? 0,
+    activitiesCompleted: exchanges,
   };
 
   if (pacingDirective) {
@@ -272,10 +272,11 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   syncInBackground(`lessonKB:${lessonId}`);
 
   // Profile updates — from explicit tag or from KB insights as fallback
-  if (parsed.profileUpdate) {
-    updateProfileInBackground(parsed.profileUpdate);
+  if (parsed.profileUpdate?.observation) {
+    updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
-    updateProfileFromObservation(lessonId, lesson.name, parsed.kbUpdate.insights);
+    const insightText = parsed.kbUpdate.insights.join('. ');
+    updateProfileFromObservation(lessonKB, insightText);
   }
 
   // Save messages
@@ -296,18 +297,24 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   };
 
   const newMessages = [userMsg, assistantMsg];
-  const updatedMessages = [...allMsgs, ...newMessages];
-  await saveLessonMessages(lessonId, updatedMessages);
+  await saveLessonMessages(lessonId, newMessages);
   syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
 
   // On completion, do a deep profile update in the background
-  if (achieved && lessonKB.status === 'completed') {
-    updateProfileOnCompletionInBackground(lessonId, lesson.name, lessonKB);
+  if (achieved) {
+    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
-  return {
-    messages: newMessages,
-    lessonKB,
-    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
-  };
+  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
+}
+
+/**
+ * Resume an existing lesson. Loads messages and KB.
+ */
+export async function resumeLesson(lessonId) {
+  const messages = await getLessonMessages(lessonId);
+  const lessonKB = await getLessonKB(lessonId);
+  const progress = lessonKB?.progress ?? 0;
+  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { messages, lessonKB, progress, phase };
 }
