@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import admin from '../../src/routes/admin.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { logger } from '../../src/lib/logger.js';
 
 async function adminReq(app, method, path, body) {
   const token = await signAccessToken('usr_admin', 'admin');
@@ -449,4 +450,107 @@ describe('PUT /v1/admin/lessons/:lessonId — sharedWith + public/private', () =
     assert.equal(data[0].status, 'private');
     assert.deepEqual(data[0].sharedWith, ['usr_1', 'usr_2']);
   });
+});
+
+describe('GET /v1/admin/logs', () => {
+  const origConsoleErr = console.error;
+  const origConsoleWarn = console.warn;
+  let savedRegion;
+
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
+      return null;
+    };
+    logger._reset();
+    console.error = () => {};
+    console.warn = () => {};
+    savedRegion = process.env.AWS_REGION;
+    delete process.env.AWS_REGION; // force cloudwatch error path
+  });
+
+  afterEach(() => {
+    console.error = origConsoleErr;
+    console.warn = origConsoleWarn;
+    if (savedRegion !== undefined) process.env.AWS_REGION = savedRegion;
+  });
+
+  it('rejects non-admin', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await userReq(app, 'GET', '/v1/admin/logs');
+    assert.equal(res.status, 403);
+  });
+
+  it('returns captured errors from the ring buffer', async () => {
+    logger.error('unhandled_error', { path: '/foo' });
+    logger.error('unhandled_error', { path: '/bar' });
+    logger.warn('seed_failed', { error: 'x' });
+
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+
+    assert.equal(data.counts.error, 2);
+    assert.equal(data.counts.warn, 1);
+    assert.ok(Array.isArray(data.groups));
+    const unhandled = data.groups.find((g) => g.code === 'unhandled_error');
+    assert.equal(unhandled.count, 2);
+    assert.deepEqual(unhandled.sources, ['buffer']);
+  });
+
+  it('filters by level', async () => {
+    logger.error('unhandled_error');
+    logger.warn('seed_failed');
+
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs?level=error');
+    const data = await res.json();
+    const codes = data.entries.map((e) => e.code);
+    assert.ok(codes.includes('unhandled_error'));
+    assert.ok(!codes.includes('seed_failed'));
+  });
+
+  it('view=groups omits raw entries', async () => {
+    logger.error('unhandled_error');
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs?view=groups');
+    const data = await res.json();
+    assert.ok(data.groups);
+    assert.equal(data.entries, undefined);
+  });
+
+  it('view=entries omits groups', async () => {
+    logger.error('unhandled_error');
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs?view=entries');
+    const data = await res.json();
+    assert.ok(data.entries);
+    assert.equal(data.groups, undefined);
+  });
+
+  it('400 on invalid since', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs?since=not-a-date');
+    assert.equal(res.status, 400);
+  });
+
+  it('surfaces CloudWatch failure explicitly instead of silently empty', async () => {
+    // AWS_REGION is unset in beforeEach, so the SDK path returns an error.
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs');
+    const data = await res.json();
+    assert.equal(data.cloudwatch.error, 'AWS_REGION not set');
+    assert.deepEqual(data.cloudwatch.logGroups, []);
+  });
+
+  it('cloudwatch=0 skips the AWS call', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/logs?cloudwatch=0');
+    const data = await res.json();
+    assert.equal(data.cloudwatch.error, null);
+    assert.deepEqual(data.cloudwatch.logGroups, []);
+  });
+
 });

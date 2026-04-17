@@ -14,6 +14,7 @@ import { generateUserId } from './lib/crypto.js';
 import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
+import { logger } from './lib/logger.js';
 
 const server = new Hono();
 
@@ -71,7 +72,12 @@ server.route('/', app);
 server.notFound((c) => c.json({ error: 'Not found' }, 404));
 
 server.onError((err, c) => {
-  console.error('Unhandled error:', err);
+  logger.error('unhandled_error', {
+    path: c.req.path,
+    method: c.req.method,
+    error: err?.message || String(err),
+    stack: err?.stack,
+  });
   return c.json({ error: 'Internal server error' }, 500);
 });
 

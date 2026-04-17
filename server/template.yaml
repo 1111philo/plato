@@ -37,6 +37,7 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
+          STAGE: !Ref Stage
           JWT_SECRET: !Sub '{{resolve:ssm:/plato/${Stage}/jwt-secret}}'
           ADMIN_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/admin-email}}'
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
@@ -63,6 +64,12 @@ Resources:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
               Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:FilterLogEvents
+                - logs:DescribeLogGroups
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
       Events:
         ApiCatchAll:
           Type: HttpApi
@@ -83,6 +90,7 @@ Resources:
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
           SYNC_DATA_TABLE: !Ref SyncDataTable
           AUDIT_LOG_TABLE: !Ref AuditLogTable
+          STAGE: !Ref Stage
           JWT_SECRET: !Sub '{{resolve:ssm:/plato/${Stage}/jwt-secret}}'
           ADMIN_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/admin-email}}'
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
@@ -109,6 +117,12 @@ Resources:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
               Resource: '*'
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:FilterLogEvents
+                - logs:DescribeLogGroups
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/plato-${Stage}-*"
       FunctionUrlConfig:
         AuthType: NONE
         InvokeMode: RESPONSE_STREAM
