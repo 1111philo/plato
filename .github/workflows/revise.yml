@@ -1,0 +1,73 @@
+name: plato-pilot-revise
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  revise:
+    if: |
+      github.event.review.state == 'changes_requested' &&
+      github.event.review.user.login == 'github-actions[bot]' &&
+      contains(github.event.pull_request.labels.*.name, 'plato-pilot') &&
+      !contains(github.event.pull_request.labels.*.name, 'plato-pilot-revised') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Mark PR as revised (prevents re-runs)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR_NUMBER" --add-label plato-pilot-revised
+
+      - uses: anthropics/claude-code-action@v1
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_ID: ${{ github.event.review.id }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: true
+          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30"
+          prompt: |
+            You are plato-pilot-revise. A code reviewer requested changes on PR #${{ env.PR_NUMBER }}.
+            Address the review in ONE fixup commit. One shot — you do not get a second pass.
+
+            ## Step 1: Read context (≤5 turns)
+            - Read CLAUDE.md for conventions
+            - Run `gh pr view $PR_NUMBER --json title,body` to see the PR
+            - Run `gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews/$REVIEW_ID` for the review body
+            - Run `gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/comments` for inline comments
+            - Run `git log --oneline origin/main..HEAD` to see what this PR changed
+
+            ## Step 2: Decide (1 turn)
+            - If the review's complaints are concrete and fixable within this PR's scope: proceed to Step 3.
+            - If the review rejects the PR's premise, demands major rework, or is ambiguous:
+              post a comment via `gh pr comment $PR_NUMBER --body "..."` explaining you're deferring to a human, and STOP.
+
+            ## Step 3: Fix (≤15 turns)
+            - Make the minimum changes that resolve the review's blocking issues
+            - Do not add unrelated changes or scope creep
+            - Do not revert the PR's original intent
+
+            ## Step 4: Verify and push (≤5 turns)
+            - Run `cd server && npm ci && npm test` — all tests must pass
+            - Configure git: `git config user.name "plato-pilot" && git config user.email "plato-pilot@users.noreply.github.com"`
+            - Commit: `git commit -am "Address code review feedback"`
+            - Push: `git push origin $HEAD_REF`
+            - Comment on the PR summarizing what you changed and noting this was the one allowed revision cycle:
+              `gh pr comment $PR_NUMBER --body "Addressed review feedback in <sha>. Further changes require human review."`
