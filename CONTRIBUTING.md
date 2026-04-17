@@ -157,7 +157,7 @@ One caveat: if your PR modifies `.github/workflows/code-review.yml` itself, the 
 
 ### Automated PRs (plato-pilot)
 
-You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis. If a plato-pilot PR's review requests changes, a companion workflow (`revise.yml`) makes a one-shot fixup commit and then labels the PR so the cycle can't repeat — any further changes require human review.
+You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis. If a plato-pilot PR's review requests changes, a companion workflow (`revise.yml`) tags the PR with `plato-pilot-revised` to prevent re-runs and then makes a one-shot fixup commit addressing the feedback — any further changes require human review.
 
 ### After merge
 
