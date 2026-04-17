@@ -32,7 +32,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr edit "$PR_NUMBER" --add-label plato-pilot-revised
+        run: |
+          gh label create plato-pilot-revised --color 9B59B6 --description "Revise workflow has already run once on this PR" 2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --add-label plato-pilot-revised
 
       - uses: anthropics/claude-code-action@v1
         env:
@@ -41,6 +43,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          allowed_bots: "claude"
           show_full_output: true
           claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30"
           prompt: |
@@ -71,3 +74,10 @@ jobs:
             - Push: `git push origin $HEAD_REF`
             - Comment on the PR summarizing what you changed and noting this was the one allowed revision cycle:
               `gh pr comment $PR_NUMBER --body "Addressed review feedback in <sha>. Further changes require human review."`
+
+      - name: Remove revised label if agent failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr edit "$PR_NUMBER" --remove-label plato-pilot-revised 2>/dev/null || true
