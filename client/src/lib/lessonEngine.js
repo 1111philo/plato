@@ -276,8 +276,11 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   if (over >= 4) {
     // 15+ exchanges: close unconditionally — learner has put in sufficient effort
     context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Do not assign any new work or ask any new questions. Look at what this learner has already demonstrated across all exchanges. Award progress 10 now, close the lesson warmly in 1-2 sentences, and ask for feedback.';
-  } else if (over >= 0) {
-    // 11-14 exchanges: one final task, then close regardless of outcome
+  } else if (over >= 1) {
+    // 12-14 exchanges: learner already had their final-task chance — close now
+    context.pacingDirective = 'OVER TARGET — The learner has already had their final task opportunity. Do not introduce any new work or questions. Close the lesson now: award progress 10, summarize what they demonstrated in 1 sentence, and ask for feedback.';
+  } else if (over === 0) {
+    // Exactly 11 exchanges: give one final task, then close on their next response
     context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE final task in a single sentence using only what the learner has already shown. Accept any reasonable attempt as sufficient — award progress 10 on their next response. Keep your response to 2 sentences.';
   } else if (completed >= MAX_EXCHANGES - 3) {
     // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
