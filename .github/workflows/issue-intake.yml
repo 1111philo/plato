@@ -79,7 +79,7 @@ jobs:
 
             ## Step 2: Classify and act (1 pass, idempotent)
 
-            Every non-bot issue gets engaged. There are two outcomes — pick one:
+            Every non-bot issue gets engaged. Pick one of three outcomes:
 
             **A. Already actionable** — reproduction steps, specific behavior, a
             concrete page/URL/code area, or a clear user-visible request are present.
@@ -91,11 +91,11 @@ jobs:
             gh issue comment $ISSUE_NUMBER --body "Thanks — this has enough detail for plato-pilot or a human to pick up. Tagged \`ready-for-pilot\`."
             ```
 
-            **B. Needs info** — anything else. Vague feedback ("make it cooler"),
-            ambiguous feature requests ("add X"), broad enhancement ideas, or reports
-            missing specifics all get engaged with focused questions. If the issue
-            self-describes as a test ("this is just a test"), still engage — ask
-            whether it's a real request, a test, or can be closed.
+            **B. Needs info** — genuine but vague report. Vague feedback ("make it
+            cooler"), ambiguous feature requests ("add X"), broad enhancement ideas,
+            or reports missing specifics all get engaged with focused questions. If
+            the issue self-describes as a test ("this is just a test"), still engage —
+            ask whether it's a real request or can be closed.
 
             Post exactly one comment using this template, then label. ONE `gh issue
             comment` call — no retries, no follow-up edits.
@@ -111,6 +111,23 @@ jobs:
             gh issue edit $ISSUE_NUMBER --add-label needs-info
             ```
 
+            **C. Spam or problematic** — close politely with a brief explanation and
+            an invitation to reopen if we misread it. Use this only for:
+            - Obvious spam (promotions, link spam, SEO)
+            - Content unrelated to plato (wrong project / repository)
+            - Abusive, threatening, hateful, or sexually explicit content
+            - Clearly malicious / "security research" extortion attempts
+
+            Err on the side of B (needs-info) when unsure. Low-effort or vague reports
+            are NOT spam — those go to B.
+
+            ```
+            gh issue comment $ISSUE_NUMBER --body "Hey, this doesn't look like a plato bug or feature request, so we're closing it. If we got that wrong — if this is a real plato issue we misread — please reopen with a sentence or two about what you were doing in plato and we'll take another look."
+            gh issue close $ISSUE_NUMBER --reason "not planned"
+            ```
+
+            Do not add a label when closing — the closed+comment state is the signal.
+
             ## Question rules (critical)
             - Ask ONLY for things the reporter can provide. Never ask "which file is
               affected" or "can you check the code" — that's our job, not theirs.
@@ -124,7 +141,7 @@ jobs:
               unblock triage.
 
             ## Do not
-            - Don't close issues.
+            - Don't close issues except in outcome C (spam / problematic / off-topic).
             - Don't add labels other than `ready-for-pilot` or `needs-info`.
             - Don't engage bot-authored issues — the job's `if:` condition already
               filters these out.

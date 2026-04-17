@@ -161,13 +161,13 @@ You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix 
 
 ### Automated issue intake
 
-When you open a new issue, the intake agent (`.github/workflows/issue-intake.yml`) reads it and either:
+When you open a new issue, the intake agent (`.github/workflows/issue-intake.yml`) reads it and picks one of three outcomes:
 
-- Adds the `ready-for-pilot` label if the report already contains enough detail (reproduction steps, environment, expected vs. actual behavior) for plato-pilot or a human to act on it. You'll see a short acknowledgement comment.
-- Adds the `needs-info` label and posts up to 3 focused clarifying questions if details are missing. Reply inline when you can — a maintainer will review your reply and relabel.
-- Leaves the issue untouched (no comment, no label) if it's a question, discussion, or otherwise not something automation can act on. A human will triage.
+- **Enough detail** — adds the `ready-for-pilot` label and a short acknowledgement. plato-pilot or a human will pick it up.
+- **Needs more info** — adds the `needs-info` label and posts up to 3 focused clarifying questions. Reply inline when you can.
+- **Spam, off-topic, or abusive** — closes the issue with a polite comment explaining why and inviting you to reopen if we got it wrong. Vague or low-effort issues are *not* treated as spam — those go to `needs-info`.
 
-To file the most useful bug reports up front: include the URL / page, what you did, what you expected, what happened, any error message or screenshot, and your browser + role (learner / admin). The intake agent is designed to ask only for things you (the reporter) can provide — it won't ask you to inspect code.
+To file the most useful bug reports up front: include the URL / page, what you did, what you expected, what happened, any error message or screenshot, and your browser + role (learner / admin). The intake agent only asks for things you (the reporter) can provide — it won't ask you to inspect code.
 
 ### After merge
 
