@@ -204,11 +204,12 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   }
   lessonKB.activitiesCompleted = (lessonKB.activitiesCompleted || 0) + 1;
 
-  // Check completion — the learner achieves the exemplar (progress 10),
-  // or the system gracefully closes the lesson at 2x the exchange target
-  // as a safety net (the coach is instructed to wrap up well before this).
-  const hardLimit = MAX_EXCHANGES * 2;
-  const achieved = parsed.progress >= 10 || lessonKB.activitiesCompleted >= hardLimit;
+  // Completion is decided by the coach (progress 10). The system never
+  // force-completes a lesson on exchange count — learners should be moved
+  // toward the exemplar, not cut off mid-conversation. The pacing directives
+  // fed to the coach escalate the nudge over time, but the coach always
+  // chooses when to award progress 10.
+  const achieved = parsed.progress >= 10;
   if (achieved && lessonKB.status !== 'completed') {
     lessonKB.status = 'completed';
     lessonKB.completedAt = ts();
@@ -270,19 +271,28 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
-  // Escalating pacing directives — pre-warning when approaching the target,
-  // then increasingly decisive once over it.
+  // Pacing directives are nudges, not orders. The target (MAX_EXCHANGES) is a
+  // design goal for ~20-minute lessons — never a deadline. The coach always
+  // decides when the learner has demonstrated the exemplar. These messages
+  // help the coach sharpen its focus as exchanges accumulate, but NEVER tell
+  // it to force-close a lesson on the learner.
   const over = completed - MAX_EXCHANGES;
-  if (over >= 4) {
-    // 15+ exchanges: close unconditionally — learner has put in sufficient effort
-    context.pacingDirective = 'SIGNIFICANTLY OVER TARGET — Do not assign any new work or ask any new questions. Look at what this learner has already demonstrated across all exchanges. Award progress 10 now, close the lesson warmly in 1-2 sentences, and ask for feedback.';
+  if (over >= 9) {
+    // 20+ exchanges: the lesson has run well past the target. Likely a sign
+    // the lesson design or the learner's starting point mismatched — worth
+    // a reflective note, but still the coach's call to close.
+    context.pacingDirective = 'This lesson has run well past its target length. If the learner has demonstrated the exemplar (or something close to it), this is a good moment to award progress 10 and close warmly. If they are still genuinely working toward it, keep moving them forward — prefer smaller, more concrete steps. Note in [KB_UPDATE] if the lesson design seems to be the issue.';
+  } else if (over >= 4) {
+    // 15+ exchanges: converge hard. Prefer closing when the exemplar is met,
+    // but do not force the issue if the learner is still making progress.
+    context.pacingDirective = 'The lesson has run longer than target. Compress: focus on the single biggest remaining gap. If the learner has demonstrated the exemplar, award progress 10 and close warmly. If they are close, one sharp final step can get them there. Keep moving them forward — never cut them off mid-thought.';
   } else if (over >= 0) {
-    // 11-14 exchanges: one final task, then close regardless of outcome
-    context.pacingDirective = 'OVER TARGET — Stop introducing new concepts. Give ONE final task in a single sentence using only what the learner has already shown. Accept any reasonable attempt as sufficient — award progress 10 on their next response. Keep your response to 2 sentences.';
+    // 11+ exchanges: target reached. Start to converge.
+    context.pacingDirective = 'Target exchange count reached. Begin converging toward the exemplar — avoid introducing new objectives. If the learner has demonstrated the exemplar, award progress 10. Otherwise give one focused nudge that narrows the gap.';
   } else if (completed >= MAX_EXCHANGES - 3) {
-    // 8-10 exchanges: pre-over-target warning — converge toward exemplar now
+    // 8-10 exchanges: pre-target — start converging.
     const remaining = MAX_EXCHANGES - completed;
-    context.pacingDirective = `NEAR LIMIT — ${remaining} exchange${remaining === 1 ? '' : 's'} remaining before target. Do not introduce any new concepts or objectives. Give ONE focused task that most directly demonstrates the exemplar using what the learner has already shown.`;
+    context.pacingDirective = `Approaching target (${remaining} exchange${remaining === 1 ? '' : 's'} until the ~20-minute design goal). Converge toward the exemplar — one focused task that narrows the gap. You may still introduce new concepts if the learner genuinely needs them to advance.`;
   }
   return JSON.stringify(context);
 }

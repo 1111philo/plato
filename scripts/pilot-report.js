@@ -92,12 +92,14 @@ async function main() {
 | Total completions | ${kpis.totalCompletions} |
 | On-target rate | ${onTargetRate}% (${signal}) |
 | Within target (≤${kpis.exchangeTarget}) | ${kpis.withinTarget} |
-| Over target (${kpis.exchangeTarget + 1}-${kpis.hardLimit - 1}) | ${kpis.overTarget} |
-| Hard limit hits (${kpis.hardLimit}+) | ${kpis.hitHardLimit} |
+| Over target (>${kpis.exchangeTarget}) | ${kpis.overTarget} |
+| Extended (≥${kpis.extendedThreshold}, informational) | ${kpis.extendedLessons ?? 0} |
 | Avg exchanges/completion | ${kpis.avgExchangesPerCompletion ?? 'N/A'} |
 | Avg exchanges (on-target) | ${kpis.avgExchangesWithinTarget ?? 'N/A'} |
 | Avg exchanges (over-target) | ${kpis.avgExchangesOverTarget ?? 'N/A'} |
 | Active lessons | ${kpis.activeLessons} |
+
+_Note: "Over target" means exchanges > target — not a failure. Lessons always run until the coach awards progress 10. If on-target rate is low, diagnose **lesson design** or **coach prompt quality**, not pacing enforcement — never introduce forced closures._
 
 ## Errors by code (last ${logs.windowHours ?? 24}h)
 

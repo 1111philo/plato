@@ -16,8 +16,8 @@ function estimateDuration(avgExchangesPerCompletion) {
 
 function PacingSection({ stats }) {
   const {
-    totalCompletions = 0, withinTarget = 0, overTarget = 0, hitHardLimit = 0,
-    exchangeTarget = 11, hardLimit = 22, avgExchangesWithinTarget,
+    totalCompletions = 0, withinTarget = 0, overTarget = 0, extendedLessons = 0,
+    exchangeTarget = 11, extendedThreshold = 22, avgExchangesWithinTarget,
     avgExchangesPerCompletion, activeLessons = 0,
   } = stats;
 
@@ -57,7 +57,7 @@ function PacingSection({ stats }) {
             </div>
             <div className="text-right text-xs text-muted-foreground">
               <div>Target: {exchangeTarget} exchanges (~20 min)</div>
-              <div>Hard limit: {hardLimit} exchanges</div>
+              <div>Extended threshold: {extendedThreshold}+ exchanges</div>
             </div>
           </div>
           {hasCompletions ? (
@@ -95,10 +95,10 @@ function PacingSection({ stats }) {
             <div className="text-sm text-muted-foreground">Went over target</div>
           </CardContent>
         </Card>
-        <Card className={hitHardLimit > 0 ? 'border-red-300 bg-red-50 ring-2 ring-red-200' : ''}>
+        <Card>
           <CardContent>
-            <div className="text-2xl font-bold">{hitHardLimit}</div>
-            <div className="text-sm text-muted-foreground">Hit hard limit</div>
+            <div className="text-2xl font-bold">{extendedLessons}</div>
+            <div className="text-sm text-muted-foreground" title="Completed lessons that ran past 2× the target. Informational — a signal the lesson design or starting point mismatched, not a failure of the coach.">Extended lessons</div>
           </CardContent>
         </Card>
         <Card>

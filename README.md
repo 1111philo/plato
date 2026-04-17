@@ -18,17 +18,16 @@ A **lesson** defines an exemplar (the mastery-level outcome a learner produces) 
 
 ### Microlearning pacing
 
-Lessons are designed for completion within 11 exchanges, but the system never cuts a learner off. Instead, the coach adapts its approach as exchanges accumulate:
+Lessons are designed for completion within 11 exchanges (~20 minutes), but the system never cuts a learner off. The coach adapts its approach as exchanges accumulate — and always decides when the exemplar has been demonstrated. There is no hard cutoff and no forced closure.
 
 | Exchanges | Coach behavior |
 |-----------|---------------|
-| 1-10 | Normal coaching — diagnostics, practice, assessment |
-| 11-14 | Pivots to the exemplar — no new concepts, direct scaffolding |
-| 15-19 | Drops to single objective — one concrete, completable task |
-| 20-21 | Celebrates progress and closes the lesson |
-| 22 | Hard limit — system completes the lesson (safety net) |
+| 1-7 | Normal coaching — diagnostics, practice, assessment |
+| 8-10 | Approaching target — converge toward the exemplar, prefer focused steps |
+| 11+ | Past target — drop non-essential objectives, scaffold to the biggest remaining gap |
+| 20+ | Well past target — the lesson probably mismatched the learner; coach flags it in `[KB_UPDATE]` but keeps moving them forward |
 
-The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target, helping educators tune lesson design.
+The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target. A low rate means the **lesson design** or **coach prompt** probably needs tuning — not that pacing should be enforced more aggressively. Extended lessons (2× target or beyond) are surfaced as informational diagnostics, never as metrics to drive to zero.
 
 Admins manage everything from `/plato`: lessons, users, a classroom customizer (styles + knowledge base), and integrations.
 

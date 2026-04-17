@@ -311,9 +311,9 @@ describe('GET /v1/admin/stats/lessons', () => {
       if (userId === 'u2') return [
         { dataKey: 'lessonKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 15, startedAt: 1000000, completedAt: 2200000 } },
       ];
-      // u3: hit hard limit (22 exchanges, progress < 10)
+      // u3: extended lesson (22 exchanges — past 2× target, still counts as completion)
       return [
-        { dataKey: 'lessonKB:c1', data: { status: 'completed', progress: 7, activitiesCompleted: 22, startedAt: 1000000, completedAt: 2800000 } },
+        { dataKey: 'lessonKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 22, startedAt: 1000000, completedAt: 2800000 } },
       ];
     };
     const app = new Hono();
@@ -323,12 +323,12 @@ describe('GET /v1/admin/stats/lessons', () => {
     const data = await res.json();
     assert.equal(data.totalCompletions, 3);
     assert.equal(data.withinTarget, 1);
-    assert.equal(data.overTarget, 1);
-    assert.equal(data.hitHardLimit, 1);
+    assert.equal(data.overTarget, 2); // 15 exch + 22 exch both count as over-target
+    assert.equal(data.extendedLessons, 1); // subset of overTarget: the 22-exchange one
     assert.equal(data.activeLessons, 1);
     assert.equal(data.avgExchangesWithinTarget, 6);
     assert.equal(data.exchangeTarget, 11);
-    assert.equal(data.hardLimit, 22);
+    assert.equal(data.extendedThreshold, 22);
     assert.equal(data.avgDurationMinutes, 20);
   });
 
