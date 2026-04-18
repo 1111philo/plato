@@ -391,6 +391,7 @@ admin.get('/v1/admin/lessons', async (c) => {
       status: normalizeStatus(i.data.status),
       sharedWith: i.data.sharedWith || [],
       createdByName: i.data.createdByName || null,
+      updatedByName: i.data.updatedByName || null,
       updatedAt: i.updatedAt,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
@@ -437,6 +438,7 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
     readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
+    updatedByName: adminUser.username || adminUser.email,
     createdBy: current?.data?.createdBy || adminUser.userId,
     createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
