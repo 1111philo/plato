@@ -193,15 +193,18 @@ jobs:
           if [ "$FAILED" -eq 1 ]; then exit 1; fi
           echo "Post-action dup-check passed."
 
-      - name: Auto-escalate looping issues (dry-run)
+      - name: Auto-escalate looping issues
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DRY_RUN: 'true'
+          DRY_RUN: 'false'
         run: |
           # Find ready-for-pilot issues that have ≥2 closed-unmerged pilot PRs.
-          # In dry-run mode (default for first week), log what we would do.
-          # Flip DRY_RUN=false to enable real relabel + comment.
+          # When a loop is detected: relabel ready-for-pilot → needs-info and
+          # post a comment asking the reporter to clarify. The dry-run mode
+          # (DRY_RUN=true) was used for the first run on 2026-04-20 and
+          # produced correct output (would-relabel #60, skip #43 because
+          # it's not labeled). Flipped to live after that validation.
           SINCE=$(date -u -d '30 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-30d +%Y-%m-%d)
           CLOSED_PRS=$(gh pr list --label plato-pilot --state closed --limit 50 \
             --search "closed:>=$SINCE" \
