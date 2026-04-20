@@ -93,3 +93,20 @@ jobs:
             - Clean → `gh pr review $PR_NUMBER --approve --body "Tests pass. No bugs, security, or accessibility issues found."`
 
             Be direct. Short is better than thorough.
+      - name: Verify claude[bot] review was posted
+        if: steps.guard.outputs.skip != 'true' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The SDK can exit successfully without calling `gh pr review`,
+          # leaving the PR unreviewed and the required status check green.
+          # Fail loudly instead so the workflow can be re-triggered.
+          COUNT=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+            --jq "[.[] | select(.user.login==\"claude[bot]\") | select(.commit_id==\"$HEAD_SHA\")] | length")
+          if [ "${COUNT:-0}" -eq 0 ]; then
+            echo "::error::No claude[bot] review posted for $HEAD_SHA. Re-run the workflow or comment @claude on the PR."
+            exit 1
+          fi
+          echo "claude[bot] review exists for $HEAD_SHA"
