@@ -189,7 +189,7 @@ export default function AdminLessons() {
                       }
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
+                  <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
                   <TableCell>
                     <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
