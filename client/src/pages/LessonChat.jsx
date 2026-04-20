@@ -90,25 +90,26 @@ export default function LessonChat() {
         setMessages(prev => [...prev, ...msgs]);
         const hasAssistant = msgs.some(m => m.role === 'assistant');
         if (hasAssistant) {
-          // Clear first so repeated identical announcements still trigger,
-          // then auto-clear again after ~3s so the text doesn't linger in
-          // the DOM as navigable static content.
           if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
           if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
           setSrAnnouncement('');
+          notifyTitle();
+          // If focus is inside the chat log, move it to the new message so
+          // VoiceOver announces it via the inline "Coach says:" prefix.
+          // Otherwise fire the live region — both paths must not run together
+          // or VoiceOver reads "Coach says: … New message from coach" as one
+          // utterance, which sounds like the coach said those words.
           srRafRef.current = requestAnimationFrame(() => {
             srRafRef.current = null;
-            setSrAnnouncement('New message from coach');
-            srClearTimeoutRef.current = setTimeout(() => setSrAnnouncement(''), 3000);
-          });
-          notifyTitle();
-          // Focus the new message if the user's focus is inside the chat log
-          requestAnimationFrame(() => {
             const log = chatAreaRef.current;
-            if (log && (log.contains(document.activeElement) || document.activeElement === log)) {
-              const msgs = log.querySelectorAll('[data-chat-message="assistant"]');
-              const last = msgs[msgs.length - 1];
+            const focusInLog = log && (log.contains(document.activeElement) || document.activeElement === log);
+            if (focusInLog) {
+              const assistantMsgs = log.querySelectorAll('[data-chat-message="assistant"]');
+              const last = assistantMsgs[assistantMsgs.length - 1];
               if (last) last.focus();
+            } else {
+              setSrAnnouncement('New message from coach');
+              srClearTimeoutRef.current = setTimeout(() => setSrAnnouncement(''), 3000);
             }
           });
         }
@@ -126,11 +127,19 @@ export default function LessonChat() {
 
   // Move focus to the Objectives dialog title when it opens so screen
   // readers announce the dialog's purpose instead of landing on the close
-  // button.
+  // button. Two nested RAFs are required: Base UI runs its own focus
+  // management on open (focusing the close button) which may itself use a
+  // single RAF, so one RAF is not enough to reliably win.
   useEffect(() => {
     if (!showObjectives) return;
-    const id = requestAnimationFrame(() => objectivesTitleRef.current?.focus());
-    return () => cancelAnimationFrame(id);
+    let cancelled = false;
+    const id = requestAnimationFrame(() => {
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (!cancelled) objectivesTitleRef.current?.focus();
+      });
+    });
+    return () => { cancelled = true; cancelAnimationFrame(id); };
   }, [showObjectives]);
 
   useEffect(() => {
