@@ -452,6 +452,63 @@ describe('PUT /v1/admin/lessons/:lessonId — sharedWith + public/private', () =
   });
 });
 
+describe('lessons endpoint — updatedByName', () => {
+  const validMarkdown = `# Test Lesson\n\nA test.\n\n## Exemplar\nProduce a thing.\n\n## Learning Objectives\n- Can do A\n- Can do B`;
+
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin', username: 'admin_user', email: 'admin@example.com' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+  });
+
+  it('PUT persists updatedByName from adminUser.username', async () => {
+    let savedData;
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-1', {
+      markdown: validMarkdown, name: 'Test',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.updatedByName, 'admin_user');
+  });
+
+  it('PUT falls back to email when username is missing', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', email: 'admin@example.com' });
+    let savedData;
+    db.putSyncData = async (uid, key, data) => { savedData = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/test-1', {
+      markdown: validMarkdown, name: 'Test',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(savedData.updatedByName, 'admin@example.com');
+  });
+
+  it('GET list returns updatedByName from data', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:upd-1',
+      data: { name: 'Updated Lesson', status: 'public', updatedByName: 'alice' },
+      updatedAt: '2026-04-20',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].updatedByName, 'alice');
+  });
+
+  it('GET list returns null updatedByName when record pre-dates the field', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:old-1',
+      data: { name: 'Legacy', status: 'public' },
+      updatedAt: '2025-01-01',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].updatedByName, null);
+  });
+});
+
 describe('GET /v1/admin/logs', () => {
   const origConsoleErr = console.error;
   const origConsoleWarn = console.warn;
