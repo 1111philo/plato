@@ -59,6 +59,10 @@ jobs:
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
             Read REVIEW.md and CLAUDE.md for project conventions.
 
+            **plato is live.** learn.ai-leaders.org has active users, many mid-lesson
+            as you review. Every merge to `main` auto-deploys to prod. Your review is
+            the last human-free checkpoint before real sessions see this code.
+
             ## What to do
             1. Read the PR diff and understand what changed and why
             2. Read the FULL source files that were modified (not just the diff) to check context
@@ -71,6 +75,25 @@ jobs:
             - **Security**: XSS, injection, leaked secrets, auth bypass
             - **Accessibility**: missing aria labels, keyboard traps, broken screen reader support
             - **Missing tests**: server route/lib changes without test coverage
+            - **Live-user impact** (see below — call out even when other checks pass)
+
+            ### Live-user impact — call out explicitly in every review
+            Because merges auto-deploy to prod, always surface changes that could
+            affect active learners. Flag any of the following, either as blocking
+            (when the risk is real and unmitigated) or as a user-impact note on
+            an otherwise-clean review:
+
+            - Changes to in-flight lesson state or storage: `client/js/orchestrator.js`, `lessonOwner.js`, `storage.js`, `client/src/lib/lessonEngine.js`
+            - Streaming chat path: `server/src/routes/ai.js`, `ai-provider.js` — bugs drop active conversations
+            - Auth / JWT / refresh tokens (`server/src/routes/auth.js`, token TTLs, localStorage keys) — a bug logs everyone out
+            - DynamoDB schema, sync-data format, or data migrations — forward/backward compatibility
+            - `server/template.yaml` / SAM infra — deploy-breaking changes
+            - Prompt files under `client/prompts/*.md` — live coaching behavior changes on next Lambda cold start
+            - Changes to microlearning constants (`client/src/lib/constants.js`, `server/src/lib/lesson-limits.js`)
+
+            When the PR is a plato-pilot PR, check the **User impact** line in the PR body
+            against the actual diff. If the author said "low" but the diff touches a
+            higher-risk surface, that's a must-flag mislabel.
 
             ### Should flag (non-blocking)
             - Logic that's correct but fragile (will break on the next change)
@@ -87,10 +110,15 @@ jobs:
             update, amend, or supplement it with extra `gh pr review`, `gh pr comment`,
             or `gh api` calls — if the first call succeeded you are done.
 
+            **Every review body must end with a one-line "User impact" summary**, e.g.
+            `User impact: none — admin-only UI copy change.` or
+            `User impact: medium — streaming route error handling changed; confirmed tests cover the new path.`
+            This gives the maintainer a consistent final signal before merge.
+
             Pick one outcome:
             - Tests fail → `gh pr review $PR_NUMBER --request-changes --body "Tests fail: ..."`
             - Blocking issues → `gh pr review $PR_NUMBER --request-changes --body "..."` with file:line references
-            - Clean → `gh pr review $PR_NUMBER --approve --body "Tests pass. No bugs, security, or accessibility issues found."`
+            - Clean → `gh pr review $PR_NUMBER --approve --body "Tests pass. No bugs, security, or accessibility issues found.\n\nUser impact: ..."`
 
             Be direct. Short is better than thorough.
       - name: Verify claude[bot] review was posted
