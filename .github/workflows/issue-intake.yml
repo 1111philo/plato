@@ -97,10 +97,22 @@ jobs:
 
             Every non-bot issue gets engaged. Pick one of three outcomes:
 
-            **A. Already actionable** — reproduction steps, specific behavior, a
-            concrete page/URL/code area, or a clear user-visible request are present.
-            Even a short but specific report counts ("the Send button doesn't work on
-            iPad Safari" is actionable).
+            **A. Already actionable** — the issue names something *concrete*. At
+            least ONE of these must be present:
+            - An exact string / label / copy change (e.g. "change 'Created by' to
+              'Updated by' in the Lessons table header")
+            - A specific error message, console log, or screenshot that pinpoints
+              the problem
+            - A concrete page/URL/component AND the specific observed-vs-expected
+              behavior ("the Send button in the chat compose bar on iPad Safari
+              doesn't respond to taps" — names component, device, and behavior)
+
+            A "clear user-visible request" alone is NOT sufficient. "Updated
+            headings needed in admin dashboard" is too vague even if a reporter
+            feels strongly — plato-pilot will loop on interpretations. When in
+            doubt between A and B, **prefer B**. A false-positive `needs-info`
+            is cheap (reporter clarifies); a false-positive `ready-for-pilot`
+            fuels pilot loops and wastes review cycles.
 
             ```
             gh issue edit $ISSUE_NUMBER --add-label ready-for-pilot

@@ -28,12 +28,19 @@ jobs:
           PLATO_API_URL: ${{ secrets.PLATO_API_URL }}
           PLATO_ADMIN_EMAIL: ${{ secrets.PLATO_ADMIN_EMAIL }}
           PLATO_ADMIN_PASSWORD: ${{ secrets.PLATO_ADMIN_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node scripts/pilot-report.js > /tmp/pilot-report.md
+          # Extract the machine-readable blocklist marker for post-action verification.
+          # The report embeds `<!-- PILOT_BLOCKLIST: 60,46 -->` near the blocklist section.
+          BLOCKLIST=$(grep -oE '<!-- PILOT_BLOCKLIST: [0-9,]* -->' /tmp/pilot-report.md | head -1 | sed -E 's/<!-- PILOT_BLOCKLIST: ([0-9,]*) -->/\1/')
+          echo "$BLOCKLIST" > /tmp/pilot-blocklist.txt
+          echo "Blocked issues: ${BLOCKLIST:-none}"
           echo "Generated pilot report:"
           cat /tmp/pilot-report.md
 
       - uses: anthropics/claude-code-action@v1
+        id: agent
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: true
@@ -41,30 +48,49 @@ jobs:
           prompt: |
             You are plato-pilot, an autonomous engineering advisor for plato.
             You have a turn budget — be efficient. Don't over-explore. Pick one thing, fix it, test it, ship it.
+            **SKIP is a valid and valued outcome.** A skipped day is better than a duplicate or misaligned PR.
 
-            ## Step 1: Read context (≤5 turns)
-            - Read /tmp/pilot-report.md for today's KPI snapshot and server errors (by code, with counts and samples)
-            - Read CLAUDE.md for architecture and conventions
-            - Run `gh issue list --state open --label ready-for-pilot --limit 20` for triaged issues. If that's empty, fall back to `gh issue list --state open --limit 20`. Prefer `ready-for-pilot` issues — they've been through the intake agent and have the detail you need. Issues labeled `needs-info` are blocked pending the reporter's reply; don't pick them.
-            - Run `gh pr list --label plato-pilot --state all --limit 20 --json number,title,state,mergedAt,closedAt,body` to see your own recent work
+            ## Step 1: Read context (≤4 turns)
+            - Read /tmp/pilot-report.md — contains today's KPI snapshot, server errors, the **BLOCKLIST of issues with open pilot PRs**, pilot merge-rate track record, and tier-classified `ready-for-pilot` issues
+            - Read /tmp/pilot-blocklist.txt — the machine-readable list of blocked issue numbers (comma-separated)
+            - Read CLAUDE.md for architecture, conventions, and anti-goals
+            - Do NOT re-query `gh pr list` or `gh issue list` — the report already has the synthesized view
 
-            ## Step 2: Triage — pick ONE thing (1 turn)
-            Priority: high-count error codes > open bug issues > open enhancement issues > skip.
-            The errors table is keyed by `code` (e.g. `unhandled_error`, `ai_stream_error`, `cloudwatch_raw`) with counts and first/last seen. Pick the code with the highest count that looks actionable.
-            If the report shows `CloudWatch fetch failed`, the in-process buffer errors are still reliable but Lambda runtime errors (timeouts etc.) may be missing — factor that uncertainty in.
-            If an issue and a log error overlap, that's the strongest signal.
-            If nothing is actionable, stop immediately — do not invent work.
+            ## Strategic priorities (use for tie-breaking)
+            plato is an exemplar-driven microlearning platform. Work that serves learners directly beats work that cleans up infrastructure.
 
-            ### Cross-reference your own recent PRs (HARD rule)
-            Before committing to a signal, check the recent `plato-pilot` PRs you just listed:
-            - If a PR addressing the same topic is **still OPEN**, do NOT open a duplicate. Either pick a different signal or stop.
-            - If a similar PR was **CLOSED without being merged**, treat that as a strong anti-signal — the maintainer already rejected that approach. Pick a different signal or stop. Do NOT re-propose a closed-without-merge change with a different title.
-            - If a similar PR was **MERGED recently**, the fix is already shipped. Pick a different signal.
-            Only a genuinely new topic should get a new PR.
+            - **Tier 1 — Learner experience**: exemplar clarity, coach quality, learner profile accuracy, lesson pedagogy
+            - **Tier 2 — Accessibility**: keyboard, screen reader, ARIA, MITRE/Orange chat patterns
+            - **Tier 3 — Admin ergonomics**: lesson creation flow, KB editing, admin dashboard usability
+            - **Tier 4 — Data integrity**: sync-data consistency, auth, lesson visibility
+            - **Tier 5 — DevOps**: CI/CD, AWS infra, deploy tooling
+
+            When a high-count error would land in Tier 4/5 and a concrete Tier 1/2 issue is actionable, **pick the Tier 1/2 issue**. Volume is not the only axis — alignment to the project's mission (serving learners) matters more.
+
+            ## Step 2: Triage — pick ONE thing or SKIP (1 turn)
+
+            **Hard rules (violations abort the run):**
+            1. If a candidate references a blocked issue from /tmp/pilot-blocklist.txt, **DO NOT PICK IT**. An open pilot PR already exists.
+            2. If the report's "Looped issues" section names an issue, **DO NOT PICK IT**. Two or more closed-unmerged PRs already tried and failed — the reporter needs to clarify before another attempt makes sense.
+            3. Do NOT violate any anti-goal (see below).
+
+            **Signal weighting:**
+            - A Tier 1/2 `ready-for-pilot` issue with specifics (exact string change, screenshot, error message) → strongest signal
+            - A high-count server error code tied to a learner-facing surface → strong signal
+            - A Tier 1/2 issue overlapping a log error → strongest combined signal
+            - A Tier 4/5 error with no Tier 1/2 alternative → acceptable, but narrow the fix
+            - A Tier 3+ issue when Tier 1/2 is covered or missing → acceptable if clearly scoped
+
+            **SKIP outcomes (exit 0 with a single line to stdout):**
+            - `SKIP: all Tier 1/2 signals are covered by open pilot PRs (#N, #M)` — blocklist ate everything worth picking
+            - `SKIP: no actionable signal today` — nothing meets the hard rules or signal weighting
+            - `SKIP: only candidate is an anti-goal (<describe>)` — the loudest signal would force a bad fix
+
+            Print the SKIP line and stop. Do not invent work, do not "find something small to ship." SKIP is success.
 
             ### Anti-goals (hard rules — never violate)
-            - **Lessons never have hard stops.** plato's coaching philosophy is "move people, not force people." Do NOT introduce any change that cuts a learner off mid-lesson, auto-completes a lesson based on exchange count, or tells the coach to award progress 10 regardless of what the learner has demonstrated. The coach always decides when the exemplar has been met.
-            - **Over-target completions are a design signal, not a bug.** A low on-target rate means the lesson design or coach prompt may need tuning. NEVER fix it by tightening pacing directives into forced closures. If you're tempted to touch `pacingDirective` strings or the `MAX_EXCHANGES`-based completion logic in `client/src/lib/lessonEngine.js` to "reduce over-target," stop and pick a different signal.
+            - **Lessons never have hard stops.** plato's coaching philosophy is "move people, not force people." Do NOT introduce any change that cuts a learner off mid-lesson, auto-completes a lesson based on exchange count, or tells the coach to award progress 10 regardless of what the learner has demonstrated.
+            - **Over-target completions are a design signal, not a bug.** Low on-target rate means the lesson design or coach prompt may need tuning. NEVER fix it by tightening pacing directives into forced closures. If tempted to touch `pacingDirective` strings or `MAX_EXCHANGES`-based completion in `client/src/lib/lessonEngine.js`, stop and pick a different signal.
             - The `extendedLessons` KPI is informational. Do not treat it as a metric to drive to zero.
 
             ## Step 3: Implement (≤15 turns)
@@ -82,5 +108,91 @@ jobs:
             - Commit on your branch, then push: `git push -u origin "$BRANCH"`
             - Create a PR with `gh pr create --head "$BRANCH" --label plato-pilot`:
               - Title: imperative mood, under 70 chars
-              - Body: ## Triage\nWhich signal and why.\n## Changes\nWhat and why.
-              - Reference any related issue (e.g. "Fixes #42")
+              - Reference the issue with `Fixes #N` in the PR body (required when an issue drives the pick — the post-action dup-check reads this)
+              - **Body must include a Triage table**, using exactly this markdown structure:
+
+                ```
+                ## Triage
+
+                | Signal | Source | Tier | Decision | Why |
+                |--------|--------|------|----------|-----|
+                | <picked-signal> | issue / log-error / kpi | 1–5 | fix | <one sentence> |
+
+                ## Changes
+                <what + why>
+                ```
+
+                One row minimum (the picked signal). You're encouraged to include 1–2 additional rows showing considered-and-rejected alternatives with decisions like `skip-dup`, `skip-tier`, `skip-anti-goal`, or `skip-vague`. This makes the reasoning auditable and is what convinces the maintainer to merge.
+
+      - name: Verify agent did not duplicate a blocked issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Post-action dup-check: if the agent opened a PR against a blocked issue, close it.
+          BLOCKLIST=$(cat /tmp/pilot-blocklist.txt 2>/dev/null || echo "")
+          if [ -z "$BLOCKLIST" ]; then
+            echo "No blocklist; skipping post-action dup-check."
+            exit 0
+          fi
+          # Find any pilot PR created in the last 10 minutes (this run's output).
+          CUTOFF=$(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-10M +%Y-%m-%dT%H:%M:%SZ)
+          RECENT_PRS=$(gh pr list --label plato-pilot --state open --limit 5 \
+            --search "created:>=$CUTOFF" \
+            --json number,body)
+          echo "$RECENT_PRS" | jq -c '.[]' | while read -r pr; do
+            NUM=$(echo "$pr" | jq -r '.number')
+            BODY=$(echo "$pr" | jq -r '.body')
+            # Extract Fixes/Closes/Resolves #N from the body.
+            LINKED=$(echo "$BODY" | grep -oiE '(fixes|closes|resolves)[[:space:]]+#[0-9]+' | grep -oE '[0-9]+' | sort -u)
+            for ISSUE in $LINKED; do
+              if echo ",$BLOCKLIST," | grep -q ",$ISSUE,"; then
+                echo "::error::PR #$NUM references blocked issue #$ISSUE (already has an open pilot PR). Closing."
+                gh pr close "$NUM" --comment "Automatically closed: this PR duplicates an already-open pilot PR for issue #$ISSUE. The pilot's pre-flight blocklist should have prevented this pick."
+                exit 1
+              fi
+            done
+          done
+          echo "Post-action dup-check passed."
+
+      - name: Auto-escalate looping issues (dry-run)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: 'true'
+        run: |
+          # Find ready-for-pilot issues that have ≥2 closed-unmerged pilot PRs.
+          # In dry-run mode (default for first week), log what we would do.
+          # Flip DRY_RUN=false to enable real relabel + comment.
+          SINCE=$(date -u -d '30 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-30d +%Y-%m-%d)
+          CLOSED_PRS=$(gh pr list --label plato-pilot --state closed --limit 50 \
+            --search "closed:>=$SINCE" \
+            --json number,body,mergedAt)
+          # Attribute each closed-unmerged PR to its referenced issues.
+          ATTEMPTS=$(echo "$CLOSED_PRS" | jq -r '
+            [.[] | select(.mergedAt == null) | .body // "" |
+              [scan("(?i)(?:fixes|closes|resolves)\\s+#([0-9]+)")[]] | .[0]] |
+            group_by(.) | map({issue: .[0], count: length}) | .[] |
+            select(.count >= 2) | "\(.issue) \(.count)"')
+          if [ -z "$ATTEMPTS" ]; then
+            echo "No looping issues detected."
+            exit 0
+          fi
+          echo "$ATTEMPTS" | while read -r ISSUE COUNT; do
+            LABELS=$(gh issue view "$ISSUE" --json labels --jq '.labels | map(.name) | join(",")' 2>/dev/null || echo "")
+            if ! echo ",$LABELS," | grep -q ",ready-for-pilot,"; then
+              echo "Issue #$ISSUE has $COUNT closed pilot PRs but is not ready-for-pilot; skip."
+              continue
+            fi
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "[DRY-RUN] Would relabel issue #$ISSUE (ready-for-pilot → needs-info) after $COUNT closed pilot PRs."
+            else
+              PR_REFS=$(echo "$CLOSED_PRS" | jq -r --arg i "$ISSUE" '
+                [.[] | select(.mergedAt == null) |
+                  select(.body // "" | test("(?i)(?:fixes|closes|resolves)\\s+#\($i)\\b")) |
+                  "#\(.number)"] | join(", ")')
+              gh issue edit "$ISSUE" --remove-label ready-for-pilot --add-label needs-info
+              gh issue comment "$ISSUE" --body "plato-pilot attempted this $COUNT× (closed PRs: $PR_REFS) without a merge. Re-tagging \`needs-info\` — could you clarify which of those attempts matches what you wanted, or what's missing? Once clarified we'll route it back to the pilot."
+              echo "Relabeled issue #$ISSUE."
+            fi
+          done
