@@ -1,16 +1,157 @@
 #!/usr/bin/env node
 
 /**
- * Collects KPIs and server logs from plato's admin API, then outputs a
- * markdown triage report for the pilot workflow.
+ * Collects KPIs and server logs from plato's admin API, plus pilot PR/issue
+ * state from the GitHub CLI, then outputs a markdown triage report for the
+ * pilot workflow.
  *
  * Required env vars:
  *   PLATO_API_URL          — e.g. https://learn.ai-leaders.org
  *   PLATO_ADMIN_EMAIL      — admin email for API login
  *   PLATO_ADMIN_PASSWORD   — admin password for API login
  *
+ * Optional: GH_TOKEN in env (for `gh` CLI auth, set by the workflow).
+ *
  * Usage: node scripts/pilot-report.js > /tmp/pilot-report.md
  */
+
+import { execFileSync } from 'node:child_process';
+
+const ISSUE_REF_RE = /(?:fixes|closes|resolves)\s+#(\d+)/gi;
+
+function gh(args) {
+  try {
+    return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    console.error(`gh ${args.join(' ')} failed:`, err.stderr?.toString() || err.message);
+    return '';
+  }
+}
+
+function ghJson(args) {
+  const out = gh(args);
+  if (!out) return [];
+  try {
+    return JSON.parse(out);
+  } catch {
+    return [];
+  }
+}
+
+function linkedIssues(body) {
+  if (!body) return [];
+  const ids = new Set();
+  for (const m of body.matchAll(ISSUE_REF_RE)) ids.add(Number(m[1]));
+  return [...ids];
+}
+
+function classifyTier(issue) {
+  const text = `${issue.title} ${issue.body || ''}`.toLowerCase();
+  // Order matters: check Tier 1 first so a learner-experience issue that also
+  // mentions "keyboard" or "aria" lands in Tier 1 (the higher priority), not
+  // Tier 2. Matches the declared priority order in the pilot prompt.
+  if (/\b(coach|exemplar|lesson|learner\s*profile|kb\b|knowledge\s*base|prompt)\b/.test(text)) return 1;
+  if (/\b(a11y|accessib|keyboard|screen\s*reader|voiceover|nvda|jaws|aria|mitre|orange)\b/.test(text)) return 2;
+  if (/\b(admin|dashboard|customizer|invite|classroom)\b/.test(text)) return 3;
+  if (/\b(auth|token|sync[-\s]*data|visibility|share)\b/.test(text)) return 4;
+  if (/\b(deploy|ci|cd|sam|cloudformation|lambda|cloudwatch|infra)\b/.test(text)) return 5;
+  return 3;
+}
+
+function formatPilotTrackRecord(prs) {
+  if (!prs.length) return '_No pilot PRs in the last 30 days._';
+
+  const merged = prs.filter((p) => p.state === 'MERGED');
+  const closed = prs.filter((p) => p.state === 'CLOSED');
+  const open = prs.filter((p) => p.state === 'OPEN');
+  const totalResolved = merged.length + closed.length;
+  const mergeRate = totalResolved ? ((merged.length / totalResolved) * 100).toFixed(0) : 'N/A';
+
+  const issueAttempts = new Map();
+  for (const pr of prs) {
+    for (const issueNum of linkedIssues(pr.body)) {
+      if (!issueAttempts.has(issueNum)) issueAttempts.set(issueNum, []);
+      issueAttempts.get(issueNum).push(pr);
+    }
+  }
+
+  const loopedIssues = [];
+  for (const [issueNum, attemptPrs] of issueAttempts) {
+    const closedUnmerged = attemptPrs.filter((p) => p.state === 'CLOSED');
+    if (closedUnmerged.length >= 2) {
+      const prList = closedUnmerged.map((p) => `#${p.number}`).join(', ');
+      loopedIssues.push(`- Issue #${issueNum}: ${closedUnmerged.length} closed-unmerged PRs (${prList}). **Do NOT re-attempt without new information from the reporter.**`);
+    }
+  }
+
+  const lines = [
+    `- Merged: ${merged.length} · Closed-unmerged: ${closed.length} · Open: ${open.length}`,
+    `- Merge rate (of resolved): **${mergeRate}%**`,
+  ];
+  if (loopedIssues.length) {
+    lines.push('', '### Looped issues (strong anti-signal)', ...loopedIssues);
+  }
+  return lines.join('\n');
+}
+
+function formatBlocklist(openPrs) {
+  const blocked = new Set();
+  const rows = [];
+  for (const pr of openPrs) {
+    const issues = linkedIssues(pr.body);
+    for (const i of issues) blocked.add(i);
+    const ref = issues.length ? issues.map((i) => `#${i}`).join(', ') : '_(no issue ref)_';
+    rows.push(`| #${pr.number} | ${pr.title.replace(/\|/g, '\\|')} | ${ref} |`);
+  }
+
+  const marker = `<!-- PILOT_BLOCKLIST: ${[...blocked].sort((a, b) => a - b).join(',')} -->`;
+
+  if (!openPrs.length) {
+    return `${marker}\n_No open pilot PRs. Nothing is blocked._`;
+  }
+
+  const table = [
+    '| Open PR | Title | Linked issues |',
+    '|---------|-------|---------------|',
+    ...rows,
+  ].join('\n');
+
+  const blockedList = blocked.size
+    ? `**Issues blocked from re-picking:** ${[...blocked].sort((a, b) => a - b).map((i) => `#${i}`).join(', ')}`
+    : '_No issues linked from open PRs._';
+
+  return `${marker}\n\n${blockedList}\n\n${table}\n\n**Rule:** Do NOT open a PR that references any blocked issue. If the best signal points at a blocked issue, pick a different signal or SKIP.`;
+}
+
+function formatReadyIssues(issues, closedPilotPrs) {
+  if (!issues.length) return '_No `ready-for-pilot` issues today._';
+
+  const attemptedIssues = new Map();
+  for (const pr of closedPilotPrs) {
+    for (const issueNum of linkedIssues(pr.body)) {
+      if (!attemptedIssues.has(issueNum)) attemptedIssues.set(issueNum, []);
+      attemptedIssues.get(issueNum).push(pr.number);
+    }
+  }
+
+  const byTier = new Map();
+  for (const issue of issues) {
+    const tier = classifyTier(issue);
+    if (!byTier.has(tier)) byTier.set(tier, []);
+    byTier.get(tier).push(issue);
+  }
+
+  const sections = [];
+  for (const tier of [...byTier.keys()].sort()) {
+    sections.push(`### Tier ${tier}`);
+    for (const issue of byTier.get(tier)) {
+      const attempted = attemptedIssues.get(issue.number);
+      const attemptNote = attempted?.length ? ` — ⚠️ previously attempted in closed PRs: ${attempted.map((n) => `#${n}`).join(', ')}` : '';
+      sections.push(`- #${issue.number}: ${issue.title}${attemptNote}`);
+    }
+  }
+  return sections.join('\n');
+}
 
 async function login(apiUrl) {
   const res = await fetch(`${apiUrl}/v1/auth/login`, {
@@ -73,6 +214,26 @@ async function main() {
   const token = await login(apiUrl);
   const [kpis, logs] = await Promise.all([collectKpis(apiUrl, token), collectLogs(apiUrl, token)]);
 
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const pilotPrs = ghJson([
+    'pr', 'list',
+    '--label', 'plato-pilot',
+    '--state', 'all',
+    '--limit', '50',
+    '--json', 'number,title,state,body,createdAt,mergedAt,closedAt',
+    '--search', `created:>=${thirtyDaysAgo.slice(0, 10)}`,
+  ]);
+  const openPilotPrs = pilotPrs.filter((p) => p.state === 'OPEN');
+  const closedPilotPrs = pilotPrs.filter((p) => p.state === 'CLOSED');
+
+  const readyIssues = ghJson([
+    'issue', 'list',
+    '--state', 'open',
+    '--label', 'ready-for-pilot',
+    '--limit', '30',
+    '--json', 'number,title,body,createdAt',
+  ]);
+
   const onTargetRate = kpis.totalCompletions
     ? ((kpis.withinTarget / kpis.totalCompletions) * 100).toFixed(1)
     : 'N/A';
@@ -110,6 +271,18 @@ ${formatGroups(logs)}
 ## CloudWatch lane status
 
 ${formatCloudWatchStatus(logs)}
+
+## Open pilot PRs (BLOCKLIST)
+
+${formatBlocklist(openPilotPrs)}
+
+## Pilot track record (last 30 days)
+
+${formatPilotTrackRecord(pilotPrs)}
+
+## Open \`ready-for-pilot\` issues (tier-classified)
+
+${formatReadyIssues(readyIssues, closedPilotPrs)}
 `;
 
   process.stdout.write(report);
