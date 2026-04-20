@@ -47,8 +47,11 @@ function linkedIssues(body) {
 
 function classifyTier(issue) {
   const text = `${issue.title} ${issue.body || ''}`.toLowerCase();
-  if (/\b(a11y|accessib|keyboard|screen\s*reader|voiceover|nvda|jaws|aria|mitre|orange)\b/.test(text)) return 2;
+  // Order matters: check Tier 1 first so a learner-experience issue that also
+  // mentions "keyboard" or "aria" lands in Tier 1 (the higher priority), not
+  // Tier 2. Matches the declared priority order in the pilot prompt.
   if (/\b(coach|exemplar|lesson|learner\s*profile|kb\b|knowledge\s*base|prompt)\b/.test(text)) return 1;
+  if (/\b(a11y|accessib|keyboard|screen\s*reader|voiceover|nvda|jaws|aria|mitre|orange)\b/.test(text)) return 2;
   if (/\b(admin|dashboard|customizer|invite|classroom)\b/.test(text)) return 3;
   if (/\b(auth|token|sync[-\s]*data|visibility|share)\b/.test(text)) return 4;
   if (/\b(deploy|ci|cd|sam|cloudformation|lambda|cloudwatch|infra)\b/.test(text)) return 5;
