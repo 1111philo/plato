@@ -47,7 +47,12 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         with:
+          # OAuth-only was attempted in PR #93; the Max OAuth token hit 401
+          # "Invalid bearer token" on its first real use (PR #94). Restored the
+          # API-key fallback so reviews keep working. Investigate the OAuth 401
+          # (token scope? rate limit?) before attempting OAuth-only again.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
           # display_report intentionally disabled: it auto-posts an aggregated
           # review from buffered inline annotations at end of session, which
