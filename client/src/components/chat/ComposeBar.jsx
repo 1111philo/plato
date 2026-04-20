@@ -30,7 +30,7 @@ export default function ComposeBar({
     const payload = { text: val || null, imageDataUrl: image?.dataUrl || null };
     setText('');
     setImage(null);
-    if (inputRef.current) inputRef.current.style.height = 'auto';
+    if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.overflowY = 'hidden'; }
     onSend(payload);
   };
 
