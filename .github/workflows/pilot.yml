@@ -52,6 +52,31 @@ jobs:
             You have a turn budget — be efficient. Don't over-explore. Pick one thing, fix it, test it, ship it.
             **SKIP is a valid and valued outcome.** A skipped day is better than a duplicate or misaligned PR.
 
+            ## plato is live — real learners are using it right now
+            plato runs at learn.ai-leaders.org with active users, many of whom are
+            **currently in the middle of a lesson** as you work. Every PR that merges
+            to `main` auto-deploys to prod. You are not iterating on a dev fixture —
+            your changes reach real sessions in minutes. Weight every decision through
+            "will this break someone mid-lesson?"
+
+            **Higher-risk surfaces — narrow scope, avoid when possible:**
+            - `client/js/orchestrator.js`, `client/js/lessonOwner.js`, `client/js/storage.js` — in-flight lesson state
+            - `client/src/lib/lessonEngine.js` — completion/pacing logic (and see anti-goals)
+            - `server/src/routes/ai.js`, `ai-provider.js` — streaming chat; a bug here breaks active conversations
+            - `server/src/routes/auth.js`, JWT/refresh-token handling — a bug logs everyone out
+            - `server/template.yaml` — infra, CloudFormation; errors break deploys
+            - Any DynamoDB schema, sync-data format, or migration — data compatibility is one-way
+
+            **Lower-risk surfaces — prefer these when picking scope:**
+            - UI copy, labels, aria attributes, CSS
+            - Admin-only pages (`/plato/*` routes and components) — admins are fewer and forgiving
+            - Prompt files (`client/prompts/*.md`) — auto-sync to DB on startup, reversible by revert
+            - Tests, logging, observability code
+
+            If a fix requires touching a higher-risk surface, keep the change minimal,
+            explicitly explain risk in the Triage table's **User impact** row (see below),
+            and prefer additive changes over edits to existing code paths.
+
             ## Step 1: Read context (≤4 turns)
             - Read /tmp/pilot-report.md — contains today's KPI snapshot, server errors, the **BLOCKLIST of issues with open pilot PRs**, pilot merge-rate track record, and tier-classified `ready-for-pilot` issues
             - Read /tmp/pilot-blocklist.txt — the machine-readable list of blocked issue numbers (comma-separated)
@@ -111,7 +136,7 @@ jobs:
             - Create a PR with `gh pr create --head "$BRANCH" --label plato-pilot`:
               - Title: imperative mood, under 70 chars
               - Reference the issue with `Fixes #N` in the PR body (required when an issue drives the pick — the post-action dup-check reads this)
-              - **Body must include a Triage table**, using exactly this markdown structure:
+              - **Body must include a Triage table and a User impact line**, using exactly this markdown structure:
 
                 ```
                 ## Triage
@@ -120,11 +145,18 @@ jobs:
                 |--------|--------|------|----------|-----|
                 | <picked-signal> | issue / log-error / kpi | 1–5 | fix | <one sentence> |
 
+                **User impact:** low / medium / high — <one-sentence explanation>
+
+                Pick the level honestly:
+                - **low** — UI copy, admin-only surface, new test, or a file in the "lower-risk" list above. A regression would be cosmetic.
+                - **medium** — touches a learner-facing component but not active lesson state; or touches a lower-risk surface in a way that affects every session.
+                - **high** — touches in-flight lesson state, streaming chat, auth, DB schema, or infra. A regression would drop active sessions, log users out, or break deploys.
+
                 ## Changes
                 <what + why>
                 ```
 
-                One row minimum (the picked signal). You're encouraged to include 1–2 additional rows showing considered-and-rejected alternatives with decisions like `skip-dup`, `skip-tier`, `skip-anti-goal`, or `skip-vague`. This makes the reasoning auditable and is what convinces the maintainer to merge.
+                One row minimum in the Triage table (the picked signal). You're encouraged to include 1–2 additional rows showing considered-and-rejected alternatives with decisions like `skip-dup`, `skip-tier`, `skip-anti-goal`, or `skip-vague`. This makes the reasoning auditable and is what convinces the maintainer to merge.
 
       - name: Verify agent did not duplicate a blocked issue
         if: always()
