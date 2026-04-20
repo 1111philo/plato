@@ -42,9 +42,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         id: agent
         with:
-          # Prefer Claude Max OAuth; fall back to API key if the secret isn't set.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           show_full_output: true
           claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 50"
           prompt: |
