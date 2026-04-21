@@ -259,11 +259,13 @@ export async function resumeLesson(lessonId) {
 
 export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   const completed = lessonKB?.activitiesCompleted || 0;
+  const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
     learnerName: learnerName || '',
     lessonName: lesson.name,
     lessonDescription: lesson.description,
     exemplar: lesson.exemplar,
+    lessonStatus,
     objectives: lessonKB?.objectives || [],
     insights: lessonKB?.insights || [],
     learnerProfile: profileSummary || 'No profile yet',
@@ -271,6 +273,9 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  if (lessonStatus === 'completed') {
+    context.postCompletionDirective = 'This lesson is already complete. Stay in feedback mode only. Do not coach, assess, or award credit for another lesson in this conversation. If the learner wants to continue with a new lesson, tell them to start the next lesson separately so their work is tracked there.';
+  }
   // Pacing directives are nudges, not orders. The target (MAX_EXCHANGES) is a
   // design goal for ~20-minute lessons — never a deadline. The coach always
   // decides when the learner has demonstrated the exemplar. These messages
