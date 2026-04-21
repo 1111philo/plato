@@ -15,14 +15,32 @@ import {
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
-import { ensureProfileExists, updateProfileFromObservation, updateProfileOnCompletionInBackground } from './profileQueue.js';
-import { LESSON_PHASES, MSG_TYPES } from './constants.js';
+import { ensureProfileExists, updateProfileInBackground, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
+import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
 
 // Bedrock hard limit for base64-encoded image payloads.
 // 5 MB decoded = 5 * 1024 * 1024 bytes. Base64 string length * 3/4 ≈ decoded bytes.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Throw a learner-friendly error if an image data URL decodes to more than
+ * 5 MB — Bedrock rejects larger images with a cryptic ValidationException.
+ * Returns silently for non-image URLs or URLs without a parseable base64 body.
+ */
+export function assertImageWithinBedrockLimit(imageDataUrl) {
+  if (!imageDataUrl) return;
+  const match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+  if (!match) return;
+  const estimatedBytes = Math.floor(match[1].length * 3 / 4);
+  if (estimatedBytes > MAX_IMAGE_BYTES) {
+    throw new Error(
+      `Image is too large (${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+      `Please resize it to under 5 MB and try again.`
+    );
+  }
+}
 
 // -- Tag parsing --------------------------------------------------------------
 
@@ -149,20 +167,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   let lessonKB = await getLessonKB(lessonId);
   const profileSummary = await getLearnerProfileSummary();
 
-  // Validate image size before sending — Bedrock rejects base64 images > 5 MB.
-  // base64 string length * 3/4 ≈ decoded byte count.
-  if (imageDataUrl) {
-    const match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-    if (match) {
-      const estimatedBytes = Math.floor(match[1].length * 3 / 4);
-      if (estimatedBytes > MAX_IMAGE_BYTES) {
-        throw new Error(
-          `Image is too large (${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB). ` +
-          `Please resize it to under 5 MB and try again.`
-        );
-      }
-    }
-  }
+  assertImageWithinBedrockLimit(imageDataUrl);
 
   // Save image if provided
   let imageKey = null;
@@ -193,7 +198,8 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
 
-  // Call coach
+  // Call coach (use heavy model if image attached)
+  const model = imageDataUrl ? 'heavy' : undefined;
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
@@ -240,44 +246,30 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   if (parsed.profileUpdate?.observation) {
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
+    // Use KB insights as a profile signal if no explicit profile update
     const insightText = parsed.kbUpdate.insights.join('. ');
     updateProfileFromObservation(lessonKB, insightText);
   }
-
-  // Save messages
-  const userMsg = {
-    role: 'user',
-    content: text || '',
-    imageKey,
-    msgType: MSG_TYPES.USER,
-    phase: LESSON_PHASES.LEARNING,
-    timestamp: ts(),
-  };
-  const assistantMsg = {
-    role: 'assistant',
-    content: parsed.text,
-    msgType: MSG_TYPES.GUIDE,
-    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
-    timestamp: ts(),
-  };
-
-  const updatedMsgs = [...(await getLessonMessages(lessonId)), userMsg, assistantMsg];
-  await saveLessonMessages(lessonId, updatedMsgs);
-  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
-
   if (achieved) {
     updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
-  return {
-    messages: updatedMsgs,
-    lessonKB,
-    phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING,
-  };
+  // Save messages
+  const newMessages = [
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
+      metadata: imageKey ? { imageKey } : null, timestamp: ts() },
+    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
+      phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },
+  ];
+
+  await saveLessonMessages(lessonId, newMessages);
+  syncInBackground(`messages:${lessonId}`);
+
+  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
 }
 
 /**
- * Resume an existing lesson — loads stored messages and KB.
+ * Resume an existing lesson. Loads messages and KB.
  */
 export async function resumeLesson(lessonId) {
   const messages = await getLessonMessages(lessonId);
@@ -287,37 +279,44 @@ export async function resumeLesson(lessonId) {
   return { messages, lessonKB, progress, phase };
 }
 
-// -- Context builder ----------------------------------------------------------
+// -- Helpers ------------------------------------------------------------------
 
-/**
- * Build the JSON context block injected as the first user message on every
- * coach turn. Keeps the coach grounded in lesson state and learner progress.
- */
 export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const exchanges = lessonKB?.activitiesCompleted || 0;
-
-  // Escalating pacing directive based on exchange count
-  let pacingDirective = null;
-  if (exchanges >= 20) {
-    pacingDirective = 'This lesson has run well past its target length. If the learner has demonstrated the exemplar (or something close to it), this is a good moment to award progress 10 and close warmly. If they are still genuinely working toward it, keep moving them forward — prefer smaller, more concrete steps.';
-  } else if (exchanges >= 15) {
-    pacingDirective = 'URGENT: Lesson is significantly over target. Push strongly toward the exemplar — reduce scaffolding, prompt directly for the final demonstration, and award progress 10 as soon as the learner shows adequate understanding.';
-  } else if (exchanges >= 11) {
-    pacingDirective = 'PACING: Lesson has exceeded the target length. Consolidate remaining objectives, guide the learner toward a final demonstration, and award progress 10 at the next reasonable opportunity.';
-  } else if (exchanges >= 8) {
-    pacingDirective = 'PACING: Approaching the target length. Begin steering toward closure — wrap up open threads and prepare the learner for a final synthesis.';
-  }
-
-  return JSON.stringify({
-    lessonId: lesson.lessonId,
+  const completed = lessonKB?.activitiesCompleted || 0;
+  const context = {
+    learnerName: learnerName || '',
     lessonName: lesson.name,
     lessonDescription: lesson.description,
     exemplar: lesson.exemplar,
-    learningObjectives: lesson.learningObjectives,
-    learnerName: learnerName || 'Learner',
-    learnerProfile: profileSummary || 'New learner, no profile yet.',
-    lessonKB,
-    exchangeCount: exchanges,
-    ...(pacingDirective ? { pacingDirective } : {}),
-  });
+    objectives: lessonKB?.objectives || [],
+    insights: lessonKB?.insights || [],
+    learnerProfile: profileSummary || 'No profile yet',
+    learnerPosition: lessonKB?.learnerPosition || 'New learner',
+    progress: lessonKB?.progress ?? 0,
+    activitiesCompleted: completed,
+  };
+  // Pacing directives are nudges, not orders. The target (MAX_EXCHANGES) is a
+  // design goal for ~20-minute lessons — never a deadline. The coach always
+  // decides when the learner has demonstrated the exemplar. These messages
+  // help the coach sharpen its focus as exchanges accumulate, but NEVER tell
+  // it to force-close a lesson on the learner.
+  const over = completed - MAX_EXCHANGES;
+  if (over >= 9) {
+    // 20+ exchanges: the lesson has run well past the target. Likely a sign
+    // the lesson design or the learner's starting point mismatched — worth
+    // a reflective note, but still the coach's call to close.
+    context.pacingDirective = 'This lesson has run well past its target length. If the learner has demonstrated the exemplar (or something close to it), this is a good moment to award progress 10 and close warmly. If they are still genuinely working toward it, keep moving them forward — prefer smaller, more concrete steps. Note in [KB_UPDATE] if the lesson design seems to be the issue.';
+  } else if (over >= 4) {
+    // 15+ exchanges: converge hard. Prefer closing when the exemplar is met,
+    // but do not force the issue if the learner is still making progress.
+    context.pacingDirective = 'The lesson has run longer than target. Compress: focus on the single biggest remaining gap. If the learner has demonstrated the exemplar, award progress 10 and close warmly. If they are close, one sharp final step can get them there. Keep moving them forward — never cut them off mid-thought.';
+  } else if (over >= 0) {
+    // 11+ exchanges: target reached. Start to converge.
+    context.pacingDirective = 'Target exchange count reached. Begin converging toward the exemplar — avoid introducing new objectives. If the learner has demonstrated the exemplar, award progress 10. Otherwise give one focused nudge that narrows the gap.';
+  } else if (completed >= MAX_EXCHANGES - 3) {
+    // 8-10 exchanges: pre-target — start converging.
+    const remaining = MAX_EXCHANGES - completed;
+    context.pacingDirective = `Approaching target (${remaining} exchange${remaining === 1 ? '' : 's'} until the ~20-minute design goal). Converge toward the exemplar — one focused task that narrows the gap. You may still introduce new concepts if the learner genuinely needs them to advance.`;
+  }
+  return JSON.stringify(context);
 }
