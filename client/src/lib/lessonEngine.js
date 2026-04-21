@@ -15,8 +15,8 @@ import {
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
-import { ensureProfileExists, updateProfileInBackground, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
-import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { ensureProfileExists, updateProfileFromObservation, updateProfileOnCompletionInBackground } from './profileQueue.js';
+import { LESSON_PHASES, MSG_TYPES } from './constants.js';
 
 function ts() { return Date.now(); }
 
@@ -193,8 +193,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
 
-  // Call coach (use heavy model if image attached)
-  const model = imageDataUrl ? 'heavy' : undefined;
+  // Call coach
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
@@ -237,9 +236,12 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   await saveLessonKB(lessonId, lessonKB);
   syncInBackground(`lessonKB:${lessonId}`);
 
-  // Profile updates — from explicit tag or from KB insights
-  if (parsed.profileUpdate) {
-    updateProfileInBackground(parsed.profileUpdate);
+  // Profile updates — from explicit tag or from KB insights as fallback
+  if (parsed.profileUpdate?.observation) {
+    updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
+  } else if (parsed.kbUpdate?.insights?.length) {
+    const insightText = parsed.kbUpdate.insights.join('. ');
+    updateProfileFromObservation(lessonKB, insightText);
   }
 
   // Save messages
@@ -264,7 +266,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
 
   if (achieved) {
-    updateProfileOnCompletionInBackground(lessonKB, lesson.name, lessonId);
+    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
   return {
@@ -274,6 +276,17 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   };
 }
 
+/**
+ * Resume an existing lesson — loads stored messages and KB.
+ */
+export async function resumeLesson(lessonId) {
+  const messages = await getLessonMessages(lessonId);
+  const lessonKB = await getLessonKB(lessonId);
+  const progress = lessonKB?.progress ?? 0;
+  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { messages, lessonKB, progress, phase };
+}
+
 // -- Context builder ----------------------------------------------------------
 
 /**
@@ -281,12 +294,12 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
  * coach turn. Keeps the coach grounded in lesson state and learner progress.
  */
 export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const exchanges = lessonKB.activitiesCompleted || 0;
+  const exchanges = lessonKB?.activitiesCompleted || 0;
 
   // Escalating pacing directive based on exchange count
   let pacingDirective = null;
   if (exchanges >= 20) {
-    pacingDirective = 'CRITICAL: This lesson has run very long. The learner must reach the exemplar THIS exchange — synthesize, affirm any reasonable attempt, and award progress 10 now.';
+    pacingDirective = 'This lesson has run well past its target length. If the learner has demonstrated the exemplar (or something close to it), this is a good moment to award progress 10 and close warmly. If they are still genuinely working toward it, keep moving them forward — prefer smaller, more concrete steps.';
   } else if (exchanges >= 15) {
     pacingDirective = 'URGENT: Lesson is significantly over target. Push strongly toward the exemplar — reduce scaffolding, prompt directly for the final demonstration, and award progress 10 as soon as the learner shows adequate understanding.';
   } else if (exchanges >= 11) {
