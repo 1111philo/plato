@@ -57,8 +57,11 @@ async function loadAdminCatalog() {
   try {
     const resp = await authenticatedFetch('/v1/admin/lessons');
     const lessons = resp.ok ? await resp.json() : [];
-    if (!lessons.length) { adminCatalog = ''; return ''; }
-    adminCatalog = lessons.map(l => {
+    // Drafts are in-progress lesson records, not part of the catalog the
+    // lesson-creator/KB-editor agents should treat as existing lessons.
+    const finalized = lessons.filter(l => l.status !== 'draft');
+    if (!finalized.length) { adminCatalog = ''; return ''; }
+    adminCatalog = finalized.map(l => {
       const tag = l.status === 'private' ? ' [PRIVATE]' : '';
       return `- ${l.name || l.lessonId}${tag}`;
     }).join('\n');
