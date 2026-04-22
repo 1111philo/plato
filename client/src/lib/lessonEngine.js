@@ -209,35 +209,9 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
 
   const parsed = parseCoachResponse(coachMsg);
 
-  // Update lesson KB
-  if (parsed.kbUpdate) {
-    if (parsed.kbUpdate.insights?.length) {
-      lessonKB.insights = [...(lessonKB.insights || []), ...parsed.kbUpdate.insights];
-      // Prune old insights (keep last 10)
-      if (lessonKB.insights.length > 10) {
-        const older = lessonKB.insights.slice(0, lessonKB.insights.length - 10);
-        lessonKB.insights = [`[Earlier: ${older.join('; ')}]`, ...lessonKB.insights.slice(-10)];
-      }
-    }
-    if (parsed.kbUpdate.learnerPosition) {
-      lessonKB.learnerPosition = parsed.kbUpdate.learnerPosition;
-    }
-  }
-  if (parsed.progress != null) {
-    lessonKB.progress = parsed.progress;
-  }
-  lessonKB.activitiesCompleted = (lessonKB.activitiesCompleted || 0) + 1;
-
-  // Completion is decided by the coach (progress 10). The system never
-  // force-completes a lesson on exchange count — learners should be moved
-  // toward the exemplar, not cut off mid-conversation. The pacing directives
-  // fed to the coach escalate the nudge over time, but the coach always
-  // chooses when to award progress 10.
-  const achieved = parsed.progress >= 10;
-  if (achieved && lessonKB.status !== 'completed') {
-    lessonKB.status = 'completed';
-    lessonKB.completedAt = ts();
-  }
+  const applied = applyCoachResponseToKB(lessonKB, parsed, { now: ts });
+  lessonKB = applied.lessonKB;
+  const { achieved, phase } = applied;
 
   await saveLessonKB(lessonId, lessonKB);
   syncInBackground(`lessonKB:${lessonId}`);
@@ -256,16 +230,15 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
 
   // Save messages
   const newMessages = [
-    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING,
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase,
       metadata: imageKey ? { imageKey } : null, timestamp: ts() },
-    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE,
-      phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING, timestamp: ts() },
+    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
   ];
 
   await saveLessonMessages(lessonId, newMessages);
   syncInBackground(`messages:${lessonId}`);
 
-  return { messages: newMessages, progress: parsed.progress, achieved, phase: achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING };
+  return { messages: newMessages, progress: parsed.progress, achieved, phase };
 }
 
 /**
@@ -281,13 +254,58 @@ export async function resumeLesson(lessonId) {
 
 // -- Helpers ------------------------------------------------------------------
 
+/**
+ * Apply a parsed coach response to a lesson KB. Pure — returns a new KB
+ * without mutating the input. Centralizes the "feedback mode" invariant:
+ * once a lesson is completed the exchange counter freezes and `achieved`
+ * can't re-fire, so one-shot side effects (confetti, completion profile
+ * update) stay one-shot across the feedback conversation that follows.
+ */
+export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) {
+  const wasCompleted = prevKB?.status === 'completed';
+  const next = { ...prevKB };
+
+  if (parsed.kbUpdate) {
+    if (parsed.kbUpdate.insights?.length) {
+      next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
+      // Prune old insights (keep last 10)
+      if (next.insights.length > 10) {
+        const older = next.insights.slice(0, next.insights.length - 10);
+        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
+      }
+    }
+    if (parsed.kbUpdate.learnerPosition) {
+      next.learnerPosition = parsed.kbUpdate.learnerPosition;
+    }
+  }
+  if (parsed.progress != null) {
+    next.progress = parsed.progress;
+  }
+  if (!wasCompleted) {
+    next.activitiesCompleted = (next.activitiesCompleted || 0) + 1;
+  }
+
+  // `achieved` means "just achieved on this turn" — one-shot. Without this
+  // guard it would re-fire on every post-completion message, triggering
+  // confetti + completion-profile updates repeatedly in the feedback thread.
+  const achieved = parsed.progress >= 10 && !wasCompleted;
+  if (achieved) {
+    next.status = 'completed';
+    next.completedAt = now();
+  }
+  const phase = next.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { lessonKB: next, achieved, phase };
+}
+
 export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   const completed = lessonKB?.activitiesCompleted || 0;
+  const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
     learnerName: learnerName || '',
     lessonName: lesson.name,
     lessonDescription: lesson.description,
     exemplar: lesson.exemplar,
+    lessonStatus,
     objectives: lessonKB?.objectives || [],
     insights: lessonKB?.insights || [],
     learnerProfile: profileSummary || 'No profile yet',
@@ -295,6 +313,13 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  if (lessonStatus === 'completed') {
+    // Completed threads are feedback-only. Skip pacing nudges — they'd
+    // conflict with the feedback directive — and tell the coach plainly not
+    // to treat this thread as a new lesson.
+    context.postCompletionDirective = 'This lesson is already complete. Stay in feedback mode only. Do not coach, assess, or award credit for another lesson in this conversation. If the learner wants to continue with a new lesson, tell them to start the next lesson separately so their work is tracked there.';
+    return JSON.stringify(context);
+  }
   // Pacing directives are nudges, not orders. The target (MAX_EXCHANGES) is a
   // design goal for ~20-minute lessons — never a deadline. The coach always
   // decides when the learner has demonstrated the exemplar. These messages

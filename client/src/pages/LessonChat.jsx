@@ -246,6 +246,9 @@ export default function LessonChat() {
   if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
   const busy = !!loading;
+  const composePlaceholder = phase === LESSON_PHASES.COMPLETED
+    ? 'Share feedback about this lesson...'
+    : 'Chat with your coach...';
 
   const renderMessage = (msg, idx) => {
     switch (msg.msgType) {
@@ -362,7 +365,7 @@ export default function LessonChat() {
       {phase && (
         <div ref={composeAnchorRef} aria-hidden={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
           <ComposeBar
-            placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+            placeholder={composePlaceholder}
             onSend={handleSend}
             disabled={busy}
             allowImages
@@ -378,7 +381,7 @@ export default function LessonChat() {
       {phase && composePinned && (
         <div className="fixed bottom-9 left-0 right-0 z-50">
           <ComposeBar
-            placeholder={phase === LESSON_PHASES.COMPLETED ? "Continue chatting..." : "Chat with your coach..."}
+            placeholder={composePlaceholder}
             onSend={handleSend}
             disabled={busy}
             allowImages

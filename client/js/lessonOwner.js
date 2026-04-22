@@ -1,13 +1,10 @@
 /**
- * Lesson Owner — loads lesson prompts from markdown files,
- * manages lesson KB updates after assessments.
+ * Lesson Owner — loads lesson prompts from markdown files
+ * and parses their structure.
  */
 
 import { authenticatedFetch } from './auth.js';
 import { getUserLessons } from './storage.js';
-
-/** Max recent insights to keep in full. Older ones get summarized. */
-const MAX_RECENT_INSIGHTS = 10;
 
 let lessonsCache = null;
 
@@ -98,46 +95,4 @@ export function parseLessonPrompt(lessonId, markdown) {
   }
 
   return { lessonId, name, description, exemplar, learningObjectives: objectives };
-}
-
-/**
- * Update the lesson KB after an assessment.
- * Merges new insights and learner position from the assessor's lessonKBUpdate.
- * Prunes old insights to keep context manageable for long learning loops.
- */
-export function updateLessonKBFromAssessment(lessonKB, assessmentResult) {
-  const update = assessmentResult.lessonKBUpdate;
-  if (!update) return lessonKB;
-
-  const newKB = { ...lessonKB };
-
-  // Append new insights, then prune if needed
-  if (update.insights?.length) {
-    const allInsights = [...(newKB.insights || []), ...update.insights];
-
-    if (allInsights.length > MAX_RECENT_INSIGHTS) {
-      // Summarize older insights into one condensed entry
-      const older = allInsights.slice(0, allInsights.length - MAX_RECENT_INSIGHTS);
-      const recent = allInsights.slice(-MAX_RECENT_INSIGHTS);
-      const summary = `[Earlier observations: ${older.join('; ')}]`;
-      newKB.insights = [summary, ...recent];
-    } else {
-      newKB.insights = allInsights;
-    }
-  }
-
-  // Replace learner position
-  if (update.learnerPosition) {
-    newKB.learnerPosition = update.learnerPosition;
-  }
-
-  // Increment activities completed
-  newKB.activitiesCompleted = (newKB.activitiesCompleted || 0) + 1;
-
-  // Mark completed if achieved
-  if (assessmentResult.achieved) {
-    newKB.status = 'completed';
-  }
-
-  return newKB;
 }
