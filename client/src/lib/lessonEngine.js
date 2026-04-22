@@ -20,6 +20,28 @@ import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
 
+// Bedrock hard limit for base64-encoded image payloads.
+// 5 MB decoded = 5 * 1024 * 1024 bytes. Base64 string length * 3/4 ≈ decoded bytes.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Throw a learner-friendly error if an image data URL decodes to more than
+ * 5 MB — Bedrock rejects larger images with a cryptic ValidationException.
+ * Returns silently for non-image URLs or URLs without a parseable base64 body.
+ */
+export function assertImageWithinBedrockLimit(imageDataUrl) {
+  if (!imageDataUrl) return;
+  const match = imageDataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+  if (!match) return;
+  const estimatedBytes = Math.floor(match[1].length * 3 / 4);
+  if (estimatedBytes > MAX_IMAGE_BYTES) {
+    throw new Error(
+      `Image is too large (${(estimatedBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+      `Please resize it to under 5 MB and try again.`
+    );
+  }
+}
+
 // -- Tag parsing --------------------------------------------------------------
 
 // Detects where the coach tag section begins (tags always come at the end)
@@ -144,6 +166,8 @@ export async function startLesson(lessonId, lesson, onStream) {
 export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream) {
   let lessonKB = await getLessonKB(lessonId);
   const profileSummary = await getLearnerProfileSummary();
+
+  assertImageWithinBedrockLimit(imageDataUrl);
 
   // Save image if provided
   let imageKey = null;
