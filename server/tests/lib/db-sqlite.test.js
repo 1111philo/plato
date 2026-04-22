@@ -183,6 +183,22 @@ describe('db-sqlite', () => {
       );
     });
 
+    it('rejects create writes when the item already exists at version 0', async () => {
+      await assert.rejects(
+        () => db.putSyncData(userId, 'profile', { name: 'Overwrite' }, 0),
+        { name: 'ConditionalCheckFailedException' }
+      );
+    });
+
+    it('rejects updates when the item was deleted after the caller cached an older version', async () => {
+      await db.deleteSyncData(userId, 'profile');
+      await assert.rejects(
+        () => db.putSyncData(userId, 'profile', { name: 'Resurrected' }, 2),
+        { name: 'ConditionalCheckFailedException' }
+      );
+      await db.putSyncData(userId, 'profile', { name: 'Blake Updated' }, 0);
+    });
+
     it('gets all sync data for a user', async () => {
       await db.putSyncData(userId, 'preferences', { name: 'Test' }, 0);
       const all = await db.getAllSyncData(userId);

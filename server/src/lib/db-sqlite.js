@@ -281,15 +281,14 @@ const db = {
     const newVersion = (expectedVersion || 0) + 1;
     const jsonData = JSON.stringify(data);
 
-    if (expectedVersion) {
-      // Optimistic locking: only update if version matches or item doesn't exist
-      const existing = sqlite.prepare(
-        'SELECT version FROM sync_data WHERE userId = ? AND dataKey = ?'
-      ).get(userId, dataKey);
+    const existing = sqlite.prepare(
+      'SELECT version FROM sync_data WHERE userId = ? AND dataKey = ?'
+    ).get(userId, dataKey);
 
-      if (existing && existing.version !== expectedVersion) {
-        throw conditionalCheckFailed('Version mismatch');
-      }
+    if (expectedVersion === 0) {
+      if (existing) throw conditionalCheckFailed('Version mismatch');
+    } else if (!existing || existing.version !== expectedVersion) {
+      throw conditionalCheckFailed('Version mismatch');
     }
 
     sqlite.prepare(

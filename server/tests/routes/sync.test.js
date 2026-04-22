@@ -75,6 +75,57 @@ describe('PUT /v1/sync/:dataKey', () => {
     const res = await authedReq(app, 'PUT', '/v1/sync/progress:basics-wordpress', { data: {}, version: 0 });
     assert.equal(res.status, 200);
   });
+
+  it('rejects stale lesson-session writes for lesson-scoped keys', async () => {
+    db.getSyncData = async (_userId, dataKey) => {
+      if (dataKey === 'lessonSession:foundation-1') {
+        return {
+          dataKey,
+          version: 7,
+          data: { lessonId: 'foundation-1', lessonSessionId: 'session-current', generation: 3 },
+        };
+      }
+      return null;
+    };
+
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:foundation-1', {
+      data: [{ role: 'assistant', content: 'stale replay' }],
+      version: 2,
+      guard: { lessonSessionId: 'session-old' },
+    });
+
+    assert.equal(res.status, 409);
+    const result = await res.json();
+    assert.equal(result.conflict, 'stale_session');
+    assert.equal(result.lessonSession.lessonSessionId, 'session-current');
+    assert.equal(result.serverVersion, 7);
+  });
+
+  it('accepts a matching lesson-session guard for lesson-scoped keys', async () => {
+    db.getSyncData = async (_userId, dataKey) => {
+      if (dataKey === 'lessonSession:foundation-1') {
+        return {
+          dataKey,
+          version: 3,
+          data: { lessonId: 'foundation-1', lessonSessionId: 'session-current', generation: 2 },
+        };
+      }
+      return null;
+    };
+    db.putSyncData = async () => ({ version: 4, updatedAt: '2024-01-01T00:00:00Z' });
+
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:foundation-1', {
+      data: { status: 'active', progress: 5 },
+      version: 3,
+      guard: { lessonSessionId: 'session-current' },
+    });
+
+    assert.equal(res.status, 200);
+  });
 });
 
 describe('PUT /v1/sync/batch', () => {

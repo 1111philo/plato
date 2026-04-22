@@ -284,8 +284,10 @@ const db = {
       TableName: SYNC_DATA_TABLE,
       Item: { userId, dataKey, data, updatedAt: now, version: newVersion },
     };
-    if (expectedVersion) {
-      params.ConditionExpression = 'attribute_not_exists(version) OR version = :v';
+    if (expectedVersion === 0) {
+      params.ConditionExpression = 'attribute_not_exists(version)';
+    } else {
+      params.ConditionExpression = 'version = :v';
       params.ExpressionAttributeValues = { ':v': expectedVersion };
     }
     await doc.send(new PutCommand(params));

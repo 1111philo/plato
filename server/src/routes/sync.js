@@ -7,7 +7,7 @@ const sync = new Hono();
 sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
-const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|lessons:.+|onboardingComplete)$/;
+const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|lessonKB:.+|lessonSession:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|lessons:.+|onboardingComplete)$/;
 
 // Keep user record name in sync with extension preferences
 async function syncNameIfNeeded(userId, dataKey, data) {
@@ -18,6 +18,36 @@ async function syncNameIfNeeded(userId, dataKey, data) {
 
 function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
+}
+
+function lessonScopedId(dataKey) {
+  if (dataKey.startsWith('lessonKB:')) return dataKey.slice('lessonKB:'.length);
+  if (dataKey.startsWith('activities:')) return dataKey.slice('activities:'.length);
+  if (dataKey.startsWith('activityKBs:')) return dataKey.slice('activityKBs:'.length);
+  if (dataKey.startsWith('drafts:')) return dataKey.slice('drafts:'.length);
+  if (dataKey.startsWith('messages:')) {
+    const lessonId = dataKey.slice('messages:'.length);
+    return lessonId.startsWith('create:') ? null : lessonId;
+  }
+  return null;
+}
+
+async function validateLessonSessionGuard(userId, dataKey, guard) {
+  const lessonId = lessonScopedId(dataKey);
+  if (!lessonId) return null;
+
+  const lessonSessionItem = await db.getSyncData(userId, `lessonSession:${lessonId}`);
+  const lessonSession = lessonSessionItem?.data || null;
+  if (!guard?.lessonSessionId || !lessonSession || lessonSession.lessonSessionId !== guard.lessonSessionId) {
+    return {
+      error: 'Lesson session conflict',
+      conflict: 'stale_session',
+      serverVersion: lessonSessionItem?.version || 0,
+      lessonSession,
+    };
+  }
+
+  return null;
 }
 
 // GET /v1/sync — get all synced data
@@ -70,6 +100,10 @@ sync.put('/v1/sync/batch', async (c) => {
     if (!validateDataKey(item.dataKey) || item.data === undefined) {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
+    const lessonSessionConflict = await validateLessonSessionGuard(userId, item.dataKey, item.guard);
+    if (lessonSessionConflict) {
+      return { dataKey: item.dataKey, status: 'conflict', ...lessonSessionConflict };
+    }
     try {
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
       await syncNameIfNeeded(userId, item.dataKey, item.data);
@@ -98,9 +132,14 @@ sync.put('/v1/sync/:dataKey', async (c) => {
     return c.json({ error: 'Invalid dataKey' }, 400);
   }
 
-  const { data, version } = await c.req.json();
+  const { data, version, guard } = await c.req.json();
   if (data === undefined) {
     return c.json({ error: 'data is required' }, 400);
+  }
+
+  const lessonSessionConflict = await validateLessonSessionGuard(userId, dataKey, guard);
+  if (lessonSessionConflict) {
+    return c.json(lessonSessionConflict, 409);
   }
 
   try {
