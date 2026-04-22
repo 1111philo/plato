@@ -257,16 +257,6 @@ export async function deleteUserLesson(lessonId) {
   await deleteSyncData(`lessons:${lessonId}`);
 }
 
-export async function getDraftLessonId() {
-  // Check cache for create:* message keys
-  for (const key of _cache.keys()) {
-    if (key.startsWith('messages:create:')) {
-      return key.slice('messages:'.length);
-    }
-  }
-  return null;
-}
-
 // -- Auth tokens (localStorage) -----------------------------------------------
 
 const AUTH_STORAGE_KEY = 'plato_auth';

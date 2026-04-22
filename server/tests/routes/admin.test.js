@@ -258,38 +258,63 @@ describe('PUT /v1/admin/lessons/:lessonId/conversation — auto-save', () => {
   });
 });
 
-describe('draft conversation endpoints', () => {
+describe('draft lesson records', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
   });
 
-  it('saves and retrieves a draft conversation', async () => {
+  it('accepts PUT with status=draft and no markdown', async () => {
     let stored = null;
     db.getSyncData = async () => stored ? { data: stored, version: 1 } : null;
     db.putSyncData = async (uid, key, data) => { stored = data; };
-    db.deleteSyncData = async () => { stored = null; };
     const app = new Hono(); app.route('/', admin);
+    const convo = [{ role: 'user', content: 'teach me' }, { role: 'assistant', content: 'sure' }];
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/draft-123', {
+      status: 'draft', name: 'Untitled draft', conversation: convo, readiness: 2,
+    });
+    assert.equal(res.status, 200);
+    assert.equal(stored.status, 'draft');
+    assert.equal(stored.markdown, '');
+    assert.deepEqual(stored.conversation, convo);
+    assert.equal(stored.readiness, 2);
+  });
 
-    // Save draft
-    const convo = [{ role: 'user', content: 'new lesson' }];
-    const putRes = await adminReq(app, 'PUT', '/v1/admin/draft-conversation', { conversation: convo, readiness: 3 });
-    assert.equal(putRes.status, 200);
+  it('rejects PUT without markdown when status is not draft', async () => {
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/no-md', {
+      name: 'Missing Markdown',
+    });
+    assert.equal(res.status, 400);
+  });
 
-    // Get draft
-    const getRes = await adminReq(app, 'GET', '/v1/admin/draft-conversation');
-    assert.equal(getRes.status, 200);
-    const data = await getRes.json();
-    assert.deepEqual(data.conversation, convo);
-    assert.equal(data.readiness, 3);
+  it('validates markdown when a draft is finalized to private', async () => {
+    db.getSyncData = async () => ({
+      data: { status: 'draft', markdown: '', conversation: [], name: 'Untitled draft' },
+      version: 1,
+    });
+    db.putSyncData = async () => {};
+    const badMd = `# Bad\n\n## Exemplar\nDo it\n\n## Learning Objectives\n- Can do one`;
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/draft-123', {
+      markdown: badMd, status: 'private',
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error.includes('Too few objectives'));
+  });
 
-    // Delete draft
-    const delRes = await adminReq(app, 'DELETE', '/v1/admin/draft-conversation');
-    assert.equal(delRes.status, 200);
-
-    // Get after delete returns null
-    const emptyRes = await adminReq(app, 'GET', '/v1/admin/draft-conversation');
-    const emptyData = await emptyRes.json();
-    assert.equal(emptyData.conversation, null);
+  it('lists drafts in admin lessons with status=draft', async () => {
+    db.getAllSyncData = async () => [{
+      dataKey: 'lesson:draft-1',
+      data: { name: 'Untitled draft', status: 'draft', markdown: '', conversation: [] },
+      updatedAt: '2026-04-22',
+    }];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/lessons');
+    const data = await res.json();
+    assert.equal(data[0].status, 'draft');
   });
 });
 
@@ -425,10 +450,12 @@ describe('PUT /v1/admin/lessons/:lessonId — sharedWith + public/private', () =
     assert.deepEqual(savedData.sharedWith, []);
   });
 
-  it('normalizes legacy draft to private in admin list', async () => {
+  it('normalizes legacy status=draft records with markdown to private', async () => {
+    // A legacy record left behind before drafts became first-class:
+    // has markdown, so it is a real lesson and must surface as private, not draft.
     db.getAllSyncData = async () => [{
       dataKey: 'lesson:old-1',
-      data: { name: 'Old Draft', status: 'draft', sharedWith: ['usr_1'] },
+      data: { name: 'Old Draft', status: 'draft', markdown: validMarkdown, sharedWith: ['usr_1'] },
       updatedAt: '2025-01-01',
     }];
     const app = new Hono(); app.route('/', admin);

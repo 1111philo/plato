@@ -78,6 +78,19 @@ describe('GET /v1/lessons — visibility filtering', () => {
     assert.equal(data.length, 1);
     assert.equal(data[0].lessonId, 'old-draft');
   });
+
+  it('hides true drafts (status=draft, no markdown) from learners even when shared', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'lesson:draft-1', data: { name: 'Untitled draft', markdown: '', status: 'draft', sharedWith: ['usr_1'] }, updatedAt: '2026-04-22' },
+      { dataKey: 'lesson:pub-1', data: { name: 'Public', markdown: '# P', status: 'public' }, updatedAt: '2025-01-01' },
+    ];
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons', 'usr_1');
+    const data = await res.json();
+    const ids = data.map(l => l.lessonId);
+    assert.ok(!ids.includes('draft-1'), 'drafts must not appear in learner lesson list');
+    assert.ok(ids.includes('pub-1'));
+  });
 });
 
 describe('GET /v1/lessons/:lessonId — access control', () => {
@@ -106,5 +119,15 @@ describe('GET /v1/lessons/:lessonId — access control', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.sharedWith, undefined, 'sharedWith should be stripped');
+  });
+
+  it('returns 404 for drafts even when shared', async () => {
+    db.getSyncData = async () => ({
+      data: { name: 'Untitled draft', status: 'draft', markdown: '', sharedWith: ['usr_1'] },
+      version: 1,
+    });
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/draft-1', 'usr_1');
+    assert.equal(res.status, 404);
   });
 });

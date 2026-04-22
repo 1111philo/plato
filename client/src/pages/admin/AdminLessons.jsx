@@ -31,10 +31,15 @@ export default function AdminLessons() {
   const isNewRoute = location.pathname.endsWith('/new');
 
   const [lessons, setLessons] = useState([]);
-  const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply }
+  const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmModal, setConfirmModal] = useState(null);
+  // Stable lesson ID for a fresh /new session; regenerated each time the /new route is entered.
+  const [newDraftId, setNewDraftId] = useState(() => `admin-${Date.now()}`);
+  useEffect(() => {
+    if (isNewRoute) setNewDraftId(`admin-${Date.now()}`);
+  }, [isNewRoute]);
 
   useEffect(() => {
     document.title = 'Lessons — Admin';
@@ -53,15 +58,18 @@ export default function AdminLessons() {
   async function editLesson(lessonId) {
     try {
       const data = await adminApi('GET', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
+      // A record is a live draft iff status==='draft' and markdown is empty.
+      // Legacy records with status='draft' but stored markdown are treated as private.
+      const isDraft = data.status === 'draft' && !data.markdown;
       if (data.conversation?.length) {
-        // Resume the creation conversation
-        setEditing({ lessonId, conversation: data.conversation, readiness: data.readiness ?? 8 });
+        // Resume the creation conversation (drafts always land here)
+        setEditing({ lessonId, conversation: data.conversation, readiness: data.readiness ?? (isDraft ? 1 : 8), isDraft });
       } else {
         // No conversation — seed one with the existing markdown so the agent has context
         const seedConversation = [
           { role: 'user', content: `I want to edit an existing lesson. Here is the current lesson markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
         ];
-        setEditing({ lessonId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true });
+        setEditing({ lessonId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true, isDraft });
       }
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -102,36 +110,45 @@ export default function AdminLessons() {
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
-  // New lesson creation via AI Chat
+  // New lesson creation via AI Chat. Each /new mount gets a fresh draft lesson ID
+  // so multiple drafts can exist in parallel (issue #101).
   if (isNewRoute) {
     return (
       <NewLessonView
+        lessonId={newDraftId}
+        isDraft
         onSave={async (name, markdown, conversation, readiness) => {
-          const lessonId = name.trim().replace(/\s+/g, '-').toLowerCase();
-          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, { markdown, name, status: 'private', sharedWith: [user.userId], conversation, readiness });
-          adminApi('DELETE', '/v1/admin/draft-conversation').catch(() => {});
+          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(newDraftId)}`, {
+            markdown, name, status: 'private', sharedWith: [user.userId], conversation, readiness,
+          });
           setMessage({ text: 'Lesson created (private).', type: 'success' });
           await loadLessons();
           navigate('/plato/lessons');
         }}
         onCancel={() => navigate('/plato/lessons')}
         onError={(text) => setMessage({ text, type: 'error' })}
-        loadDraft
       />
     );
   }
 
-  // Edit existing lesson — always via conversation
+  // Edit existing lesson — always via conversation. When the record is a draft,
+  // finalizing extracts markdown and flips status draft → private on the same record.
   if (editing) {
     return (
       <NewLessonView
-        editingLessonId={editing.lessonId}
+        lessonId={editing.lessonId}
+        isDraft={editing.isDraft}
         initialMessages={editing.conversation}
         initialReadiness={editing.readiness}
         needsAgentReply={editing.needsAgentReply}
         onSave={async (name, markdown, conversation, readiness) => {
-          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, { markdown, name, conversation, readiness });
-          setMessage({ text: 'Lesson updated.', type: 'success' });
+          const body = { markdown, name, conversation, readiness };
+          if (editing.isDraft) {
+            body.status = 'private';
+            body.sharedWith = [user.userId];
+          }
+          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, body);
+          setMessage({ text: editing.isDraft ? 'Lesson created (private).' : 'Lesson updated.', type: 'success' });
           setEditing(null);
           loadLessons();
         }}
@@ -177,15 +194,18 @@ export default function AdminLessons() {
           </TableHeader>
           <TableBody>
             {lessons.map(c => {
+              const isDraft = c.status === 'draft';
               const isPublic = c.status === 'public';
               return (
                 <TableRow key={c.lessonId}>
                   <TableCell>
                     <span className="flex items-center gap-2">
                       {c.name || c.lessonId}
-                      {isPublic
-                        ? <Badge variant="outline" className="text-xs">Public</Badge>
-                        : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
+                      {isDraft
+                        ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
+                        : isPublic
+                          ? <Badge variant="outline" className="text-xs">Public</Badge>
+                          : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
                       }
                     </span>
                   </TableCell>
@@ -193,10 +213,12 @@ export default function AdminLessons() {
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
                   <TableCell>
                     <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
-                      <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                      </Button>
-                      <Button variant="ghost" size="icon-xs" title="Edit" onClick={() => editLesson(c.lessonId)} aria-label={`Edit ${c.name}`}>&#9998;</Button>
+                      {!isDraft && (
+                        <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => editLesson(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
                       <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       </Button>
@@ -242,9 +264,11 @@ export default function AdminLessons() {
 
 // -- Lesson creation/editing view with AI Chat --------------------------------
 
-function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMessages, initialReadiness, needsAgentReply, loadDraft }) {
-  const isEditing = !!editingLessonId;
-  const pageTitle = isEditing ? 'Edit Lesson — Admin' : 'New Lesson — Admin';
+function NewLessonView({ onSave, onCancel, onError, lessonId, isDraft, initialMessages, initialReadiness, needsAgentReply }) {
+  // A view is in "create" mode when it's driving a fresh or in-progress draft.
+  // It's in "edit" mode when finalizing a non-draft lesson's content.
+  const isCreate = !!isDraft;
+  const pageTitle = isCreate ? 'New Lesson — Admin' : 'Edit Lesson — Admin';
   useEffect(() => { document.title = pageTitle; }, [pageTitle]);
   const notifyTitle = useTitleNotification(pageTitle);
   const [chatMessages, setChatMessages] = useState(initialMessages || []);
@@ -252,7 +276,6 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [key, setKey] = useState(0); // increment to restart conversation
-  const [draftLoaded, setDraftLoaded] = useState(!loadDraft); // skip loading if not needed
 
   // Streaming
   const [streamingText, setStreamingText] = useState(null);
@@ -260,19 +283,26 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
   const pendingRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
 
-  // Auto-save conversation after each exchange
+  // Auto-save conversation after each exchange. Drafts use the main PUT with
+  // status=draft so the first save creates the record; non-drafts use the
+  // lighter /conversation endpoint that never touches markdown or status.
   const readinessRef = useRef(readiness);
   useEffect(() => { readinessRef.current = readiness; }, [readiness]);
   useEffect(() => {
     if (chatMessages.length === 0) return;
     const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
     const r = readinessRef.current;
-    if (isEditing) {
-      adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editingLessonId)}/conversation`, { conversation, readiness: r }).catch(() => {});
+    if (isCreate) {
+      adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, {
+        status: 'draft',
+        name: 'Untitled draft',
+        conversation,
+        readiness: r,
+      }).catch(() => {});
     } else {
-      adminApi('PUT', '/v1/admin/draft-conversation', { conversation, readiness: r }).catch(() => {});
+      adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}/conversation`, { conversation, readiness: r }).catch(() => {});
     }
-  }, [chatMessages, isEditing, editingLessonId]);
+  }, [chatMessages, isCreate, lessonId]);
 
   // Handle stream drain completing
   useEffect(() => {
@@ -292,33 +322,14 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     }
   }, [displayText, notifyTitle]);
 
-  // Load draft conversation for new lessons (if one exists from a previous session)
-  useEffect(() => {
-    if (!loadDraft) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await adminApi('GET', '/v1/admin/draft-conversation');
-        if (!cancelled && data.conversation?.length) {
-          setChatMessages(data.conversation);
-          setReadiness(data.readiness ?? 0);
-        }
-      } catch { /* no draft */ }
-      if (!cancelled) setDraftLoaded(true);
-    })();
-    return () => { cancelled = true; };
-  }, [loadDraft]);
-
-  // Start conversation on mount (and on key change after lesson creation)
-  // Skip when resuming an existing conversation that already has an agent reply
+  // Start conversation on mount (and on key change after lesson creation).
+  // Skip when resuming an existing conversation that already has an agent reply.
   const skipInitRef = useRef(!!initialMessages?.length && !needsAgentReply);
   useEffect(() => {
-    if (!draftLoaded) return; // wait for draft check to complete
     if (skipInitRef.current) {
       skipInitRef.current = false;
       return;
     }
-    // If we loaded a draft, skip the initial agent call — conversation is already populated
     if (chatMessages.length > 0 && key === 0) return;
     let cancelled = false;
 
@@ -334,9 +345,6 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     setBusy('starting');
     setStreamingText('');
     setError('');
-
-    // Clear draft when starting fresh
-    if (!isEditing) adminApi('DELETE', '/v1/admin/draft-conversation').catch(() => {});
 
     (async () => {
       try {
@@ -357,7 +365,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     })();
 
     return () => { cancelled = true; };
-  }, [key, draftLoaded]);
+  }, [key]);
 
   // Keep a ref to chatMessages so handleSend always has the latest
   const chatMessagesRef = useRef(chatMessages);
@@ -399,7 +407,6 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     try {
       const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
       const md = await extractLessonMarkdown(conversationText);
-      const lessonId = `admin-${Date.now()}`;
       const lesson = parseLessonPrompt(lessonId, md);
 
       if (!lesson.name || !lesson.exemplar || !lesson.learningObjectives.length) {
@@ -411,7 +418,6 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
       // Save conversation alongside the markdown so it can be resumed later
       const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
       await onSave(lesson.name, md, conversation, readiness);
-      if (!isEditing) setKey(k => k + 1); // Reset for next lesson (new only)
     } catch (e) {
       setError(e.message || 'Failed to create lesson.');
       setBusy('');
@@ -429,7 +435,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
     <div>
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to lessons">&larr; Back</Button>
-        <h1 className="text-2xl font-bold">{isEditing ? 'Edit Lesson' : 'New Lesson'}</h1>
+        <h1 className="text-2xl font-bold">{isCreate ? 'New Lesson' : 'Edit Lesson'}</h1>
       </div>
 
       {error && (
@@ -480,7 +486,7 @@ function NewLessonView({ onSave, onCancel, onError, editingLessonId, initialMess
               disabled={isBusy}
               size="sm"
             >
-              {busy === 'creating' ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Lesson' : 'Create Lesson')}
+              {busy === 'creating' ? (isCreate ? 'Creating...' : 'Updating...') : (isCreate ? 'Create Lesson' : 'Update Lesson')}
             </Button>
           </div>
         </div>
