@@ -68,7 +68,7 @@ plato/
 |------|---------|
 | `client/js/storage.js` | Data layer — all reads/writes go through here (API-backed with in-memory cache) |
 | `client/js/orchestrator.js` | AI agent orchestration — loads prompts, assembles context, streams responses |
-| `client/js/lessonOwner.js` | Lesson loading, parsing, and knowledge base management |
+| `client/js/lessonOwner.js` | Lesson loading and markdown parsing |
 | `client/src/lib/lessonEngine.js` | The learning loop state machine (phases, messages, KB updates) |
 | `server/src/routes/sync.js` | Data sync endpoints (per-user key-value store with optimistic locking) |
 | `server/src/routes/admin.js` | Admin API (users, invites, content management) |

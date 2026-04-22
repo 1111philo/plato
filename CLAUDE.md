@@ -134,7 +134,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/src/hooks/usePublicBranding.js` — classroom branding for auth pages
 - `client/src/lib/branding.js` — shared branding utilities (CSS vars, favicon gen)
 - `client/src/lib/lessonCreationEngine.js` — lesson creation conversation flow
-- `client/js/lessonOwner.js` — lesson loading, parsing, KB management
+- `client/js/lessonOwner.js` — lesson loading and markdown parsing
 - `client/js/storage.js` — sync-data cache and persistence
 - `client/js/orchestrator.js` — AI agent orchestration
 - `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow keyboard navigation between chat messages
