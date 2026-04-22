@@ -187,6 +187,7 @@ export default function AdminLessons() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Created by</TableHead>
               <TableHead>Updated by</TableHead>
               <TableHead>Updated</TableHead>
               <TableHead><span className="sr-only">Actions</span></TableHead>
@@ -209,6 +210,7 @@ export default function AdminLessons() {
                       }
                     </span>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
                   <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
                   <TableCell>
@@ -229,7 +231,7 @@ export default function AdminLessons() {
             })}
             {lessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
+                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
