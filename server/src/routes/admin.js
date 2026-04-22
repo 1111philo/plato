@@ -28,10 +28,17 @@ function validateLessonMarkdown(markdown) {
   return null;
 }
 
-/** Map legacy statuses to public/private. */
-function normalizeStatus(status) {
+/**
+ * Normalize a lesson's visibility status.
+ * `draft` is a first-class status for in-progress lessons that have no markdown yet.
+ * Legacy records with `status: 'draft'` AND markdown present are treated as `private`
+ * to preserve the old auto-normalize semantics (CLAUDE.md: "legacy draft/published
+ * statuses are auto-normalized to private/public").
+ */
+function normalizeStatus(status, hasMarkdown = true) {
   if (status === 'published' || status === 'public') return 'public';
-  return 'private'; // draft, private, undefined → private
+  if (status === 'draft' && !hasMarkdown) return 'draft';
+  return 'private';
 }
 
 admin.use('/v1/admin/*', authenticate, requireAdmin);
@@ -388,7 +395,7 @@ admin.get('/v1/admin/lessons', async (c) => {
       lessonId: i.dataKey.slice('lesson:'.length),
       name: i.data.name || i.dataKey.slice('lesson:'.length),
       isBuiltIn: i.data.isBuiltIn || false,
-      status: normalizeStatus(i.data.status),
+      status: normalizeStatus(i.data.status, !!i.data.markdown),
       sharedWith: i.data.sharedWith || [],
       createdByName: i.data.createdByName || null,
       updatedByName: i.data.updatedByName || null,
@@ -412,15 +419,19 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   const body = await c.req.json();
   const adminUser = c.get('user');
   const current = await db.getSyncData('_system', `lesson:${lessonId}`);
-  // Validate markdown when it's new/changed, or when making public
-  const hasMarkdown = body.markdown || current?.data?.markdown;
-  if (!hasMarkdown) return c.json({ error: 'markdown is required' }, 400);
   const markdownToValidate = body.markdown || current?.data?.markdown;
-  const newStatus = normalizeStatus(body.status || current?.data?.status);
-  const currentStatus = normalizeStatus(current?.data?.status);
+  const hasMarkdown = !!markdownToValidate;
+  const newStatus = normalizeStatus(body.status || current?.data?.status, hasMarkdown);
+  const currentStatus = normalizeStatus(current?.data?.status, !!current?.data?.markdown);
+  // Drafts are allowed without markdown (they hold a mid-creation conversation).
+  // Any non-draft lesson must have markdown.
+  if (newStatus !== 'draft' && !hasMarkdown) {
+    return c.json({ error: 'markdown is required' }, 400);
+  }
   const isGoingPublic = newStatus === 'public' && currentStatus !== 'public';
+  const isLeavingDraft = currentStatus === 'draft' && newStatus !== 'draft';
   const markdownChanged = body.markdown && body.markdown !== current?.data?.markdown;
-  if (markdownChanged || isGoingPublic) {
+  if ((markdownChanged || isGoingPublic || isLeavingDraft) && hasMarkdown) {
     const mdError = validateLessonMarkdown(markdownToValidate);
     if (mdError) return c.json({ error: mdError }, 400);
   }
@@ -430,7 +441,7 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     return c.json({ error: 'sharedWith must be an array of user ID strings' }, 400);
   }
   const data = {
-    markdown: body.markdown || current?.data?.markdown,
+    markdown: markdownToValidate || '',
     name: body.name || current?.data?.name || lessonId,
     isBuiltIn: body.isBuiltIn || false,
     status: newStatus,
@@ -457,30 +468,6 @@ admin.put('/v1/admin/lessons/:lessonId/conversation', async (c) => {
   data.conversation = body.conversation || null;
   if (body.readiness !== undefined) data.readiness = body.readiness;
   await db.putSyncData('_system', `lesson:${lessonId}`, data, current.version);
-  return c.json({ ok: true });
-});
-
-// PUT /v1/admin/draft-conversation — auto-save new lesson conversation (before lesson exists)
-admin.put('/v1/admin/draft-conversation', async (c) => {
-  const body = await c.req.json();
-  const current = await db.getSyncData('_system', 'draft:lesson-conversation');
-  await db.putSyncData('_system', 'draft:lesson-conversation', {
-    conversation: body.conversation || null,
-    readiness: body.readiness ?? 0,
-  }, current?.version || 0);
-  return c.json({ ok: true });
-});
-
-// GET /v1/admin/draft-conversation — resume new lesson conversation
-admin.get('/v1/admin/draft-conversation', async (c) => {
-  const item = await db.getSyncData('_system', 'draft:lesson-conversation');
-  if (!item?.data?.conversation?.length) return c.json({ conversation: null, readiness: 0 });
-  return c.json({ conversation: item.data.conversation, readiness: item.data.readiness ?? 0 });
-});
-
-// DELETE /v1/admin/draft-conversation — clear draft after lesson is created
-admin.delete('/v1/admin/draft-conversation', async (c) => {
-  await db.deleteSyncData('_system', 'draft:lesson-conversation');
   return c.json({ ok: true });
 });
 
