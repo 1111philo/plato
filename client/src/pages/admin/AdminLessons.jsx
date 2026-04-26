@@ -373,8 +373,12 @@ function NewLessonView({ onSave, onCancel, onError, lessonId, isDraft, initialMe
   const chatMessagesRef = useRef(chatMessages);
   useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
 
+  // History stack for undo: each entry is a snapshot taken before a user send
+  const historyStack = useRef([]);
+
   const handleSend = useCallback(async ({ text }) => {
     if (!text?.trim()) return;
+    historyStack.current.push({ messages: chatMessagesRef.current, readiness: readinessRef.current });
     setError('');
     setBusy('qa');
     setStreamingText('');
@@ -428,8 +432,36 @@ function NewLessonView({ onSave, onCancel, onError, lessonId, isDraft, initialMe
 
   const isBusy = !!busy;
 
+  function handleUndo() {
+    if (historyStack.current.length === 0 || isBusy) return;
+    const prev = historyStack.current.pop();
+    setChatMessages(prev.messages);
+    setReadiness(prev.readiness);
+  }
+
+  const lastUserMsgIdx = chatMessages.reduceRight(
+    (acc, m, i) => acc === -1 && m.msgType === MSG_TYPES.USER ? i : acc, -1
+  );
+
   const renderMessage = (msg, idx) => {
-    if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
+    if (msg.msgType === MSG_TYPES.USER) {
+      const showUndo = !isBusy && idx === lastUserMsgIdx && historyStack.current.length > 0;
+      return (
+        <div key={idx} className="flex justify-end items-start gap-1.5">
+          {showUndo && (
+            <button
+              onClick={handleUndo}
+              aria-label="Undo last prompt"
+              title="Undo last prompt"
+              className="mt-2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+            </button>
+          )}
+          <UserMessage content={msg.content} />
+        </div>
+      );
+    }
     return <AssistantMessage key={idx} content={msg.content} />;
   };
 
@@ -475,7 +507,7 @@ function NewLessonView({ onSave, onCancel, onError, lessonId, isDraft, initialMe
           <div className="flex items-center gap-2 shrink-0">
             <Button
               variant="outline"
-              onClick={() => setKey(k => k + 1)}
+              onClick={() => { historyStack.current = []; setKey(k => k + 1); }}
               disabled={isBusy}
               size="sm"
               aria-label="Start over"
