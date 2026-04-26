@@ -11,6 +11,7 @@ import {
 } from '../../js/storage.js';
 import { invalidateLessonsCache, loadLessons } from '../../js/lessonOwner.js';
 import * as engine from '../lib/lessonEngine.js';
+import { getLinkAnswerPolicy, getLinkSubmissionGuidance } from '../lib/linkAnswerPolicy.js';
 
 import ChatArea from '../components/chat/ChatArea.jsx';
 import ThinkingSpinner from '../components/chat/ThinkingSpinner.jsx';
@@ -37,6 +38,7 @@ export default function LessonChat() {
   const [lessonKB, setLessonKB] = useState(null);
   const [loading, setLoading] = useState('');
   const [error, setError] = useState('');
+  const [linkNotice, setLinkNotice] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
   const displayText = useStreamedText(streamingText);
@@ -174,9 +176,18 @@ export default function LessonChat() {
     return () => { cancelled = true; };
   }, [lessonGroupId, lesson]);
 
-  const handleSend = useCallback(async ({ text, imageDataUrl }) => {
-    if (!text && !imageDataUrl) return;
+  const handleSend = useCallback(({ text, imageDataUrl }) => {
+    if (!text && !imageDataUrl) return false;
+
+    const linkPolicy = getLinkAnswerPolicy(text || '');
+    if (linkPolicy.blocked) {
+      setError(linkPolicy.message);
+      setLinkNotice('');
+      return false;
+    }
+
     setError('');
+    setLinkNotice(linkPolicy.message);
     setLoading('qa');
     setStreamingText('');
 
@@ -187,25 +198,30 @@ export default function LessonChat() {
       timestamp: Date.now(),
     }]);
 
-    try {
-      const result = await engine.sendMessage(
-        lessonGroupId, lesson, text, imageDataUrl,
-        (partial) => setStreamingText(partial)
-      );
-      const assistantMsg = result.messages.find(m => m.role === 'assistant');
-      pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
-      setStreamingText(null);
+    (async () => {
+      try {
+        const result = await engine.sendMessage(
+          lessonGroupId, lesson, text, imageDataUrl,
+          (partial) => setStreamingText(partial)
+        );
+        const assistantMsg = result.messages.find(m => m.role === 'assistant');
+        pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
+        setStreamingText(null);
 
-      const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
-    } catch (e) {
-      setError(e.message || 'Failed to send.');
-      setStreamingText(null);
-      setLoading('');
-    }
+        const freshKB = await getLessonKB(lessonGroupId);
+        setLessonKB(freshKB);
+      } catch (e) {
+        setError(e.message || 'Failed to send.');
+        setStreamingText(null);
+        setLoading('');
+      }
+    })();
+
+    return true;
   }, [lessonGroupId, lesson]);
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
+  const linkGuidance = getLinkSubmissionGuidance(composeText);
 
   const handleExport = useCallback(async () => {
     const markdown = await getUserLessonMarkdown(lessonGroupId);
@@ -357,6 +373,7 @@ export default function LessonChat() {
         )}
         {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your lesson..." />}
         {loading === 'qa' && !displayText && <ThinkingSpinner />}
+        {linkNotice && <div className="px-3 py-2 text-sm text-muted-foreground" role="status">{linkNotice}</div>}
         {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
       </ChatArea>
       </div>
@@ -373,6 +390,7 @@ export default function LessonChat() {
             onTextChange={setComposeText}
             image={composeImage}
             onImageChange={setComposeImage}
+            linkGuidance={linkGuidance}
           />
         </div>
       )}
@@ -390,6 +408,7 @@ export default function LessonChat() {
             onTextChange={setComposeText}
             image={composeImage}
             onImageChange={setComposeImage}
+            linkGuidance={linkGuidance}
           />
         </div>
       )}

@@ -12,6 +12,7 @@ export default function ComposeBar({
   onTextChange,
   image: imageProp,
   onImageChange,
+  linkGuidance,
 }) {
   const [localText, setLocalText] = useState('');
   const [localImage, setLocalImage] = useState(null);
@@ -23,15 +24,17 @@ export default function ComposeBar({
   const fileRef = useRef(null);
   const handleResize = useAutoResize();
   const inputId = useId();
+  const guidanceId = `${inputId}-link-guidance`;
 
   const send = () => {
     const val = text.trim();
     if ((!val && !image) || disabled) return;
     const payload = { text: val || null, imageDataUrl: image?.dataUrl || null };
+    const accepted = onSend(payload);
+    if (accepted === false) return;
     setText('');
     setImage(null);
     if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.overflowY = 'hidden'; }
-    onSend(payload);
   };
 
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Bedrock 5 MB limit
@@ -51,6 +54,11 @@ export default function ComposeBar({
   };
 
   const hasContent = text.trim() || image;
+  const guidanceToneClass = linkGuidance?.tone === 'warning'
+    ? 'border-amber-200 bg-amber-50 text-amber-800'
+    : linkGuidance?.tone === 'success'
+      ? 'border-green-200 bg-green-50 text-green-800'
+      : 'border-border bg-muted/40 text-muted-foreground';
 
   return (
     <div className="px-4 pb-4 pt-2">
@@ -76,6 +84,7 @@ export default function ComposeBar({
           className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           rows={1}
           placeholder={placeholder}
+          aria-describedby={linkGuidance ? guidanceId : undefined}
           value={text}
           onChange={(e) => { setText(e.target.value); handleResize(e); }}
           onKeyDown={(e) => {
@@ -83,6 +92,14 @@ export default function ComposeBar({
           }}
           disabled={disabled}
         />
+        {linkGuidance && (
+          <div
+            id={guidanceId}
+            className={`mx-2 mb-2 rounded-md border px-2 py-1.5 text-xs leading-relaxed ${guidanceToneClass}`}
+          >
+            <span className="font-medium">Links: </span>{linkGuidance.message}
+          </div>
+        )}
         <div className="flex items-center gap-1 px-2 pb-2">
           {allowImages && (
             <>
