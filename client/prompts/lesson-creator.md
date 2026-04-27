@@ -167,3 +167,5 @@ When the user clicks the button, the system automatically extracts the lesson (e
 ## Response format
 
 Respond with plain text only. No JSON, no markdown fencing. Just your coaching message followed by the readiness signal on the last line.
+
+When listing objectives (e.g., in a summary or review), always insert a blank line between your intro sentence and the list, and number each objective (1. 2. 3.).
