@@ -55,6 +55,7 @@ jobs:
         run: |
           gh label create ready-for-pilot --color 1F883D --description "Triaged: enough info for plato-pilot or a human to act on" 2>/dev/null || true
           gh label create needs-info --color D4C5F9 --description "Intake agent asked the reporter for more details" 2>/dev/null || true
+          gh label create needs-decomposition --color FBCA04 --description "Real request, but too broad to act on as one PR — break into smaller issues" 2>/dev/null || true
 
       - uses: anthropics/claude-code-action@v1
         env:
@@ -100,8 +101,26 @@ jobs:
               hint that it IS a real plato issue. Prefer outcome A or B; only close
               again (outcome C) if it's clearly still spam/off-topic on a second read.
             - `needs-info` label present, reporter has replied in comments → check the
-              comments. If they answered enough, remove `needs-info` and switch to
-              `ready-for-pilot`. If they still haven't, leave `needs-info` and stop.
+              comments and pick one of:
+              - **Reply answers enough** → remove `needs-info`, add `ready-for-pilot`,
+                and post a short confirmation comment ("Got it — tagged ready-for-pilot.").
+              - **Reply doesn't fully answer, but the gap is narrow** → leave `needs-info`
+                and post **one focused follow-up comment** that names exactly what's
+                still missing. Reference what they did say so they know you read it
+                ("Thanks — that confirms the navigation level. We still need…"). Max
+                2 follow-up questions.
+              - **Reply reveals this is an epic / multi-component feature** → switch
+                from `needs-info` to `needs-decomposition`, post a comment that names
+                the components you see and asks the reporter to split it into separate
+                issues (one per component). Pattern: "This is bigger than one PR —
+                we see [X], [Y], [Z]. Could you open a separate issue for each so we
+                can pick them up one at a time?"
+              - **Never** silently leave `needs-info` after a reporter reply. If you
+                read it, say something. The reporter is waiting on you.
+            - `needs-decomposition` label present, reporter has replied with new
+              issues filed → confirm the split looks right, close this umbrella issue
+              with a brief comment pointing to the new issues. If they haven't split
+              yet, leave the label and don't comment again (the original ask stands).
             - `ready-for-pilot` label present → almost always leave alone unless the
               classification is obviously wrong.
 
@@ -185,7 +204,7 @@ jobs:
 
             ## Do not
             - Don't close issues except in outcome C (spam / problematic / off-topic).
-            - Don't add labels other than `ready-for-pilot` or `needs-info`.
+            - Don't add labels other than `ready-for-pilot`, `needs-info`, or `needs-decomposition`.
             - Don't engage bot-authored issues — the job's `if:` condition already
               filters these out.
             - Don't lecture or offer design opinions. This is intake, not review.
