@@ -48,7 +48,9 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
           show_full_output: true
-          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30"
+          # Haiku handles mechanical fixup edits well — saves ~3x on per-run cost.
+          # If revise quality regresses on complex reviews, swap back to Sonnet.
+          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30 --model claude-haiku-4-5-20251001"
           prompt: |
             You are plato-pilot-revise. A code reviewer requested changes on PR #${{ env.PR_NUMBER }}.
             Address the review in ONE fixup commit. One shot — you do not get a second pass.
