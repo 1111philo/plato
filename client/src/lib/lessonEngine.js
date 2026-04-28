@@ -15,7 +15,7 @@ import {
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
-import { ensureProfileExists, updateProfileInBackground, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
+import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
@@ -144,7 +144,7 @@ export async function startLesson(lessonId, lesson, onStream) {
     512
   );
 
-  const { text, progress, kbUpdate } = parseCoachResponse(coachMsg);
+  const { text, progress } = parseCoachResponse(coachMsg);
 
   if (progress != null) {
     lessonKB.progress = progress;
@@ -198,8 +198,6 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
 
-  // Call coach (use heavy model if image attached)
-  const model = imageDataUrl ? 'heavy' : undefined;
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,

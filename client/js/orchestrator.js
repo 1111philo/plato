@@ -3,7 +3,7 @@
  * parses structured JSON responses.
  */
 
-import { parseSSEStream, parseResponse, MODEL_LIGHT, MODEL_HEAVY, ApiError } from './api.js';
+import { parseSSEStream, parseResponse, MODEL_LIGHT, ApiError } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
 

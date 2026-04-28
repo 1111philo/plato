@@ -97,7 +97,7 @@ export default function ResetPassword() {
         </CardContent>
       </Card>
       <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
       </p>
     </main>
   );

@@ -27,6 +27,6 @@ export async function loadAll() {
  * Now a no-op — storage.js write functions call putSyncData directly.
  * Kept for backward compatibility with syncInBackground.
  */
-export async function save(syncKey) {
+export async function save(_syncKey) {
   // No-op — writes are handled by storage.js putSyncData
 }

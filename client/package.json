@@ -5,11 +5,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "lint": "eslint .",
     "test": "node --test tests/*.test.js"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@tailwindcss/vite": "^4.2.2",
     "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.5.0",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.2",
     "vite-plugin-static-copy": "^4.0.0"

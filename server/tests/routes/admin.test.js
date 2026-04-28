@@ -63,8 +63,6 @@ describe('POST /v1/admin/invites', () => {
   });
 
   it('creates invite', async () => {
-    // Stub sendInviteEmail via dynamic import mock approach
-    const { sendInviteEmail } = await import('../../src/lib/email.js');
     // Since we can't easily mock SES in this test, we set SKIP_EMAIL
     process.env.SKIP_EMAIL = 'true';
     const app = new Hono();

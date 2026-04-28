@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand,
-  UpdateCommand, DeleteCommand, ScanCommand, BatchWriteCommand,
+  UpdateCommand, DeleteCommand, ScanCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   USERS_TABLE, INVITES_TABLE, REFRESH_TOKENS_TABLE, SYNC_DATA_TABLE,

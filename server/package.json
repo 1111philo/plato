@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/**/*.test.js",
+    "lint": "eslint .",
     "dev": "node dev.js",
     "dev:sqlite": "node dev-sqlite.js",
     "setup-db": "node scripts/setup-local-db.js",
@@ -23,7 +24,10 @@
     "jose": "^5.0.0"
   },
   "devDependencies": {
-    "@hono/node-server": "^1.19.13"
+    "@eslint/js": "^9.39.4",
+    "@hono/node-server": "^1.19.13",
+    "eslint": "^9.39.4",
+    "globals": "^17.5.0"
   },
   "overrides": {
     "axios": "^1.15.0",

@@ -11,11 +11,6 @@ process.env.ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? '';
 process.env.ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? '';
 process.env.APP_URL = process.env.APP_URL ?? 'http://localhost:3000';
 
-// Patch DynamoDB client to use local endpoint
-const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb');
-const originalSend = DynamoDBClient.prototype.send;
-// We'll override in db.js via endpoint config instead — see below.
-
 const { default: health } = await import('./src/routes/health.js');
 const { default: auth } = await import('./src/routes/auth.js');
 const { default: me } = await import('./src/routes/me.js');

@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dialog';
 
 export default function LessonsList() {
-  const { state, dispatch } = useApp();
+  const { state } = useApp();
   const navigate = useNavigate();
   const { lessons } = state;
   const [lessonData, setLessonData] = useState({});

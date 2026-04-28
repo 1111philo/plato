@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
   savePreferences,
-  getLearnerProfileSummary, getLearnerProfile,
+  getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import { updateProfile } from '../../js/auth.js';
