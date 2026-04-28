@@ -155,7 +155,7 @@ function isSubmittedArtifact(text) {
   return [
     /\b(this is|here is|here's)\s+my\s+(final\s+)?(artifact|work|submission|project|prototype|draft|essay|page|site|design|copy|prompt|analysis)\b/,
     /\bmy\s+(final\s+)?(artifact|work|submission|project|prototype|draft|essay|page|site|design|copy|prompt|analysis)\s+(is|lives|appears|starts)\b/,
-    /\bi\s+(wrote|made|created|built|designed|drafted|published)\s+(this|the|my)\b/,
+    /\bi\s+(wrote|made|created|built|designed|drafted|published)\s+(this|my)\b/,
     /\bplease\s+evaluate\s+(my|this)\s+(artifact|work|submission|project|prototype|draft|essay|page|site|design|copy|prompt|analysis)\b/,
   ].some(pattern => pattern.test(text));
 }
