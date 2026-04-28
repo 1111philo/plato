@@ -18,7 +18,7 @@ function PacingSection({ stats }) {
   const {
     totalCompletions = 0, withinTarget = 0, overTarget = 0, extendedLessons = 0,
     exchangeTarget = 11, extendedThreshold = 22, avgExchangesWithinTarget,
-    avgExchangesPerCompletion, activeLessons = 0,
+    avgExchangesOverTarget, avgExchangesPerCompletion, activeLessons = 0,
   } = stats;
 
   const hasCompletions = totalCompletions > 0;
@@ -28,6 +28,9 @@ function PacingSection({ stats }) {
   // to avoid inflation from multi-session or abandoned-then-resumed lessons.
   const estimatedDuration = estimateDuration(avgExchangesPerCompletion);
   const durationWarning = estimatedDuration != null && estimatedDuration > 25;
+
+  // Flag when over-target lessons are running significantly long (≥15 exchanges)
+  const overTargetWarning = avgExchangesOverTarget != null && avgExchangesOverTarget >= 15;
 
   let cardClasses = '';
   let signal = '';
@@ -76,7 +79,7 @@ function PacingSection({ stats }) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <Card className={durationWarning ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
           <CardContent>
             <div className="text-2xl font-bold">{estimatedDuration != null ? `${estimatedDuration} min` : '—'}</div>
@@ -87,6 +90,17 @@ function PacingSection({ stats }) {
           <CardContent>
             <div className="text-2xl font-bold">{avgExchangesWithinTarget ?? '—'}</div>
             <div className="text-sm text-muted-foreground">Avg exchanges (on target)</div>
+          </CardContent>
+        </Card>
+        <Card className={overTargetWarning ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
+          <CardContent>
+            <div className="text-2xl font-bold">{avgExchangesOverTarget ?? '—'}</div>
+            <div
+              className="text-sm text-muted-foreground"
+              title={`Average exchanges for the ${overTarget} lesson${overTarget !== 1 ? 's' : ''} that went over target. High values suggest a lesson design mismatch — too many objectives or a poorly-scoped exemplar.`}
+            >
+              Avg exchanges (over target)
+            </div>
           </CardContent>
         </Card>
         <Card className={overTarget > 0 ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
