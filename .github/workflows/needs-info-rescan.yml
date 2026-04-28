@@ -1,0 +1,72 @@
+name: needs-info-rescan
+
+# Safety net for the issue-intake workflow's `issue_comment` trigger.
+#
+# The intake workflow re-runs on comments to `needs-info` issues so the
+# agent can flip the label to `ready-for-pilot` once the reporter has
+# answered. In practice, GitHub's `issue_comment` event delivery is not
+# 100% reliable — comments occasionally don't fire the workflow. This
+# scheduled scan catches anything that fell through.
+#
+# Runs weekday mornings before plato-pilot, so any issue flipped to
+# `ready-for-pilot` here becomes an available signal for the same day's
+# pilot run.
+
+on:
+  schedule:
+    - cron: '0 13 * * 0-4'   # 8:00 AM ET weekdays Sun–Thu (3h before pilot)
+  workflow_dispatch:
+
+jobs:
+  rescan:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      actions: write   # required to dispatch issue-intake.yml
+    steps:
+      - name: Dispatch intake on needs-info issues with new reporter replies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # List open needs-info issues. For each, find the most recent
+          # claude[bot] comment timestamp and check whether any non-bot
+          # comment is newer. If yes, dispatch intake on that issue —
+          # the intake prompt's re-run guard handles the classification.
+          gh issue list \
+            --repo "${{ github.repository }}" \
+            --label needs-info \
+            --state open \
+            --json number \
+            --jq '.[].number' > /tmp/needs-info.txt
+
+          if [ ! -s /tmp/needs-info.txt ]; then
+            echo "No open needs-info issues. Nothing to do."
+            exit 0
+          fi
+
+          dispatched=0
+          while read -r n; do
+            [ -z "$n" ] && continue
+            # Compare timestamps as ISO strings — lexical compare works
+            # because they're zulu-format and same length.
+            stale=$(gh issue view "$n" \
+              --repo "${{ github.repository }}" \
+              --json comments \
+              --jq '
+                (.comments | map(select(.author.login == "claude")) | last | .createdAt // "1970-01-01T00:00:00Z") as $bot
+                | (.comments | map(select(.author.login != "claude" and (.createdAt > $bot))) | length > 0)
+              ')
+            if [ "$stale" = "true" ]; then
+              echo "Issue #$n has a reporter reply newer than claude[bot]'s last comment — dispatching intake."
+              gh workflow run issue-intake.yml \
+                --repo "${{ github.repository }}" \
+                -f issue_number="$n"
+              dispatched=$((dispatched + 1))
+            else
+              echo "Issue #$n: no new reporter reply since claude[bot] comment. Skipping."
+            fi
+          done < /tmp/needs-info.txt
+
+          echo "Dispatched intake on $dispatched issue(s)."
