@@ -78,7 +78,7 @@ content.get('/v1/lessons', async (c) => {
       return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
-      const { sharedWith, ...data } = i.data;
+      const { sharedWith: _sharedWith, ...data } = i.data;
       return {
         lessonId: i.dataKey.slice('lesson:'.length),
         ...data,
@@ -102,7 +102,7 @@ content.get('/v1/lessons/:lessonId', async (c) => {
       return c.json({ error: 'Lesson not found' }, 404);
     }
   }
-  const { sharedWith, ...data } = item.data;
+  const { sharedWith: _sharedWith, ...data } = item.data;
   return c.json({ lessonId, ...data, updatedAt: item.updatedAt });
 });
 

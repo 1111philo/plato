@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
 import { generateUserId, generateRefreshToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
-import { signAccessToken, verifyAccessToken } from '../lib/jwt.js';
+import { signAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 

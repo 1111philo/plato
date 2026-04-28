@@ -80,7 +80,7 @@ export default function Signup() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>You've been invited to join {branding.classroomName}.</CardDescription>
+          <CardDescription>You&apos;ve been invited to join {branding.classroomName}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -160,7 +160,7 @@ export default function Signup() {
         </CardFooter>
       </Card>
       <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-white/80">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
       </p>
     </main>
   );

@@ -5,7 +5,7 @@
 
 import {
   getAuthTokens, saveAuthTokens, clearAuth,
-  getAuthUser, saveAuthUser
+  saveAuthUser
 } from './storage.js';
 
 // When served from the same origin (Lambda), use relative paths.

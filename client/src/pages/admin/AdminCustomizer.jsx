@@ -269,7 +269,7 @@ function KBViewer({ content, updatedAt, updatedByName, onEdit }) {
       ) : (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            <p>No knowledge base yet. Click "Create Knowledge Base" to get started with the AI editor.</p>
+            <p>No knowledge base yet. Click &quot;Create Knowledge Base&quot; to get started with the AI editor.</p>
           </CardContent>
         </Card>
       )}

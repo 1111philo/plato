@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBranding } from '../contexts/BrandingContext.jsx';
 import { useViewTransition } from '../hooks/useViewTransition.js';
@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export default function AppShell({ children }) {
-  const location = useLocation();
   const navigate = useNavigate();
   const { user, logout, sessionExpired } = useAuth();
   const branding = useBranding();
@@ -117,7 +116,7 @@ export default function AppShell({ children }) {
       </main>
 
       <footer className="shrink-0 border-t px-4 py-2 text-center text-xs text-muted-foreground">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener" className="underline hover:text-foreground">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">plato</a>.
       </footer>
 
       <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>
@@ -125,7 +124,7 @@ export default function AppShell({ children }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Sign Out?</AlertDialogTitle>
             <AlertDialogDescription>
-              You'll need to sign in again to access your lessons.
+              You&apos;ll need to sign in again to access your lessons.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

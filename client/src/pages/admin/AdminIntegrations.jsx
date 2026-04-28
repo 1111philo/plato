@@ -93,7 +93,7 @@ export default function AdminIntegrations() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Integrations</h1>
-      <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato's functionality.</p>
+      <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato&apos;s functionality.</p>
 
       <Card className="mb-6">
         <CardHeader>

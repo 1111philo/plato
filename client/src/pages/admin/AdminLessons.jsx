@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -266,7 +266,7 @@ export default function AdminLessons() {
 
 // -- Lesson creation/editing view with AI Chat --------------------------------
 
-function NewLessonView({ onSave, onCancel, onError, lessonId, isDraft, initialMessages, initialReadiness, needsAgentReply }) {
+function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft, initialMessages, initialReadiness, needsAgentReply }) {
   // A view is in "create" mode when it's driving a fresh or in-progress draft.
   // It's in "edit" mode when finalizing a non-draft lesson's content.
   const isCreate = !!isDraft;
