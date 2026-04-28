@@ -3,13 +3,21 @@ name: Code Review
 on:
   pull_request:
     types: [opened, synchronize]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/dependabot.yml'
   issue_comment:
     types: [created]
 
 jobs:
   review:
+    # Skip dependabot PRs entirely — they're mechanical bumps already gated by
+    # the Lint job and don't need an AI review. Manual `@claude` mentions still
+    # work via the issue_comment branch if anyone wants a second look.
     if: |
-      (github.event_name == 'pull_request') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.user.login != 'dependabot[bot]') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
     permissions:

@@ -67,7 +67,9 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           allowed_bots: "claude"
           show_full_output: true
-          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 15"
+          # Haiku is plenty for classification: read issue, decide A/B/C, label, comment.
+          # Sonnet's reasoning headroom is wasted here — saves ~3x on per-run cost.
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 15 --model claude-haiku-4-5-20251001"
           prompt: |
             You are plato's issue-intake agent. Your job is to prepare new issues so
             plato-pilot (the daily autonomous engineering agent) or a human can act on
