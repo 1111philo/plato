@@ -212,6 +212,7 @@ export default function LessonChat() {
         setLessonKB(freshKB);
       } catch (e) {
         setError(e.message || 'Failed to send.');
+        setLinkNotice('');
         setStreamingText(null);
         setLoading('');
       }
