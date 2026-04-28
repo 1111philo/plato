@@ -59,7 +59,7 @@ jobs:
           # races with the explicit `gh pr review` call in the prompt and
           # double-submits. See PR #73 (2026-04-17) where two reviews were
           # posted 6s apart with slightly different bodies.
-          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 20"
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 30"
           prompt: |
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
             Read REVIEW.md and CLAUDE.md for project conventions.
