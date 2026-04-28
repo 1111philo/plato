@@ -1,0 +1,30 @@
+# Make Dependabot manifest detection explicit for the monorepo.
+# Security updates are enabled at the repo level (Settings → Code security);
+# this file does not turn them on or off — it just tells Dependabot exactly
+# where to look. We deliberately do not enable scheduled version updates;
+# routine bumps stay manual, security PRs come automatically.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0  # disables version-update PRs; security PRs are unaffected
+    groups:
+      server-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /client
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0  # disables version-update PRs; security PRs are unaffected
+    groups:
+      client-deps:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0  # disables version-update PRs; security PRs are unaffected
