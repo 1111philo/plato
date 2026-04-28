@@ -3,6 +3,8 @@ name: issue-intake
 on:
   issues:
     types: [opened, reopened]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       issue_number:
@@ -18,6 +20,11 @@ jobs:
     #   that the previous classification needs revisiting (either "you closed
     #   this wrongly" or "I replied to needs-info, please re-check"). The
     #   prompt's re-run guard handles the already-labeled case.
+    # - `issue_comment` on a `needs-info` issue: a reply may be the answer the
+    #   intake agent asked for. Re-run so the prompt's re-run guard can decide
+    #   whether to flip to `ready-for-pilot` or leave `needs-info` in place.
+    #   Filtered to issues only (not PR comments) and non-bot commenters so
+    #   claude[bot]'s own asking comment doesn't re-trigger the workflow.
     # - `workflow_dispatch`: always run — the operator is explicitly asking.
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -26,7 +33,11 @@ jobs:
       (github.event_name == 'issues' && github.event.action == 'opened' &&
        !contains(github.event.issue.user.login, '[bot]') &&
        !contains(github.event.issue.labels.*.name, 'ready-for-pilot') &&
-       !contains(github.event.issue.labels.*.name, 'needs-info'))
+       !contains(github.event.issue.labels.*.name, 'needs-info')) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request == null &&
+       contains(github.event.issue.labels.*.name, 'needs-info') &&
+       !contains(github.event.comment.user.login, '[bot]'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -78,9 +89,10 @@ jobs:
             **Only work on `$ISSUE_NUMBER`** — do not scan other issues. The workflow
             fires per-issue; this run's job is one issue.
 
-            ## Re-run guard (reopens and manual dispatches)
-            If this run is a **reopen** or a **manual dispatch**, the issue may
-            already have history. Handle the likely cases:
+            ## Re-run guard (reopens, comment replies, and manual dispatches)
+            If this run is a **reopen**, a **new comment on a `needs-info`
+            issue**, or a **manual dispatch**, the issue may already have
+            history. Handle the likely cases:
 
             - Issue previously closed by the intake agent (outcome C) and now
               reopened, no intake label → the reporter is saying you misread it.
