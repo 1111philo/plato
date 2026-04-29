@@ -22,7 +22,37 @@ export { Hono } from 'hono';
 // so this is acceptable for v1. Phase 2+ may narrow this to the `PluginDbView`
 // surface declared in packages/plugin-sdk/index.d.ts (see CAPABILITIES.md). Don't
 // add new core methods that bypass plugin contracts here — extend the registry instead.
+import dbDefault from '../db.js';
 export { default as db } from '../db.js';
+
+/**
+ * Per-user plugin metadata storage. Reads/writes a single sync-data record at
+ * `userMeta:<pluginId>` on the given user. The HTTP `/v1/sync` API filters
+ * `userMeta:*` keys out of bulk responses and rejects them on single-key
+ * read/write — so this surface is server-side-only by default. Plugins that
+ * need learner-visible per-user data should expose their own routes.
+ *
+ * Capability: `user.metadata.read` / `user.metadata.write` (declarative; not
+ * enforced at runtime — same trust model as `server.routes`. Phase 3+
+ * sandboxing would enforce.)
+ */
+export async function getUserMeta(userId, pluginId) {
+  if (!userId || !pluginId) throw new Error('userId and pluginId required');
+  const item = await dbDefault.getSyncData(userId, `userMeta:${pluginId}`);
+  return item?.data || null;
+}
+
+export async function putUserMeta(userId, pluginId, data) {
+  if (!userId || !pluginId) throw new Error('userId and pluginId required');
+  if (!data || typeof data !== 'object') throw new Error('data must be an object');
+  const existing = await dbDefault.getSyncData(userId, `userMeta:${pluginId}`);
+  return dbDefault.putSyncData(userId, `userMeta:${pluginId}`, data, existing?.version || 0);
+}
+
+export async function deleteUserMeta(userId, pluginId) {
+  if (!userId || !pluginId) throw new Error('userId and pluginId required');
+  return dbDefault.deleteSyncData(userId, `userMeta:${pluginId}`);
+}
 
 export { authenticate } from '../../middleware/authenticate.js';
 export { requireAdmin } from '../../middleware/requireAdmin.js';

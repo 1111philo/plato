@@ -3,11 +3,10 @@
  *
  * Stores admin notes about each learner. Mounted at /v1/plugins/teacher-comments/.
  *
- * Phase-1 storage workaround: comments live inside the plugin's own settings
- * record at `_system:plugins:activation.teacher-comments.settings.comments`,
- * keyed by userId. Phase 2's `userMeta:<pluginId>` namespace will be the
- * proper home — until then, every comment write rewrites the full settings
- * object. Acceptable for small classrooms (see GAPS.md).
+ * Storage: per-user `userMeta:teacher-comments` records via the plugin SDK's
+ * getUserMeta/putUserMeta helpers. Each comment is its own DB record keyed by
+ * userId — write contention is per-user (not per-plugin), and a user-delete
+ * cascade auto-cleans the comment.
  */
 
 import {
@@ -15,52 +14,37 @@ import {
   db,
   authenticate,
   requireAdmin,
+  getUserMeta,
+  putUserMeta,
+  deleteUserMeta,
 } from '../../../server/src/lib/plugins/sdk.js';
 
 const PLUGIN_ID = 'teacher-comments';
-const ACTIVATION_KEY = 'plugins:activation';
 
 const routes = new Hono();
 routes.use('*', authenticate, requireAdmin);
 
-/**
- * Read comments + the activation record's version so callers can do an
- * optimistic-locked update. Returns `{ comments, version, record }`.
- */
-async function readCommentsState() {
-  const item = await db.getSyncData('_system', ACTIVATION_KEY);
-  const record = (item?.data && typeof item.data === 'object') ? item.data : {};
-  const settings = record[PLUGIN_ID]?.settings || {};
-  const comments = (settings.comments && typeof settings.comments === 'object') ? settings.comments : {};
-  return { comments, version: item?.version || 0, record };
-}
-
-/** Write back, preserving any other fields on the plugin's record. */
-async function writeComments(comments, prev) {
-  const next = { ...prev.record };
-  const existing = next[PLUGIN_ID] || {};
-  next[PLUGIN_ID] = {
-    ...existing,
-    enabled: existing.enabled ?? true,
-    settings: { ...(existing.settings || {}), comments },
-  };
-  await db.putSyncData('_system', ACTIVATION_KEY, next, prev.version);
-}
-
-// GET /admin/comments — full map (for the settings panel).
+// GET /admin/comments — full map (for the settings panel). Reads each user's
+// userMeta:teacher-comments record and assembles the map. O(N) for N users;
+// fine for classroom-scale, would want indexing for larger deployments.
 routes.get('/admin/comments', async (c) => {
-  const { comments } = await readCommentsState();
-  return c.json(comments);
+  const users = await db.listAllUsers();
+  const out = {};
+  await Promise.all(users.map(async (u) => {
+    const meta = await getUserMeta(u.userId, PLUGIN_ID);
+    if (meta?.text) out[u.userId] = meta;
+  }));
+  return c.json(out);
 });
 
-// GET /admin/comments/:userId — single comment (for the row-action popover).
+// GET /admin/comments/:userId — single comment.
 routes.get('/admin/comments/:userId', async (c) => {
   const userId = c.req.param('userId');
-  const { comments } = await readCommentsState();
-  return c.json(comments[userId] || { text: '' });
+  const meta = await getUserMeta(userId, PLUGIN_ID);
+  return c.json(meta || { text: '' });
 });
 
-// PUT /admin/comments/:userId — upsert. Body: { text: string }. Empty text deletes.
+// PUT /admin/comments/:userId — upsert. Body: { text: string }. Empty deletes.
 routes.put('/admin/comments/:userId', async (c) => {
   const userId = c.req.param('userId');
   let body;
@@ -71,39 +55,20 @@ routes.put('/admin/comments/:userId', async (c) => {
   const adminUser = c.get('user');
   const text = body.text.trim();
 
-  // Retry once on optimistic-lock conflict (two admins editing different users
-  // simultaneously rewrite the same activation record).
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const state = await readCommentsState();
-    const next = { ...state.comments };
-    if (text === '') {
-      delete next[userId];
-    } else {
-      next[userId] = { text, updatedAt: new Date().toISOString(), updatedBy: adminUser.userId };
-    }
-    try {
-      await writeComments(next, state);
-      return c.json(next[userId] || { text: '' });
-    } catch (err) {
-      if (err.name !== 'ConditionalCheckFailedException' || attempt === 1) throw err;
-    }
+  if (text === '') {
+    await deleteUserMeta(userId, PLUGIN_ID);
+    return c.json({ text: '' });
   }
+  const next = { text, updatedAt: new Date().toISOString(), updatedBy: adminUser.userId };
+  await putUserMeta(userId, PLUGIN_ID, next);
+  return c.json(next);
 });
 
-// DELETE /admin/comments/:userId — clear.
+// DELETE /admin/comments/:userId — explicit clear.
 routes.delete('/admin/comments/:userId', async (c) => {
   const userId = c.req.param('userId');
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const state = await readCommentsState();
-    const next = { ...state.comments };
-    delete next[userId];
-    try {
-      await writeComments(next, state);
-      return c.json({ ok: true });
-    } catch (err) {
-      if (err.name !== 'ConditionalCheckFailedException' || attempt === 1) throw err;
-    }
-  }
+  await deleteUserMeta(userId, PLUGIN_ID);
+  return c.json({ ok: true });
 });
 
 export default {

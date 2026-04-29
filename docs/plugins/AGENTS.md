@@ -197,7 +197,40 @@ export default {
 };
 ```
 
-### Recipe 8 — minimal vitest skeleton for a plugin route
+### Recipe 8 — store and read per-user plugin data
+
+```js
+import { getUserMeta, putUserMeta, deleteUserMeta } from '../../../server/src/lib/plugins/sdk.js';
+
+// In a route handler:
+await putUserMeta(userId, 'my-plugin', { score: 42, lastSeenAt: new Date().toISOString() });
+const meta = await getUserMeta(userId, 'my-plugin');  // -> { score: 42, lastSeenAt: ... } or null
+await deleteUserMeta(userId, 'my-plugin');
+```
+
+Manifest must declare `user.metadata.read` and/or `user.metadata.write`. Records are stored at `userMeta:<pluginId>` per user and are filtered from the learner-visible `/v1/sync` endpoint — admin-only by default. Auto-cleaned when a user is deleted.
+
+### Recipe 9 — react to user lifecycle events
+
+```js
+export default {
+  hooks: {
+    async userCreated({ userId, email, role }, ctx) {
+      ctx.logger.info('saw_new_user', { userId, role });
+      // e.g. seed an external system, send a welcome email
+    },
+    async userDeleted({ userId }, ctx) {
+      ctx.logger.info('saw_user_delete', { userId });
+      // The user's userMeta:<id> records are auto-deleted by the cascade.
+      // Subscribe only if you have side effects beyond plato.
+    },
+  },
+};
+```
+
+Manifest must declare `hook.userCreated` / `hook.userDeleted` capabilities. `userCreated` fires after persist; `userDeleted` fires before the cascade (so handlers can read their own per-user data while it still exists).
+
+### Recipe 10 — minimal vitest skeleton for a plugin route
 
 ```js
 // plugins/<id>/server/index.test.js

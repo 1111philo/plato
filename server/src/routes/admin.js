@@ -9,6 +9,7 @@ import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-lim
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
+import { emit as emitHook } from '../lib/plugins/hooks.js';
 
 const admin = new Hono();
 
@@ -341,7 +342,11 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
     details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: false },
   });
 
-  // Delete all sync data for this user
+  // Emit userDeleted BEFORE the cascade — plugins can react with the user's data
+  // still in place. Hook errors are caught by emit() and don't block deletion.
+  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+
+  // Delete all sync data for this user (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
   await Promise.all(syncItems.map((item) => db.deleteSyncData(userId, item.dataKey)));
   await db.deleteUser(userId);

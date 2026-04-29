@@ -8,13 +8,15 @@ a fallback panel on `/plato/plugins` that lists every learner with their note.
 
 ## Local invariants
 
-- Comments live at `_system:plugins:activation.teacher-comments.settings.comments`,
-  a map keyed by `userId`. **Phase-1 storage workaround** — Phase 2 will introduce
-  a `userMeta:<pluginId>` namespace; until then every write rewrites the whole
-  map and fights for the activation record's optimistic lock. Server retries
-  once on conflict.
+- Each comment lives at the user's own `userMeta:teacher-comments` sync-data
+  record, keyed by userId. Use the SDK helpers
+  (`getUserMeta` / `putUserMeta` / `deleteUserMeta`) — don't read/write the
+  raw DB key shape directly.
 - Empty `text` deletes the comment entry.
 - Admin-only across the board: `routes.use('*', authenticate, requireAdmin)`.
+- `userMeta:*` records are filtered from learners' `/v1/sync` listing
+  automatically by the host. If we ever need learners to see something, we
+  expose our own route — never relax the filter.
 - The plugin reads users via `GET /v1/admin/users` directly. If the host
   endpoint shape changes the plugin breaks (filed in GAPS.md).
 

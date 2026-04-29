@@ -10,8 +10,8 @@
   "defaultEnabled": false,
   "capabilities": [
     "server.routes",
-    "settings.read",
-    "settings.write",
+    "user.metadata.read",
+    "user.metadata.write",
     "ui.slot.adminSettingsPanel",
     "ui.slot.adminUserRowAction"
   ],
@@ -20,15 +20,6 @@
     "slots": {
       "adminSettingsPanel": "client/SettingsPanel.jsx",
       "adminUserRowAction": "client/UserRowAction.jsx"
-    }
-  },
-  "settingsSchema": {
-    "type": "object",
-    "properties": {
-      "comments": {
-        "type": "object",
-        "description": "Per-user notes keyed by userId. NOTE: Phase 1 stores all comments in the plugin's settings record because per-user metadata storage isn't yet a Phase-1 extension point. This works for small classrooms but grows the settings record proportionally to user count."
-      }
     }
   }
 }

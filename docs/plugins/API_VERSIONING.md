@@ -5,10 +5,27 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.0.0'
+PLUGIN_API_VERSION = '1.1.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
+
+## Changelog
+
+### 1.1.0 (additive)
+- **Added** core hook emit-points: `userCreated` (auth.js signup + bootstrap-admin) and `userDeleted` (me.js DELETE /v1/me + admin.js DELETE /v1/admin/users/:id). `userDeleted` fires BEFORE the cascade so handlers can read the user's `userMeta:*` records.
+- **Added** SDK helpers `getUserMeta(userId, pluginId)`, `putUserMeta(userId, pluginId, data)`, `deleteUserMeta(userId, pluginId)` for plugin-scoped per-user data.
+- **Added** capabilities: `user.metadata.read`, `user.metadata.write` (declarative; not yet runtime-enforced).
+- **Added** `adminUserRowAction` UI slot render-point in AdminUsers.jsx.
+- **Changed**: `/v1/sync` (the bulk learner-side listing) now filters out `userMeta:*` keys. Single-key `/v1/sync/:dataKey` already rejected them via the regex. Plugin server code reads/writes via the SDK helpers.
+
+Plugins that worked under 1.0.0 keep working — all changes are additive.
+
+### 1.0.0
+- Initial plugin host: manifest, capabilities, registry, hook bus (plumbed only),
+  server routes, slot system (`adminSettingsPanel`, `adminUserRowAction`),
+  per-plugin settings with auto-form rendering, lifecycle (`onActivate`/`onDeactivate`),
+  plugin-scoped logger, scaffolder, and validator.
 
 ## Plugin manifest
 

@@ -36,15 +36,23 @@ Phase 2. Declared early so plugins can target it as soon as it lands.
 
 ### `user.metadata.read`
 
-Allows reading `userMeta:<pluginId>` for any user (admin endpoint) or for the authenticated user (learner endpoint).
+Allows reading `userMeta:<pluginId>` for any user via the SDK helper
+`getUserMeta(userId, pluginId)`. Available since Plugin API 1.1.0.
 
-Phase 2.
+Phase 1.1+ (declarative; not yet runtime-enforced — same trust model as
+`server.routes`).
 
 ### `user.metadata.write`
 
-Allows writing `userMeta:<pluginId>` for any user (admin) or self (learner, gated by `learnerWritable: true` per field).
+Allows writing `userMeta:<pluginId>` for any user via
+`putUserMeta(userId, pluginId, data)` and `deleteUserMeta(userId, pluginId)`.
+Available since Plugin API 1.1.0.
 
-Phase 2.
+By design, `userMeta:*` records are filtered out of the user-visible
+`/v1/sync` endpoint. Plugins that want learner-visible per-user data must
+expose their own routes.
+
+Phase 1.1+ (declarative).
 
 ### `kpi`
 

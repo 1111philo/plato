@@ -29,27 +29,30 @@ async function userReq(app, method, path, body) {
   });
 }
 
-// Tiny in-memory store for `_system:plugins:activation` so tests don't need a DB.
-function fakeStore(initial = {}) {
-  let data = { ...initial };
-  let version = 0;
+/**
+ * In-memory fake of getSyncData/putSyncData/deleteSyncData scoped per
+ * (userId, dataKey). Plugin storage now goes through the per-user
+ * `userMeta:teacher-comments` namespace, so each comment is its own record.
+ */
+function fakeUserSyncStore() {
+  const store = new Map(); // key: `${userId}\0${dataKey}` -> { data, version }
+  const k = (userId, key) => `${userId}\0${key}`;
   return {
-    getSyncData: async (userId, key) => {
-      if (userId !== '_system' || key !== 'plugins:activation') return null;
-      return { data, version };
-    },
-    putSyncData: async (userId, key, next, expectedVersion) => {
-      if (userId !== '_system' || key !== 'plugins:activation') throw new Error('unexpected key');
-      if (expectedVersion !== version) {
+    getSyncData: async (userId, key) => store.get(k(userId, key)) || null,
+    putSyncData: async (userId, key, data, expectedVersion) => {
+      const cur = store.get(k(userId, key));
+      const ver = cur?.version || 0;
+      if (expectedVersion !== ver) {
         const err = new Error('version conflict');
         err.name = 'ConditionalCheckFailedException';
         throw err;
       }
-      data = next;
-      version += 1;
-      return { version };
+      const next = { data, version: ver + 1 };
+      store.set(k(userId, key), next);
+      return next;
     },
-    _peek: () => ({ data, version }),
+    deleteSyncData: async (userId, key) => { store.delete(k(userId, key)); },
+    _peek: () => store,
   };
 }
 
@@ -60,6 +63,10 @@ describe('teacher-comments plugin', () => {
       if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
       return null;
     };
+    db.listAllUsers = async () => [
+      { userId: 'usr_x', email: 'x@example.com', role: 'user' },
+      { userId: 'usr_y', email: 'y@example.com', role: 'user' },
+    ];
   });
 
   it('rejects non-admin', async () => {
@@ -69,9 +76,10 @@ describe('teacher-comments plugin', () => {
   });
 
   it('GET /admin/comments returns empty map by default', async () => {
-    const store = fakeStore();
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
     const res = await adminReq(app, 'GET', '/admin/comments');
     assert.equal(res.status, 200);
@@ -79,69 +87,83 @@ describe('teacher-comments plugin', () => {
   });
 
   it('PUT then GET round-trips a comment', async () => {
-    const store = fakeStore();
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
     const put = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'Strong reasoner.' });
     assert.equal(put.status, 200);
     const get = await adminReq(app, 'GET', '/admin/comments/usr_x');
-    assert.equal(get.status, 200);
     const data = await get.json();
     assert.equal(data.text, 'Strong reasoner.');
     assert.equal(data.updatedBy, 'usr_admin');
     assert.ok(data.updatedAt);
   });
 
-  it('PUT with empty text deletes the entry', async () => {
-    const store = fakeStore();
+  it('PUT empty text deletes the entry', async () => {
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'temporary' });
+    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'temp' });
     const del = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: '' });
     assert.equal(del.status, 200);
     const list = await adminReq(app, 'GET', '/admin/comments');
     assert.deepEqual(await list.json(), {});
   });
 
-  it('PUT validates text type', async () => {
-    const store = fakeStore();
+  it('PUT validates text type and length', async () => {
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    const res = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 12345 });
-    assert.equal(res.status, 400);
+    const wrongType = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 12345 });
+    assert.equal(wrongType.status, 400);
+    const tooLong = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'x'.repeat(4001) });
+    assert.equal(tooLong.status, 400);
   });
 
-  it('PUT enforces 4000 char cap', async () => {
-    const store = fakeStore();
+  it('GET /admin/comments aggregates only users with non-empty comments', async () => {
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    const res = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'x'.repeat(4001) });
-    assert.equal(res.status, 400);
+    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'note for x' });
+    const list = await adminReq(app, 'GET', '/admin/comments');
+    const data = await list.json();
+    assert.equal(data.usr_x?.text, 'note for x');
+    assert.equal(data.usr_y, undefined, 'users without comments not in the map');
   });
 
-  it('preserves other plugins\' settings on the activation record', async () => {
-    // Pre-seed the store with another plugin's data — make sure teacher-comments
-    // writes don't clobber it.
-    const store = fakeStore({
-      slack: { enabled: true, settings: { workspaceName: 'Acme', connected: true } },
-    });
+  it('writes are isolated per user (each comment is its own record)', async () => {
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'note' });
-    const after = store._peek();
-    assert.equal(after.data.slack?.settings?.workspaceName, 'Acme', 'slack settings clobbered');
-    assert.equal(after.data['teacher-comments']?.settings?.comments?.usr_x?.text, 'note');
+    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'note for x' });
+    await adminReq(app, 'PUT', '/admin/comments/usr_y', { text: 'note for y' });
+
+    const xRec = await store.getSyncData('usr_x', 'userMeta:teacher-comments');
+    const yRec = await store.getSyncData('usr_y', 'userMeta:teacher-comments');
+    assert.equal(xRec.data.text, 'note for x');
+    assert.equal(yRec.data.text, 'note for y');
+    // Updating x doesn't bump y's version (proves no shared record contention).
+    const yVerBefore = yRec.version;
+    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'updated for x' });
+    const yAfter = await store.getSyncData('usr_y', 'userMeta:teacher-comments');
+    assert.equal(yAfter.version, yVerBefore);
   });
 
   it('DELETE removes a comment', async () => {
-    const store = fakeStore();
+    const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
     await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'to delete' });
     const res = await adminReq(app, 'DELETE', '/admin/comments/usr_x');

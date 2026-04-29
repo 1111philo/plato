@@ -6,6 +6,7 @@ import { hashPassword, comparePassword } from '../lib/password.js';
 import { signAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
+import { emit as emitHook } from '../lib/plugins/hooks.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -63,6 +64,10 @@ auth.post('/v1/auth/setup', async (c) => {
     name,
     role: 'admin',
   });
+
+  // Emit userCreated so plugins can react. Errors in handlers are caught and
+  // logged inside emit() — never bubble up to the user-facing request.
+  await emitHook('userCreated', { userId, email: email.toLowerCase(), role: 'admin' });
 
   // Seed default prompts and lessons
   try { await seedDefaultContent(); } catch (e) {
@@ -139,6 +144,8 @@ auth.post('/v1/auth/signup', async (c) => {
     role: 'user',
     slackUserId: invite.slackUserId || null,
   });
+
+  await emitHook('userCreated', { userId, email: invite.email, role: 'user' });
 
   await db.markInviteUsed(inviteToken);
 

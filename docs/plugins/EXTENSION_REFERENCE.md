@@ -58,16 +58,18 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `userCreated`
 
 - **Capability:** `hook.userCreated`
-- **Payload:** `{ userId: string, email: string, role: 'admin' | 'learner' }`
-- **Emit point:** `server/src/routes/auth.js` after `db.createUser`; `server/src/routes/admin.js` after invite-accept
-- **Phase:** 2 (capability and bus exist; emit-point lands in Phase 2)
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Emit point:** `server/src/routes/auth.js` after `db.createUser` — both the bootstrap-admin path (`POST /v1/auth/bootstrap-admin`) and the invite-accept signup path (`POST /v1/auth/signup`)
+- **Fires:** AFTER the user record is persisted. Observe-only; handlers can't abort. Errors in handlers are logged but don't fail the user-facing request.
+- **Phase:** 1.1
+- **Notes:** Bootstrap admins created at server-startup via env-vars (in `server/src/index.js` and `dev-sqlite.js`) bypass this emit point — the hook bus may not be initialized yet at that boot phase. If you need to react to ALL users including the very first admin, run a sweep on plugin activate.
 
 ### `userUpdated`
 
 - **Capability:** `hook.userUpdated`
 - **Payload:** `{ userId: string, updates: object }`
 - **Emit point:** `server/src/routes/me.js` PATCH `/v1/me`; `server/src/routes/admin.js` PATCH `/v1/admin/users/:id`
-- **Phase:** 2
+- **Phase:** 2 (capability and bus exist; emit-point not yet wired)
 
 ### `profileUpdated`
 
@@ -96,6 +98,15 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 - **Capability:** `hook.coachExchangeRecorded`
 - **Payload:** `{ userId: string, lessonId: string, messageCount: number }`
 - **Phase:** 3
+
+### `userDeleted`
+
+- **Capability:** `hook.userDeleted`
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Emit point:** `server/src/routes/me.js` DELETE `/v1/me`; `server/src/routes/admin.js` DELETE `/v1/admin/users/:id`
+- **Fires:** BEFORE the cascade. Plugins can read their own `userMeta:<id>` records before they're deleted by the cascade. The host awaits all handlers before proceeding to delete the user's sync-data and user record.
+- **Phase:** 1.1
+- **Notes:** The user's `userMeta:*` records are auto-deleted by the cascade — plugins don't need to explicitly clean up. Subscribe to this hook only if you have side effects beyond plato (e.g., notify external systems, archive content).
 
 ## Capabilities
 
@@ -127,6 +138,14 @@ A plugin using an extension point without declaring its capability fails registr
 | `APP_URL` | Public URL of the deployment |
 | `hostLogger` | Host's ring-buffer logger (rare — prefer `ctx.logger` for plugin-scoped logs) |
 | `WebClient` | `@slack/web-api` client (re-exported for the Slack plugin; third-party plugins should declare their own deps) |
+| `getUserMeta(userId, pluginId)` | Read the plugin's per-user record. Returns the stored object or `null`. Capability: `user.metadata.read`. Available since 1.1.0. |
+| `putUserMeta(userId, pluginId, data)` | Upsert the plugin's per-user record. `data` must be an object. Capability: `user.metadata.write`. Available since 1.1.0. |
+| `deleteUserMeta(userId, pluginId)` | Delete the plugin's per-user record. Capability: `user.metadata.write`. Available since 1.1.0. |
+
+**Per-user storage convention:** `userMeta:<pluginId>` is the canonical key
+shape. Each plugin gets one record per user. Records are filtered out of the
+learner-visible `/v1/sync` listing — admin-only by default. Plugins that want
+learner-visible per-user data should expose their own routes.
 
 Adding to this surface is a core change — it widens the public plugin contract.
 

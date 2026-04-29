@@ -4,7 +4,7 @@ import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
-import { listEvents } from '../lib/plugins/hooks.js';
+import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
 import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
 
@@ -123,7 +123,12 @@ me.delete('/v1/me', async (c) => {
     details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: true },
   });
 
-  // Delete all sync data
+  // Emit userDeleted BEFORE the cascade so plugins can read their per-user data
+  // (userMeta:<id> records) while it still exists. Hook errors are caught by
+  // emit(); they never block the deletion.
+  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+
+  // Delete all sync data (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
   for (const item of syncItems) {
     await db.deleteSyncData(userId, item.dataKey);
@@ -159,8 +164,16 @@ me.get('/v1/plugins/extension-points', (c) => {
     ],
     hooks: {
       coreEmits: listEvents(),
-      defined: ['userCreated', 'userUpdated', 'profileUpdated', 'lessonStarted', 'lessonCompleted', 'coachExchangeRecorded'],
-      note: 'Phase 1 has no emit-points; the bus is plumbed for Phase 2. Plugins MAY emit/subscribe to arbitrary events using the convention <plugin-id>.<event>.',
+      defined: [
+        { name: 'userCreated', payload: '{ userId, email, role }', emitPoint: 'auth.js (signup, bootstrap-admin)', phase: '1.1' },
+        { name: 'userDeleted', payload: '{ userId, email, role }', emitPoint: 'me.js DELETE /v1/me, admin.js DELETE /v1/admin/users/:id', phase: '1.1' },
+        { name: 'userUpdated', payload: '{ userId, updates }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'profileUpdated', payload: '{ userId, key, data }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'lessonStarted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'lessonCompleted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'coachExchangeRecorded', payload: '{ userId, lessonId, messageCount }', emitPoint: '(not yet wired)', phase: '3' },
+      ],
+      note: 'Plugins MAY also emit/subscribe to arbitrary events using the convention <plugin-id>.<event>.',
     },
     capabilities: {
       static: STATIC_CAPABILITIES,

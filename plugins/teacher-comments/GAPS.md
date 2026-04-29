@@ -12,66 +12,57 @@ capability vocabulary, but `client/src/pages/admin/AdminUsers.jsx` didn't
 actually render `<PluginSlot name="adminUserRowAction">`. The plugin's
 `UserRowAction.jsx` was registered correctly but rendered nowhere.
 
-**Status:** Fixed in this PR — `AdminUsers.jsx` now renders the slot in the
-per-row actions cell. The plugin's button shows up automatically once the
-admin enables the plugin.
+**Closed:** `AdminUsers.jsx` now renders the slot in the per-row actions
+cell. The plugin's button shows up automatically once the admin enables it.
 
-**Lesson left for the host:** declaring a slot in the SDK without a host
-render-point is a half-shipped feature. The SDK type list still has several
-more slots in this state (`adminProfileFields`, `adminHomeKpi`,
-`learnerProfileFields`, `learnerHomeBanner`). Phase 2+ should land each one
-the same way: render-point + capability + worked-example plugin together.
+## 2. No per-user metadata storage (CLOSED in Plugin API 1.1.0)
 
-## 2. No per-user metadata storage
+**Symptom:** Per-user data is the whole point of this plugin. Phase 1
+shipped only plugin-level settings (one record per plugin). Stuffing all
+comments into `settings.comments = { <userId>: ... }` made every write
+rewrite the entire settings record; concurrent writes optimistic-lock-
+conflicted.
 
-**Symptom:** Per-user data is the whole point of this plugin. Phase 1 has
-plugin-level settings (one record per plugin) and shared `_system` keys.
-Neither fits per-user data.
+**Closed in 1.1.0:** SDK helpers `getUserMeta(userId, pluginId)`,
+`putUserMeta(userId, pluginId, data)`, `deleteUserMeta(userId, pluginId)`.
+Each plugin's per-user data lives in its own DB record at
+`userMeta:<pluginId>`, scoped to the user. Write contention is per-user,
+not per-plugin. Records are auto-deleted by the user-delete cascade and
+filtered out of the learner-visible `/v1/sync` listing.
 
-**Workaround used:** Stuffed everything into the plugin's settings as
-`settings.comments = { <userId>: { text, updatedAt, updatedBy } }`. Every
-comment write rewrites the entire settings object; concurrent writes
-optimistic-lock-conflict. Fine for small classrooms; doesn't scale.
+The plugin migrated to this storage in the same release. Capability:
+`user.metadata.read` / `user.metadata.write`.
 
-**Better surface (Phase 2):** `userMeta:<pluginId>` sync-data keys per user,
-with `user.metadata.read` / `user.metadata.write` capabilities and helpers
-on the SDK like `db.getUserMeta(userId, pluginId)` /
-`db.putUserMeta(userId, pluginId, data)`.
-
-## 3. No `userCreated` / `userDeleted` hooks
+## 3. No `userCreated` / `userDeleted` emit-points (CLOSED in Plugin API 1.1.0)
 
 **Symptom:** When a learner is invited and accepts, this plugin would like
-to seed an empty comment record (or just be aware so the row-action
-indicator shows up immediately). When a user is deleted, this plugin would
-like to clean up its `comments[userId]` entry.
+to react (e.g., seed an external CRM). When a user is deleted, plugins with
+side effects beyond plato (Slack notifications, archiving) need to know.
 
-**Workaround used:** None. The plugin tolerates missing entries (returns
-`{ text: '' }` on read) and tolerates orphaned entries (admin sees a stale
-note for a deleted user until they manually clear it).
+**Closed in 1.1.0:** core now emits `userCreated` after `db.createUser`
+(both bootstrap-admin and signup) and `userDeleted` before the user-data
+cascade in both `me.js` DELETE `/v1/me` and `admin.js` DELETE
+`/v1/admin/users/:id`. teacher-comments doesn't subscribe to either —
+the user-delete cascade auto-cleans the plugin's per-user records, and
+teacher-comments has no need to seed on userCreated. Hooks are exercised
+by `server/tests/routes/lifecycle-hooks.test.js`.
 
-**Better surface (Phase 2):** core-emitted `userCreated` and `userDeleted`
-hooks. The bus already exists in `server/src/lib/plugins/hooks.js` — Phase 2
-just needs `emit('userCreated', ...)` calls at the right points in
-`server/src/routes/auth.js` and the user-delete paths.
-
-## 4. No way to know which users have plugin data
+## 4. No way to know which users have plugin data (still open)
 
 **Symptom:** When the admin opens `/plato/users`, the row-action button
 should ideally show a filled vs. outline icon based on whether a comment
-exists. This requires either pre-fetching all comments (we do this in the
-settings panel) or one HTTP request per row.
+exists. Today the row-action component fetches the comment lazily on
+dialog open; the button is always shown unfilled.
 
-**Workaround used:** The row-action component fetches the comment lazily on
-dialog open. The button is always shown unfilled. If we wanted the indicator
-state we'd need either a shared client-side cache (none today) or a bulk
-"hydrate" API call that returns the per-user data the plugin owns.
+**Workaround used:** Lazy fetch on dialog open. Acceptable; the indicator
+state is a UX nicety, not a correctness issue.
 
-**Better surface (Phase 2 or 3):** AdminUsers could pre-fetch
+**Better surface (future):** AdminUsers could pre-fetch
 `/v1/plugins/<id>/admin/<bulk endpoint>` once and pass an indicator hint to
 each row's slot — but that's a significant slot contract change. Probably
-fine to leave this to plugin authors.
+fine to leave to plugin authors.
 
-## 5. Plugin must hard-code core-endpoint shapes
+## 5. Plugin must hard-code core-endpoint shapes (still open)
 
 **Symptom:** `SettingsPanel.jsx` calls `GET /v1/admin/users` directly
 because there's no plugin-scoped helper for "list users." If plato changes
@@ -79,11 +70,8 @@ the response shape, the plugin breaks.
 
 **Workaround used:** Direct fetch + defensive parsing.
 
-**Better surface:** plugins shouldn't reach into `/v1/admin/*`. Either:
-- Add a small "host data" SDK surface (`sdk.getUsers()` etc.) that the host
-  controls and versions with `apiVersion`, OR
-- Pass commonly-needed lists as slot props (e.g., `learners` to relevant
-  slots).
-
-Probably defer until a second plugin needs the same data — premature SDK
-expansion is its own anti-pattern.
+**Better surface (future):** plugins shouldn't reach into `/v1/admin/*`.
+Either add a small "host data" SDK surface (`sdk.getUsers()` etc.) that
+the host versions with `apiVersion`, or pass commonly-needed lists as slot
+props (e.g., `learners` to relevant slots). Defer until a second plugin
+needs the same data.
