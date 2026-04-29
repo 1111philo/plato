@@ -147,6 +147,25 @@ describe('DELETE /v1/sync', () => {
     const data = await res.json();
     assert.equal(data.deleted, 0);
   });
+
+  it('preserves plugin-owned userMeta:* records (admin-maintained, not learner-deletable)', async () => {
+    const deleted = [];
+    db.getAllSyncData = async () => [
+      { dataKey: 'profile' },
+      { dataKey: 'userMeta:teacher-comments' },
+      { dataKey: 'work' },
+      { dataKey: 'userMeta:other-plugin' },
+    ];
+    db.deleteSyncData = async (_uid, key) => { deleted.push(key); };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'DELETE', '/v1/sync');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    // Only the learner's own keys deleted; admin-maintained userMeta:* survives.
+    assert.deepEqual(deleted.sort(), ['profile', 'work']);
+    assert.equal(data.deleted, 2, 'response count reflects what actually got deleted');
+  });
 });
 
 describe('DELETE /v1/sync/:dataKey', () => {

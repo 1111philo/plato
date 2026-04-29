@@ -123,12 +123,17 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   }
 });
 
-// DELETE /v1/sync — delete all sync data for the authenticated user
+// DELETE /v1/sync — delete all sync data for the authenticated user.
+// Plugin-owned `userMeta:*` records are admin-maintained (teacher comments,
+// admin notes) and explicitly NOT the learner's to delete. Filter them out;
+// they're cleaned up only via account deletion (DELETE /v1/me / admin-delete),
+// which fires `userDeleted` first so plugins can react.
 sync.delete('/v1/sync', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
-  await Promise.all(items.map((item) => db.deleteSyncData(userId, item.dataKey)));
-  return c.json({ ok: true, deleted: items.length });
+  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:'));
+  await Promise.all(deletable.map((item) => db.deleteSyncData(userId, item.dataKey)));
+  return c.json({ ok: true, deleted: deletable.length });
 });
 
 // DELETE /v1/sync/:dataKey
