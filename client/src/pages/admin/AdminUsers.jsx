@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -590,9 +591,12 @@ export default function AdminUsers() {
                     )}
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      {item._user.userId !== currentUser?.userId && (
-                        <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
-                      )}
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
+                        {item._user.userId !== currentUser?.userId && (
+                          <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

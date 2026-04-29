@@ -1,0 +1,34 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "teacher-comments",
+  "name": "Teacher Comments",
+  "version": "0.1.0",
+  "apiVersion": "1.x",
+  "description": "Lets admins attach private notes to each learner. Visible only to admins.",
+  "author": "plato community",
+  "license": "AGPL-3.0-or-later",
+  "defaultEnabled": false,
+  "capabilities": [
+    "server.routes",
+    "settings.read",
+    "settings.write",
+    "ui.slot.adminSettingsPanel",
+    "ui.slot.adminUserRowAction"
+  ],
+  "extensionPoints": {
+    "serverRoutes": "server/index.js#default",
+    "slots": {
+      "adminSettingsPanel": "client/SettingsPanel.jsx",
+      "adminUserRowAction": "client/UserRowAction.jsx"
+    }
+  },
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "comments": {
+        "type": "object",
+        "description": "Per-user notes keyed by userId. NOTE: Phase 1 stores all comments in the plugin's settings record because per-user metadata storage isn't yet a Phase-1 extension point. This works for small classrooms but grows the settings record proportionally to user count."
+      }
+    }
+  }
+}

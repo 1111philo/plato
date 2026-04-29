@@ -17,9 +17,11 @@ Flat reference of every plato extension point. One section per surface; no nesti
 ### `adminUserRowAction`
 
 - **Capability:** `ui.slot.adminUserRowAction`
-- **Renders inside:** `client/src/pages/admin/AdminUsers.jsx` (per-user row action area)
+- **Renders inside:** `client/src/pages/admin/AdminUsers.jsx` — actions cell at the right end of each user row, before the Delete button
 - **Props:** `{ user: AdminUser }` (see SDK `AdminUser` type)
-- **Phase:** 2 (declared in SDK, no host render-point yet)
+- **Phase:** 1
+- **Example:** `plugins/teacher-comments/client/UserRowAction.jsx`
+- **Gotchas:** the host wraps the slot in a `stopPropagation` container so clicks inside the slot don't trigger the row's edit-user navigation. Plugin components don't need their own `stopPropagation`. The slot only renders for confirmed users — invite rows skip the slot.
 
 ### `adminHomeKpi`
 
