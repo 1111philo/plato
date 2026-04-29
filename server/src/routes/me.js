@@ -3,11 +3,17 @@ import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
+import { pluginRegistry } from '../lib/plugins/registry.js';
+import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
+import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
+import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
 
 const me = new Hono();
 
 me.use('/v1/me', authenticate);
 me.use('/v1/me/*', authenticate);
+me.use('/v1/plugins', authenticate);
+me.use('/v1/plugins/extension-points', authenticate);
 
 // GET /v1/me — get own profile
 me.get('/v1/me', (c) => {
@@ -74,10 +80,14 @@ me.patch('/v1/me', async (c) => {
   });
 });
 
-// GET /v1/me/export — download all user data as JSON
+// GET /v1/me/export — download all user data as JSON.
+// Plugin-owned `userMeta:*` records are admin-maintained (e.g. teacher
+// comments) and explicitly NOT part of "the user's own data" — same
+// isolation rule applied by GET/DELETE /v1/sync.
 me.get('/v1/me/export', async (c) => {
   const user = c.get('user');
-  const syncItems = await db.getAllSyncData(user.userId);
+  const syncItems = (await db.getAllSyncData(user.userId))
+    .filter((item) => !item.dataKey?.startsWith('userMeta:'));
   const syncData = {};
   for (const item of syncItems) {
     syncData[item.dataKey] = { data: item.data, version: item.version, updatedAt: item.updatedAt };
@@ -117,7 +127,12 @@ me.delete('/v1/me', async (c) => {
     details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: true },
   });
 
-  // Delete all sync data
+  // Emit userDeleted BEFORE the cascade so plugins can read their per-user data
+  // (userMeta:<id> records) while it still exists. Hook errors are caught by
+  // emit(); they never block the deletion.
+  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+
+  // Delete all sync data (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
   for (const item of syncItems) {
     await db.deleteSyncData(userId, item.dataKey);
@@ -127,6 +142,55 @@ me.delete('/v1/me', async (c) => {
   await db.deleteUser(userId);
 
   return c.json({ ok: true, message: 'Account and all associated data have been permanently deleted' });
+});
+
+// GET /v1/plugins — enabled plugins + sanitized settings (writeOnly fields
+// stripped). Not admin-only; the client loader uses this to filter which slots
+// render.
+me.get('/v1/plugins', (c) => {
+  const list = pluginRegistry.list().filter((e) => e.manifest && !e.loadError);
+  return c.json(list.map((e) => ({
+    ...pluginRegistry.publicView(e),
+    settings: pluginRegistry.sanitizeSettings(e),
+  })));
+});
+
+// GET /v1/plugins/extension-points — machine-readable inventory of slots, hooks,
+// capabilities, and the host's API version. Used by AI agents (and tooling) to
+// discover what's possible without grep-ing the codebase. See
+// docs/plugins/AGENTS.md "Decision tree" for the expected agent workflow.
+me.get('/v1/plugins/extension-points', (c) => {
+  return c.json({
+    apiVersion: PLUGIN_API_VERSION,
+    slots: [
+      { name: 'adminSettingsPanel', capability: 'ui.slot.adminSettingsPanel', context: 'admin', props: { pluginId: 'string', settings: 'object', onSave: '(next) => Promise<void>' }, location: 'client/src/pages/admin/AdminPlugins.jsx', phase: '1' },
+      { name: 'adminUserRowAction', capability: 'ui.slot.adminUserRowAction', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx', phase: '1.1' },
+      { name: 'adminProfileFields', capability: 'ui.slot.adminProfileFields', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx (Edit User card)', phase: '1.1' },
+    ],
+    hooks: {
+      coreEmits: listEvents(),
+      defined: [
+        { name: 'userCreated', payload: '{ userId, email, role }', emitPoint: 'auth.js (signup, bootstrap-admin)', phase: '1.1' },
+        { name: 'userDeleted', payload: '{ userId, email, role }', emitPoint: 'me.js DELETE /v1/me, admin.js DELETE /v1/admin/users/:id', phase: '1.1' },
+        { name: 'userUpdated', payload: '{ userId, updates }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'profileUpdated', payload: '{ userId, key, data }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'lessonStarted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'lessonCompleted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'coachExchangeRecorded', payload: '{ userId, lessonId, messageCount }', emitPoint: '(not yet wired)', phase: '3' },
+      ],
+      note: 'Plugins MAY also emit/subscribe to arbitrary events using the convention <plugin-id>.<event>.',
+    },
+    capabilities: {
+      static: STATIC_CAPABILITIES,
+      patterns: ['ui.slot.<SlotName>', 'hook.<HookName>'],
+    },
+    docs: {
+      authoring: 'docs/plugins/AUTHORING.md',
+      agents: 'docs/plugins/AGENTS.md',
+      reference: 'docs/plugins/EXTENSION_REFERENCE.md',
+      schema: 'docs/plugins/plugin.schema.json',
+    },
+  });
 });
 
 export default me;

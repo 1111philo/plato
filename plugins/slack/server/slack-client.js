@@ -1,4 +1,4 @@
-import { WebClient } from '@slack/web-api';
+import { WebClient } from '../../../server/src/lib/plugins/sdk.js';
 
 /**
  * Create a Slack WebClient for the given bot token.

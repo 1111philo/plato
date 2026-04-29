@@ -15,6 +15,8 @@ import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
 import { logger } from './lib/logger.js';
+import { pluginRegistry } from './lib/plugins/registry.js';
+import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
 
 const server = new Hono();
 
@@ -56,6 +58,15 @@ server.use('*', async (c, next) => {
     } catch (err) {
       console.error('Seed failed (non-fatal):', err.message);
     }
+    // Plugin registry: discover and activate plugins. Routes are NOT mounted here —
+    // Hono throws "Can not add a route since the matcher is already built" if you
+    // call server.route() mid-request. Instead we register a static catch-all (below)
+    // that dispatches via the registry once it's booted.
+    try {
+      await pluginRegistry.boot();
+    } catch (err) {
+      logger.error('plugin_registry_boot_failed', { error: err?.message, stack: err?.stack });
+    }
   }
   await next();
 });
@@ -67,6 +78,14 @@ server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
 server.route('/', content);
+
+// Plugin catch-all + legacy shim. See server/src/lib/plugins/dispatcher.js for
+// the handler logic. Registered BEFORE `app` because app.js has a global SPA
+// fallback (`app.get('*')`) that would otherwise swallow plugin GETs.
+server.all('/v1/plugins/:pluginId/*', makePluginDispatcher(pluginRegistry));
+server.all('/v1/admin/slack/*', makeSlackLegacyShim(pluginRegistry));
+
+// SPA fallback last.
 server.route('/', app);
 
 server.notFound((c) => c.json({ error: 'Not found' }, 404));

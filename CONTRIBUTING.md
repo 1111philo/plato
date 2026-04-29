@@ -2,6 +2,36 @@
 
 Thank you for your interest in contributing to plato. This project is maintained by [11:11 Philosopher's Group](https://github.com/1111philo).
 
+> **Are you building a plugin?** Plugins live in `plugins/<id>/` and have a lighter review bar than core changes. Read [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md) (humans) or [docs/plugins/AGENTS.md](docs/plugins/AGENTS.md) (AI agents) — you don't need to read the full core-contribution guide. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one.
+
+## Plugin vs. core changes
+
+Plato has two contribution surfaces with different review bars:
+
+| Change type | Where | Review bar |
+|---|---|---|
+| Plugin (new or modify) | `plugins/<id>/` | Manifest validates? No core invariants violated? Has its own tests? Ship. |
+| Core | Everything else | Architectural review, public-contract impact, more thorough review. |
+
+Use a branch naming convention to make this clear:
+
+- Plugin work: `plugin/<id>/<feature>` (e.g. `plugin/slack/channel-filtering`)
+- Core work: `feat/<area>` or `fix/<area>` (e.g. `feat/lesson-pacing-banner`)
+
+### Adding a new extension point
+
+If a plugin you're building genuinely cannot use existing extension points, **don't patch core from inside the plugin folder**. Instead:
+
+1. File an `extension-point-request` issue (template in `.github/ISSUE_TEMPLATE/`).
+2. Wait for maintainer triage — extension points are part of the public plugin contract.
+3. Once approved, the bar for adding the extension point is:
+   - One real plugin must use it (no speculative slots/hooks)
+   - Update [docs/plugins/EXTENSION_REFERENCE.md](docs/plugins/EXTENSION_REFERENCE.md) atomically
+   - Update the capability enum in [docs/plugins/plugin.schema.json](docs/plugins/plugin.schema.json)
+   - Update the type in `packages/plugin-sdk/index.d.ts`
+   - Add a test in `server/tests/lib/plugins/registry.test.js` proving the new capability gates correctly
+   - Bump `PLUGIN_API_VERSION` per [docs/plugins/API_VERSIONING.md](docs/plugins/API_VERSIONING.md)
+
 ## Getting started
 
 ### Prerequisites
@@ -40,14 +70,20 @@ The client uses **Tailwind CSS v4** and **shadcn/ui** for styling. UI components
 
 ```
 plato/
-  client/                 React 18 + Vite SPA
+  client/                 React 19 + Vite SPA
     src/
       pages/              Route-level components
       pages/admin/        Admin dashboard (lazy-loaded)
       components/         Shared UI components
       contexts/           React contexts (auth, app state, modals)
-      lib/                Engines and utilities
+      lib/                Engines and utilities (incl. lib/plugins/ — client plugin host)
     js/                   Service modules (storage, orchestrator, auth, API)
+  server/
+    src/lib/plugins/      Server plugin host (registry, manifest, hooks, sdk)
+  plugins/                Built-in and community plugins (one folder per plugin)
+    slack/                The Slack invite plugin — also serves as a worked example
+  packages/plugin-sdk/    TypeScript types for plugin authors (no runtime)
+  docs/plugins/           Plugin authoring docs + JSON Schema + templates
   server/                 Node.js + Hono API
     src/
       routes/             API route handlers

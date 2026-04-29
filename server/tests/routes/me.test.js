@@ -116,6 +116,25 @@ describe('GET /v1/me/export', () => {
     assert.ok(data.syncData.work);
     assert.ok(data.exportedAt);
   });
+
+  it('excludes plugin-owned userMeta:* records (admin-only data not learner-exportable)', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'profile', data: { bio: 'hi' }, version: 1, updatedAt: '2024-06-01T00:00:00Z' },
+      { dataKey: 'userMeta:teacher-comments', data: { comments: [{ text: 'private admin note' }] }, version: 1, updatedAt: '2024-06-01T00:00:00Z' },
+      { dataKey: 'userMeta:other-plugin', data: { secret: 'xyz' }, version: 1, updatedAt: '2024-06-01T00:00:00Z' },
+      { dataKey: 'work', data: [{ id: 'w1' }], version: 2, updatedAt: '2024-06-01T00:00:00Z' },
+    ];
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'GET', '/v1/me/export');
+    const data = await res.json();
+    const keys = Object.keys(data.syncData).sort();
+    assert.deepEqual(keys, ['profile', 'work'], 'userMeta:* leaked to learner via export');
+    // Defense-in-depth: also assert the secret string is nowhere in the body.
+    const body = JSON.stringify(data);
+    assert.equal(body.includes('private admin note'), false);
+    assert.equal(body.includes('userMeta:'), false);
+  });
 });
 
 describe('DELETE /v1/me', () => {

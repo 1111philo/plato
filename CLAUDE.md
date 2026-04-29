@@ -39,6 +39,38 @@ plato is an Open Source, AI-powered [microlearning](https://philosophers.group/p
 - Admin dashboard at `/plato` (lazy-loaded, role-gated) with Lesson Pacing KPIs (on-target rate, over-target count, extended-lesson count)
 - Server logging: `server/src/lib/logger.js` — ring-buffer logger keyed by snake_case `code` strings (not free-form messages). Each call mirrors a structured JSON line to stdout that includes `logId`, so Lambda → CloudWatch captures the same shape and the endpoint can dedupe events retrieved from both lanes. `GET /v1/admin/logs` merges the in-process buffer with CloudWatch (Lambda has `logs:FilterLogEvents` scoped to `/aws/lambda/${AWS::StackName}-*` plus `logs:DescribeLogGroups` on `*` since that action doesn't support per-group scoping). The log-group prefix for queries is derived from stage (prod → `/aws/lambda/plato-`, playground → `/aws/lambda/plato-playground-`) to match CloudFormation's naming — the prod stack is bare `plato`, not `plato-prod`. CloudWatch is queried with two required-term patterns (`ERROR` and `"Task timed out"`) — never the all-optional `?FOO ?BAR` form, which CloudWatch treats as match-everything. The pilot agent (via `scripts/pilot-report.js`) is the primary consumer: response is pre-aggregated into `groups` by code with counts, firstSeen/lastSeen, and a sample entry, and the pilot workflow itself no longer needs AWS credentials (no `AWS_ROLE_ARN` secret, no `aws-actions/configure-aws-credentials` step — all log reads are proxied through the endpoint via admin JWT). CloudWatch failures populate `cloudwatch.error` instead of silently returning empty.
 
+## Plugins
+
+plato has a manifest-driven plugin system modeled on VS Code/Vite/WordPress patterns. Plugins live in `plugins/<id>/` and are bundled into the SAM build (no runtime code uploads — Lambda's read-only FS rules that out). The admin UI at `/plato/plugins` lets admins toggle activation and configure plugins.
+
+```
+plugins/
+  slack/                       # built-in plugin (the Slack invite UI lives here, not in admin.js)
+  ...
+docs/plugins/
+  README.md                    # quickstart
+  AUTHORING.md                 # human guide
+  AGENTS.md                    # AI-agent guide (decision tree, recipes, DO-NOT list)
+  EXTENSION_REFERENCE.md       # flat reference of every slot/hook/capability
+  CAPABILITIES.md              # capability vocabulary + audit guidance
+  API_VERSIONING.md            # semver policy + deprecation window
+  EXAMPLES.md                  # walkthroughs at increasing complexity
+  plugin.schema.json           # machine-readable manifest spec
+  templates/                   # copy-paste-ready code templates
+packages/plugin-sdk/index.d.ts # TypeScript types for plugin authors
+server/src/lib/plugins/        # plugin host: registry, manifest, hooks, lifecycle, logger, sdk
+client/src/lib/plugins/        # client host: loader, <PluginSlot>, SettingsForm
+scripts/
+  create-plato-plugin.js       # scaffolder
+  validate-plugins.js          # CI gate (validates every manifest)
+```
+
+**Anti-goals (plugins MUST NOT):** override completion semantics (`applyCoachResponseToKB` is the single owner), introduce hard exchange-count cutoffs, write to `_system:settings.*` directly, read or write another plugin's settings, mount routes outside `/v1/plugins/<id>/`, modify files outside their own `plugins/<id>/` folder.
+
+**When changing the plugin contract:** bump `PLUGIN_API_VERSION` in `server/src/lib/plugins/version.js`, update `docs/plugins/plugin.schema.json` capability/slot/hook enums, update `packages/plugin-sdk/index.d.ts` types, update `docs/plugins/EXTENSION_REFERENCE.md`. The capability vocabulary table in `docs/plugins/CAPABILITIES.md` is the single source of truth for what's documented vs. what's implemented.
+
+**Core plugin tests** live alongside each plugin (`plugins/<id>/server/*.test.js`). Plugin host tests live at `server/tests/lib/plugins/*.test.js`.
+
 ## Development
 
 ```bash
@@ -67,6 +99,9 @@ cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
 cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
+# Plugins (server-side) — the registry walks plugins/<id>/server/index.js at boot
+cp -r ../plugins .aws-sam/build/PlatoApiFunction/plugins
+cp -r ../plugins .aws-sam/build/PlatoStreamFunction/plugins
 # version.json is generated at deploy time from the latest Beta-RC-* tag
 VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')
 echo "{\"version\":\"${VERSION}\"}" > .aws-sam/build/PlatoApiFunction/version.json
@@ -124,7 +159,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - No admin lesson preview — admins preview lessons by sharing with themselves and viewing in the classroom
 - Lesson editing: conversation-based via the Lesson Creator agent (no raw markdown editor)
 - Knowledge base: created/edited by admins via the KB Editor agent in the Customizer (not directly editable)
-- Admin nav order: Home, Lessons, Users, Customizer, Integrations
+- Admin nav order: Home, Lessons, Users, Customizer, Plugins
 
 ## Key files
 

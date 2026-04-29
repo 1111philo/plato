@@ -31,6 +31,21 @@ describe('GET /v1/sync', () => {
     assert.equal(data.length, 1);
     assert.equal(data[0].dataKey, 'profile');
   });
+
+  it('filters out plugin userMeta:* records (admin-only by convention)', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'profile', data: { name: 'T' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+      { dataKey: 'userMeta:teacher-comments', data: { text: 'private' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+      { dataKey: 'userMeta:other-plugin', data: { stuff: 'also private' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+      { dataKey: 'preferences', data: { theme: 'dark' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+    ];
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'GET', '/v1/sync');
+    const data = await res.json();
+    const keys = data.map((d) => d.dataKey).sort();
+    assert.deepEqual(keys, ['preferences', 'profile'], 'userMeta:* must be hidden from learners');
+  });
 });
 
 describe('PUT /v1/sync/:dataKey', () => {
@@ -131,6 +146,25 @@ describe('DELETE /v1/sync', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.deleted, 0);
+  });
+
+  it('preserves plugin-owned userMeta:* records (admin-maintained, not learner-deletable)', async () => {
+    const deleted = [];
+    db.getAllSyncData = async () => [
+      { dataKey: 'profile' },
+      { dataKey: 'userMeta:teacher-comments' },
+      { dataKey: 'work' },
+      { dataKey: 'userMeta:other-plugin' },
+    ];
+    db.deleteSyncData = async (_uid, key) => { deleted.push(key); };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'DELETE', '/v1/sync');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    // Only the learner's own keys deleted; admin-maintained userMeta:* survives.
+    assert.deepEqual(deleted.sort(), ['profile', 'work']);
+    assert.equal(data.deleted, 2, 'response count reflects what actually got deleted');
   });
 });
 

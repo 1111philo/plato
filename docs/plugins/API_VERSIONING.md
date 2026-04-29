@@ -1,0 +1,97 @@
+# API versioning
+
+Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_API_VERSION`; each plugin manifest declares an `apiVersion` semver range.
+
+## Current host version
+
+```
+PLUGIN_API_VERSION = '1.2.0'
+```
+
+Defined in `server/src/lib/plugins/version.js`.
+
+## Changelog
+
+### 1.2.0 (additive)
+- **Added** `onUninstall(ctx)` lifecycle hook — optional. Runs when an admin uses the "Delete plugin data" flow on `/plato/plugins` and the plugin needs cleanup beyond its activation record (e.g., per-user `userMeta:<id>` records). The host clears the activation record (settings) automatically; plugins only implement `onUninstall` when they own data elsewhere. Plugin must be **disabled** first, and the admin must type the plugin id in a confirm dialog before the destructive button enables. Errors propagate so partial-cleanup failures are surfaced loudly.
+- **Added** `POST /v1/admin/plugins/:id/uninstall-data` endpoint. Body: `{ confirm: '<plugin id>' }`. Refuses unless the plugin is disabled. Audit-logged as `plugin_data_uninstalled`.
+- **Added** `hasStoredState: boolean` to the plugin's public view (`GET /v1/admin/plugins`). True iff the plugin has an entry in `_system:plugins:activation` — i.e., has been activated/configured at least once and may have stored data. The admin UI uses this to gate the "Delete plugin data" button: never-activated plugins have nothing to delete, so the button hides.
+- **Changed** `DELETE /v1/sync` (learner reset) preserves `userMeta:*` records — admin-owned, not the learner's to delete. `GET /v1/me/export` (download-my-data) likewise filters them out. With these two changes, every learner-facing path that touches the user's own data excludes plugin-owned `userMeta:*` records: `/v1/sync` GET (bulk+single), PUT (single), DELETE (single+bulk), and `/v1/me/export`. Cleanup happens only via account-deletion or a plugin's own `onUninstall`.
+
+### 1.1.0 (additive)
+- **Added** core hook emit-points: `userCreated` (auth.js signup + bootstrap-admin) and `userDeleted` (me.js DELETE /v1/me + admin.js DELETE /v1/admin/users/:id). `userDeleted` fires BEFORE the cascade so handlers can read the user's `userMeta:*` records.
+- **Added** SDK helpers `getUserMeta(userId, pluginId)`, `putUserMeta(userId, pluginId, data)`, `deleteUserMeta(userId, pluginId)` for plugin-scoped per-user data.
+- **Added** capabilities: `user.metadata.read`, `user.metadata.write` (declarative; not yet runtime-enforced).
+- **Added** `adminUserRowAction` UI slot render-point in AdminUsers.jsx (per-row actions cell).
+- **Added** `adminProfileFields` UI slot render-point in AdminUsers.jsx (Edit User page, below the form). Worked example: `plugins/teacher-comments`.
+- **Changed**: `/v1/sync` (the bulk learner-side listing) now filters out `userMeta:*` keys. Single-key `/v1/sync/:dataKey` already rejected them via the regex. Plugin server code reads/writes via the SDK helpers.
+
+Plugins that worked under 1.0.0 keep working — all changes are additive.
+
+### 1.0.0
+- Initial plugin host: manifest, capabilities, registry, hook bus (plumbed only),
+  server routes, slot system (`adminSettingsPanel`, `adminUserRowAction`),
+  per-plugin settings with auto-form rendering, lifecycle (`onActivate`/`onDeactivate`),
+  plugin-scoped logger, scaffolder, and validator.
+
+## Plugin manifest
+
+```json
+{
+  "apiVersion": "1.x"
+}
+```
+
+Supported range syntax:
+
+- Exact: `"1.0.0"`
+- Caret: `"^1.0.0"` (same major, ≥ X.Y.Z)
+- Tilde: `"~1.2.0"` (same major+minor, ≥ X.Y.Z)
+- Wildcard: `"1.x"`, `"1.2.x"`
+
+If the host's version doesn't satisfy the plugin's range, the plugin is refused at boot with `plugin_api_mismatch` and skipped (the host stays up; other plugins continue loading).
+
+## Semver policy
+
+| Change type | Bump |
+|---|---|
+| Remove or rename a slot, hook, or capability | major |
+| Change the payload shape of a hook or props of a slot in a breaking way | major |
+| Remove or rename an SDK re-export | major |
+| Change the manifest schema in a way that invalidates existing manifests | major |
+| Add a new slot, hook, capability, or SDK export | minor |
+| Add an optional manifest field | minor |
+| Bug fix that doesn't change the contract | patch |
+
+Plugins targeting `^1.0.0` will keep working through every minor and patch release in the 1.x line.
+
+## Deprecation window
+
+When a slot/hook/capability is deprecated:
+
+1. It keeps working for one full major-version cycle.
+2. Each invocation logs `plugin_deprecated_api` with the plugin id and the deprecated name. This shows up in `/v1/admin/logs` for the maintainer.
+3. The next major version removes it. Plugins that still target the old major continue running on the old major; plugins that move to the new major must migrate.
+
+## What's not covered by versioning
+
+- Plugin-internal data shape (your plugin's settings record, your sync-data writes). You own that contract.
+- The open hook bus event names for plugin-to-plugin events. The convention `<plugin-id>.<event>` means the emitter owns the contract.
+- Implementation details (e.g. how the registry stores activation state). The contract is the SDK + extension reference, not the source code.
+
+## Compatibility table
+
+| Host range | Plugin `apiVersion` | Status |
+|---|---|---|
+| 1.0.0 | `"1.x"` | ✅ |
+| 1.0.0 | `"^1.0.0"` | ✅ |
+| 1.0.0 | `"^1.1.0"` | ❌ — 1.0.0 doesn't satisfy ≥1.1.0 |
+| 1.2.0 | `"^1.0.0"` | ✅ |
+| 1.2.0 | `"~1.0.0"` | ❌ — `~1.0.0` requires 1.0.x |
+| 2.0.0 | `"^1.0.0"` | ❌ — major mismatch |
+| 2.0.0 | `"^2.0.0"` | ✅ |
+| 2.0.0 | `"1.x"` | ❌ — major mismatch |
+
+## When the host bumps
+
+Plato follows the same versioning policy as the rest of the codebase (`Beta-RC-N` tags). The plugin API version is decoupled from the plato release version — only changes to the plugin contract bump it.

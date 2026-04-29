@@ -20,16 +20,20 @@ function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
 }
 
-// GET /v1/sync — get all synced data
+// GET /v1/sync — get all synced data. Plugin-owned per-user records
+// (`userMeta:<pluginId>`) are filtered out — they're admin-only by default,
+// and the plugin's own routes are responsible for any learner exposure.
 sync.get('/v1/sync', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
-  return c.json(items.map((item) => ({
-    dataKey: item.dataKey,
-    data: item.data,
-    version: item.version,
-    updatedAt: item.updatedAt,
-  })));
+  return c.json(items
+    .filter((item) => !item.dataKey?.startsWith('userMeta:'))
+    .map((item) => ({
+      dataKey: item.dataKey,
+      data: item.data,
+      version: item.version,
+      updatedAt: item.updatedAt,
+    })));
 });
 
 // GET /v1/sync/:dataKey — get specific item
@@ -119,12 +123,17 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   }
 });
 
-// DELETE /v1/sync — delete all sync data for the authenticated user
+// DELETE /v1/sync — delete all sync data for the authenticated user.
+// Plugin-owned `userMeta:*` records are admin-maintained (teacher comments,
+// admin notes) and explicitly NOT the learner's to delete. Filter them out;
+// they're cleaned up only via account deletion (DELETE /v1/me / admin-delete),
+// which fires `userDeleted` first so plugins can react.
 sync.delete('/v1/sync', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
-  await Promise.all(items.map((item) => db.deleteSyncData(userId, item.dataKey)));
-  return c.json({ ok: true, deleted: items.length });
+  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:'));
+  await Promise.all(deletable.map((item) => db.deleteSyncData(userId, item.dataKey)));
+  return c.json({ ok: true, deleted: deletable.length });
 });
 
 // DELETE /v1/sync/:dataKey

@@ -4,12 +4,12 @@ import { authenticate } from '../middleware/authenticate.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
-import { testSlackConnection, searchSlackUsers, listSlackChannels, listChannelMembers, sendSlackDM } from '../lib/slack.js';
-import { APP_URL } from '../config.js';
 import { validateUsername } from './auth.js';
 import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-limits.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
+import { pluginRegistry } from '../lib/plugins/registry.js';
+import { emit as emitHook } from '../lib/plugins/hooks.js';
 
 const admin = new Hono();
 
@@ -342,7 +342,11 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
     details: { name: user.name, userGroup: user.userGroup, role: user.role, selfDelete: false },
   });
 
-  // Delete all sync data for this user
+  // Emit userDeleted BEFORE the cascade — plugins can react with the user's data
+  // still in place. Hook errors are caught by emit() and don't block deletion.
+  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+
+  // Delete all sync data for this user (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
   await Promise.all(syncItems.map((item) => db.deleteSyncData(userId, item.dataKey)));
   await db.deleteUser(userId);
@@ -554,125 +558,91 @@ admin.put('/v1/admin/theme', async (c) => {
 });
 
 
-// ── Slack integration ──
+// ── Slack integration moved to plugins/slack/ ──
+// Slack endpoints now live at /v1/plugins/slack/admin/* via the plugin registry.
+// A backwards-compat shim in server/src/index.js re-routes /v1/admin/slack/* for
+// one release. See plugins/slack/server/index.js.
 
-// Helper: get Slack bot token from settings
-async function getSlackToken() {
-  const item = await db.getSyncData('_system', 'settings');
-  return item?.data?.slack?.botToken || null;
-}
+// ── Plugin admin endpoints ──
 
-// POST /v1/admin/slack/test — validate a bot token
-admin.post('/v1/admin/slack/test', async (c) => {
-  const { botToken } = await c.req.json();
-  if (!botToken) return c.json({ error: 'botToken is required' }, 400);
+// GET /v1/admin/plugins — list all known plugins, including disabled and load-failed.
+// writeOnly settings (e.g. Slack's bot token) are stripped from responses; the host
+// is the source of truth for those values, the client never needs them back.
+admin.get('/v1/admin/plugins', (c) => {
+  return c.json(pluginRegistry.list().map((e) => {
+    const view = pluginRegistry.publicView(e);
+    return { ...view, settings: pluginRegistry.sanitizeSettings(e) };
+  }));
+});
+
+// PUT /v1/admin/plugins/:id/activation — enable/disable a plugin.
+admin.put('/v1/admin/plugins/:id/activation', async (c) => {
+  const id = c.req.param('id');
+  let body;
   try {
-    const result = await testSlackConnection(botToken);
-    return c.json(result);
-  } catch (e) {
-    return c.json({ error: 'Invalid token or Slack API error', detail: e.message }, 400);
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required' }, 400);
+  }
+  if (typeof body?.enabled !== 'boolean') {
+    return c.json({ error: 'enabled (boolean) is required' }, 400);
+  }
+  const { enabled } = body;
+  try {
+    const entry = await pluginRegistry.setEnabled(id, enabled);
+    return c.json(pluginRegistry.publicView(entry));
+  } catch (err) {
+    return c.json({ error: err.message }, 400);
   }
 });
 
-// GET /v1/admin/slack/users?q= — search workspace users
-admin.get('/v1/admin/slack/users', async (c) => {
-  const token = await getSlackToken();
-  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
-  try {
-    const q = c.req.query('q') || '';
-    const users = await searchSlackUsers(token, q);
-    return c.json(users);
-  } catch (e) {
-    return c.json({ error: 'Slack API error', detail: e.message }, 500);
+// POST /v1/admin/plugins/:id/uninstall-data — run the plugin's onUninstall
+// hook and clear its activation/settings entry. Plugin must be disabled first
+// (registry refuses otherwise). Body: { confirm: '<plugin id>' } — the admin
+// must type the plugin id to confirm, mirroring GitHub's repo-deletion gate.
+// Audit-logged.
+admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
+  const id = c.req.param('id');
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'JSON body required' }, 400); }
+  if (body?.confirm !== id) {
+    return c.json({ error: `Type the plugin id (${id}) in "confirm" to proceed` }, 400);
   }
-});
-
-// GET /v1/admin/slack/channels — list public channels
-admin.get('/v1/admin/slack/channels', async (c) => {
-  const token = await getSlackToken();
-  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
-  try {
-    const channels = await listSlackChannels(token);
-    return c.json(channels);
-  } catch (e) {
-    return c.json({ error: 'Slack API error', detail: e.message }, 500);
-  }
-});
-
-// GET /v1/admin/slack/channels/:id/members — list channel members
-admin.get('/v1/admin/slack/channels/:id/members', async (c) => {
-  const token = await getSlackToken();
-  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
-  try {
-    const members = await listChannelMembers(token, c.req.param('id'));
-    return c.json(members);
-  } catch (e) {
-    return c.json({ error: 'Slack API error', detail: e.message }, 500);
-  }
-});
-
-// POST /v1/admin/slack/invites — invite users via Slack DM
-admin.post('/v1/admin/slack/invites', async (c) => {
-  const token = await getSlackToken();
-  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
-
-  const { users } = await c.req.json();
-  if (!Array.isArray(users) || users.length === 0) {
-    return c.json({ error: 'users array is required' }, 400);
-  }
-  if (users.length > 200) {
-    return c.json({ error: 'Maximum 200 invites per batch' }, 400);
-  }
-
   const adminUser = c.get('user');
-  const classroom = await (async () => {
-    const item = await db.getSyncData('_system', 'settings');
-    const s = item?.data || {};
-    return s.logoAlt || 'plato';
-  })();
-
-  const results = [];
-  for (const u of users) {
-    const email = (u.email || '').trim().toLowerCase();
-    if (!email) {
-      results.push({ slackUserId: u.slackUserId, status: 'skipped', reason: 'No email on Slack profile' });
-      continue;
-    }
-
-    const existing = await db.getUserByEmail(email);
-    if (existing) {
-      results.push({ email, slackUserId: u.slackUserId, status: 'skipped', reason: 'User already exists' });
-      continue;
-    }
-
-    const pendingInvite = await db.getInviteByEmail(email);
-    if (pendingInvite) {
-      results.push({ email, slackUserId: u.slackUserId, status: 'skipped', reason: 'Pending invite already exists' });
-      continue;
-    }
-
-    try {
-      const inviteToken = generateInviteToken();
-      await db.createInvite({
-        inviteToken,
-        email,
-        invitedBy: adminUser.userId,
-        slackUserId: u.slackUserId,
-      });
-
-      const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
-      const message = `${adminUser.name ? `${adminUser.name} has` : "You've been"} invited you to join *${classroom}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
-
-      await sendSlackDM(token, u.slackUserId, message);
-      results.push({ email, slackUserId: u.slackUserId, status: 'sent' });
-    } catch (err) {
-      results.push({ email, slackUserId: u.slackUserId, status: 'error', reason: err.message });
-    }
+  try {
+    await pluginRegistry.uninstallData(id);
+  } catch (err) {
+    logger.error('plugin_uninstall_failed', { pluginId: id, error: err.message });
+    return c.json({ error: err.message }, 400);
   }
+  await db.createAuditLog({
+    action: 'plugin_data_uninstalled',
+    userId: adminUser.userId,
+    email: adminUser.email,
+    performedBy: adminUser.userId,
+    details: { pluginId: id },
+  });
+  return c.json({ ok: true });
+});
 
-  const sent = results.filter(r => r.status === 'sent').length;
-  const skipped = results.filter(r => r.status !== 'sent').length;
-  return c.json({ sent, skipped, total: results.length, results }, 201);
+// PUT /v1/admin/plugins/:id/settings — update plugin settings.
+admin.put('/v1/admin/plugins/:id/settings', async (c) => {
+  const id = c.req.param('id');
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return c.json({ error: 'settings object required' }, 400);
+  }
+  try {
+    const entry = await pluginRegistry.updateSettings(id, body);
+    return c.json({ ...pluginRegistry.publicView(entry), settings: pluginRegistry.sanitizeSettings(entry) });
+  } catch (err) {
+    return c.json({ error: err.message }, 400);
+  }
 });
 
 // GET /v1/admin/stats/lessons — lesson pacing KPIs

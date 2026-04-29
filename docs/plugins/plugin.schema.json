@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/1111philo/plato/docs/plugins/plugin.schema.json",
+  "title": "plato plugin manifest",
+  "description": "Schema for plugins/<id>/plugin.json. Validated by scripts/validate-plugins.js and the plugin registry at boot. The capability and slot/hook enums must stay in sync with packages/plugin-sdk/index.d.ts and server/src/lib/plugins/capabilities.js.",
+  "type": "object",
+  "required": ["id", "name", "version", "apiVersion", "description", "capabilities", "extensionPoints"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,49}$",
+      "description": "Lower-case kebab id matching the plugins/<id>/ directory name. 2-50 chars, [a-z0-9-]."
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.-]+)?$",
+      "description": "Semver version of the plugin itself."
+    },
+    "apiVersion": {
+      "type": "string",
+      "description": "Semver range against the host's PLUGIN_API_VERSION (e.g. '1.x', '^1.2')."
+    },
+    "description": { "type": "string", "minLength": 1, "maxLength": 280 },
+    "author": { "type": "string" },
+    "license": { "type": "string" },
+    "homepage": { "type": "string", "format": "uri" },
+    "defaultEnabled": { "type": "boolean", "default": false },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/capability" },
+      "description": "Capabilities the plugin uses. Surfaced to admins at activation. Plugins must declare every capability they actually exercise; the host fails registration on missing declarations."
+    },
+    "extensionPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serverRoutes": {
+          "type": "string",
+          "pattern": "^server/[^#]+\\.js#[a-zA-Z_$][a-zA-Z0-9_$]*$",
+          "description": "Path-relative reference 'server/<file>.js#<exportName>'."
+        },
+        "slots": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/slotName" },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^client/.+\\.(jsx?|tsx?)$"
+          }
+        },
+        "hooks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/hookName" }
+        },
+        "syncDataNamespace": {
+          "type": "string",
+          "pattern": "^plugin:[a-z0-9-]+:[a-z0-9*-]+$"
+        }
+      }
+    },
+    "settingsSchema": { "$ref": "#/$defs/settingsSchema" }
+  },
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "anyOf": [
+        { "enum": [
+          "server.routes",
+          "settings.read",
+          "settings.write",
+          "ui.adminNav",
+          "user.metadata.read",
+          "user.metadata.write",
+          "kpi",
+          "agent",
+          "syncData.namespace"
+        ] },
+        { "pattern": "^ui\\.slot\\.[a-zA-Z][a-zA-Z0-9]*$" },
+        { "pattern": "^hook\\.[a-zA-Z][a-zA-Z0-9]*$" }
+      ]
+    },
+    "slotName": {
+      "type": "string",
+      "enum": [
+        "adminSettingsPanel",
+        "adminUserRowAction",
+        "adminHomeKpi",
+        "adminProfileFields",
+        "learnerProfileFields",
+        "learnerHomeBanner"
+      ]
+    },
+    "hookName": {
+      "type": "string",
+      "enum": [
+        "userCreated",
+        "userUpdated",
+        "profileUpdated",
+        "lessonStarted",
+        "lessonCompleted",
+        "coachExchangeRecorded"
+      ]
+    },
+    "settingsSchema": {
+      "type": "object",
+      "description": "Subset of JSON Schema. Primitives (string/number/boolean) plus a single level of object nesting are auto-rendered by SettingsForm; deeper or more complex schemas should be paired with a custom adminSettingsPanel slot.",
+      "properties": {
+        "type": { "enum": ["object", "string", "number", "boolean"] },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/settingsSchema" }
+        },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "default": {},
+        "enum": { "type": "array" },
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "description": { "type": "string" },
+        "writeOnly": { "type": "boolean" },
+        "additionalProperties": { "type": "boolean" }
+      }
+    }
+  }
+}

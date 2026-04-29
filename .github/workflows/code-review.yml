@@ -7,18 +7,23 @@ on:
       - '**.md'
       - 'docs/**'
       - '.github/dependabot.yml'
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (current branch must be the PR branch)'
+        required: true
+        type: string
+  # NOTE: no `issue_comment` trigger. `@claude` mentions on PRs are handled by
+  # the hosted Claude GitHub App (Max-plan-included, no Anthropic API spend),
+  # while this workflow remains the canonical reviewer on every commit using
+  # the project-specific prompt below. To rerun on demand without a new commit:
+  #   gh workflow run code-review.yml --ref <branch> -f pr_number=<n>
 
 jobs:
   review:
     # Skip dependabot PRs entirely — they're mechanical bumps already gated by
-    # the Lint job and don't need an AI review. Manual `@claude` mentions still
-    # work via the issue_comment branch if anyone wants a second look.
-    if: |
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
+    # the Lint job and don't need an AI review.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,13 +34,29 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Skip if a claude review already exists for this commit
-        id: guard
-        if: github.event_name == 'pull_request'
+      - name: Resolve PR + head sha
+        # Normalises PR_NUMBER + HEAD_SHA across pull_request (auto) and
+        # workflow_dispatch (manual rerun) triggers so the rest of the job
+        # doesn't have to branch on event_name.
+        id: ctx
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+            HEAD_SHA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .head.sha)
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - name: Skip if a claude review already exists for this commit
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
         run: |
           # Per-commit idempotency. If a claude[bot] review already exists
           # for the current HEAD sha, don't post another one. New commits
@@ -53,7 +74,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         if: steps.guard.outputs.skip != 'true'
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
         with:
           # OAuth-only was attempted in PR #93; the Max OAuth token hit 401
           # "Invalid bearer token" on its first real use (PR #94). Restored the
@@ -135,11 +156,11 @@ jobs:
 
             Be direct. Short is better than thorough.
       - name: Verify claude[bot] review was posted
-        if: steps.guard.outputs.skip != 'true' && github.event_name == 'pull_request'
+        if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.ctx.outputs.head_sha }}
         run: |
           # The SDK can exit successfully without calling `gh pr review`,
           # leaving the PR unreviewed and the required status check green.
@@ -147,7 +168,7 @@ jobs:
           COUNT=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
             --jq "[.[] | select(.user.login==\"claude[bot]\") | select(.commit_id==\"$HEAD_SHA\")] | length")
           if [ "${COUNT:-0}" -eq 0 ]; then
-            echo "::error::No claude[bot] review posted for $HEAD_SHA. Re-run the workflow or comment @claude on the PR."
+            echo "::error::No claude[bot] review posted for $HEAD_SHA. Re-run the workflow with: gh workflow run code-review.yml --ref <branch>"
             exit 1
           fi
           echo "claude[bot] review exists for $HEAD_SHA"

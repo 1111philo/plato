@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -82,15 +83,19 @@ export default function AdminUsers() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [p, i, s] = await Promise.all([
+      const [usersRes, invitesRes, settingsRes, pluginsRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
+        adminApi('GET', '/v1/admin/plugins').catch(() => []),
       ]);
-      setUsers(Array.isArray(p) ? p : []);
-      setPendingInvites(Array.isArray(i) ? i.filter(x => x.status === 'pending') : []);
-      setGroups(s.userGroups || []);
-      setSlackConnected(!!s.slack?.connected);
+      setUsers(Array.isArray(usersRes) ? usersRes : []);
+      setPendingInvites(Array.isArray(invitesRes) ? invitesRes.filter(x => x.status === 'pending') : []);
+      setGroups(settingsRes.userGroups || []);
+      // Slack connection status comes from the plugin's settings, not legacy _system:settings.slack.
+      // The Slack tab is hidden when the plugin is disabled OR not connected.
+      const slack = Array.isArray(pluginsRes) ? pluginsRes.find((entry) => entry.id === 'slack') : null;
+      setSlackConnected(!!(slack?.enabled && slack?.settings?.connected));
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
@@ -221,7 +226,7 @@ export default function AdminUsers() {
     slackSearchTimeout.current = setTimeout(async () => {
       setSlackSearching(true);
       try {
-        const results = await adminApi('GET', `/v1/admin/slack/users?q=${encodeURIComponent(value)}`);
+        const results = await adminApi('GET', `/v1/plugins/slack/admin/users?q=${encodeURIComponent(value)}`);
         setSlackSearchResults(Array.isArray(results) ? results : []);
       } catch { setSlackSearchResults([]); }
       setSlackSearching(false);
@@ -230,7 +235,7 @@ export default function AdminUsers() {
 
   async function loadSlackChannels() {
     try {
-      const channels = await adminApi('GET', '/v1/admin/slack/channels');
+      const channels = await adminApi('GET', '/v1/plugins/slack/admin/channels');
       setSlackChannels(Array.isArray(channels) ? channels : []);
     } catch { setSlackChannels([]); }
   }
@@ -239,7 +244,7 @@ export default function AdminUsers() {
     if (!channelId) return;
     setSlackSearching(true);
     try {
-      const members = await adminApi('GET', `/v1/admin/slack/channels/${channelId}/members`);
+      const members = await adminApi('GET', `/v1/plugins/slack/admin/channels/${channelId}/members`);
       // Add all members to queue at once
       if (Array.isArray(members)) {
         setSlackQueue(prev => {
@@ -278,7 +283,7 @@ export default function AdminUsers() {
     if (slackQueue.length === 0) return;
     setSlackSending(true);
     try {
-      const data = await adminApi('POST', '/v1/admin/slack/invites', { users: slackQueue });
+      const data = await adminApi('POST', '/v1/plugins/slack/admin/invites', { users: slackQueue });
       const parts = [];
       if (data.sent > 0) parts.push(`${data.sent} Slack invite(s) sent`);
       if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
@@ -465,6 +470,7 @@ export default function AdminUsers() {
                 </Button>
               )}
             </div>
+            <PluginSlot name="adminProfileFields" context={{ user: editUser }} />
           </CardContent>
         </Card>
       </div>
@@ -586,9 +592,12 @@ export default function AdminUsers() {
                     )}
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
-                      {item._user.userId !== currentUser?.userId && (
-                        <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
-                      )}
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
+                        {item._user.userId !== currentUser?.userId && (
+                          <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

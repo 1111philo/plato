@@ -3,7 +3,7 @@
  * Reads MD files from client/ at runtime. Called during first-time setup.
  */
 
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
@@ -13,6 +13,18 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientDir = existsSync(join(__dirname, '../../client-content/prompts'))
   ? join(__dirname, '../../client-content')
   : join(__dirname, '../../../client');
+
+// Plugin prompts: contributed by plugins/<id>/prompts/*.md. Same dual-path logic.
+function findPluginsDir() {
+  const candidates = [
+    join(__dirname, '../../../plugins'),    // local dev
+    join(__dirname, '../../plugins'),       // Lambda function root
+  ];
+  for (const path of candidates) {
+    if (existsSync(path)) return path;
+  }
+  return null;
+}
 
 export async function seedDefaultContent() {
   let seeded = 0;
@@ -28,6 +40,35 @@ export async function seedDefaultContent() {
       if (!existing || existing.data.content !== content) {
         await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, existing?.version || 0);
         seeded++;
+      }
+    }
+  }
+
+  // Seed plugin-contributed prompts. Stored under prompt:plugin:<id>:<name> so they
+  // never collide with core prompts. Phase 3 plugins that contribute AI agents will
+  // be the primary consumer; for Phase 1 this is a no-op (Slack ships no prompts).
+  const pluginsDir = findPluginsDir();
+  if (pluginsDir) {
+    for (const pluginDirName of readdirSync(pluginsDir)) {
+      const pluginRoot = join(pluginsDir, pluginDirName);
+      // Skip stray files (e.g. README.md at the plugins/ root).
+      try {
+        if (!statSync(pluginRoot).isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      const pluginPromptsDir = join(pluginRoot, 'prompts');
+      if (!existsSync(pluginPromptsDir)) continue;
+      const files = readdirSync(pluginPromptsDir).filter(f => f.endsWith('.md'));
+      for (const file of files) {
+        const name = file.replace(/\.md$/, '');
+        const content = readFileSync(join(pluginPromptsDir, file), 'utf-8');
+        const key = `prompt:plugin:${pluginDirName}:${name}`;
+        const existing = await db.getSyncData('_system', key);
+        if (!existing || existing.data.content !== content) {
+          await db.putSyncData('_system', key, { content, updatedBy: `plugin:${pluginDirName}` }, existing?.version || 0);
+          seeded++;
+        }
       }
     }
   }

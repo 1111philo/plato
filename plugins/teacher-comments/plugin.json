@@ -1,0 +1,23 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "teacher-comments",
+  "name": "Teacher Comments",
+  "version": "0.3.0",
+  "apiVersion": "^1.2.0",
+  "description": "A comment thread per learner on the admin Edit User page. Visible only to admins.",
+  "author": "plato community",
+  "license": "AGPL-3.0-or-later",
+  "defaultEnabled": false,
+  "capabilities": [
+    "server.routes",
+    "user.metadata.read",
+    "user.metadata.write",
+    "ui.slot.adminProfileFields"
+  ],
+  "extensionPoints": {
+    "serverRoutes": "server/index.js#default",
+    "slots": {
+      "adminProfileFields": "client/ProfileField.jsx"
+    }
+  }
+}

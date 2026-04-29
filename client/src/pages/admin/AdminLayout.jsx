@@ -9,7 +9,7 @@ const NAV_LINKS = [
   { to: '/plato/lessons', label: 'Lessons' },
   { to: '/plato/users', label: 'Users' },
   { to: '/plato/customizer', label: 'Customizer' },
-  { to: '/plato/integrations', label: 'Integrations' },
+  { to: '/plato/plugins', label: 'Plugins' },
 ];
 
 function NavItems({ onClick }) {
