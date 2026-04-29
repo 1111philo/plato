@@ -1,23 +1,27 @@
 /**
  * @plato/plugin-sdk — type definitions for plato plugin authors.
  *
- * No runtime. Import types from this package and use `definePlugin()` as an
- * identity helper for narrowing (the same trick Vite, Astro, and Tailwind use).
+ * No runtime. Plato itself is JavaScript; these types are purely for plugin-
+ * author DX (IntelliSense in TS or via `// @ts-check` + JSDoc in JS).
  *
- * Plato itself is JavaScript; these types are purely for plugin-author DX.
- *
- * @example
- *   // plugins/my-plugin/server/index.js
- *   import { definePlugin } from '@plato/plugin-sdk';
+ * @example  // TypeScript
+ *   import type { ServerPluginExports } from '@plato/plugin-sdk';
  *   import { Hono } from 'hono';
  *
  *   const routes = new Hono();
  *   routes.get('/hello', (c) => c.json({ ok: true }));
  *
- *   export default definePlugin({
+ *   export default {
  *     routes,
  *     onActivate(ctx) { ctx.logger.info('activated'); },
- *   });
+ *   } satisfies ServerPluginExports;
+ *
+ * @example  // JavaScript with JSDoc
+ *   /** @type {import('@plato/plugin-sdk').ServerPluginExports} *\/
+ *   export default {
+ *     routes,
+ *     onActivate(ctx) { ctx.logger.info('activated'); },
+ *   };
  */
 
 import type { Hono } from 'hono';
