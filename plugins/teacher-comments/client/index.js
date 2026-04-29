@@ -1,9 +1,7 @@
-import SettingsPanel from './SettingsPanel.jsx';
-import UserRowAction from './UserRowAction.jsx';
+import ProfileField from './ProfileField.jsx';
 
 export default {
   slots: {
-    adminSettingsPanel: SettingsPanel,
-    adminUserRowAction: UserRowAction,
+    adminProfileFields: ProfileField,
   },
 };

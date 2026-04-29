@@ -29,37 +29,31 @@ async function userReq(app, method, path, body) {
   });
 }
 
-/**
- * In-memory fake of getSyncData/putSyncData/deleteSyncData scoped per
- * (userId, dataKey). Plugin storage now goes through the per-user
- * `userMeta:teacher-comments` namespace, so each comment is its own record.
- */
-function fakeUserSyncStore() {
-  const store = new Map(); // key: `${userId}\0${dataKey}` -> { data, version }
-  const k = (userId, key) => `${userId}\0${key}`;
+function fakeUserSyncStore(seed = []) {
+  const store = new Map();
+  for (const [u, k, v] of seed) store.set(`${u}\0${k}`, { data: v, version: 1 });
+  const k = (u, key) => `${u}\0${key}`;
   return {
-    getSyncData: async (userId, key) => store.get(k(userId, key)) || null,
-    putSyncData: async (userId, key, data, expectedVersion) => {
-      const cur = store.get(k(userId, key));
+    getSyncData: async (u, key) => store.get(k(u, key)) || null,
+    putSyncData: async (u, key, data, expectedVersion) => {
+      const cur = store.get(k(u, key));
       const ver = cur?.version || 0;
       if (expectedVersion !== ver) {
-        const err = new Error('version conflict');
-        err.name = 'ConditionalCheckFailedException';
-        throw err;
+        const err = new Error('conflict'); err.name = 'ConditionalCheckFailedException'; throw err;
       }
       const next = { data, version: ver + 1 };
-      store.set(k(userId, key), next);
+      store.set(k(u, key), next);
       return next;
     },
-    deleteSyncData: async (userId, key) => { store.delete(k(userId, key)); },
+    deleteSyncData: async (u, key) => { store.delete(k(u, key)); },
     _peek: () => store,
   };
 }
 
-describe('teacher-comments plugin', () => {
+describe('teacher-comments — thread API', () => {
   beforeEach(() => {
     db.getUserById = async (id) => {
-      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Alice Admin' };
       if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
       return null;
     };
@@ -71,104 +65,143 @@ describe('teacher-comments plugin', () => {
 
   it('rejects non-admin', async () => {
     const app = buildApp();
-    const res = await userReq(app, 'GET', '/admin/comments');
+    const res = await userReq(app, 'GET', '/admin/comments/usr_x');
     assert.equal(res.status, 403);
   });
 
-  it('GET /admin/comments returns empty map by default', async () => {
+  it('GET on a user with no comments returns an empty thread', async () => {
     const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
     db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    const res = await adminReq(app, 'GET', '/admin/comments');
+    const res = await adminReq(app, 'GET', '/admin/comments/usr_x');
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), {});
+    assert.deepEqual(await res.json(), { comments: [] });
   });
 
-  it('PUT then GET round-trips a comment', async () => {
+  it('POST appends a comment with author + timestamp; GET returns it newest-first', async () => {
     const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
     db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    const put = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'Strong reasoner.' });
-    assert.equal(put.status, 200);
-    const get = await adminReq(app, 'GET', '/admin/comments/usr_x');
-    const data = await get.json();
-    assert.equal(data.text, 'Strong reasoner.');
-    assert.equal(data.updatedBy, 'usr_admin');
-    assert.ok(data.updatedAt);
-  });
 
-  it('PUT empty text deletes the entry', async () => {
-    const store = fakeUserSyncStore();
-    db.getSyncData = store.getSyncData;
-    db.putSyncData = store.putSyncData;
-    db.deleteSyncData = store.deleteSyncData;
-    const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'temp' });
-    const del = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: '' });
-    assert.equal(del.status, 200);
-    const list = await adminReq(app, 'GET', '/admin/comments');
-    assert.deepEqual(await list.json(), {});
-  });
+    const post1 = await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'first' });
+    assert.equal(post1.status, 201);
+    const c1 = await post1.json();
+    assert.equal(c1.text, 'first');
+    assert.equal(c1.authorId, 'usr_admin');
+    assert.equal(c1.authorName, 'Alice Admin');
+    assert.ok(c1.id);
+    assert.ok(c1.createdAt);
 
-  it('PUT validates text type and length', async () => {
-    const store = fakeUserSyncStore();
-    db.getSyncData = store.getSyncData;
-    db.putSyncData = store.putSyncData;
-    db.deleteSyncData = store.deleteSyncData;
-    const app = buildApp();
-    const wrongType = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 12345 });
-    assert.equal(wrongType.status, 400);
-    const tooLong = await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'x'.repeat(4001) });
-    assert.equal(tooLong.status, 400);
-  });
+    // small wait so the second timestamp is strictly later
+    await new Promise((r) => setTimeout(r, 5));
+    const post2 = await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'second' });
+    assert.equal(post2.status, 201);
 
-  it('GET /admin/comments aggregates only users with non-empty comments', async () => {
-    const store = fakeUserSyncStore();
-    db.getSyncData = store.getSyncData;
-    db.putSyncData = store.putSyncData;
-    db.deleteSyncData = store.deleteSyncData;
-    const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'note for x' });
-    const list = await adminReq(app, 'GET', '/admin/comments');
+    const list = await adminReq(app, 'GET', '/admin/comments/usr_x');
     const data = await list.json();
-    assert.equal(data.usr_x?.text, 'note for x');
-    assert.equal(data.usr_y, undefined, 'users without comments not in the map');
+    assert.equal(data.comments.length, 2);
+    assert.equal(data.comments[0].text, 'second', 'newest first');
+    assert.equal(data.comments[1].text, 'first');
   });
 
-  it('writes are isolated per user (each comment is its own record)', async () => {
+  it('POST validates body (empty, missing, oversize, wrong type)', async () => {
     const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
     db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'note for x' });
-    await adminReq(app, 'PUT', '/admin/comments/usr_y', { text: 'note for y' });
-
-    const xRec = await store.getSyncData('usr_x', 'userMeta:teacher-comments');
-    const yRec = await store.getSyncData('usr_y', 'userMeta:teacher-comments');
-    assert.equal(xRec.data.text, 'note for x');
-    assert.equal(yRec.data.text, 'note for y');
-    // Updating x doesn't bump y's version (proves no shared record contention).
-    const yVerBefore = yRec.version;
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'updated for x' });
-    const yAfter = await store.getSyncData('usr_y', 'userMeta:teacher-comments');
-    assert.equal(yAfter.version, yVerBefore);
+    assert.equal((await adminReq(app, 'POST', '/admin/comments/usr_x', { text: '   ' })).status, 400);
+    assert.equal((await adminReq(app, 'POST', '/admin/comments/usr_x', {})).status, 400);
+    assert.equal((await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 42 })).status, 400);
+    assert.equal((await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'x'.repeat(4001) })).status, 400);
   });
 
-  it('DELETE removes a comment', async () => {
+  it('DELETE removes a single comment without affecting others', async () => {
     const store = fakeUserSyncStore();
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
     db.deleteSyncData = store.deleteSyncData;
     const app = buildApp();
-    await adminReq(app, 'PUT', '/admin/comments/usr_x', { text: 'to delete' });
-    const res = await adminReq(app, 'DELETE', '/admin/comments/usr_x');
-    assert.equal(res.status, 200);
-    const list = await adminReq(app, 'GET', '/admin/comments');
-    assert.deepEqual(await list.json(), {});
+    const c1 = await (await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'one' })).json();
+    await new Promise((r) => setTimeout(r, 5));
+    const c2 = await (await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'two' })).json();
+    const del = await adminReq(app, 'DELETE', `/admin/comments/usr_x/${c1.id}`);
+    assert.equal(del.status, 200);
+    const list = await (await adminReq(app, 'GET', '/admin/comments/usr_x')).json();
+    assert.equal(list.comments.length, 1);
+    assert.equal(list.comments[0].id, c2.id);
+  });
+
+  it('DELETE on the last comment removes the userMeta record entirely', async () => {
+    const store = fakeUserSyncStore();
+    db.getSyncData = store.getSyncData;
+    db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
+    const app = buildApp();
+    const c1 = await (await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'only' })).json();
+    await adminReq(app, 'DELETE', `/admin/comments/usr_x/${c1.id}`);
+    assert.equal(store._peek().has('usr_x\0userMeta:teacher-comments'), false);
+  });
+
+  it('DELETE returns 404 for unknown comment id', async () => {
+    const store = fakeUserSyncStore();
+    db.getSyncData = store.getSyncData;
+    db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
+    const app = buildApp();
+    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'one' });
+    const res = await adminReq(app, 'DELETE', '/admin/comments/usr_x/cm_doesnotexist');
+    assert.equal(res.status, 404);
+  });
+
+  it('reads tolerate the legacy single-comment shape', async () => {
+    const store = fakeUserSyncStore([
+      ['usr_x', 'userMeta:teacher-comments', {
+        text: 'pre-thread comment from the old API',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        updatedBy: 'usr_admin',
+      }],
+    ]);
+    db.getSyncData = store.getSyncData;
+    db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
+    const app = buildApp();
+    const list = await (await adminReq(app, 'GET', '/admin/comments/usr_x')).json();
+    assert.equal(list.comments.length, 1);
+    assert.equal(list.comments[0].text, 'pre-thread comment from the old API');
+    assert.equal(list.comments[0].createdAt, '2026-01-01T00:00:00.000Z');
+    assert.match(list.comments[0].id, /^cm_legacy_/);
+  });
+
+  it('GET /admin/comments returns a per-user summary with count and lastAt', async () => {
+    const store = fakeUserSyncStore();
+    db.getSyncData = store.getSyncData;
+    db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
+    const app = buildApp();
+    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'a' });
+    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'b' });
+    await adminReq(app, 'POST', '/admin/comments/usr_y', { text: 'c' });
+    const summary = await (await adminReq(app, 'GET', '/admin/comments')).json();
+    assert.equal(summary.usr_x.count, 2);
+    assert.equal(summary.usr_y.count, 1);
+    assert.equal(summary.usr_x.lastAuthorName, 'Alice Admin');
+    assert.ok(summary.usr_x.lastAt);
+  });
+
+  it('users with no comments are absent from the summary', async () => {
+    const store = fakeUserSyncStore();
+    db.getSyncData = store.getSyncData;
+    db.putSyncData = store.putSyncData;
+    db.deleteSyncData = store.deleteSyncData;
+    const app = buildApp();
+    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'a' });
+    const summary = await (await adminReq(app, 'GET', '/admin/comments')).json();
+    assert.equal(summary.usr_x?.count, 1);
+    assert.equal(summary.usr_y, undefined);
   });
 });

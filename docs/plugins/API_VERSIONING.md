@@ -16,7 +16,8 @@ Defined in `server/src/lib/plugins/version.js`.
 - **Added** core hook emit-points: `userCreated` (auth.js signup + bootstrap-admin) and `userDeleted` (me.js DELETE /v1/me + admin.js DELETE /v1/admin/users/:id). `userDeleted` fires BEFORE the cascade so handlers can read the user's `userMeta:*` records.
 - **Added** SDK helpers `getUserMeta(userId, pluginId)`, `putUserMeta(userId, pluginId, data)`, `deleteUserMeta(userId, pluginId)` for plugin-scoped per-user data.
 - **Added** capabilities: `user.metadata.read`, `user.metadata.write` (declarative; not yet runtime-enforced).
-- **Added** `adminUserRowAction` UI slot render-point in AdminUsers.jsx.
+- **Added** `adminUserRowAction` UI slot render-point in AdminUsers.jsx (per-row actions cell).
+- **Added** `adminProfileFields` UI slot render-point in AdminUsers.jsx (Edit User page, below the form). Worked example: `plugins/teacher-comments`.
 - **Changed**: `/v1/sync` (the bulk learner-side listing) now filters out `userMeta:*` keys. Single-key `/v1/sync/:dataKey` already rejected them via the regex. Plugin server code reads/writes via the SDK helpers.
 
 Plugins that worked under 1.0.0 keep working — all changes are additive.

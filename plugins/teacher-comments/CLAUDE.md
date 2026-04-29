@@ -2,23 +2,28 @@
 
 Plugin: Teacher Comments (`teacher-comments`).
 
-Lets admins attach a private text note to each learner. Visible only to admins.
-Two surfaces: a per-row "Note" button on `/plato/users` (the canonical UX) and
-a fallback panel on `/plato/plugins` that lists every learner with their note.
+A traditional comment thread per learner, rendered on the admin Edit User page.
+Multiple comments per user, each with author attribution and timestamp.
+Append-only from the admin's perspective (no in-place editing — delete and
+re-add). Visible only to admins.
 
 ## Local invariants
 
-- Each comment lives at the user's own `userMeta:teacher-comments` sync-data
-  record, keyed by userId. Use the SDK helpers
-  (`getUserMeta` / `putUserMeta` / `deleteUserMeta`) — don't read/write the
-  raw DB key shape directly.
-- Empty `text` deletes the comment entry.
-- Admin-only across the board: `routes.use('*', authenticate, requireAdmin)`.
-- `userMeta:*` records are filtered from learners' `/v1/sync` listing
-  automatically by the host. If we ever need learners to see something, we
-  expose our own route — never relax the filter.
-- The plugin reads users via `GET /v1/admin/users` directly. If the host
-  endpoint shape changes the plugin breaks (filed in GAPS.md).
+- Each user's thread lives at `userMeta:teacher-comments` on that user, shape
+  `{ comments: [{ id, text, createdAt, authorId, authorName }] }`. Newest
+  comment first when read.
+- Reads tolerate the legacy single-comment shape
+  (`{ text, updatedAt, updatedBy }`) so notes from the prior version aren't
+  lost — converted to a one-item thread on the fly.
+- Comment IDs use the prefix `cm_` (or `cm_legacy_` for converted entries).
+  Generated server-side.
+- Admin-only across the board (`routes.use('*', authenticate, requireAdmin)`).
+  `userMeta:*` records are filtered from the learner-visible `/v1/sync` listing
+  by the host — don't relax that filter.
+- The `delete` endpoint targets a single `commentId`. Deleting the last
+  comment removes the underlying `userMeta:teacher-comments` record entirely
+  (clean slate).
+- The plugin reads users via `GET /v1/admin/users` directly. Filed in GAPS.md.
 
 ## Adding new functionality
 
@@ -30,15 +35,10 @@ a fallback panel on `/plato/plugins` that lists every learner with their note.
 
 ## Don't
 
-- Don't write to `_system:plugins:activation` for any plugin id other than
-  `teacher-comments`. The whole record passes through this plugin's writes —
-  it's important to preserve the other plugins' entries.
-- Don't expose comment content via any non-admin endpoint. Phase 1 has no
-  learner-visible surface, but if Phase 2 adds one, mark fields as `writeOnly`
-  in `settingsSchema` so the host strips them from `/v1/plugins`.
+- Don't import core modules outside the SDK (`server/src/lib/plugins/sdk.js`)
+  unless you've added a re-export there first.
+- Don't allow comments to be edited in place — append + delete keeps the
+  audit story clean.
+- Don't expose comment content to learners via any route. Phase 2 has no
+  learner-visible surface for this plugin.
 - Don't override completion semantics or introduce hard lesson cutoffs.
-
-## Open gaps
-
-See `GAPS.md` in this directory for items the host needs to land before this
-plugin can graduate from "Phase-1 demo" to "production-quality."

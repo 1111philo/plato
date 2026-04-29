@@ -2,9 +2,9 @@
   "$schema": "../../docs/plugins/plugin.schema.json",
   "id": "teacher-comments",
   "name": "Teacher Comments",
-  "version": "0.1.0",
-  "apiVersion": "1.x",
-  "description": "Lets admins attach private notes to each learner. Visible only to admins.",
+  "version": "0.2.0",
+  "apiVersion": "^1.1.0",
+  "description": "A comment thread per learner on the admin Edit User page. Visible only to admins.",
   "author": "plato community",
   "license": "AGPL-3.0-or-later",
   "defaultEnabled": false,
@@ -12,14 +12,12 @@
     "server.routes",
     "user.metadata.read",
     "user.metadata.write",
-    "ui.slot.adminSettingsPanel",
-    "ui.slot.adminUserRowAction"
+    "ui.slot.adminProfileFields"
   ],
   "extensionPoints": {
     "serverRoutes": "server/index.js#default",
     "slots": {
-      "adminSettingsPanel": "client/SettingsPanel.jsx",
-      "adminUserRowAction": "client/UserRowAction.jsx"
+      "adminProfileFields": "client/ProfileField.jsx"
     }
   }
 }

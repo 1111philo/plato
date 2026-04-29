@@ -470,6 +470,7 @@ export default function AdminUsers() {
                 </Button>
               )}
             </div>
+            <PluginSlot name="adminProfileFields" context={{ user: editUser }} />
           </CardContent>
         </Card>
       </div>

@@ -33,9 +33,11 @@ Flat reference of every plato extension point. One section per surface; no nesti
 ### `adminProfileFields`
 
 - **Capability:** `ui.slot.adminProfileFields`
-- **Renders inside:** `client/src/pages/admin/AdminUsers.jsx` (admin user detail panel)
+- **Renders inside:** `client/src/pages/admin/AdminUsers.jsx` — below the form fields on the Edit User page
 - **Props:** `{ user: AdminUser }`
-- **Phase:** 2
+- **Phase:** 1.1
+- **Example:** `plugins/teacher-comments/client/ProfileField.jsx` (admin comment thread)
+- **Gotchas:** the slot mounts inside the same Card as the form fields. Plugin components should structure their own visual separator (e.g., `<Separator />` + section heading) so they don't blend into the form. Multiple plugins contributing to this slot stack vertically in registration order.
 
 ### `learnerProfileFields`
 
