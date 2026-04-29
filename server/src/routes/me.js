@@ -159,8 +159,9 @@ me.get('/v1/plugins/extension-points', (c) => {
   return c.json({
     apiVersion: PLUGIN_API_VERSION,
     slots: [
-      { name: 'adminSettingsPanel', capability: 'ui.slot.adminSettingsPanel', context: 'admin', props: { pluginId: 'string', settings: 'object', onSave: '(next) => Promise<void>' }, location: 'client/src/pages/admin/AdminPlugins.jsx' },
-      { name: 'adminUserRowAction', capability: 'ui.slot.adminUserRowAction', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx' },
+      { name: 'adminSettingsPanel', capability: 'ui.slot.adminSettingsPanel', context: 'admin', props: { pluginId: 'string', settings: 'object', onSave: '(next) => Promise<void>' }, location: 'client/src/pages/admin/AdminPlugins.jsx', phase: '1' },
+      { name: 'adminUserRowAction', capability: 'ui.slot.adminUserRowAction', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx', phase: '1.1' },
+      { name: 'adminProfileFields', capability: 'ui.slot.adminProfileFields', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx (Edit User card)', phase: '1.1' },
     ],
     hooks: {
       coreEmits: listEvents(),

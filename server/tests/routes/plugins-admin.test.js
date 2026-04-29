@@ -259,6 +259,23 @@ describe('GET /v1/plugins/extension-points', () => {
     assert.ok(data.docs.authoring, 'docs link present');
   });
 
+  // Regression guard: every UI slot that has a host render-point in the codebase
+  // must appear in the inventory. AI agents query this endpoint as the
+  // authoritative discovery surface (per docs/plugins/AGENTS.md), so an
+  // omission here would silently mislead them — the bug the second-round
+  // review caught with adminProfileFields.
+  it('inventory lists every slot that has a render-point', async () => {
+    const app = new Hono();
+    app.route('/', me);
+    const data = await (await userReq(app, 'GET', '/v1/plugins/extension-points')).json();
+    const slotNames = data.slots.map((s) => s.name).sort();
+    assert.deepEqual(slotNames, [
+      'adminProfileFields',
+      'adminSettingsPanel',
+      'adminUserRowAction',
+    ], 'slot inventory drifted from host render-points; sync me.js with the SDK SlotName union');
+  });
+
   it('requires auth', async () => {
     const app = new Hono();
     app.route('/', me);
