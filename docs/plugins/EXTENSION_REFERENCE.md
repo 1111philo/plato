@@ -206,9 +206,24 @@ A plugin using an extension point without declaring its capability fails registr
 | `deleteUserMeta(userId, pluginId)` | Delete the plugin's per-user record. Capability: `user.metadata.write`. Available since 1.1.0. |
 
 **Per-user storage convention:** `userMeta:<pluginId>` is the canonical key
-shape. Each plugin gets one record per user. Records are filtered out of the
-learner-visible `/v1/sync` listing — admin-only by default. Plugins that want
-learner-visible per-user data should expose their own routes.
+shape. Each plugin gets one record per user.
+
+**Learner isolation** — `userMeta:*` records are admin-owned. Every learner-
+facing path on `/v1/sync` excludes them:
+
+  - `GET /v1/sync` (bulk) — filtered out of the listing
+  - `GET /v1/sync/:dataKey` (single) — rejected by the key whitelist regex
+  - `PUT /v1/sync/:dataKey` — rejected by the key whitelist regex
+  - `DELETE /v1/sync/:dataKey` (single) — rejected by the key whitelist regex
+  - `DELETE /v1/sync` (bulk reset of own data) — `userMeta:*` preserved
+
+The only paths that delete `userMeta:*` are account-deletion (DELETE /v1/me
+self-delete; DELETE /v1/admin/users/:id admin-delete) and a plugin's own
+`onUninstall` hook. Both account-deletion paths fire `userDeleted` BEFORE
+the cascade so plugins can read their data on the way out if needed.
+
+Plugins that want learner-visible per-user data should expose their own
+routes.
 
 Adding to this surface is a core change — it widens the public plugin contract.
 
