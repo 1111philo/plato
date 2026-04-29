@@ -27,10 +27,6 @@
     "author": { "type": "string" },
     "license": { "type": "string" },
     "homepage": { "type": "string", "format": "uri" },
-    "builtIn": {
-      "type": "boolean",
-      "description": "True for plugins shipped with plato core. Built-ins can be disabled but not uninstalled."
-    },
     "defaultEnabled": { "type": "boolean", "default": false },
     "capabilities": {
       "type": "array",

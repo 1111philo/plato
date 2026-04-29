@@ -1,6 +1,6 @@
 # plugins/slack/ — Claude / agent instructions
 
-This plugin ships in plato core (`builtIn: true`). It lets admins invite learners via Slack DM.
+Lets admins invite learners via Slack DM.
 
 ## Local invariants
 - The bot token is `writeOnly` in `settingsSchema` — never echo it back in a `GET` response. The plugin's settings record holds it; the `/v1/plugins` endpoint strips writeOnly fields for non-admin callers.

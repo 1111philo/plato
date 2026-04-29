@@ -1,6 +1,6 @@
 # Slack plugin
 
-Built-in plato plugin. Adds Slack DM invites for the learner-onboarding flow.
+plato plugin that adds Slack DM invites for the learner-onboarding flow.
 
 ## Setup
 

@@ -596,6 +596,35 @@ admin.put('/v1/admin/plugins/:id/activation', async (c) => {
   }
 });
 
+// POST /v1/admin/plugins/:id/uninstall-data — run the plugin's onUninstall
+// hook and clear its activation/settings entry. Plugin must be disabled first
+// (registry refuses otherwise). Body: { confirm: '<plugin id>' } — the admin
+// must type the plugin id to confirm, mirroring GitHub's repo-deletion gate.
+// Audit-logged.
+admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
+  const id = c.req.param('id');
+  let body;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'JSON body required' }, 400); }
+  if (body?.confirm !== id) {
+    return c.json({ error: `Type the plugin id (${id}) in "confirm" to proceed` }, 400);
+  }
+  const adminUser = c.get('user');
+  try {
+    await pluginRegistry.uninstallData(id);
+  } catch (err) {
+    logger.error('plugin_uninstall_failed', { pluginId: id, error: err.message });
+    return c.json({ error: err.message }, 400);
+  }
+  await db.createAuditLog({
+    action: 'plugin_data_uninstalled',
+    userId: adminUser.userId,
+    email: adminUser.email,
+    performedBy: adminUser.userId,
+    details: { pluginId: id },
+  });
+  return c.json({ ok: true });
+});
+
 // PUT /v1/admin/plugins/:id/settings — update plugin settings.
 admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   const id = c.req.param('id');

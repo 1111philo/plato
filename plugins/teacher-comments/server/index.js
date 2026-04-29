@@ -63,24 +63,6 @@ routes.get('/admin/comments/:userId', async (c) => {
   return c.json({ comments: thread.comments });
 });
 
-// GET /admin/comments — summary for every user with a thread (for the
-// settings panel and badges). Returns { userId: { count, lastAt } }.
-routes.get('/admin/comments', async (c) => {
-  const users = await db.listAllUsers();
-  const out = {};
-  await Promise.all(users.map(async (u) => {
-    const { comments } = await readThread(u.userId);
-    if (comments.length > 0) {
-      out[u.userId] = {
-        count: comments.length,
-        lastAt: comments[0].createdAt,
-        lastAuthorName: comments[0].authorName || null,
-      };
-    }
-  }));
-  return c.json(out);
-});
-
 // POST /admin/comments/:userId — append a new comment. Body: { text: string }.
 routes.post('/admin/comments/:userId', async (c) => {
   const userId = c.req.param('userId');
@@ -127,5 +109,23 @@ export default {
   routes,
   async onActivate(ctx) {
     ctx.logger.info('activated');
+  },
+  /**
+   * Wipe every comment thread for every user. Invoked from the admin UI's
+   * "Delete plugin data" flow only after the admin has disabled the plugin
+   * AND typed the plugin id to confirm. Errors propagate so the admin
+   * sees a partial-deletion failure rather than a silent half-purge.
+   */
+  async onUninstall(ctx) {
+    const users = await db.listAllUsers();
+    let deleted = 0;
+    for (const u of users) {
+      const existing = await getUserMeta(u.userId, PLUGIN_ID);
+      if (existing) {
+        await deleteUserMeta(u.userId, PLUGIN_ID);
+        deleted++;
+      }
+    }
+    ctx.logger.info('data_uninstalled', { threadsRemoved: deleted });
   },
 };

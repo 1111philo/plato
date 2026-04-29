@@ -34,3 +34,17 @@ export async function invokeOnDeactivate(plugin, ctx) {
     });
   }
 }
+
+/**
+ * Run the plugin's data-uninstall hook. Unlike the other lifecycle hooks,
+ * errors are NOT swallowed here — admins triggering "Delete plugin data"
+ * need to know if some records weren't cleaned up so they can retry. The
+ * caller (`pluginRegistry.uninstallData`) is responsible for failing loudly.
+ *
+ * No-op when the plugin doesn't define `onUninstall`.
+ */
+export async function invokeOnUninstall(plugin, ctx) {
+  if (!plugin || typeof plugin.onUninstall !== 'function') return;
+  // Throws bubble up.
+  await plugin.onUninstall(ctx);
+}

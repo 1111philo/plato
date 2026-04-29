@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, createElement } from 'react';
 import { adminApi } from './adminApi.js';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { initPluginRegistry, settingsPanelFor, refreshActivation } from '@/lib/plugins/registry.js';
@@ -55,6 +59,12 @@ export default function AdminPlugins() {
     await load();
   }
 
+  async function uninstallData(pluginId) {
+    await adminApi('POST', `/v1/admin/plugins/${pluginId}/uninstall-data`, { confirm: pluginId });
+    await refreshActivation();
+    await load();
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">
@@ -93,6 +103,7 @@ export default function AdminPlugins() {
             registryReady={registryReady}
             onToggle={(enabled) => toggle(plugin.id, enabled)}
             onSaveSettings={(next) => saveSettings(plugin.id, next)}
+            onUninstallData={() => uninstallData(plugin.id)}
           />
         ))}
       </div>
@@ -133,11 +144,19 @@ function Switch({ checked, onCheckedChange, disabled, label }) {
   );
 }
 
-function PluginCard({ plugin, registryReady, onToggle, onSaveSettings }) {
+function PluginCard({ plugin, registryReady, onToggle, onSaveSettings, onUninstallData }) {
+  const [uninstallOpen, setUninstallOpen] = useState(false);
   const customPanel = registryReady ? settingsPanelFor(plugin.id) : null;
   const hasSettingsSurface = !!customPanel || !!plugin.settingsSchema;
   const isDisabled = !plugin.enabled;
   const hasLoadError = !!plugin.loadError;
+  // Show "Delete plugin data" only when:
+  //  - the plugin is currently disabled (forces a deliberate two-step path)
+  //  - the plugin has stored state (an activation record exists — proxy for
+  //    "may have data to clean up." A plugin that's never been activated has
+  //    no entry in `_system:plugins:activation`, so the button hides.)
+  //  - the plugin loaded cleanly
+  const canUninstall = isDisabled && plugin.hasStoredState && !hasLoadError;
 
   return (
     <Card className={cn('transition-opacity', isDisabled && !hasLoadError && 'opacity-75')}>
@@ -147,20 +166,19 @@ function PluginCard({ plugin, registryReady, onToggle, onSaveSettings }) {
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold leading-none">{plugin.name}</h2>
               <span className="text-xs text-muted-foreground">v{plugin.version}</span>
-              {plugin.builtIn && <Badge variant="secondary" className="text-xs">Built-in</Badge>}
               {hasLoadError && <Badge variant="destructive" className="text-xs">Load error</Badge>}
             </div>
             <p className="text-sm text-muted-foreground">{plugin.description}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className={cn('text-xs font-medium', plugin.enabled ? 'text-foreground' : 'text-muted-foreground')}>
-              {plugin.enabled ? 'On' : 'Off'}
+              {plugin.enabled ? 'Active' : 'Disabled'}
             </span>
             <Switch
               checked={!!plugin.enabled}
               onCheckedChange={onToggle}
               disabled={hasLoadError}
-              label={`${plugin.enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+              label={`${plugin.enabled ? 'Deactivate' : 'Activate'} ${plugin.name}`}
             />
           </div>
         </div>
@@ -202,6 +220,31 @@ function PluginCard({ plugin, registryReady, onToggle, onSaveSettings }) {
         </CardContent>
       )}
 
+      {canUninstall && (
+        <CardContent className="pt-0">
+          <Separator className="mb-3" />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Permanently remove every record this plugin has stored. The plugin code stays installed.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
+              onClick={() => setUninstallOpen(true)}
+            >
+              Delete plugin data
+            </Button>
+          </div>
+          <UninstallDialog
+            plugin={plugin}
+            open={uninstallOpen}
+            onOpenChange={setUninstallOpen}
+            onConfirm={onUninstallData}
+          />
+        </CardContent>
+      )}
+
       {hasLoadError && (
         <CardContent className="pt-0">
           <p role="alert" className="text-sm text-destructive">
@@ -210,5 +253,79 @@ function PluginCard({ plugin, registryReady, onToggle, onSaveSettings }) {
         </CardContent>
       )}
     </Card>
+  );
+}
+
+/**
+ * Type-to-confirm dialog before invoking the plugin's data uninstall. Same
+ * friction GitHub uses for repo deletion: the destructive button stays
+ * disabled until the admin types the plugin id.
+ */
+function UninstallDialog({ plugin, open, onOpenChange, onConfirm }) {
+  const [confirm, setConfirm] = useState('');
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState(null);
+  const matches = confirm.trim() === plugin.id;
+
+  // Reset on open/close so previous text doesn't linger.
+  useEffect(() => {
+    if (!open) {
+      setConfirm('');
+      setError(null);
+      setWorking(false);
+    }
+  }, [open]);
+
+  async function handleConfirm() {
+    setWorking(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onOpenChange(false);
+    } catch (e) {
+      setError(e.message);
+      setWorking(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {plugin.name} data?</DialogTitle>
+          <DialogDescription>
+            This permanently removes every record the plugin has stored. The plugin code stays installed,
+            but settings and any per-user data the plugin owns are wiped. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Label htmlFor={`confirm-${plugin.id}`}>
+            Type <code className="rounded bg-muted px-1 font-mono">{plugin.id}</code> to confirm
+          </Label>
+          <Input
+            id={`confirm-${plugin.id}`}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="off"
+            autoFocus
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">{error}</p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={working}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={!matches || working}
+            onClick={handleConfirm}
+          >
+            {working ? 'Deleting…' : 'Delete plugin data'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

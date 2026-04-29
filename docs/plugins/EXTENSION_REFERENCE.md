@@ -53,6 +53,67 @@ Flat reference of every plato extension point. One section per surface; no nesti
 - **Props:** `{}`
 - **Phase:** 2
 
+## Lifecycle methods
+
+Optional functions a plugin's `server/index.js` default export can declare.
+Distinct from event hooks below — these are one-shot host-invoked methods,
+not pub-sub events.
+
+### `onActivate(ctx)`
+
+Runs once when admin enables the plugin AND once at boot if the plugin is
+already enabled. Idempotent. Use for migrations, cache warmup, seeding. Don't
+run heavy work here — it's synchronous in the boot path.
+
+Errors are caught and logged as `plugin_on_activate_failed`; the plugin
+continues to run.
+
+### `onDeactivate(ctx)`
+
+Runs when admin disables the plugin. Should release resources, NOT delete
+user data. Settings are preserved across disable/enable cycles.
+
+Errors are caught and logged as `plugin_on_deactivate_failed`.
+
+### `onUninstall(ctx)`
+
+Optional. Runs only when an admin uses the "Delete plugin data" flow on
+`/plato/plugins`.
+
+- Plugin must be **disabled** first (host refuses otherwise).
+- Admin must type the plugin id in a confirm dialog.
+- The host clears the plugin's settings/activation entry after `onUninstall`
+  completes successfully — every plugin gets that for free.
+
+**Implement `onUninstall` only if your plugin owns data beyond the
+activation record** — for example, per-user `userMeta:<id>` records or
+`plugin:<id>:*` sync-data namespace records (Phase 3+). For a plugin whose
+only state is its settings (e.g. Slack's bot token), no `onUninstall` is
+needed; the host's activation-record cleanup is sufficient.
+
+For a plugin that uses `userMeta:<id>`, the cleanup iterates users and
+calls `deleteUserMeta`:
+
+```js
+async onUninstall(ctx) {
+  const users = await db.listAllUsers();
+  for (const u of users) {
+    if (await getUserMeta(u.userId, ctx.pluginId)) {
+      await deleteUserMeta(u.userId, ctx.pluginId);
+    }
+  }
+}
+```
+
+**Errors propagate** — unlike `onActivate`/`onDeactivate`, partial-cleanup
+failures are surfaced to the admin so they can retry rather than silently
+leaving data behind.
+
+The audit log gets a `plugin_data_uninstalled` entry with the admin's user
+id and the plugin id.
+
+Available since Plugin API 1.2.0.
+
 ## Hooks
 
 The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any event name works. Plugins MAY emit/subscribe to arbitrary names following the convention `<plugin-id>.<event>`. Core emits a known subset (this list).

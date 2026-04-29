@@ -188,4 +188,9 @@ export default {
   async onActivate(ctx) {
     await migrateLegacySettings(ctx);
   },
+  // No `onUninstall` defined — Slack's only data is bot token/workspace name
+  // in its settings record, which the host clears automatically when the
+  // admin confirms "Delete plugin data". Plugins implement onUninstall only
+  // when they have data outside the activation record (e.g. teacher-comments
+  // wipes per-user `userMeta:teacher-comments` records).
 };

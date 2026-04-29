@@ -230,7 +230,34 @@ export default {
 
 Manifest must declare `hook.userCreated` / `hook.userDeleted` capabilities. `userCreated` fires after persist; `userDeleted` fires before the cascade (so handlers can read their own per-user data while it still exists).
 
-### Recipe 10 — minimal vitest skeleton for a plugin route
+### Recipe 10 — implement clean-uninstall for plugin data
+
+Plugins that store data (settings, `userMeta:<id>`, `plugin:<id>:*` keys)
+should implement `onUninstall` so admins have a clean teardown path.
+Without it, the "Delete plugin data" button doesn't appear on the plugin's
+card in `/plato/plugins`.
+
+```js
+import { db, getUserMeta, deleteUserMeta } from '../../../server/src/lib/plugins/sdk.js';
+
+export default {
+  routes,
+  async onUninstall(ctx) {
+    // Wipe per-user records the plugin owns.
+    const users = await db.listAllUsers();
+    for (const u of users) {
+      if (await getUserMeta(u.userId, ctx.pluginId)) {
+        await deleteUserMeta(u.userId, ctx.pluginId);
+      }
+    }
+    // Settings/activation entry is cleared by the host after this returns.
+  },
+};
+```
+
+Errors propagate to the admin — partial cleanup failures are loud, not silent. The host audit-logs `plugin_data_uninstalled` with the admin's user id.
+
+### Recipe 11 — minimal vitest skeleton for a plugin route
 
 ```js
 // plugins/<id>/server/index.test.js

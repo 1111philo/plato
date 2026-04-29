@@ -34,10 +34,10 @@ async function userReq(app, method, path, body) {
 }
 
 // Sample plugin entry fixture.
-function makeEntry({ id = 'demo', enabled = true, settings = {}, builtIn = false, schema = null } = {}) {
+function makeEntry({ id = 'demo', enabled = true, settings = {}, schema = null } = {}) {
   return {
     manifest: {
-      id, name: id, version: '1.0.0', description: `${id} plugin`, builtIn,
+      id, name: id, version: '1.0.0', description: `${id} plugin`,
       capabilities: ['settings.read', 'settings.write'],
       extensionPoints: {},
       settingsSchema: schema,

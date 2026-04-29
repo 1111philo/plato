@@ -57,9 +57,6 @@ export function validateManifest(raw, { expectedId } = {}) {
   if (typeof raw.description !== 'string' || raw.description.length === 0 || raw.description.length > 280) {
     errors.push('description must be a non-empty string ≤ 280 chars');
   }
-  if (raw.builtIn !== undefined && typeof raw.builtIn !== 'boolean') {
-    errors.push('builtIn must be a boolean if present');
-  }
   if (raw.defaultEnabled !== undefined && typeof raw.defaultEnabled !== 'boolean') {
     errors.push('defaultEnabled must be a boolean if present');
   }

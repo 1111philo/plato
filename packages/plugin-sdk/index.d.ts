@@ -37,14 +37,12 @@ export interface PluginManifest {
   author?: string;
   license?: string;
   homepage?: string;
-  /** Set by core plugins shipped with plato. Built-ins can be disabled but not uninstalled. */
-  builtIn?: boolean;
   /** Capabilities the plugin requires; surfaced to admins at activation. */
   capabilities: Capability[];
   extensionPoints: ExtensionPoints;
   /** JSON Schema for the plugin's settings. Used to auto-render a form when no settingsPanel slot is provided. */
   settingsSchema?: JSONSchemaPrimitive;
-  /** If absent, defaults to false. Built-ins typically default to true. */
+  /** If absent, defaults to false. */
   defaultEnabled?: boolean;
 }
 
@@ -144,6 +142,13 @@ export interface ServerPluginExports {
   onActivate?(ctx: PluginLifecycleContext): void | Promise<void>;
   /** Called when admin disables the plugin. Should release resources, NOT delete user data. */
   onDeactivate?(ctx: PluginLifecycleContext): void | Promise<void>;
+  /**
+   * Called only when an admin uses "Delete plugin data" on /plato/plugins.
+   * Plugin must be disabled first; admin must type the plugin id to confirm.
+   * Wipes everything the plugin has stored. Errors propagate to the admin UI —
+   * surface partial-cleanup failures rather than swallow them.
+   */
+  onUninstall?(ctx: PluginLifecycleContext): void | Promise<void>;
 }
 
 export interface ClientPluginExports {
@@ -236,21 +241,9 @@ export type JSONSchemaPrimitive =
       description?: string;
     };
 
-// ---------- definePlugin identity helpers ----------
-
-/**
- * Identity helper for typing server-side plugin exports.
- * Accepts ServerPluginExports and returns it unchanged so editors can narrow.
- */
-export function defineServerPlugin<T extends ServerPluginExports>(plugin: T): T;
-
-/**
- * Identity helper for typing client-side plugin exports.
- */
-export function defineClientPlugin<T extends ClientPluginExports>(plugin: T): T;
-
-/**
- * Generic alias — works on either side. `defineServerPlugin` / `defineClientPlugin`
- * give better narrowing if you know which one you're writing.
- */
-export function definePlugin<T extends ServerPluginExports | ClientPluginExports>(plugin: T): T;
+// Plugin authors using TypeScript can type their default export with
+// `satisfies ServerPluginExports` (or `: ServerPluginExports`) directly —
+// no helper function needed. Plain JS authors get IntelliSense via JSDoc:
+//
+//   /** @type {import('@plato/plugin-sdk').ServerPluginExports} */
+//   export default { routes, async onActivate(ctx) { ... } };

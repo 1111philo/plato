@@ -10,7 +10,7 @@ Plato has a manifest-driven plugin system. Each plugin lives in `plugins/<id>/` 
 plugins/my-plugin/
   plugin.json              # manifest (capabilities, extension points, settings schema)
   server/
-    index.js               # default-exports { routes, hooks, onActivate, onDeactivate }
+    index.js               # default-exports { routes, hooks, onActivate, onDeactivate, onUninstall }
   client/
     index.js               # default-exports { slots, settingsPanel, navItems }
     SettingsPanel.jsx      # (or any other slot components)
@@ -21,7 +21,7 @@ The host discovers plugins at boot (`server/src/lib/plugins/registry.js`), valid
 
 - Mounts the plugin's Hono router under `/v1/plugins/<id>/`
 - Registers slot components for rendering by `<PluginSlot name="...">`
-- Calls `onActivate` once, plus once per enable toggle
+- Calls `onActivate` once, plus once per enable toggle; `onDeactivate` on disable; `onUninstall` only when an admin uses "Delete plugin data" (plugin must be disabled + admin types id to confirm)
 - Stores per-plugin settings in `_system:plugins:activation.<id>.settings`
 
 Disabled plugins consume zero runtime surface — their routes return 404, their slots render nothing, their hooks don't fire.

@@ -5,12 +5,17 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.1.0'
+PLUGIN_API_VERSION = '1.2.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.2.0 (additive)
+- **Added** `onUninstall(ctx)` lifecycle hook — optional. Runs when an admin uses the "Delete plugin data" flow on `/plato/plugins` and the plugin needs cleanup beyond its activation record (e.g., per-user `userMeta:<id>` records). The host clears the activation record (settings) automatically; plugins only implement `onUninstall` when they own data elsewhere. Plugin must be **disabled** first, and the admin must type the plugin id in a confirm dialog before the destructive button enables. Errors propagate so partial-cleanup failures are surfaced loudly.
+- **Added** `POST /v1/admin/plugins/:id/uninstall-data` endpoint. Body: `{ confirm: '<plugin id>' }`. Refuses unless the plugin is disabled. Audit-logged as `plugin_data_uninstalled`.
+- **Added** `hasStoredState: boolean` to the plugin's public view (`GET /v1/admin/plugins`). True iff the plugin has an entry in `_system:plugins:activation` — i.e., has been activated/configured at least once and may have stored data. The admin UI uses this to gate the "Delete plugin data" button: never-activated plugins have nothing to delete, so the button hides.
 
 ### 1.1.0 (additive)
 - **Added** core hook emit-points: `userCreated` (auth.js signup + bootstrap-admin) and `userDeleted` (me.js DELETE /v1/me + admin.js DELETE /v1/admin/users/:id). `userDeleted` fires BEFORE the cascade so handlers can read the user's `userMeta:*` records.

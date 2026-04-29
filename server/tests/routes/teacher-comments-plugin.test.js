@@ -177,31 +177,4 @@ describe('teacher-comments — thread API', () => {
     assert.match(list.comments[0].id, /^cm_legacy_/);
   });
 
-  it('GET /admin/comments returns a per-user summary with count and lastAt', async () => {
-    const store = fakeUserSyncStore();
-    db.getSyncData = store.getSyncData;
-    db.putSyncData = store.putSyncData;
-    db.deleteSyncData = store.deleteSyncData;
-    const app = buildApp();
-    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'a' });
-    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'b' });
-    await adminReq(app, 'POST', '/admin/comments/usr_y', { text: 'c' });
-    const summary = await (await adminReq(app, 'GET', '/admin/comments')).json();
-    assert.equal(summary.usr_x.count, 2);
-    assert.equal(summary.usr_y.count, 1);
-    assert.equal(summary.usr_x.lastAuthorName, 'Alice Admin');
-    assert.ok(summary.usr_x.lastAt);
-  });
-
-  it('users with no comments are absent from the summary', async () => {
-    const store = fakeUserSyncStore();
-    db.getSyncData = store.getSyncData;
-    db.putSyncData = store.putSyncData;
-    db.deleteSyncData = store.deleteSyncData;
-    const app = buildApp();
-    await adminReq(app, 'POST', '/admin/comments/usr_x', { text: 'a' });
-    const summary = await (await adminReq(app, 'GET', '/admin/comments')).json();
-    assert.equal(summary.usr_x?.count, 1);
-    assert.equal(summary.usr_y, undefined);
-  });
 });

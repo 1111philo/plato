@@ -23,7 +23,7 @@ import { logger } from '../logger.js';
 import { validateManifest } from './manifest.js';
 import { satisfies, PLUGIN_API_VERSION } from './version.js';
 import { on as hookOn, emit as hookEmit } from './hooks.js';
-import { invokeOnActivate, invokeOnDeactivate } from './lifecycle.js';
+import { invokeOnActivate, invokeOnDeactivate, invokeOnUninstall } from './lifecycle.js';
 import { createPluginLogger } from './logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -200,6 +200,7 @@ export const pluginRegistry = {
         }
 
         const persisted = activation.record[manifest.id] || {};
+        const hasStoredState = manifest.id in activation.record;
         const enabled = typeof persisted.enabled === 'boolean'
           ? persisted.enabled
           : Boolean(manifest.defaultEnabled);
@@ -228,6 +229,7 @@ export const pluginRegistry = {
           serverModule,
           enabled,
           settings,
+          hasStoredState,
           loadError: null,
           hookUnsubs: [],
         };
@@ -266,6 +268,7 @@ export const pluginRegistry = {
     await writeActivation(record, version);
 
     entry.enabled = enabled;
+    entry.hasStoredState = true;
     if (enabled) {
       entry.hookUnsubs = subscribeHooks(id, entry.serverModule);
       await invokeOnActivate(entry.serverModule, buildContext(id, entry.settings));
@@ -274,6 +277,36 @@ export const pluginRegistry = {
       entry.hookUnsubs = [];
       await invokeOnDeactivate(entry.serverModule, buildContext(id, entry.settings));
     }
+    return entry;
+  },
+
+  /**
+   * Run the plugin's `onUninstall` hook to wipe its data, then clear the
+   * plugin's activation entry. Plugin must already be disabled — refuses
+   * otherwise so the admin commits to a deliberate two-step path
+   * (disable first, then uninstall data).
+   *
+   * Errors from the plugin's onUninstall propagate to the caller — partial
+   * cleanup is surfaced loudly rather than silently swallowed.
+   */
+  async uninstallData(id) {
+    const entry = state.entries.get(id);
+    if (!entry) throw new Error(`unknown plugin: ${id}`);
+    if (entry.loadError) throw new Error(`plugin "${id}" failed to load: ${entry.loadError}`);
+    if (entry.enabled) throw new Error(`plugin "${id}" must be disabled before uninstalling data`);
+
+    // Run the plugin's teardown. Throws propagate.
+    await invokeOnUninstall(entry.serverModule, buildContext(id, entry.settings));
+
+    // Clear the plugin's settings + entry from the activation record so a
+    // future re-enable starts fresh.
+    const { record, version } = await readActivation();
+    if (record[id]) {
+      delete record[id];
+      await writeActivation(record, version);
+    }
+    entry.settings = {};
+    entry.hasStoredState = false;
     return entry;
   },
 
@@ -288,6 +321,7 @@ export const pluginRegistry = {
     record[id] = { ...(record[id] || {}), enabled: entry.enabled, settings: nextSettings };
     await writeActivation(record, version);
     entry.settings = nextSettings;
+    entry.hasStoredState = true;
     return entry;
   },
 
@@ -303,12 +337,16 @@ export const pluginRegistry = {
       name: m.name,
       version: m.version,
       description: m.description,
-      builtIn: !!m.builtIn,
       capabilities: m.capabilities,
       slots: m.extensionPoints?.slots ? Object.keys(m.extensionPoints.slots) : [],
       hooks: m.extensionPoints?.hooks || [],
       hasSettingsSchema: !!m.settingsSchema,
       settingsSchema: m.settingsSchema || null,
+      // True iff the plugin has an entry in `_system:plugins:activation`
+      // (i.e. has been activated/configured at least once and may have
+      // stored data). Drives the "Delete plugin data" button visibility:
+      // never-activated plugins have nothing to delete, so the button hides.
+      hasStoredState: !!entry.hasStoredState,
       enabled: !!entry.enabled,
       loadError: entry.loadError || null,
     };

@@ -34,4 +34,16 @@ export default {
   async onDeactivate(ctx) {
     ctx.logger.info('deactivated');
   },
+  /**
+   * Called only when an admin uses "Delete plugin data" on /plato/plugins.
+   * Plugin must already be disabled; admin must type the plugin id to confirm.
+   * Wipe everything the plugin has stored. Errors propagate — surface partial-
+   * cleanup failures rather than swallow them. Remove this method if your
+   * plugin stores nothing.
+   */
+  async onUninstall(ctx) {
+    ctx.logger.info('uninstall_data_start');
+    // TODO: iterate users + deleteUserMeta, clear plugin sync-data namespace, etc.
+    ctx.logger.info('uninstall_data_done');
+  },
 };

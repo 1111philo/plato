@@ -63,8 +63,8 @@ export { APP_URL } from '../../config.js';
 
 export { logger as hostLogger } from '../logger.js';
 
-// Re-export third-party packages built-in plugins depend on. Third-party plugins
-// SHOULD declare their own dependencies and not import from this file unless the
-// dependency is genuinely shared with the host (Hono is the canonical example).
-// Built-in plugins shipped with plato can rely on whatever's in server/package.json.
+// Re-export third-party packages plugins shipped in this repo depend on. External
+// plugins SHOULD declare their own dependencies and not import from this file
+// unless the dependency is genuinely shared with the host (Hono is the canonical
+// example). Plugins shipped in this repo can rely on whatever's in server/package.json.
 export { WebClient } from '@slack/web-api';

@@ -33,6 +33,14 @@ re-add). Visible only to admins.
 3. Wire the implementation in `server/index.js` or `client/index.js`.
 4. Run `node scripts/validate-plugins.js` before committing.
 
+## Teardown
+
+`onUninstall` iterates every user and deletes their `userMeta:teacher-comments`
+record. Errors propagate so the admin sees a partial-cleanup failure rather
+than a silent half-purge. Triggered only via the gated "Delete plugin data"
+flow on `/plato/plugins` (plugin must be disabled + admin must type the id
+to confirm). The host clears the activation/settings entry afterwards.
+
 ## Don't
 
 - Don't import core modules outside the SDK (`server/src/lib/plugins/sdk.js`)

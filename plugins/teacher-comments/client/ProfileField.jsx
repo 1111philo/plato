@@ -110,10 +110,10 @@ export default function ProfileField({ user }) {
   }
 
   return (
-    <section className="space-y-4" aria-label="Admin comments">
+    <section className="space-y-4" aria-label="Teacher comments">
       <Separator />
       <div className="flex items-baseline justify-between">
-        <h2 className="text-base font-semibold">Admin comments</h2>
+        <h2 className="text-base font-semibold">Teacher comments</h2>
         <span className="text-xs text-muted-foreground">
           Private — visible only to admins
         </span>
@@ -152,14 +152,14 @@ export default function ProfileField({ user }) {
       ) : (
         <ul className="space-y-3">
           {comments.map((c) => (
-            <li key={c.id} className="flex gap-3 rounded-md border bg-card p-3">
+            <li key={c.id} className="flex items-start gap-3 rounded-md border bg-card p-3">
               <div
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold"
+                className="flex h-8 w-8 flex-none aspect-square items-center justify-center rounded-full bg-muted text-xs font-semibold"
                 aria-hidden="true"
               >
                 {initials(c.authorName)}
               </div>
-              <div className="min-w-0 flex-1 space-y-1">
+              <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-sm font-medium truncate">
                     {c.authorName || 'Admin'}
@@ -173,22 +173,21 @@ export default function ProfileField({ user }) {
                   </time>
                 </div>
                 <p className="whitespace-pre-wrap text-sm">{c.text}</p>
-                <div className="pt-1">
+                <div>
                   {confirmingDelete === c.id ? (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">Delete this comment?</span>
                       <Button size="sm" variant="destructive" onClick={() => deleteComment(c.id)}>
                         Delete
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(null)}>
+                      <Button size="sm" variant="outline" onClick={() => setConfirmingDelete(null)}>
                         Cancel
                       </Button>
                     </div>
                   ) : (
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      variant="outline"
                       onClick={() => setConfirmingDelete(c.id)}
                       aria-label={`Delete comment by ${c.authorName || 'Admin'}`}
                     >

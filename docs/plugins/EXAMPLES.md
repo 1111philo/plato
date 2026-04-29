@@ -33,7 +33,7 @@ Located at `plugins/slack/`. Demonstrates:
 - Lifecycle migration (legacy `_system:settings.slack` → plugin's settings record)
 - Custom `adminSettingsPanel` slot with multi-step UX (test → connect → disconnect)
 - writeOnly settings (the bot token is stripped from `GET /v1/plugins`)
-- Built-in flag (`builtIn: true`) — can be disabled but not uninstalled
+- `defaultEnabled: true` — Slack ships in this repo and is on by default for new installs
 
 Read `plugins/slack/server/index.js` and `plugins/slack/client/SlackSettingsPanel.jsx` for the full implementation.
 
@@ -143,5 +143,5 @@ The Phase 2 SDK will add `db.putUserMeta` / `db.getUserMeta` and the `userCreate
 | Plugin-scoped logger via `ctx.logger` | All examples |
 | Per-plugin `CLAUDE.md` capturing local invariants | Slack, scaffolder |
 | `defaultEnabled: false` for non-core plugins | hello-world (scaffolder) |
-| `defaultEnabled: true, builtIn: true` for core plugins | Slack |
+| `defaultEnabled: true` for plugins this repo ships on by default | Slack |
 | Auto-rendered form when no custom panel needed | hello-world (alternate path) |

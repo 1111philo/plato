@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { invokeOnActivate, invokeOnDeactivate } from '../../../src/lib/plugins/lifecycle.js';
+import { invokeOnActivate, invokeOnDeactivate, invokeOnUninstall } from '../../../src/lib/plugins/lifecycle.js';
 import { logger } from '../../../src/lib/logger.js';
 
 const origErr = console.error;
@@ -37,6 +37,25 @@ describe('lifecycle', () => {
     }, { pluginId: 'y' });
     const entries = logger.recent({ level: 'error' });
     assert.ok(entries.some((e) => e.code === 'plugin_on_deactivate_failed'));
+  });
+
+  it('invokes onUninstall when present', async () => {
+    let called = 0;
+    await invokeOnUninstall({ onUninstall: () => { called++; } }, { pluginId: 'z' });
+    assert.equal(called, 1);
+  });
+
+  it('is a no-op when onUninstall is missing', async () => {
+    await invokeOnUninstall({}, { pluginId: 'z' });
+    await invokeOnUninstall(null, { pluginId: 'z' });
+    assert.ok(true, 'no throw');
+  });
+
+  it('PROPAGATES errors from onUninstall (unlike activate/deactivate)', async () => {
+    await assert.rejects(
+      () => invokeOnUninstall({ onUninstall: () => { throw new Error('boom'); } }, { pluginId: 'z' }),
+      /boom/,
+    );
   });
 });
 

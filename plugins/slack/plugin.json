@@ -8,7 +8,6 @@
   "author": "plato core",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/1111philo/plato",
-  "builtIn": true,
   "defaultEnabled": true,
   "capabilities": [
     "server.routes",
