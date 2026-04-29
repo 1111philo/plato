@@ -49,9 +49,10 @@ Allows writing `userMeta:<pluginId>` for any user via
 Available since Plugin API 1.1.0.
 
 By design, `userMeta:*` records are admin-owned. Every learner-facing
-`/v1/sync` path excludes them — bulk GET filters them out, single
-GET/PUT/DELETE reject the key, and bulk DELETE (learner reset) preserves
-them. They're cleaned only via account-deletion or the plugin's own
+path that touches the user's own data excludes them — `/v1/sync` bulk GET
+filters them out, single GET/PUT/DELETE reject the key, bulk DELETE
+(learner reset) preserves them, and `GET /v1/me/export` filters them.
+They're cleaned only via account-deletion or the plugin's own
 `onUninstall` hook. Plugins that want learner-visible per-user data must
 expose their own routes.
 

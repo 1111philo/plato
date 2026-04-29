@@ -209,13 +209,14 @@ A plugin using an extension point without declaring its capability fails registr
 shape. Each plugin gets one record per user.
 
 **Learner isolation** — `userMeta:*` records are admin-owned. Every learner-
-facing path on `/v1/sync` excludes them:
+facing path that touches the user's own sync-data excludes them:
 
   - `GET /v1/sync` (bulk) — filtered out of the listing
   - `GET /v1/sync/:dataKey` (single) — rejected by the key whitelist regex
   - `PUT /v1/sync/:dataKey` — rejected by the key whitelist regex
   - `DELETE /v1/sync/:dataKey` (single) — rejected by the key whitelist regex
   - `DELETE /v1/sync` (bulk reset of own data) — `userMeta:*` preserved
+  - `GET /v1/me/export` (download my data) — `userMeta:*` filtered out
 
 The only paths that delete `userMeta:*` are account-deletion (DELETE /v1/me
 self-delete; DELETE /v1/admin/users/:id admin-delete) and a plugin's own

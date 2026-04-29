@@ -80,10 +80,14 @@ me.patch('/v1/me', async (c) => {
   });
 });
 
-// GET /v1/me/export — download all user data as JSON
+// GET /v1/me/export — download all user data as JSON.
+// Plugin-owned `userMeta:*` records are admin-maintained (e.g. teacher
+// comments) and explicitly NOT part of "the user's own data" — same
+// isolation rule applied by GET/DELETE /v1/sync.
 me.get('/v1/me/export', async (c) => {
   const user = c.get('user');
-  const syncItems = await db.getAllSyncData(user.userId);
+  const syncItems = (await db.getAllSyncData(user.userId))
+    .filter((item) => !item.dataKey?.startsWith('userMeta:'));
   const syncData = {};
   for (const item of syncItems) {
     syncData[item.dataKey] = { data: item.data, version: item.version, updatedAt: item.updatedAt };

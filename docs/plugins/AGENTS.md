@@ -208,7 +208,7 @@ const meta = await getUserMeta(userId, 'my-plugin');  // -> { score: 42, lastSee
 await deleteUserMeta(userId, 'my-plugin');
 ```
 
-Manifest must declare `user.metadata.read` and/or `user.metadata.write`. Records are stored at `userMeta:<pluginId>` per user — admin-owned by default. Every learner-facing `/v1/sync` path excludes them: bulk GET filters them out, single GET/PUT/DELETE reject the key, and bulk DELETE preserves them (the learner can reset their own data without wiping admin-maintained records). `userMeta:*` is cleaned only via account-deletion (which fires `userDeleted` first) or your plugin's own `onUninstall` hook.
+Manifest must declare `user.metadata.read` and/or `user.metadata.write`. Records are stored at `userMeta:<pluginId>` per user — admin-owned by default. Every learner-facing path that touches the user's own data excludes them: `/v1/sync` bulk GET filters them out, single GET/PUT/DELETE reject the key, bulk DELETE preserves them (learner reset doesn't wipe admin-maintained records), and `GET /v1/me/export` filters them. `userMeta:*` is cleaned only via account-deletion (which fires `userDeleted` first) or your plugin's own `onUninstall` hook.
 
 ### Recipe 9 — react to user lifecycle events
 
