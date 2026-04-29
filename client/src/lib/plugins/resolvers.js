@@ -15,7 +15,7 @@ export function resolveSlotComponent(mod, slotName) {
 }
 
 /**
- * Settings panel for the admin Integrations card. Resolution order:
+ * Settings panel for the admin plugin card on /plato/plugins. Resolution order:
  *   1. slots.adminSettingsPanel — canonical, matches every other slot
  *   2. settingsPanel            — convenience top-level export (back-compat)
  *

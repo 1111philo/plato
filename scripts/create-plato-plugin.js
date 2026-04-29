@@ -182,4 +182,4 @@ console.log('');
 console.log('Next:');
 console.log(`  1. Run "node scripts/validate-plugins.js" to confirm the manifest is valid.`);
 console.log(`  2. Run "node server/dev-sqlite.js" — your plugin loads as defaultEnabled: false.`);
-console.log(`  3. Open /plato/integrations and toggle the plugin on.`);
+console.log(`  3. Open /plato/plugins and toggle the plugin on.`);

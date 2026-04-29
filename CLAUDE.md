@@ -41,7 +41,7 @@ plato is an Open Source, AI-powered [microlearning](https://philosophers.group/p
 
 ## Plugins
 
-plato has a manifest-driven plugin system modeled on VS Code/Vite/WordPress patterns. Plugins live in `plugins/<id>/` and are bundled into the SAM build (no runtime code uploads — Lambda's read-only FS rules that out). The admin UI at `/plato/integrations` lets admins toggle activation and configure plugins.
+plato has a manifest-driven plugin system modeled on VS Code/Vite/WordPress patterns. Plugins live in `plugins/<id>/` and are bundled into the SAM build (no runtime code uploads — Lambda's read-only FS rules that out). The admin UI at `/plato/plugins` lets admins toggle activation and configure plugins.
 
 ```
 plugins/
@@ -159,7 +159,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - No admin lesson preview — admins preview lessons by sharing with themselves and viewing in the classroom
 - Lesson editing: conversation-based via the Lesson Creator agent (no raw markdown editor)
 - Knowledge base: created/edited by admins via the KB Editor agent in the Customizer (not directly editable)
-- Admin nav order: Home, Lessons, Users, Customizer, Integrations
+- Admin nav order: Home, Lessons, Users, Customizer, Plugins
 
 ## Key files
 

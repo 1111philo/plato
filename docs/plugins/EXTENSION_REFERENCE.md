@@ -7,7 +7,7 @@ Flat reference of every plato extension point. One section per surface; no nesti
 ### `adminSettingsPanel`
 
 - **Capability:** `ui.slot.adminSettingsPanel`
-- **Renders inside:** `client/src/pages/admin/AdminIntegrations.jsx` (the Integrations card)
+- **Renders inside:** `client/src/pages/admin/AdminPlugins.jsx` (the plugin card)
 - **Props:** `{ pluginId: string, settings: object, onSave: (next) => Promise<void> }`
 - **When:** the admin expands "Show settings" on the plugin's card
 - **Phase:** 1

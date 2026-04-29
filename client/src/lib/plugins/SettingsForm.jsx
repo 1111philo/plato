@@ -3,7 +3,7 @@
  * (string, number, boolean, enum) and a single level of object nesting. For
  * anything more complex, plugins should provide an `adminSettingsPanel` slot.
  *
- * Used by AdminIntegrations.jsx as a fallback when a plugin declares a
+ * Used by AdminPlugins.jsx as a fallback when a plugin declares a
  * settingsSchema but does not register a custom settingsPanel.
  */
 

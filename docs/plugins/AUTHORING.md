@@ -104,7 +104,7 @@ The `@/components/ui/...` and `@/lib/...` aliases work in plugin code (configure
 node server/dev-sqlite.js
 ```
 
-Plato discovers your plugin and logs `plugin_loaded`. Open `http://localhost:3000/plato/integrations`, find your card, toggle it on, expand settings.
+Plato discovers your plugin and logs `plugin_loaded`. Open `http://localhost:3000/plato/plugins`, find your card, toggle it on, expand settings.
 
 ### 6. Test it
 

@@ -10,7 +10,7 @@ node scripts/validate-plugins.js
 node server/dev-sqlite.js
 ```
 
-Open `/plato/integrations` and toggle the plugin on.
+Open `/plato/plugins` and toggle the plugin on.
 
 ## What plugins can do (Phase 1)
 
@@ -41,6 +41,6 @@ What plugins can NOT do (Phase 1):
 
 ## Distribution
 
-For Phase 1, plugins are distributed by committing them to your fork of plato. There is no upload UI and no marketplace. The admin UI at `/plato/integrations` lets admins enable/disable and configure pre-installed plugins. Phase 2 may add a sandboxed-worker model for runtime-installed plugins.
+For Phase 1, plugins are distributed by committing them to your fork of plato. There is no upload UI and no marketplace. The admin UI at `/plato/plugins` lets admins enable/disable and configure pre-installed plugins. Phase 2 may add a sandboxed-worker model for runtime-installed plugins.
 
 If you build a plugin you'd like upstream, open a PR to `1111philo/plato` adding `plugins/<your-id>/`. Plugins live alongside core but have a lighter review bar than core changes — the only review questions are: "does it validate? does it follow the do-not list? does it have its own tests?".

@@ -151,7 +151,7 @@ export interface ClientPluginExports {
   slots?: Partial<Record<SlotName, ComponentType<SlotProps[SlotName]>>>;
   /** Admin sidebar links (Phase 2). */
   navItems?: { to: string; label: string; component: LazyExoticComponent<ComponentType> }[];
-  /** Custom settings panel. If provided, renders inside the Integrations card. If absent, plato auto-renders a form from settingsSchema. */
+  /** Custom settings panel. If provided, renders inside the plugin card on /plato/plugins. If absent, plato auto-renders a form from settingsSchema. */
   settingsPanel?: ComponentType<SettingsPanelProps>;
 }
 

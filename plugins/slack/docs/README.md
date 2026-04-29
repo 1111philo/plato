@@ -7,7 +7,7 @@ Built-in plato plugin. Adds Slack DM invites for the learner-onboarding flow.
 1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps).
 2. Add OAuth scopes: `users:read`, `users:read.email`, `channels:read`, `groups:read`, `chat:write`, `im:write`.
 3. Install to your workspace, copy the **Bot User OAuth Token** (starts with `xoxb-`).
-4. In plato, go to **Admin → Integrations → Slack**, paste the token, click **Test Connection**, then **Connect**.
+4. In plato, go to **Admin → Plugins → Slack**, paste the token, click **Test Connection**, then **Connect**.
 5. The Invite Users dialog on the Users page now shows a Slack tab.
 
 ## Settings
@@ -28,4 +28,4 @@ Built-in plato plugin. Adds Slack DM invites for the learner-onboarding flow.
 
 ## Disabling
 
-Toggle off in **Admin → Integrations → Slack**. The plugin's routes return 404 while disabled and the row-action button hides on the Users page. Settings are preserved — re-enabling restores the previous bot token.
+Toggle off in **Admin → Plugins → Slack**. The plugin's routes return 404 while disabled and the row-action button hides on the Users page. Settings are preserved — re-enabling restores the previous bot token.

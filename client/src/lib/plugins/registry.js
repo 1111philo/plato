@@ -70,7 +70,7 @@ export function slotComponents(slotName) {
   return out;
 }
 
-/** Settings panel for a single plugin (used by AdminIntegrations). */
+/** Settings panel for a single plugin (used by AdminPlugins). */
 export function settingsPanelFor(id) {
   return resolveSettingsPanel(state.modules.get(id));
 }

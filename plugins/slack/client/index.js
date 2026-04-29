@@ -2,7 +2,7 @@
  * Slack plugin — client side.
  *
  * Registers the SlackSettingsPanel as the `adminSettingsPanel` slot. Plato's
- * <PluginSlot name="adminSettingsPanel"> renders this inside the Integrations card.
+ * <PluginSlot name="adminSettingsPanel"> renders this inside the plugin card on /plato/plugins.
  */
 
 import SlackSettingsPanel from './SlackSettingsPanel.jsx';

@@ -18,7 +18,7 @@ const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
 const AdminLessons = lazy(() => import('./pages/admin/AdminLessons.jsx'));
 const AdminCustomizer = lazy(() => import('./pages/admin/AdminCustomizer.jsx'));
-const AdminIntegrations = lazy(() => import('./pages/admin/AdminIntegrations.jsx'));
+const AdminPlugins = lazy(() => import('./pages/admin/AdminPlugins.jsx'));
 const AdminKBSetup = lazy(() => import('./pages/admin/AdminKBSetup.jsx'));
 
 function RequireAuth({ children }) {
@@ -111,7 +111,9 @@ export default function App() {
           <Route path="customizer" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
           <Route path="customizer/knowledge" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
           <Route path="customizer/knowledge/edit" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="integrations" element={<Suspense fallback={<AdminFallback />}><AdminIntegrations /></Suspense>} />
+          <Route path="plugins" element={<Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense>} />
+          {/* Back-compat redirect from the old /plato/integrations URL */}
+          <Route path="integrations" element={<Navigate to="/plato/plugins" replace />} />
           <Route path="setup-kb" element={<Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense>} />
         </Route>
 

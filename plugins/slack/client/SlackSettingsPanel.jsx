@@ -1,6 +1,6 @@
 /**
  * Slack settings panel — rendered as the `adminSettingsPanel` slot inside the
- * Integrations card on /plato/integrations.
+ * plugin card on /plato/plugins.
  *
  * Props (per the SettingsPanel slot contract):
  *   - pluginId: 'slack'

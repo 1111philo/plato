@@ -31,7 +31,7 @@ Lessons are designed for completion within 11 exchanges (~20 minutes), but the s
 
 The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target. A low rate means the **lesson design** or **coach prompt** probably needs tuning — not that pacing should be enforced more aggressively. Extended lessons (2× target or beyond) are surfaced as informational diagnostics, never as metrics to drive to zero.
 
-Admins manage everything from `/plato`: lessons, users, a classroom customizer (styles + knowledge base), and integrations.
+Admins manage everything from `/plato`: lessons, users, a classroom customizer (styles + knowledge base), and plugins.
 
 ## Reporting issues
 
