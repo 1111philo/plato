@@ -3,11 +3,17 @@ import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
+import { pluginRegistry } from '../lib/plugins/registry.js';
+import { listEvents } from '../lib/plugins/hooks.js';
+import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
+import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
 
 const me = new Hono();
 
 me.use('/v1/me', authenticate);
 me.use('/v1/me/*', authenticate);
+me.use('/v1/plugins', authenticate);
+me.use('/v1/plugins/extension-points', authenticate);
 
 // GET /v1/me — get own profile
 me.get('/v1/me', (c) => {
@@ -127,6 +133,52 @@ me.delete('/v1/me', async (c) => {
   await db.deleteUser(userId);
 
   return c.json({ ok: true, message: 'Account and all associated data have been permanently deleted' });
+});
+
+// GET /v1/plugins — enabled plugins + public-shape settings (not admin-only;
+// the client loader uses this to filter which slots/components to render).
+me.get('/v1/plugins', (c) => {
+  const list = pluginRegistry.list().filter((e) => e.manifest && !e.loadError);
+  return c.json(list.map((e) => {
+    const view = pluginRegistry.publicView(e);
+    // Strip writeOnly settings (e.g. tokens) so non-admin clients can't read them.
+    const sanitized = { ...e.settings };
+    if (e.manifest.settingsSchema?.properties) {
+      for (const [k, schema] of Object.entries(e.manifest.settingsSchema.properties)) {
+        if (schema && schema.writeOnly) delete sanitized[k];
+      }
+    }
+    return { ...view, settings: sanitized };
+  }));
+});
+
+// GET /v1/plugins/extension-points — machine-readable inventory of slots, hooks,
+// capabilities, and the host's API version. Used by AI agents (and tooling) to
+// discover what's possible without grep-ing the codebase. See
+// docs/plugins/AGENTS.md "Decision tree" for the expected agent workflow.
+me.get('/v1/plugins/extension-points', (c) => {
+  return c.json({
+    apiVersion: PLUGIN_API_VERSION,
+    slots: [
+      { name: 'adminSettingsPanel', capability: 'ui.slot.adminSettingsPanel', context: 'admin', props: { pluginId: 'string', settings: 'object', onSave: '(next) => Promise<void>' }, location: 'client/src/pages/admin/AdminIntegrations.jsx' },
+      { name: 'adminUserRowAction', capability: 'ui.slot.adminUserRowAction', context: 'admin', props: { user: 'AdminUser' }, location: 'client/src/pages/admin/AdminUsers.jsx' },
+    ],
+    hooks: {
+      coreEmits: listEvents(),
+      defined: ['userCreated', 'userUpdated', 'profileUpdated', 'lessonStarted', 'lessonCompleted', 'coachExchangeRecorded'],
+      note: 'Phase 1 has no emit-points; the bus is plumbed for Phase 2. Plugins MAY emit/subscribe to arbitrary events using the convention <plugin-id>.<event>.',
+    },
+    capabilities: {
+      static: STATIC_CAPABILITIES,
+      patterns: ['ui.slot.<SlotName>', 'hook.<HookName>'],
+    },
+    docs: {
+      authoring: 'docs/plugins/AUTHORING.md',
+      agents: 'docs/plugins/AGENTS.md',
+      reference: 'docs/plugins/EXTENSION_REFERENCE.md',
+      schema: 'docs/plugins/plugin.schema.json',
+    },
+  });
 });
 
 export default me;

@@ -10,6 +10,8 @@ Built by [11:11 Philosopher's Group](https://github.com/1111philo).
 
 Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source Fund](https://osf.it.uic.edu/), [WordPress](https://wordpress.org/), [Louisiana Tech](https://www.latech.edu/), and the [ULL Louisiana Educate Program](https://louisiana.edu/educate).
 
+> **Looking to extend plato?** plato supports plugins like WordPress: add custom user fields, new admin KPIs, AI agents, lifecycle hooks, and more. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one in seconds, or read the **[plugin authoring guide](docs/plugins/AUTHORING.md)** (and the **[AI-agent guide](docs/plugins/AGENTS.md)** if you're working with Claude Code or similar tools).
+
 ## How it works
 
 plato applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each lesson is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
@@ -98,13 +100,30 @@ Then log in and navigate to `/plato` to see the admin dashboard, or `/lessons` t
 
 ```
 plato/
-  client/    React 19 + Vite SPA (learner and admin UI)
-  server/    Node.js + Hono + AWS Lambda + DynamoDB (API, auth, data, AI proxy)
-  scripts/   Build and deploy tooling
-  docs/      Extended guides (deployment, etc.)
+  client/                React 19 + Vite SPA (learner and admin UI)
+  server/                Node.js + Hono + AWS Lambda + DynamoDB (API, auth, data, AI proxy)
+  plugins/               Built-in and community plugins (e.g. plugins/slack)
+  packages/plugin-sdk/   TypeScript types for plugin authors
+  docs/plugins/          Plugin authoring docs (start at AUTHORING.md or AGENTS.md)
+  scripts/               Build, deploy, and plugin scaffolding tooling
+  docs/                  Extended guides (deployment, etc.)
 ```
 
 For architectural details (AI agents, data model, auth, conventions) see [CLAUDE.md](CLAUDE.md).
+
+## Extending plato
+
+There are two contribution paths and they have different review bars:
+
+**Build a plugin (most common).** Plugins live in `plugins/<id>/` and have a lighter review bar — they sit alongside core, declare what they touch via capabilities, and can't override completion semantics or other core invariants. Scaffold a working plugin with:
+
+```bash
+node scripts/create-plato-plugin.js my-plugin --name "My Plugin"
+```
+
+Then read [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md) (humans) or [docs/plugins/AGENTS.md](docs/plugins/AGENTS.md) (AI agents). The full extension reference is at [docs/plugins/EXTENSION_REFERENCE.md](docs/plugins/EXTENSION_REFERENCE.md). Plugins can add admin pages, custom settings UI, server routes, lifecycle hooks, and more.
+
+**Contribute to plato core.** Anything outside `plugins/` is core — coach, lessons, KPIs, agents, the plugin host itself. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and review process; [CLAUDE.md](CLAUDE.md) for architecture context. Core changes require more review than plugin changes because they affect every plato deployment, including the public plugin contract.
 
 ## Deployment
 
@@ -116,7 +135,7 @@ plato is designed to be fully usable with screen readers (VoiceOver, NVDA, JAWS)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, conventions, and how to submit changes. The `main` branch is protected — all changes require a pull request.
+Plugins live in `plugins/` and have a lighter review bar — see [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md). Core changes (anything outside `plugins/`) follow [CONTRIBUTING.md](CONTRIBUTING.md). The `main` branch is protected — all changes require a pull request.
 
 ## License
 

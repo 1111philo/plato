@@ -1,0 +1,10 @@
+{
+  "name": "@plato/plugin-sdk",
+  "version": "1.0.0",
+  "description": "TypeScript types for plato plugin authors. No runtime — types only.",
+  "types": "index.d.ts",
+  "type": "module",
+  "files": ["index.d.ts"],
+  "license": "AGPL-3.0-or-later",
+  "private": true
+}

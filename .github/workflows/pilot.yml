@@ -120,6 +120,7 @@ jobs:
             - **Lessons never have hard stops.** plato's coaching philosophy is "move people, not force people." Do NOT introduce any change that cuts a learner off mid-lesson, auto-completes a lesson based on exchange count, or tells the coach to award progress 10 regardless of what the learner has demonstrated.
             - **Over-target completions are a design signal, not a bug.** Low on-target rate means the lesson design or coach prompt may need tuning. NEVER fix it by tightening pacing directives into forced closures. If tempted to touch `pacingDirective` strings or `MAX_EXCHANGES`-based completion in `client/src/lib/lessonEngine.js`, stop and pick a different signal.
             - The `extendedLessons` KPI is informational. Do not treat it as a metric to drive to zero.
+            - **Never claim `extension-point-request` issues.** Issues labeled `extension-point` change the public plugin contract and require maintainer judgment. SKIP them — even if they look small. (See `docs/plugins/CAPABILITIES.md` for the bar new extension points must clear.)
 
             ## Step 3: Implement (≤15 turns)
             - BEFORE editing any file, create a working branch:

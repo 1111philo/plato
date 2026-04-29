@@ -1,160 +1,186 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, createElement } from 'react';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { initPluginRegistry, settingsPanelFor, refreshActivation } from '@/lib/plugins/registry.js';
+import SettingsForm from '@/lib/plugins/SettingsForm.jsx';
+
+/**
+ * Integrations page — generic plugin list. One card per installed plugin.
+ *
+ * Each card shows:
+ *   - Name, version, capability chips, "Built-in" badge if applicable
+ *   - Enable/disable toggle
+ *   - Settings panel: either the plugin's own `adminSettingsPanel` slot, or
+ *     SettingsForm auto-rendered from the manifest's settingsSchema, or nothing
+ *     when the plugin has no settings.
+ */
 
 export default function AdminIntegrations() {
-  const [slackToken, setSlackToken] = useState('');
-  const [slackConnected, setSlackConnected] = useState(false);
-  const [slackWorkspace, setSlackWorkspace] = useState('');
-  const [slackTesting, setSlackTesting] = useState(false);
-  const [slackSaving, setSlackSaving] = useState(false);
-  const [slackMessage, setSlackMessage] = useState(null);
+  const [plugins, setPlugins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [registryReady, setRegistryReady] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const list = await adminApi('GET', '/v1/admin/plugins');
+      setPlugins(Array.isArray(list) ? list : []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     document.title = 'Integrations — plato';
-    loadSettings();
-  }, []);
+    load();
+    initPluginRegistry().then(() => setRegistryReady(true));
+  }, [load]);
 
-  async function loadSettings() {
-    setLoading(true);
+  async function toggle(pluginId, enabled) {
     try {
-      const data = await adminApi('GET', '/v1/admin/settings');
-      const slack = data.slack || {};
-      if (slack.connected && slack.workspaceName) {
-        setSlackConnected(true);
-        setSlackWorkspace(slack.workspaceName);
-      }
-    } catch { /* ignore */ }
-    setLoading(false);
-  }
-
-  async function testSlackConnection() {
-    if (!slackToken.trim()) return;
-    setSlackTesting(true);
-    setSlackMessage(null);
-    try {
-      const data = await adminApi('POST', '/v1/admin/slack/test', { botToken: slackToken.trim() });
-      if (data.ok) {
-        setSlackWorkspace(data.team);
-        setSlackMessage({ text: `Connected to ${data.team}`, type: 'success' });
-      } else {
-        setSlackMessage({ text: 'Connection failed', type: 'error' });
-      }
+      await adminApi('PUT', `/v1/admin/plugins/${pluginId}/activation`, { enabled });
+      await refreshActivation();
+      await load();
     } catch (e) {
-      setSlackMessage({ text: e.message, type: 'error' });
-    } finally {
-      setSlackTesting(false);
+      setError(e.message);
     }
   }
 
-  async function saveSlackIntegration() {
-    if (!slackWorkspace) {
-      setSlackMessage({ text: 'Test the connection first', type: 'error' });
-      return;
-    }
-    setSlackSaving(true);
-    setSlackMessage(null);
-    try {
-      await adminApi('PUT', '/v1/admin/settings', {
-        slack: { botToken: slackToken.trim(), workspaceName: slackWorkspace, connected: true },
-      });
-      setSlackConnected(true);
-      setSlackMessage({ text: 'Slack integration saved.', type: 'success' });
-    } catch (e) {
-      setSlackMessage({ text: e.message, type: 'error' });
-    } finally {
-      setSlackSaving(false);
-    }
+  async function saveSettings(pluginId, next) {
+    await adminApi('PUT', `/v1/admin/plugins/${pluginId}/settings`, next);
+    await refreshActivation();
+    await load();
   }
 
-  async function disconnectSlack() {
-    setSlackSaving(true);
-    try {
-      await adminApi('PUT', '/v1/admin/settings', {
-        slack: { botToken: null, workspaceName: null, connected: false },
-      });
-      setSlackConnected(false);
-      setSlackWorkspace('');
-      setSlackToken('');
-      setSlackMessage({ text: 'Slack disconnected.', type: 'success' });
-    } catch (e) {
-      setSlackMessage({ text: e.message, type: 'error' });
-    } finally {
-      setSlackSaving(false);
-    }
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">
+        Loading…
+      </div>
+    );
   }
 
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
+  if (error) {
+    return (
+      <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Integrations</h1>
-      <p className="text-sm text-muted-foreground mb-4">Connect external services to extend plato&apos;s functionality.</p>
+      <h1 className="text-2xl font-bold mb-2">Integrations</h1>
+      <p className="text-sm text-muted-foreground mb-6">
+        Connect external services and extend plato. Each plugin declares the capabilities it uses
+        — disabled plugins consume zero runtime surface. New to plugins?{' '}
+        <a href="https://github.com/1111philo/plato/blob/main/docs/plugins/AUTHORING.md" target="_blank" rel="noopener noreferrer" className="underline">
+          Build your own.
+        </a>
+      </p>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
-            </svg>
-            Slack
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {slackConnected ? (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm">Connected to <strong>{slackWorkspace}</strong></span>
+      {plugins.length === 0 && (
+        <p className="text-sm text-muted-foreground">No plugins installed.</p>
+      )}
+
+      <div className="space-y-4">
+        {plugins.map((plugin) => (
+          <PluginCard
+            key={plugin.id}
+            plugin={plugin}
+            registryReady={registryReady}
+            onToggle={(enabled) => toggle(plugin.id, enabled)}
+            onSaveSettings={(next) => saveSettings(plugin.id, next)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PluginCard({ plugin, registryReady, onToggle, onSaveSettings }) {
+  const [expanded, setExpanded] = useState(false);
+  const customPanel = registryReady ? settingsPanelFor(plugin.id) : null;
+  const hasSettingsSurface = !!customPanel || !!plugin.settingsSchema;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2">
+              <span>{plugin.name}</span>
+              <span className="text-xs font-normal text-muted-foreground">v{plugin.version}</span>
+              {plugin.builtIn && <Badge variant="secondary">Built-in</Badge>}
+              {plugin.loadError && <Badge variant="destructive">Load error</Badge>}
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">{plugin.description}</p>
+            {Array.isArray(plugin.capabilities) && plugin.capabilities.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {plugin.capabilities.map((cap) => (
+                  <Badge key={cap} variant="outline" className="text-xs">{cap}</Badge>
+                ))}
               </div>
-              <p className="text-sm text-muted-foreground">
-                Slack invites are available in the Invite Users dialog on the Users page.
-              </p>
-              <Button variant="outline" onClick={disconnectSlack} disabled={slackSaving}>
-                {slackSaving ? 'Disconnecting...' : 'Disconnect'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">
-                Connect your Slack workspace to invite users via DM. Create a Slack app at{' '}
-                <a href="https://api.slack.com/apps" target="_blank" rel="noopener noreferrer" className="underline">api.slack.com/apps</a>,
-                install it to your workspace, and paste the Bot User OAuth Token below.
-              </p>
-              <div className="space-y-2">
-                <Label htmlFor="slack-token">Bot User OAuth Token</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="slack-token"
-                    type="password"
-                    placeholder="xoxb-..."
-                    value={slackToken}
-                    onChange={e => setSlackToken(e.target.value)}
-                    className="flex-1 font-mono"
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!plugin.enabled}
+                onChange={(e) => onToggle(e.target.checked)}
+                aria-label={`${plugin.enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
+                disabled={!!plugin.loadError}
+              />
+              <span>{plugin.enabled ? 'Enabled' : 'Disabled'}</span>
+            </label>
+          </div>
+        </div>
+      </CardHeader>
+      {plugin.enabled && hasSettingsSurface && (
+        <CardContent>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="mb-3"
+          >
+            {expanded ? 'Hide settings' : 'Show settings'}
+          </Button>
+          {expanded && (
+            <div className="border-t pt-4">
+              {customPanel
+                ? createElement(customPanel, {
+                    pluginId: plugin.id,
+                    settings: plugin.settings || {},
+                    onSave: onSaveSettings,
+                  })
+                : (
+                  <SettingsForm
+                    pluginId={plugin.id}
+                    schema={plugin.settingsSchema}
+                    settings={plugin.settings || {}}
+                    onSave={onSaveSettings}
                   />
-                  <Button variant="outline" onClick={testSlackConnection} disabled={slackTesting || !slackToken.trim()}>
-                    {slackTesting ? 'Testing...' : 'Test Connection'}
-                  </Button>
-                </div>
-              </div>
-              {slackWorkspace && !slackConnected && (
-                <Button onClick={saveSlackIntegration} disabled={slackSaving}>
-                  {slackSaving ? 'Saving...' : `Connect to ${slackWorkspace}`}
-                </Button>
-              )}
-            </>
-          )}
-          {slackMessage && (
-            <span role="status" aria-live="polite" className={`text-sm ${slackMessage.type === 'error' ? 'text-destructive' : 'text-green-700'}`}>
-              {slackMessage.text}
-            </span>
+                )}
+            </div>
           )}
         </CardContent>
-      </Card>
-    </div>
+      )}
+      {plugin.loadError && (
+        <CardContent>
+          <p role="alert" className="text-sm text-destructive">
+            <strong>Failed to load:</strong> {plugin.loadError}
+          </p>
+        </CardContent>
+      )}
+    </Card>
   );
 }

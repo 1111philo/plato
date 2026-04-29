@@ -39,6 +39,7 @@ const { generateUserId } = await import('./src/lib/crypto.js');
 const { hashPassword } = await import('./src/lib/password.js');
 const { ADMIN_EMAIL, ADMIN_PASSWORD } = await import('./src/config.js');
 const { seedDefaultContent } = await import('./src/lib/seed.js');
+const { pluginRegistry } = await import('./src/lib/plugins/registry.js');
 
 const server = new Hono();
 
@@ -84,6 +85,47 @@ server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
 server.route('/', content);
+// `app` (SPA fallback `app.get('*')`) is mounted LAST — see plugin catch-all below.
+
+// Plugin registry: discover and activate plugins. Same catch-all pattern as
+// server/src/index.js (Lambda) — Hono can't accept routes registered mid-request,
+// so we register a single catch-all that dispatches via the registry.
+try {
+  await pluginRegistry.boot();
+  for (const entry of pluginRegistry.list()) {
+    if (!entry.manifest) continue;
+    console.log(`Plugin loaded: ${entry.manifest.id} (${entry.enabled ? 'enabled' : 'disabled'}${entry.loadError ? `, loadError: ${entry.loadError}` : ''})`);
+  }
+} catch (err) {
+  console.error('Plugin boot failed:', err.message);
+}
+
+// Plugin catch-all. Registered BEFORE `app` because app.js has a global SPA-fallback
+// `app.get('*')` that would otherwise swallow plugin GETs and return notFound.
+server.all('/v1/plugins/:pluginId/*', async (c) => {
+  const pluginId = c.req.param('pluginId');
+  const entry = pluginRegistry.get(pluginId);
+  if (!entry) return c.json({ error: 'Plugin not installed' }, 404);
+  if (!entry.enabled) return c.json({ error: 'Plugin disabled' }, 404);
+  if (!entry.serverModule?.routes) return c.json({ error: 'Plugin has no server routes' }, 404);
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.replace(`/v1/plugins/${pluginId}`, '') || '/';
+  return entry.serverModule.routes.fetch(new Request(url.toString(), c.req.raw));
+});
+
+// Backwards-compat shim for legacy Slack endpoints (/v1/admin/slack/* -> Slack plugin).
+// Drop in the next major release.
+server.all('/v1/admin/slack/*', async (c) => {
+  const entry = pluginRegistry.get('slack');
+  if (!entry?.enabled || !entry.serverModule?.routes) {
+    return c.json({ error: 'Slack integration not available' }, 404);
+  }
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.replace('/v1/admin/slack', '/admin');
+  return entry.serverModule.routes.fetch(new Request(url.toString(), c.req.raw));
+});
+
+// SPA fallback last.
 server.route('/', app);
 
 server.notFound((c) => c.json({ error: 'Not found' }, 404));

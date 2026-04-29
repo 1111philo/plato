@@ -4,7 +4,7 @@
   "description": "API server for plato",
   "type": "module",
   "scripts": {
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test $(find tests -name '*.test.js' | sort)",
     "lint": "eslint .",
     "dev": "node dev.js",
     "dev:sqlite": "node dev-sqlite.js",

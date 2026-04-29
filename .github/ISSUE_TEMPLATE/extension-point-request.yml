@@ -1,0 +1,60 @@
+name: Extension-point request
+description: Request a new plugin extension point (slot, hook, capability) when an existing one doesn't fit.
+title: "[extension-point] "
+labels: ["extension-point"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when you're building a plato plugin and need an extension point that doesn't exist yet — e.g. a new UI slot, a new lifecycle hook, or a new capability.
+
+        **Before opening this:** check whether existing extension points can be composed creatively. See `docs/plugins/AGENTS.md` step 2 for compositions that often replace "I need a new X" requests.
+
+        Extension points alter the public plugin contract, so the pilot agent does NOT auto-claim these. A maintainer triages and decides; the bar is "one real plugin must use it."
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: What plugin needs this?
+      description: Link to your plugin (in this repo or elsewhere) and describe the user-facing feature it's trying to add.
+      placeholder: |
+        Plugin: github.com/example/plato-attendance
+        Feature: track per-lesson attendance and surface it on the admin dashboard.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed extension point
+      description: |
+        Be specific:
+          - Slot: name + props + where the host should render it (file path)
+          - Hook: name + payload + where the host should emit it (file:line)
+          - Capability: name + what it grants
+      placeholder: |
+        Slot: `lessonReplayBanner`
+        Props: { lessonId, lessonKB }
+        Renders inside: client/src/pages/LessonChat.jsx, above the chat log
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try first?
+      description: Which existing extension points or compositions did you consider, and why didn't they fit?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I read `docs/plugins/AGENTS.md` and `docs/plugins/EXTENSION_REFERENCE.md`.
+          required: true
+        - label: I tried composing existing slots/hooks before opening this.
+          required: true
+        - label: I have a real plugin that needs this (not a speculative request).
+          required: true
