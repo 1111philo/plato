@@ -314,6 +314,23 @@ export const pluginRegistry = {
     };
   },
 
+  /**
+   * Strip settings fields marked `writeOnly: true` in the manifest's settingsSchema.
+   * Used by every endpoint that returns plugin settings (admin and non-admin) so
+   * secrets like Slack's bot token never leak in HTTP responses. The plugin author
+   * declares the secret with `writeOnly: true`; the host enforces stripping here.
+   */
+  sanitizeSettings(entry) {
+    const settings = { ...(entry?.settings || {}) };
+    const props = entry?.manifest?.settingsSchema?.properties;
+    if (props) {
+      for (const [k, schema] of Object.entries(props)) {
+        if (schema && schema.writeOnly) delete settings[k];
+      }
+    }
+    return settings;
+  },
+
   /** Test-only: clear state. Does NOT touch DB. */
   _reset() {
     state.pluginsDir = null;

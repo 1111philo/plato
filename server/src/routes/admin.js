@@ -561,20 +561,28 @@ admin.put('/v1/admin/theme', async (c) => {
 // ── Plugin admin endpoints ──
 
 // GET /v1/admin/plugins — list all known plugins, including disabled and load-failed.
+// writeOnly settings (e.g. Slack's bot token) are stripped from responses; the host
+// is the source of truth for those values, the client never needs them back.
 admin.get('/v1/admin/plugins', (c) => {
   return c.json(pluginRegistry.list().map((e) => {
     const view = pluginRegistry.publicView(e);
-    return { ...view, settings: e.settings || {} };
+    return { ...view, settings: pluginRegistry.sanitizeSettings(e) };
   }));
 });
 
 // PUT /v1/admin/plugins/:id/activation — enable/disable a plugin.
 admin.put('/v1/admin/plugins/:id/activation', async (c) => {
   const id = c.req.param('id');
-  const { enabled } = await c.req.json();
-  if (typeof enabled !== 'boolean') {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required' }, 400);
+  }
+  if (typeof body?.enabled !== 'boolean') {
     return c.json({ error: 'enabled (boolean) is required' }, 400);
   }
+  const { enabled } = body;
   try {
     const entry = await pluginRegistry.setEnabled(id, enabled);
     return c.json(pluginRegistry.publicView(entry));
@@ -586,13 +594,18 @@ admin.put('/v1/admin/plugins/:id/activation', async (c) => {
 // PUT /v1/admin/plugins/:id/settings — update plugin settings.
 admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json();
-  if (!body || typeof body !== 'object') {
+  let body;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return c.json({ error: 'settings object required' }, 400);
   }
   try {
     const entry = await pluginRegistry.updateSettings(id, body);
-    return c.json({ ...pluginRegistry.publicView(entry), settings: entry.settings });
+    return c.json({ ...pluginRegistry.publicView(entry), settings: pluginRegistry.sanitizeSettings(entry) });
   } catch (err) {
     return c.json({ error: err.message }, 400);
   }

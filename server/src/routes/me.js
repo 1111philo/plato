@@ -135,21 +135,15 @@ me.delete('/v1/me', async (c) => {
   return c.json({ ok: true, message: 'Account and all associated data have been permanently deleted' });
 });
 
-// GET /v1/plugins — enabled plugins + public-shape settings (not admin-only;
-// the client loader uses this to filter which slots/components to render).
+// GET /v1/plugins — enabled plugins + sanitized settings (writeOnly fields
+// stripped). Not admin-only; the client loader uses this to filter which slots
+// render.
 me.get('/v1/plugins', (c) => {
   const list = pluginRegistry.list().filter((e) => e.manifest && !e.loadError);
-  return c.json(list.map((e) => {
-    const view = pluginRegistry.publicView(e);
-    // Strip writeOnly settings (e.g. tokens) so non-admin clients can't read them.
-    const sanitized = { ...e.settings };
-    if (e.manifest.settingsSchema?.properties) {
-      for (const [k, schema] of Object.entries(e.manifest.settingsSchema.properties)) {
-        if (schema && schema.writeOnly) delete sanitized[k];
-      }
-    }
-    return { ...view, settings: sanitized };
-  }));
+  return c.json(list.map((e) => ({
+    ...pluginRegistry.publicView(e),
+    settings: pluginRegistry.sanitizeSettings(e),
+  })));
 });
 
 // GET /v1/plugins/extension-points — machine-readable inventory of slots, hooks,

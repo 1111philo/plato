@@ -40,6 +40,7 @@ const { hashPassword } = await import('./src/lib/password.js');
 const { ADMIN_EMAIL, ADMIN_PASSWORD } = await import('./src/config.js');
 const { seedDefaultContent } = await import('./src/lib/seed.js');
 const { pluginRegistry } = await import('./src/lib/plugins/registry.js');
+const { makePluginDispatcher, makeSlackLegacyShim } = await import('./src/lib/plugins/dispatcher.js');
 
 const server = new Hono();
 
@@ -100,30 +101,10 @@ try {
   console.error('Plugin boot failed:', err.message);
 }
 
-// Plugin catch-all. Registered BEFORE `app` because app.js has a global SPA-fallback
-// `app.get('*')` that would otherwise swallow plugin GETs and return notFound.
-server.all('/v1/plugins/:pluginId/*', async (c) => {
-  const pluginId = c.req.param('pluginId');
-  const entry = pluginRegistry.get(pluginId);
-  if (!entry) return c.json({ error: 'Plugin not installed' }, 404);
-  if (!entry.enabled) return c.json({ error: 'Plugin disabled' }, 404);
-  if (!entry.serverModule?.routes) return c.json({ error: 'Plugin has no server routes' }, 404);
-  const url = new URL(c.req.url);
-  url.pathname = url.pathname.replace(`/v1/plugins/${pluginId}`, '') || '/';
-  return entry.serverModule.routes.fetch(new Request(url.toString(), c.req.raw));
-});
-
-// Backwards-compat shim for legacy Slack endpoints (/v1/admin/slack/* -> Slack plugin).
-// Drop in the next major release.
-server.all('/v1/admin/slack/*', async (c) => {
-  const entry = pluginRegistry.get('slack');
-  if (!entry?.enabled || !entry.serverModule?.routes) {
-    return c.json({ error: 'Slack integration not available' }, 404);
-  }
-  const url = new URL(c.req.url);
-  url.pathname = url.pathname.replace('/v1/admin/slack', '/admin');
-  return entry.serverModule.routes.fetch(new Request(url.toString(), c.req.raw));
-});
+// Plugin catch-all + legacy shim. Registered BEFORE `app` because app.js has a
+// global SPA fallback (`app.get('*')`) that would otherwise swallow plugin GETs.
+server.all('/v1/plugins/:pluginId/*', makePluginDispatcher(pluginRegistry));
+server.all('/v1/admin/slack/*', makeSlackLegacyShim(pluginRegistry));
 
 // SPA fallback last.
 server.route('/', app);
