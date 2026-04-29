@@ -210,6 +210,7 @@ export default function LessonChat() {
 
         const freshKB = await getLessonKB(lessonGroupId);
         setLessonKB(freshKB);
+        setLinkNotice('');
       } catch (e) {
         setError(e.message || 'Failed to send.');
         setLinkNotice('');
