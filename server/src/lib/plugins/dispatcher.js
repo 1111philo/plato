@@ -19,10 +19,18 @@
  * Catch-all handler for `/v1/plugins/:pluginId/*`. Strips the prefix, dispatches
  * to the plugin's own Hono router via fetch(). The plugin's router applies its
  * own auth middleware.
+ *
+ * Calls `registry.refreshActivation` first so a Lambda container that booted
+ * before an enable/disable toggle picks up the persisted state instead of
+ * returning a stale "Plugin disabled" 404. `refreshActivation` is a no-op when
+ * the registry shim doesn't expose it (older test fakes).
  */
 export function makePluginDispatcher(registry) {
   return async (c) => {
     const pluginId = c.req.param('pluginId');
+    if (typeof registry.refreshActivation === 'function') {
+      await registry.refreshActivation(pluginId);
+    }
     const entry = registry.get(pluginId);
     if (!entry) return c.json({ error: 'Plugin not installed' }, 404);
     if (!entry.enabled) return c.json({ error: 'Plugin disabled' }, 404);
@@ -41,6 +49,9 @@ export function makePluginDispatcher(registry) {
  */
 export function makeSlackLegacyShim(registry) {
   return async (c) => {
+    if (typeof registry.refreshActivation === 'function') {
+      await registry.refreshActivation('slack');
+    }
     const entry = registry.get('slack');
     if (!entry?.enabled || !entry.serverModule?.routes) {
       return c.json({ error: 'Slack integration not available' }, 404);

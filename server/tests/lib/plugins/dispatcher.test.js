@@ -91,6 +91,43 @@ describe('makePluginDispatcher (catch-all)', () => {
     // Inner router has no /admin/missing-route → Hono's default 404
     assert.equal(res.status, 404);
   });
+
+  it('calls refreshActivation before reading enabled (stale disabled → enabled flips)', async () => {
+    // Simulates the cross-Lambda staleness bug: this container booted with
+    // enabled=false; the admin enabled the plugin from another container, so
+    // refreshActivation flips this entry to enabled before the dispatcher
+    // makes its decision.
+    const routes = buildSlackLikeRouter();
+    const entry = {
+      manifest: { id: 'slack' },
+      enabled: false,
+      serverModule: { routes },
+    };
+    let refreshed = 0;
+    const reg = {
+      get: () => entry,
+      refreshActivation: async (id) => {
+        refreshed++;
+        if (id === 'slack') entry.enabled = true;
+      },
+    };
+    const app = appWith(makePluginDispatcher(reg));
+    const res = await app.request('/v1/plugins/slack/admin/users?q=alice');
+    assert.equal(refreshed, 1, 'refreshActivation should be called exactly once');
+    assert.equal(res.status, 200, 'request should succeed after the flip');
+  });
+
+  it('still returns "disabled" when refreshActivation confirms disabled', async () => {
+    const reg = {
+      get: () => ({ manifest: { id: 'slack' }, enabled: false, serverModule: { routes: buildSlackLikeRouter() } }),
+      refreshActivation: async () => { /* no-op: DB also says disabled */ },
+    };
+    const app = appWith(makePluginDispatcher(reg));
+    const res = await app.request('/v1/plugins/slack/admin/test');
+    assert.equal(res.status, 404);
+    const data = await res.json();
+    assert.match(data.error, /disabled/);
+  });
 });
 
 describe('makeSlackLegacyShim', () => {

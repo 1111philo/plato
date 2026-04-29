@@ -256,6 +256,60 @@ export const pluginRegistry = {
     return [...state.entries.values()];
   },
 
+  /**
+   * Re-read the activation record from DynamoDB and reconcile this container's
+   * in-memory entry with it. Fixes the cross-Lambda staleness where Container A
+   * handled the admin's enable-toggle (updating its own state + DB) while
+   * Container B — booted before the toggle — kept serving requests with
+   * `enabled: false` and returning "Plugin disabled" 404s from the dispatcher.
+   *
+   * Called by the dispatcher on every plugin route hit. Cheap (one GetItem)
+   * and plato's plugin traffic is low. If a flip is detected, hooks are
+   * (re)subscribed and onActivate/onDeactivate runs — same pattern as boot,
+   * which the contract already requires plugins to tolerate (lifecycle.js).
+   *
+   * No-op when there's no entry, the plugin failed to load, or the DB read
+   * fails — failures here must not knock the dispatcher offline.
+   */
+  async refreshActivation(id) {
+    const entry = state.entries.get(id);
+    if (!entry || !entry.manifest || entry.loadError) return entry;
+
+    let activation;
+    try {
+      activation = await readActivation();
+    } catch (err) {
+      logger.error('plugin_activation_refresh_failed', { pluginId: id, error: err?.message });
+      return entry;
+    }
+
+    const persisted = activation.record[id] || {};
+    const hasStoredState = id in activation.record;
+    const desiredEnabled = typeof persisted.enabled === 'boolean'
+      ? persisted.enabled
+      : Boolean(entry.manifest.defaultEnabled);
+    const desiredSettings = (persisted.settings && typeof persisted.settings === 'object')
+      ? persisted.settings
+      : {};
+
+    entry.settings = desiredSettings;
+    entry.hasStoredState = hasStoredState;
+
+    if (desiredEnabled === entry.enabled) return entry;
+
+    entry.enabled = desiredEnabled;
+    if (desiredEnabled) {
+      entry.hookUnsubs = subscribeHooks(id, entry.serverModule);
+      await invokeOnActivate(entry.serverModule, buildContext(id, entry.settings));
+    } else {
+      for (const unsub of entry.hookUnsubs) { try { unsub(); } catch { /* noop */ } }
+      entry.hookUnsubs = [];
+      await invokeOnDeactivate(entry.serverModule, buildContext(id, entry.settings));
+    }
+    logger.warn('plugin_activation_refreshed', { pluginId: id, enabled: desiredEnabled });
+    return entry;
+  },
+
   /** Toggle activation. Persists to sync-data and runs onActivate/onDeactivate. */
   async setEnabled(id, enabled) {
     const entry = state.entries.get(id);
@@ -264,8 +318,14 @@ export const pluginRegistry = {
     if (entry.enabled === enabled) return entry;
 
     const { record, version } = await readActivation();
-    record[id] = { ...(record[id] || {}), enabled, settings: entry.settings };
+    // Prefer freshly-read settings over local entry.settings — another Lambda
+    // container may have just updated settings and our in-memory copy is stale.
+    const persistedSettings = (record[id]?.settings && typeof record[id].settings === 'object')
+      ? record[id].settings
+      : entry.settings;
+    record[id] = { enabled, settings: persistedSettings };
     await writeActivation(record, version);
+    entry.settings = persistedSettings;
 
     entry.enabled = enabled;
     entry.hasStoredState = true;
@@ -318,9 +378,17 @@ export const pluginRegistry = {
       throw new Error('settings must be an object');
     }
     const { record, version } = await readActivation();
-    record[id] = { ...(record[id] || {}), enabled: entry.enabled, settings: nextSettings };
+    // Prefer the persisted enabled state over local entry.enabled — another
+    // Lambda container may have just toggled activation and this container's
+    // in-memory copy is stale. Without this guard, a settings save from a
+    // stale container would clobber a fresh enable back to disabled.
+    const persistedEnabled = typeof record[id]?.enabled === 'boolean'
+      ? record[id].enabled
+      : entry.enabled;
+    record[id] = { enabled: persistedEnabled, settings: nextSettings };
     await writeActivation(record, version);
     entry.settings = nextSettings;
+    entry.enabled = persistedEnabled;
     entry.hasStoredState = true;
     return entry;
   },
@@ -374,6 +442,12 @@ export const pluginRegistry = {
     state.pluginsDir = null;
     state.entries.clear();
     state.booted = false;
+  },
+
+  /** Test-only: inject a fully-formed entry. Does NOT touch DB. */
+  _setEntry(id, entry) {
+    state.entries.set(id, entry);
+    state.booted = true;
   },
 };
 

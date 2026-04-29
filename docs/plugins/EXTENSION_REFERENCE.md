@@ -62,16 +62,22 @@ not pub-sub events.
 ### `onActivate(ctx)`
 
 Runs once when admin enables the plugin AND once at boot if the plugin is
-already enabled. Idempotent. Use for migrations, cache warmup, seeding. Don't
-run heavy work here — it's synchronous in the boot path.
+already enabled. May also run on a warm Lambda container the first time it
+notices another container flipped the plugin on (the dispatcher reconciles
+in-memory state with the persisted activation record before each plugin
+request). Treat it as effectively idempotent — use for migrations, cache
+warmup, seeding. Don't run heavy work here — it's synchronous in the request
+path.
 
 Errors are caught and logged as `plugin_on_activate_failed`; the plugin
 continues to run.
 
 ### `onDeactivate(ctx)`
 
-Runs when admin disables the plugin. Should release resources, NOT delete
-user data. Settings are preserved across disable/enable cycles.
+Runs when admin disables the plugin. May also run on a warm Lambda container
+the first time it notices another container flipped the plugin off, so this
+must also be idempotent. Should release resources, NOT delete user data.
+Settings are preserved across disable/enable cycles.
 
 Errors are caught and logged as `plugin_on_deactivate_failed`.
 
