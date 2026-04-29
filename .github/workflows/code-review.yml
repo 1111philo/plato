@@ -7,18 +7,17 @@ on:
       - '**.md'
       - 'docs/**'
       - '.github/dependabot.yml'
-  issue_comment:
-    types: [created]
+  # NOTE: no `issue_comment` trigger. `@claude` mentions on PRs are handled by
+  # the hosted Claude GitHub App (Max-plan-included, no Anthropic API spend),
+  # while this workflow remains the canonical reviewer on every commit using
+  # the project-specific prompt below. To rerun on demand without a new commit:
+  #   gh workflow run code-review.yml --ref <branch>
 
 jobs:
   review:
     # Skip dependabot PRs entirely — they're mechanical bumps already gated by
-    # the Lint job and don't need an AI review. Manual `@claude` mentions still
-    # work via the issue_comment branch if anyone wants a second look.
-    if: |
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.user.login != 'dependabot[bot]') ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
+    # the Lint job and don't need an AI review.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +30,6 @@ jobs:
           fetch-depth: 0
       - name: Skip if a claude review already exists for this commit
         id: guard
-        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -53,7 +51,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         if: steps.guard.outputs.skip != 'true'
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         with:
           # OAuth-only was attempted in PR #93; the Max OAuth token hit 401
           # "Invalid bearer token" on its first real use (PR #94). Restored the
@@ -135,7 +133,7 @@ jobs:
 
             Be direct. Short is better than thorough.
       - name: Verify claude[bot] review was posted
-        if: steps.guard.outputs.skip != 'true' && github.event_name == 'pull_request'
+        if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -147,7 +145,7 @@ jobs:
           COUNT=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
             --jq "[.[] | select(.user.login==\"claude[bot]\") | select(.commit_id==\"$HEAD_SHA\")] | length")
           if [ "${COUNT:-0}" -eq 0 ]; then
-            echo "::error::No claude[bot] review posted for $HEAD_SHA. Re-run the workflow or comment @claude on the PR."
+            echo "::error::No claude[bot] review posted for $HEAD_SHA. Re-run the workflow with: gh workflow run code-review.yml --ref <branch>"
             exit 1
           fi
           echo "claude[bot] review exists for $HEAD_SHA"
