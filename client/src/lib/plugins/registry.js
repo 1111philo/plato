@@ -8,6 +8,7 @@
 
 import { authenticatedFetch } from '../../../js/auth.js';
 import { discoverPlugins } from './loader.js';
+import { resolveSlotComponent, resolveSettingsPanel } from './resolvers.js';
 
 const state = {
   manifests: new Map(),     // id -> manifest (from bundle)
@@ -63,8 +64,7 @@ export async function refreshActivation() {
 export function slotComponents(slotName) {
   const out = [];
   for (const [id] of state.enabled) {
-    const mod = state.modules.get(id);
-    const Component = mod?.default?.slots?.[slotName] || mod?.slots?.[slotName];
+    const Component = resolveSlotComponent(state.modules.get(id), slotName);
     if (Component) out.push({ pluginId: id, Component });
   }
   return out;
@@ -72,8 +72,7 @@ export function slotComponents(slotName) {
 
 /** Settings panel for a single plugin (used by AdminIntegrations). */
 export function settingsPanelFor(id) {
-  const mod = state.modules.get(id);
-  return mod?.default?.settingsPanel || mod?.settingsPanel || null;
+  return resolveSettingsPanel(state.modules.get(id));
 }
 
 export { loadOnce as initPluginRegistry };
