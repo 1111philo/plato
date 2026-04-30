@@ -43,7 +43,7 @@ to confirm). The host clears the activation/settings entry afterwards.
 
 ## Don't
 
-- Don't import core modules outside the SDK (`server/src/lib/plugins/sdk.js`)
+- Don't import core modules outside the SDK (`src/lib/plugins/sdk.js`)
   unless you've added a re-export there first.
 - Don't allow comments to be edited in place — append + delete keeps the
   audit story clean.

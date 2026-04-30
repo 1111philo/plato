@@ -16,7 +16,7 @@ import {
   requireAdmin,
   generateInviteToken,
   APP_URL,
-} from '../../../server/src/lib/plugins/sdk.js';
+} from '../../../src/lib/plugins/sdk.js';
 import {
   testSlackConnection,
   searchSlackUsers,

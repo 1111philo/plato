@@ -39,7 +39,7 @@ Read `plugins/slack/server/index.js` and `plugins/slack/client/SlackSettingsPane
 
 Key patterns to copy:
 
-- **SDK imports**: `import { Hono, db, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js'`
+- **SDK imports**: `import { Hono, db, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js'`
 - **Settings access**: `ctx.settings` in lifecycle, or read from `_system:plugins:activation` for arbitrary lookups
 - **Plugin-scoped logs**: `ctx.logger.info('event_name', { ...meta })`
 - **Migration on activate**: use `ctx.setSettings()` to persist new settings, idempotently
@@ -95,7 +95,7 @@ plugins/teacher-comments/
 `server/index.js`:
 
 ```js
-import { Hono, db, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+import { Hono, db, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
 
 const routes = new Hono();
 routes.use('*', authenticate, requireAdmin);

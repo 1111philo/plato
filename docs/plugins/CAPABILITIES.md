@@ -103,7 +103,7 @@ Required for every entry in `extensionPoints.hooks`.
 - Direct access to other plugins' settings or sync-data namespaces
 - Ability to mount routes outside `/v1/plugins/<id>/`
 - Ability to mutate `_system:settings.*` directly (use `ctx.setSettings()` for the plugin's own settings)
-- Ability to call private host APIs not re-exported from `server/src/lib/plugins/sdk.js`
+- Ability to call private host APIs not re-exported from `src/lib/plugins/sdk.js`
 
 ## Adding a new capability
 
