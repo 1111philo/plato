@@ -57,19 +57,22 @@ jobs:
           gh label create needs-info --color D4C5F9 --description "Intake agent asked the reporter for more details" 2>/dev/null || true
           gh label create needs-decomposition --color FBCA04 --description "Real request, but too broad to act on as one PR — break into smaller issues" 2>/dev/null || true
 
+      - name: Configure AWS credentials (Bedrock OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: us-east-2
+
       - uses: anthropics/claude-code-action@v1
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         with:
-          # OAuth-only broke in PR #94 (Max token got 401 from Anthropic API).
-          # Restored API-key fallback; investigate OAuth scope before re-trying.
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_bedrock: "true"
           allowed_bots: "claude"
           show_full_output: true
           # Haiku is plenty for classification: read issue, decide A/B/C, label, comment.
           # Sonnet's reasoning headroom is wasted here — saves ~3x on per-run cost.
-          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 15 --model claude-haiku-4-5-20251001"
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 15 --model us.anthropic.claude-haiku-4-5-20251001-v1:0"
           prompt: |
             You are plato's issue-intake agent triaging issue #${{ github.event.issue.number || inputs.issue_number }}.
 
