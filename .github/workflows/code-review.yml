@@ -71,24 +71,25 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         with:
           node-version: 20
+      - name: Configure AWS credentials (Bedrock OIDC)
+        if: steps.guard.outputs.skip != 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: us-east-2
       - uses: anthropics/claude-code-action@v1
         if: steps.guard.outputs.skip != 'true'
         env:
           PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
         with:
-          # OAuth-only was attempted in PR #93; the Max OAuth token hit 401
-          # "Invalid bearer token" on its first real use (PR #94). Restored the
-          # API-key fallback so reviews keep working. Investigate the OAuth 401
-          # (token scope? rate limit?) before attempting OAuth-only again.
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_bedrock: "true"
           allowed_bots: "claude"
           # display_report intentionally disabled: it auto-posts an aggregated
           # review from buffered inline annotations at end of session, which
           # races with the explicit `gh pr review` call in the prompt and
           # double-submits. See PR #73 (2026-04-17) where two reviews were
           # posted 6s apart with slightly different bodies.
-          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 30"
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 30 --model us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           prompt: |
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
             Read REVIEW.md and CLAUDE.md for project conventions.
