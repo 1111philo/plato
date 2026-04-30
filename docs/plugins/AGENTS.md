@@ -65,7 +65,7 @@ The pilot agent is explicitly told not to claim extension-point requests — the
 
 - ❌ Mutate `lessonKB.status` directly (the coach completion path is the only owner)
 - ❌ Introduce hard exchange-count cutoffs (extending the lesson is fine, force-completing is not)
-- ❌ Bypass capability checks by importing core modules directly (use `server/src/lib/plugins/sdk.js`)
+- ❌ Bypass capability checks by importing core modules directly (use `src/lib/plugins/sdk.js`)
 - ❌ Write to `_system:settings.*` (use `ctx.setSettings()` or `PUT /v1/admin/plugins/<id>/settings`)
 - ❌ Read or write another plugin's settings record
 - ❌ Modify files outside `plugins/<id>/` from inside a plugin (CLAUDE.md scope)
@@ -86,7 +86,7 @@ That's it. The scaffolder generates a manifest with `adminSettingsPanel`, a work
 
 ```js
 // plugins/<id>/server/index.js
-import { Hono, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+import { Hono, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
 
 const routes = new Hono();
 routes.use('*', authenticate, requireAdmin);
@@ -106,7 +106,7 @@ Manifest must include `"server.routes"` in `capabilities` and `"serverRoutes": "
 ### Recipe 3 — read/write plugin settings from a route
 
 ```js
-import { Hono, db, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+import { Hono, db, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
 
 const routes = new Hono();
 routes.use('*', authenticate, requireAdmin);
@@ -200,7 +200,7 @@ export default {
 ### Recipe 8 — store and read per-user plugin data
 
 ```js
-import { getUserMeta, putUserMeta, deleteUserMeta } from '../../../server/src/lib/plugins/sdk.js';
+import { getUserMeta, putUserMeta, deleteUserMeta } from '../../../src/lib/plugins/sdk.js';
 
 // In a route handler:
 await putUserMeta(userId, 'my-plugin', { score: 42, lastSeenAt: new Date().toISOString() });
@@ -238,7 +238,7 @@ Without it, the "Delete plugin data" button doesn't appear on the plugin's
 card in `/plato/plugins`.
 
 ```js
-import { db, getUserMeta, deleteUserMeta } from '../../../server/src/lib/plugins/sdk.js';
+import { db, getUserMeta, deleteUserMeta } from '../../../src/lib/plugins/sdk.js';
 
 export default {
   routes,
