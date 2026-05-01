@@ -92,7 +92,7 @@ plato needs access to Claude models. Set one of these:
 | **Anthropic API** (recommended) | `ANTHROPIC_API_KEY=sk-ant-...` | Local dev, small deployments |
 | **Amazon Bedrock** | AWS credentials + `AI_PROVIDER=bedrock` | Production on AWS |
 
-Get an Anthropic API key at [console.anthropic.com](https://console.anthropic.com/settings/keys). If `ANTHROPIC_API_KEY` is set, plato uses it automatically. For Bedrock, set `AI_PROVIDER=bedrock` and configure AWS credentials.
+Get an Anthropic API key at [console.anthropic.com](https://console.anthropic.com/settings/keys). When `ANTHROPIC_API_KEY` is set, plato uses it automatically; otherwise set `AI_PROVIDER=bedrock` and configure AWS credentials to route through Bedrock.
 
 Then log in and navigate to `/plato` to see the admin dashboard, or `/lessons` to start learning.
 
