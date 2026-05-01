@@ -219,127 +219,206 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
     // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join('. ');
+    const insightText = parsed.kbUpdate.insights.join(' ');
     updateProfileFromObservation(lessonKB, insightText);
-  }
-  if (achieved) {
-    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
   // Save messages
-  const newMessages = [
-    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase,
-      metadata: imageKey ? { imageKey } : null, timestamp: ts() },
-    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
+  const userMsg = {
+    role: 'user',
+    content: text || '',
+    imageKey,
+    msgType: MSG_TYPES.USER,
+    phase: LESSON_PHASES.LEARNING,
+    timestamp: ts(),
+  };
+  const assistantMsg = {
+    role: 'assistant',
+    content: parsed.text,
+    msgType: MSG_TYPES.GUIDE,
+    phase,
+    timestamp: ts(),
+  };
+
+  const newMessages = [userMsg, assistantMsg];
+  await saveLessonMessages(lessonId, [...allMsgs, ...newMessages]);
+  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+
+  if (achieved) {
+    updateProfileOnCompletionInBackground(lessonId, lessonKB);
+  }
+
+  return { messages: newMessages, lessonKB, phase, achieved };
+}
+
+/**
+ * Pure helper — apply a parsed coach response to a lessonKB snapshot.
+ * Returns { lessonKB, achieved, phase }.
+ *
+ * This is the SINGLE owner of completion semantics:
+ * - Only progress >= 10 triggers completion
+ * - Post-completion chatter does not increment activitiesCompleted
+ * - `achieved` is one-shot (true only on the transition turn)
+ */
+export function applyCoachResponseToKB(lessonKB, parsed, { now = Date.now } = {}) {
+  const wasCompleted = lessonKB.status === 'completed';
+  let achieved = false;
+
+  const kb = { ...lessonKB };
+
+  // Apply KB update
+  if (parsed.kbUpdate && !wasCompleted) {
+    if (parsed.kbUpdate.insights) kb.insights = [...(kb.insights || []), ...parsed.kbUpdate.insights];
+    if (parsed.kbUpdate.gaps) kb.gaps = parsed.kbUpdate.gaps;
+    if (parsed.kbUpdate.strengths) kb.strengths = parsed.kbUpdate.strengths;
+  }
+
+  // Apply progress — only if not already completed
+  if (parsed.progress != null && !wasCompleted) {
+    kb.progress = parsed.progress;
+  }
+
+  // Check for completion
+  if (!wasCompleted && kb.progress >= 10) {
+    kb.status = 'completed';
+    kb.completedAt = now();
+    kb.activitiesCompleted = (kb.activitiesCompleted || 0) + 1;
+    achieved = true;
+  }
+
+  // Post-completion: activitiesCompleted must not increment further
+  // (it's the learning-exchange counter, not a total-turn counter)
+
+  const phase = kb.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+
+  return { lessonKB: kb, achieved, phase };
+}
+
+/**
+ * Build the context JSON sent to the coach at the start of every turn.
+ * Includes lesson definition, current KB state, learner profile, and
+ * a pacingDirective that escalates as exchange count grows.
+ */
+export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
+  const exchanges = lessonKB.activitiesCompleted || 0;
+
+  let pacingDirective = null;
+
+  if (lessonKB.status === 'completed') {
+    // Post-completion: suppress pacing, switch to feedback mode
+    pacingDirective = null;
+  } else if (exchanges >= 20) {
+    pacingDirective =
+      'CRITICAL — this lesson has reached 20+ exchanges. You MUST bring it to completion RIGHT NOW. ' +
+      'Award [PROGRESS: 10] immediately unless there is a safety or accuracy reason not to. ' +
+      'Do not introduce any new topics, questions, or scaffolding.';
+  } else if (exchanges >= 15) {
+    pacingDirective =
+      'URGENT — this lesson is at ' + exchanges + ' exchanges, well past the 11-exchange target. ' +
+      'Wrap up now. Deliver a brief, affirming closing statement and award [PROGRESS: 10] if the learner ' +
+      'has shown any reasonable engagement with the core concept. Do not ask any more questions. ' +
+      'Do not introduce new material.';
+  } else if (exchanges >= 11) {
+    pacingDirective =
+      'This lesson has reached ' + exchanges + ' exchanges — it is over the 11-exchange target. ' +
+      'You must move decisively toward closure. In this response or the next, synthesize what the ' +
+      'learner has demonstrated, affirm their progress, and award [PROGRESS: 10] if they are ' +
+      'reasonably close to the exemplar. Stop introducing new angles or follow-up questions.';
+  } else if (exchanges >= 8) {
+    pacingDirective =
+      'This lesson is at ' + exchanges + ' of 11 target exchanges. Begin steering toward a natural ' +
+      'close — consolidate the key insight and avoid opening new threads.';
+  }
+
+  const context = {
+    lesson: {
+      lessonId: lesson.lessonId,
+      name: lesson.name,
+      description: lesson.description,
+      exemplar: lesson.exemplar,
+      learningObjectives: lesson.learningObjectives,
+    },
+    lessonKB,
+    learnerProfile: profileSummary || 'New learner, no profile yet.',
+    learnerName: learnerName || null,
+    ...(pacingDirective ? { pacingDirective } : {}),
+  };
+
+  return JSON.stringify(context);
+}
+
+/**
+ * Post-completion feedback: send a message after the lesson is done.
+ * activitiesCompleted is frozen; postCompletionDirective replaces pacingDirective.
+ */
+export async function sendFeedback(lessonId, lesson, text, onStream) {
+  const lessonKB = await getLessonKB(lessonId);
+  const profileSummary = await getLearnerProfileSummary();
+
+  const allMsgs = await getLessonMessages(lessonId);
+  const tail = allMsgs.slice(-10)
+    .map(m => ({ role: m.role, content: m.content }))
+    .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : true));
+
+  const prefs = await getPreferences();
+
+  // Build post-completion context — pacing suppressed, feedback mode active
+  const context = {
+    lesson: {
+      lessonId: lesson.lessonId,
+      name: lesson.name,
+      description: lesson.description,
+      exemplar: lesson.exemplar,
+      learningObjectives: lesson.learningObjectives,
+    },
+    lessonKB,
+    learnerProfile: profileSummary || 'New learner, no profile yet.',
+    learnerName: prefs.name || null,
+    postCompletionDirective:
+      'This lesson is complete. You are now in feedback-only mode. ' +
+      'Do NOT coach, assess, or award progress for any lesson. ' +
+      'Respond warmly to the learner\'s reflection or questions about what they just learned.',
+  };
+
+  const messages = [
+    { role: 'user', content: JSON.stringify(context) },
+    { role: 'assistant', content: 'Ready.' },
+    ...tail,
+    { role: 'user', content: text },
   ];
 
-  await saveLessonMessages(lessonId, newMessages);
+  const coachMsg = await orchestrator.converseStream(
+    'coach',
+    messages,
+    cleanStream(onStream),
+    512
+  );
+
+  const parsed = parseCoachResponse(coachMsg);
+
+  // Profile update from feedback reflection
+  if (parsed.profileUpdate?.observation) {
+    updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
+  }
+
+  const userMsg = {
+    role: 'user',
+    content: text,
+    msgType: MSG_TYPES.USER,
+    phase: LESSON_PHASES.COMPLETED,
+    timestamp: ts(),
+  };
+  const assistantMsg = {
+    role: 'assistant',
+    content: parsed.text,
+    msgType: MSG_TYPES.GUIDE,
+    phase: LESSON_PHASES.COMPLETED,
+    timestamp: ts(),
+  };
+
+  const newMessages = [userMsg, assistantMsg];
+  await saveLessonMessages(lessonId, [...allMsgs, ...newMessages]);
   syncInBackground(`messages:${lessonId}`);
 
-  return { messages: newMessages, progress: parsed.progress, achieved, phase };
-}
-
-/**
- * Resume an existing lesson. Loads messages and KB.
- */
-export async function resumeLesson(lessonId) {
-  const messages = await getLessonMessages(lessonId);
-  const lessonKB = await getLessonKB(lessonId);
-  const progress = lessonKB?.progress ?? 0;
-  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-  return { messages, lessonKB, progress, phase };
-}
-
-// -- Helpers ------------------------------------------------------------------
-
-/**
- * Apply a parsed coach response to a lesson KB. Pure — returns a new KB
- * without mutating the input. Centralizes the "feedback mode" invariant:
- * once a lesson is completed the exchange counter freezes and `achieved`
- * can't re-fire, so one-shot side effects (confetti, completion profile
- * update) stay one-shot across the feedback conversation that follows.
- */
-export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) {
-  const wasCompleted = prevKB?.status === 'completed';
-  const next = { ...prevKB };
-
-  if (parsed.kbUpdate) {
-    if (parsed.kbUpdate.insights?.length) {
-      next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
-      // Prune old insights (keep last 10)
-      if (next.insights.length > 10) {
-        const older = next.insights.slice(0, next.insights.length - 10);
-        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
-      }
-    }
-    if (parsed.kbUpdate.learnerPosition) {
-      next.learnerPosition = parsed.kbUpdate.learnerPosition;
-    }
-  }
-  if (parsed.progress != null) {
-    next.progress = parsed.progress;
-  }
-  if (!wasCompleted) {
-    next.activitiesCompleted = (next.activitiesCompleted || 0) + 1;
-  }
-
-  // `achieved` means "just achieved on this turn" — one-shot. Without this
-  // guard it would re-fire on every post-completion message, triggering
-  // confetti + completion-profile updates repeatedly in the feedback thread.
-  const achieved = parsed.progress >= 10 && !wasCompleted;
-  if (achieved) {
-    next.status = 'completed';
-    next.completedAt = now();
-  }
-  const phase = next.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-  return { lessonKB: next, achieved, phase };
-}
-
-export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const completed = lessonKB?.activitiesCompleted || 0;
-  const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
-  const context = {
-    learnerName: learnerName || '',
-    lessonName: lesson.name,
-    lessonDescription: lesson.description,
-    exemplar: lesson.exemplar,
-    lessonStatus,
-    objectives: lessonKB?.objectives || [],
-    insights: lessonKB?.insights || [],
-    learnerProfile: profileSummary || 'No profile yet',
-    learnerPosition: lessonKB?.learnerPosition || 'New learner',
-    progress: lessonKB?.progress ?? 0,
-    activitiesCompleted: completed,
-  };
-  if (lessonStatus === 'completed') {
-    // Completed threads are feedback-only. Skip pacing nudges — they'd
-    // conflict with the feedback directive — and tell the coach plainly not
-    // to treat this thread as a new lesson.
-    context.postCompletionDirective = 'This lesson is already complete. Stay in feedback mode only. Do not coach, assess, or award credit for another lesson in this conversation. If the learner wants to continue with a new lesson, tell them to start the next lesson separately so their work is tracked there.';
-    return JSON.stringify(context);
-  }
-  // Pacing directives are nudges, not orders. The target (MAX_EXCHANGES) is a
-  // design goal for ~20-minute lessons — never a deadline. The coach always
-  // decides when the learner has demonstrated the exemplar. These messages
-  // help the coach sharpen its focus as exchanges accumulate, but NEVER tell
-  // it to force-close a lesson on the learner.
-  const over = completed - MAX_EXCHANGES;
-  if (over >= 9) {
-    // 20+ exchanges: the lesson has run well past the target. Likely a sign
-    // the lesson design or the learner's starting point mismatched — worth
-    // a reflective note, but still the coach's call to close.
-    context.pacingDirective = 'This lesson has run well past its target length. If the learner has demonstrated the exemplar (or something close to it), this is a good moment to award progress 10 and close warmly. If they are still genuinely working toward it, keep moving them forward — prefer smaller, more concrete steps. Note in [KB_UPDATE] if the lesson design seems to be the issue.';
-  } else if (over >= 4) {
-    // 15+ exchanges: converge hard. Prefer closing when the exemplar is met,
-    // but do not force the issue if the learner is still making progress.
-    context.pacingDirective = 'The lesson has run longer than target. Compress: focus on the single biggest remaining gap. If the learner has demonstrated the exemplar, award progress 10 and close warmly. If they are close, one sharp final step can get them there. Keep moving them forward — never cut them off mid-thought.';
-  } else if (over >= 0) {
-    // 11+ exchanges: target reached. Start to converge.
-    context.pacingDirective = 'Target exchange count reached. Begin converging toward the exemplar — avoid introducing new objectives. If the learner has demonstrated the exemplar, award progress 10. Otherwise give one focused nudge that narrows the gap.';
-  } else if (completed >= MAX_EXCHANGES - 3) {
-    // 8-10 exchanges: pre-target — start converging.
-    const remaining = MAX_EXCHANGES - completed;
-    context.pacingDirective = `Approaching target (${remaining} exchange${remaining === 1 ? '' : 's'} until the ~20-minute design goal). Converge toward the exemplar — one focused task that narrows the gap. You may still introduce new concepts if the learner genuinely needs them to advance.`;
-  }
-  return JSON.stringify(context);
+  return { messages: newMessages, lessonKB, phase: LESSON_PHASES.COMPLETED, achieved: false };
 }
