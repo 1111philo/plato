@@ -278,11 +278,15 @@ export function applyCoachResponseToKB(lessonKB, parsed, { now = Date.now } = {}
     kb.progress = parsed.progress;
   }
 
+  // Increment exchange counter on every learning turn
+  if (!wasCompleted) {
+    kb.activitiesCompleted = (kb.activitiesCompleted || 0) + 1;
+  }
+
   // Check for completion
   if (!wasCompleted && kb.progress >= 10) {
     kb.status = 'completed';
     kb.completedAt = now();
-    kb.activitiesCompleted = (kb.activitiesCompleted || 0) + 1;
     achieved = true;
   }
 
@@ -303,10 +307,16 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
   const exchanges = lessonKB.activitiesCompleted || 0;
 
   let pacingDirective = null;
+  let postCompletionDirective = null;
 
   if (lessonKB.status === 'completed') {
     // Post-completion: suppress pacing, switch to feedback mode
-    pacingDirective = null;
+    pacingDirective = undefined;
+    postCompletionDirective =
+      'This lesson is complete. You are now in feedback-only mode. ' +
+      'Do NOT coach, assess, or award progress for any lesson. ' +
+      'Respond warmly to the learner\'s reflection or questions about what they just learned. ' +
+      'If the learner wishes to work on a new topic, start the next lesson separately.';
   } else if (exchanges >= 20) {
     pacingDirective =
       'CRITICAL — this lesson has reached 20+ exchanges. You MUST bring it to completion RIGHT NOW. ' +
@@ -339,9 +349,11 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
       learningObjectives: lesson.learningObjectives,
     },
     lessonKB,
+    lessonStatus: lessonKB.status === 'completed' ? 'completed' : 'active',
     learnerProfile: profileSummary || 'New learner, no profile yet.',
     learnerName: learnerName || null,
     ...(pacingDirective ? { pacingDirective } : {}),
+    ...(postCompletionDirective ? { postCompletionDirective } : {}),
   };
 
   return JSON.stringify(context);
