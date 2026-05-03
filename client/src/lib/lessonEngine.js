@@ -225,25 +225,35 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
     // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join(' ');
+    const insightText = parsed.kbUpdate.insights.join('. ');
     updateProfileFromObservation(lessonKB, insightText);
+  }
+  if (achieved) {
+    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
   // Save messages
   const newMessages = [
-    { role: 'user', content: text || '[image]', msgType: MSG_TYPES.USER, phase: LESSON_PHASES.LEARNING, timestamp: ts(), imageKey },
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase,
+      metadata: imageKey ? { imageKey } : null, timestamp: ts() },
     { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
   ];
 
-  const updatedMessages = [...allMsgs, ...newMessages];
-  await saveLessonMessages(lessonId, updatedMessages);
-  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+  await saveLessonMessages(lessonId, [...allMsgs, ...newMessages]);
+  syncInBackground(`messages:${lessonId}`);
 
-  if (achieved) {
-    updateProfileOnCompletionInBackground(lessonId);
-  }
+  return { messages: newMessages, progress: parsed.progress, achieved, phase };
+}
 
-  return { messages: updatedMessages, lessonKB, phase, achieved };
+/**
+ * Resume an existing lesson. Loads messages and KB.
+ */
+export async function resumeLesson(lessonId) {
+  const messages = await getLessonMessages(lessonId);
+  const lessonKB = await getLessonKB(lessonId);
+  const progress = lessonKB?.progress ?? 0;
+  const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { messages, lessonKB, progress, phase };
 }
 
 /**
@@ -256,35 +266,37 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
  * - activitiesCompleted is frozen after completion (post-completion feedback
  *   exchanges must not increment it, or extendedLessons KPI would be corrupted)
  */
-export function applyCoachResponseToKB(lessonKB, parsed, { now = Date.now } = {}) {
-  const kb = { ...lessonKB };
+export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) {
+  const wasCompleted = prevKB?.status === 'completed';
+  const next = { ...prevKB };
 
-  // Apply KB update
   if (parsed.kbUpdate) {
-    if (parsed.kbUpdate.currentUnderstanding != null) kb.currentUnderstanding = parsed.kbUpdate.currentUnderstanding;
-    if (parsed.kbUpdate.insights?.length) kb.insights = [...(kb.insights || []), ...parsed.kbUpdate.insights];
-    if (parsed.kbUpdate.misconceptions?.length) kb.misconceptions = [...(kb.misconceptions || []), ...parsed.kbUpdate.misconceptions];
-    if (parsed.kbUpdate.nextFocus != null) kb.nextFocus = parsed.kbUpdate.nextFocus;
+    if (parsed.kbUpdate.insights?.length) {
+      next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
+      // Prune old insights (keep last 10)
+      if (next.insights.length > 10) {
+        const older = next.insights.slice(0, next.insights.length - 10);
+        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
+      }
+    }
+    if (parsed.kbUpdate.learnerPosition) {
+      next.learnerPosition = parsed.kbUpdate.learnerPosition;
+    }
+  }
+  if (parsed.progress != null) {
+    next.progress = parsed.progress;
+  }
+  if (!wasCompleted) {
+    next.activitiesCompleted = (next.activitiesCompleted || 0) + 1;
   }
 
-  const alreadyCompleted = kb.status === 'completed';
-
-  // Update progress — but freeze activitiesCompleted after completion
-  if (parsed.progress != null && !alreadyCompleted) {
-    kb.progress = parsed.progress;
-    kb.activitiesCompleted = (kb.activitiesCompleted || 0) + 1;
-  }
-
-  // Check for completion
-  const achieved = !alreadyCompleted && kb.progress >= 10;
+  const achieved = parsed.progress >= 10 && !wasCompleted;
   if (achieved) {
-    kb.status = 'completed';
-    kb.completedAt = now();
+    next.status = 'completed';
+    next.completedAt = now();
   }
-
-  const phase = (kb.status === 'completed') ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-
-  return { lessonKB: kb, achieved, phase };
+  const phase = next.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { lessonKB: next, achieved, phase };
 }
 
 // -- Context builder ----------------------------------------------------------
@@ -294,25 +306,25 @@ export function applyCoachResponseToKB(lessonKB, parsed, { now = Date.now } = {}
  * Includes lesson details, current KB state, learner profile, and pacing directive.
  */
 export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
-  const exchanges = lessonKB.activitiesCompleted || 0;
-  const isCompleted = lessonKB.status === 'completed';
+  const completed = lessonKB?.activitiesCompleted || 0;
+  const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
 
   let pacingDirective;
-  if (isCompleted) {
-    pacingDirective = null; // suppressed — postCompletionDirective takes over
-  } else if (exchanges >= 20) {
-    pacingDirective = 'CRITICAL: This lesson has run very long. The learner needs to reach the exemplar THIS exchange if at all possible. Provide the most direct, targeted feedback you can.';
-  } else if (exchanges >= 15) {
-    pacingDirective = 'URGENT: This lesson is running significantly over target. Push hard toward the exemplar — be direct and specific about exactly what is missing.';
-  } else if (exchanges >= 11) {
-    pacingDirective = 'This lesson has exceeded the exchange target. Be more direct and focused — help the learner close the gap to the exemplar quickly.';
-  } else if (exchanges >= 8) {
-    pacingDirective = 'You are approaching the exchange target. Begin guiding the learner toward synthesis and completion.';
+  if (lessonStatus === 'completed') {
+    pacingDirective = null;
+  } else if (completed >= 20) {
+    pacingDirective = 'This lesson has run very long. The learner should reach the exemplar soon.';
+  } else if (completed >= 15) {
+    pacingDirective = 'This lesson is running significantly over target. Help the learner close the gap to the exemplar.';
+  } else if (completed >= 11) {
+    pacingDirective = 'This lesson has exceeded the exchange target. Be more direct and focused.';
+  } else if (completed >= 8) {
+    pacingDirective = 'You are approaching the exchange target. Begin guiding toward synthesis.';
   } else {
     pacingDirective = null;
   }
 
-  const postCompletionDirective = isCompleted
+  const postCompletionDirective = lessonStatus === 'completed'
     ? 'This lesson is complete. You are now in feedback-only mode. Do NOT coach, assess, or award progress for any other lesson inside this thread. Only discuss this completed lesson.'
     : null;
 
@@ -322,10 +334,9 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     lessonDescription: lesson.description,
     exemplar: lesson.exemplar,
     learningObjectives: lesson.learningObjectives,
-    lessonKB,
     learnerProfile: profileSummary || 'New learner, no profile yet.',
     learnerName: learnerName || null,
-    exchangeCount: exchanges,
+    exchangeCount: completed,
     ...(pacingDirective ? { pacingDirective } : {}),
     ...(postCompletionDirective ? { postCompletionDirective } : {}),
   });
