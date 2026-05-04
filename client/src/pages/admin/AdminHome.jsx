@@ -32,8 +32,13 @@ function PacingSection({ stats }) {
   // Flag when over-target lessons are running significantly long (≥15 exchanges)
   const overTargetWarning = avgExchangesOverTarget != null && avgExchangesOverTarget >= 15;
 
+  // Flag when a large fraction of completions are going over target (>25%)
+  const overTargetFraction = hasCompletions ? overTarget / totalCompletions : 0;
+  const overTargetFractionHigh = overTargetFraction > 0.25;
+
   let cardClasses = '';
   let signal = '';
+  let signalDetail = null;
   if (rate !== null) {
     if (rate >= 75) {
       cardClasses = 'border-green-300 bg-green-50 ring-2 ring-green-200';
@@ -41,9 +46,11 @@ function PacingSection({ stats }) {
     } else if (rate >= 50) {
       cardClasses = 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200';
       signal = 'Some lessons are running long — review objectives or coach pacing';
+      signalDetail = 'Common causes: too many learning objectives, an exemplar that sets a very high bar, or a lesson topic that requires more scaffolding exchanges. Try simplifying objectives to 2–3 focused outcomes or tightening the exemplar scope.';
     } else {
       cardClasses = 'border-red-300 bg-red-50 ring-2 ring-red-200';
       signal = 'Most lessons exceed the target — simplify objectives or raise the target';
+      signalDetail = 'Most learners are taking significantly more exchanges than the target. Review your lessons for scope creep: each lesson should target one narrow skill. Consider splitting broad lessons into two focused ones.';
     }
   }
 
@@ -70,6 +77,9 @@ function PacingSection({ stats }) {
                 within {exchangeTarget} exchanges
               </div>
               <div className="text-sm font-semibold mt-1">{signal}</div>
+              {signalDetail && (
+                <div className="text-xs mt-2 text-muted-foreground">{signalDetail}</div>
+              )}
             </>
           ) : (
             <div className="text-sm text-muted-foreground mt-2">
@@ -101,12 +111,23 @@ function PacingSection({ stats }) {
             >
               Avg exchanges (over target)
             </div>
+            {overTargetWarning && (
+              <div className="text-xs mt-1 text-yellow-800">
+                Over-target lessons averaging {avgExchangesOverTarget} exchanges — review lesson objectives and exemplar scope in{' '}
+                <Link to="/plato/lessons" className="underline">Lessons</Link>.
+              </div>
+            )}
           </CardContent>
         </Card>
-        <Card className={overTarget > 0 ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
+        <Card className={overTargetFractionHigh ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : (overTarget > 0 ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : '')}>
           <CardContent>
             <div className="text-2xl font-bold">{overTarget}</div>
             <div className="text-sm text-muted-foreground">Went over target</div>
+            {overTargetFractionHigh && (
+              <div className="text-xs mt-1 text-yellow-800">
+                {Math.round(overTargetFraction * 100)}% of completions — consider reviewing lesson scope.
+              </div>
+            )}
           </CardContent>
         </Card>
         <Card>
