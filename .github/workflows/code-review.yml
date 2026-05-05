@@ -25,6 +25,13 @@ jobs:
     # the Lint job and don't need an AI review.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
+    # Wall-clock budget replaces the previous --max-turns 30 cap. Turn counts
+    # were a fragile proxy: a thorough review that read several modified files
+    # plus ran the test suite would routinely hit 30 mid-investigation and exit
+    # without ever calling `gh pr review`, leaving the verify step to fail the
+    # job. timeout-minutes bounds Bedrock + Actions cost on actual elapsed
+    # time, which is the constraint we care about.
+    timeout-minutes: 12
     permissions:
       contents: read
       pull-requests: write
@@ -35,8 +42,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: Resolve PR + head sha
-        # Normalises PR_NUMBER + HEAD_SHA across pull_request (auto) and
-        # workflow_dispatch (manual rerun) triggers so the rest of the job
+        # Normalises PR_NUMBER + HEAD_SHA + BASE_REF across pull_request (auto)
+        # and workflow_dispatch (manual rerun) triggers so the rest of the job
         # doesn't have to branch on event_name.
         id: ctx
         env:
@@ -44,13 +51,17 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PR_NUMBER="${{ inputs.pr_number }}"
-            HEAD_SHA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .head.sha)
+            META=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER")
+            HEAD_SHA=$(echo "$META" | jq -r .head.sha)
+            BASE_REF=$(echo "$META" | jq -r .base.ref)
           else
             PR_NUMBER="${{ github.event.pull_request.number }}"
             HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            BASE_REF="${{ github.event.pull_request.base.ref }}"
           fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
       - name: Skip if a claude review already exists for this commit
         id: guard
         env:
@@ -71,6 +82,91 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         with:
           node-version: 20
+      - name: Build review context
+        # Pre-fetches everything the reviewer needs into a single file so the
+        # agent doesn't burn turns rediscovering context with shell tools.
+        # Includes: PR metadata, diff vs. base, list of changed files, full
+        # source of each changed file (size-capped), and the npm test output.
+        # Skips binary / very-large files with a notice so token budget isn't
+        # blown on lockfiles or generated bundles.
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.ctx.outputs.pr_number }}
+          BASE_REF: ${{ steps.ctx.outputs.base_ref }}
+          MAX_LINES_PER_FILE: '800'
+          MAX_BYTES_PER_FILE: '120000'
+        run: |
+          set -euo pipefail
+          CTX=/tmp/review-context.md
+          : > "$CTX"
+
+          # ── PR metadata ────────────────────────────────────────────────
+          {
+            echo "# Review context"
+            echo
+            echo "## PR metadata"
+            gh pr view "$PR_NUMBER" --json number,title,author,body,baseRefName,headRefName \
+              --jq '"PR #\(.number): \(.title)\nAuthor: \(.author.login)\nBase: \(.baseRefName) ← Head: \(.headRefName)\n\n--- PR body ---\n\(.body // \"(no body)\")"'
+            echo
+          } >> "$CTX"
+
+          # ── Test output (run once here so the agent doesn't spend turns) ─
+          {
+            echo "## Test output (cd server && npm ci && npm test)"
+            echo '```'
+            (cd server && npm ci --silent && npm test) 2>&1 | tail -120 || echo "(tests failed — see above)"
+            echo '```'
+            echo
+          } >> "$CTX"
+
+          # ── Diff against base ──────────────────────────────────────────
+          git fetch origin "$BASE_REF" --depth=200 >/dev/null 2>&1 || true
+          MERGE_BASE=$(git merge-base "origin/$BASE_REF" HEAD)
+          {
+            echo "## Changed files (vs. $BASE_REF)"
+            echo '```'
+            git diff --name-status "$MERGE_BASE"...HEAD
+            echo '```'
+            echo
+            echo "## Full diff (vs. $BASE_REF)"
+            echo '```diff'
+            git diff "$MERGE_BASE"...HEAD
+            echo '```'
+            echo
+          } >> "$CTX"
+
+          # ── Full source of each changed (still-present) file ───────────
+          {
+            echo "## Full source of changed files"
+            echo
+            git diff --name-only --diff-filter=AM "$MERGE_BASE"...HEAD | while read -r f; do
+              [ -f "$f" ] || continue
+              # Skip binaries.
+              if file --mime "$f" | grep -qE 'charset=binary'; then
+                echo "### \`$f\`"
+                echo "(binary — skipped)"
+                echo
+                continue
+              fi
+              SIZE=$(wc -c <"$f")
+              LINES=$(wc -l <"$f")
+              echo "### \`$f\` ($LINES lines, $SIZE bytes)"
+              if [ "$SIZE" -gt "$MAX_BYTES_PER_FILE" ] || [ "$LINES" -gt "$MAX_LINES_PER_FILE" ]; then
+                echo "(file exceeds context cap — showing first $MAX_LINES_PER_FILE lines)"
+                echo '```'
+                head -n "$MAX_LINES_PER_FILE" "$f"
+                echo '```'
+              else
+                echo '```'
+                cat "$f"
+                echo '```'
+              fi
+              echo
+            done
+          } >> "$CTX"
+
+          echo "Wrote review context: $(wc -l <"$CTX") lines, $(wc -c <"$CTX") bytes"
       - name: Configure AWS credentials (Bedrock OIDC)
         if: steps.guard.outputs.skip != 'true'
         uses: aws-actions/configure-aws-credentials@v4
@@ -89,20 +185,27 @@ jobs:
           # races with the explicit `gh pr review` call in the prompt and
           # double-submits. See PR #73 (2026-04-17) where two reviews were
           # posted 6s apart with slightly different bodies.
-          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --max-turns 30 --model us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+          #
+          # No --max-turns: timeout-minutes on the job is the budget. Turn
+          # caps were dropping reviews mid-investigation; wall-clock is the
+          # constraint we actually pay for.
+          claude_args: "--allowedTools Bash(*),Read(*),Glob,Grep --model us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           prompt: |
             You are a skeptical code reviewer. Your job is to find real problems the author missed.
-            Read REVIEW.md and CLAUDE.md for project conventions.
+
+            **Start by reading `/tmp/review-context.md`.** It contains the PR metadata,
+            full diff, the full source of every changed file, and the `npm test` output.
+            That is your primary context — don't burn time re-running `gh pr diff`,
+            `git diff`, or `npm test`. Use shell tools only when you need to look at a
+            file that *isn't* in the context dump.
+
+            Then read CLAUDE.md and REVIEW.md (if present) for project conventions.
 
             **plato is live.** learn.ai-leaders.org has active users, many mid-lesson
             as you review. Every merge to `main` auto-deploys to prod. Your review is
             the last human-free checkpoint before real sessions see this code.
 
-            ## What to do
-            1. Read the PR diff and understand what changed and why
-            2. Read the FULL source files that were modified (not just the diff) to check context
-            3. Run `cd server && npm ci && npm test` to verify tests pass on this branch
-            4. Actively look for these problems:
+            ## What to look for
 
             ### Must flag (blocking)
             - **Bugs**: edge cases, off-by-one errors, null/undefined paths, race conditions
@@ -151,7 +254,7 @@ jobs:
             This gives the maintainer a consistent final signal before merge.
 
             Pick one outcome:
-            - Tests fail → `gh pr review $PR_NUMBER --request-changes --body "Tests fail: ..."`
+            - Tests fail (see context dump) → `gh pr review $PR_NUMBER --request-changes --body "Tests fail: ..."`
             - Blocking issues → `gh pr review $PR_NUMBER --request-changes --body "..."` with file:line references
             - Clean → `gh pr review $PR_NUMBER --approve --body "Tests pass. No bugs, security, or accessibility issues found.\n\nUser impact: ..."`
 
