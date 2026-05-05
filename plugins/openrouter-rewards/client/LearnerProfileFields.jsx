@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { authenticatedFetch } from '../../../client/js/auth.js';
+import { startOpenRouterClaim } from './claim-flow.js';
 
 export default function LearnerProfileFields() {
   const [status, setStatus] = useState(null);
@@ -13,7 +14,14 @@ export default function LearnerProfileFields() {
     if (res.ok) setStatus(await res.json());
   }
 
-  useEffect(() => { load().catch(() => {}); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await authenticatedFetch('/v1/plugins/openrouter-rewards/status');
+      if (!cancelled && res.ok) setStatus(await res.json());
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   async function reissue() {
     setBusy(true);
@@ -31,6 +39,17 @@ export default function LearnerProfileFields() {
     }
   }
 
+  async function claim() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await startOpenRouterClaim();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+      setBusy(false);
+    }
+  }
+
   if (!status?.keyHashSuffix && !status?.pendingClaim && !status?.pendingReissue) return null;
 
   return (
@@ -40,7 +59,12 @@ export default function LearnerProfileFields() {
       </CardHeader>
       <CardContent className="space-y-3">
         {status.keyHashSuffix && <p className="text-sm">Active key ending in {status.keyHashSuffix}. Lifetime awarded: ${status.lifetimeAwarded}.</p>}
-        {status.pendingClaim && <p className="text-sm">You have ${status.pendingClaim.accumulatedAmount} in credits ready to claim.</p>}
+        {status.pendingClaim && (
+          <div className="space-y-2">
+            <p className="text-sm">You have ${status.pendingClaim.accumulatedAmount} in credits ready to claim.</p>
+            <Button onClick={claim} disabled={busy}>{busy ? 'Opening...' : 'Claim OpenRouter credits'}</Button>
+          </div>
+        )}
         {status.pendingReissue && <p className="text-sm">A replacement key is ready to claim.</p>}
         {status.keyHashSuffix && <Button variant="outline" onClick={reissue} disabled={busy}>{busy ? 'Reissuing...' : 'Reissue key'}</Button>}
         {message?.type === 'success' && (

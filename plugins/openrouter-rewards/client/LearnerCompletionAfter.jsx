@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { authenticatedFetch } from '../../../client/js/auth.js';
-import { createPkceChallenge, createPkceVerifier } from './pkce.js';
+import { startOpenRouterClaim } from './claim-flow.js';
 
 export default function LearnerCompletionAfter({ lessonId }) {
   const checkedRef = useRef(null);
+  const cardRef = useRef(null);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -30,21 +31,16 @@ export default function LearnerCompletionAfter({ lessonId }) {
     return () => { cancelled = true; };
   }, [lessonId]);
 
+  useEffect(() => {
+    if (!result || result.status === 'no-claim') return;
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [result]);
+
   async function startOauth() {
     setBusy(true);
     setError('');
     try {
-      const verifier = createPkceVerifier();
-      const codeChallenge = await createPkceChallenge(verifier);
-      const res = await authenticatedFetch('/v1/plugins/openrouter-rewards/oauth/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codeChallenge }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Could not start OpenRouter sign-in');
-      sessionStorage.setItem(`or-pkce-verifier:${data.state}`, verifier);
-      window.location.assign(data.authorizationUrl);
+      await startOpenRouterClaim();
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -54,11 +50,14 @@ export default function LearnerCompletionAfter({ lessonId }) {
   if (!result || result.status === 'no-claim') return null;
 
   return (
-    <Card>
+    <Card ref={cardRef} className="border-primary/40 bg-primary/5" role="status" aria-live="polite">
       <CardContent className="space-y-3">
         {result.status === 'pending-oauth' && (
           <>
-            <p className="text-sm">You earned ${result.accumulatedAmount} in OpenRouter credits.</p>
+            <div>
+              <p className="text-sm font-medium">OpenRouter reward earned</p>
+              <p className="text-sm text-muted-foreground">You earned ${result.accumulatedAmount} in OpenRouter credits.</p>
+            </div>
             <Button onClick={startOauth} disabled={busy}>{busy ? 'Opening...' : 'Claim OpenRouter credits'}</Button>
           </>
         )}
