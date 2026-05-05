@@ -141,7 +141,7 @@ export async function startLesson(lessonId, lesson, onStream) {
     'coach',
     [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
     cleanStream(onStream),
-    512
+    1024
   );
 
   const { text, progress } = parseCoachResponse(coachMsg);
@@ -202,7 +202,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     'coach',
     messages,
     cleanStream(onStream),
-    512
+    1024
   );
 
   const parsed = parseCoachResponse(coachMsg);
