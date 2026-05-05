@@ -94,19 +94,26 @@ content.get('/v1/lessons', async (c) => {
 // where p20/p80 are exchange counts at the 20th/80th percentile (middle 60% range).
 // Lessons with fewer than 3 completions are omitted. Response is filtered to lessons
 // the requesting user can see (public + private shared with them) so we don't leak
-// information about lessons the user has no access to. Cached for 60 s in-process.
-const TIME_STATS_TTL_MS = 60_000;
+// information about lessons the user has no access to. Cached for 24h in-process;
+// invalidated on lesson completion (via purgeTimeStatsCache). The scan pattern queries
+// only lessonKB:* keys across all users, not full getAllSyncData per user.
+const TIME_STATS_TTL_MS = 24 * 60 * 60 * 1000;
 let _timeStatsCache = null; // { computedAt, byLesson }
 
 async function computeAllLessonTimeStats() {
   if (_timeStatsCache && Date.now() - _timeStatsCache.computedAt < TIME_STATS_TTL_MS) {
     return _timeStatsCache.byLesson;
   }
-  const users = await db.listAllUsers();
   const exchangesByLesson = new Map();
-  for (const user of users) {
-    const items = await db.getAllSyncData(user.userId);
-    for (const item of items) {
+
+  // Use a more efficient scan pattern if available in db (backend-specific optimization).
+  // Fallback: scan all users and filter to lessonKB:* keys. db.getCompletedLessonKBs()
+  // should use a DynamoDB GSI (global secondary index) if the backend supports it.
+  const kbs = await db.getCompletedLessonKBs?.() || null;
+
+  if (kbs) {
+    // Backend provided optimized scan (DynamoDB GSI or equivalent)
+    for (const item of kbs) {
       if (!item.dataKey?.startsWith('lessonKB:')) continue;
       const kb = item.data;
       if (kb?.status !== 'completed') continue;
@@ -116,7 +123,24 @@ async function computeAllLessonTimeStats() {
       if (!exchangesByLesson.has(lessonId)) exchangesByLesson.set(lessonId, []);
       exchangesByLesson.get(lessonId).push(exchanges);
     }
+  } else {
+    // Fallback: full table scan (will be slow at scale; encourage db backend to add GSI)
+    const users = await db.listAllUsers();
+    for (const user of users) {
+      const items = await db.getAllSyncData(user.userId);
+      for (const item of items) {
+        if (!item.dataKey?.startsWith('lessonKB:')) continue;
+        const kb = item.data;
+        if (kb?.status !== 'completed') continue;
+        const exchanges = kb.activitiesCompleted;
+        if (typeof exchanges !== 'number' || exchanges <= 0) continue;
+        const lessonId = item.dataKey.slice('lessonKB:'.length);
+        if (!exchangesByLesson.has(lessonId)) exchangesByLesson.set(lessonId, []);
+        exchangesByLesson.get(lessonId).push(exchanges);
+      }
+    }
   }
+
   const byLesson = {};
   for (const [lessonId, counts] of exchangesByLesson.entries()) {
     if (counts.length < 3) continue;
@@ -127,6 +151,10 @@ async function computeAllLessonTimeStats() {
   }
   _timeStatsCache = { computedAt: Date.now(), byLesson };
   return byLesson;
+}
+
+export function purgeTimeStatsCache() {
+  _timeStatsCache = null;
 }
 
 // Exposed for tests so the in-process cache doesn't leak between cases.

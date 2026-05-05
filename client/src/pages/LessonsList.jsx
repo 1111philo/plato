@@ -119,6 +119,7 @@ export default function LessonsList() {
                       variant="outline"
                       className="text-xs"
                       title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
+                      aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
                     >
                       Most learners finish in {range}
                     </Badge>
