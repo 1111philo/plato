@@ -52,7 +52,7 @@ export default function LearnerProfileFields() {
     }
   }
 
-  if (!status?.keyHashSuffix && !status?.pendingClaim && !status?.pendingReissue) return null;
+  if (!message && !status?.keyHashSuffix && !status?.pendingClaim && !status?.pendingReissue) return null;
 
   return (
     <Card>
