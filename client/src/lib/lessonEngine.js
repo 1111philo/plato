@@ -16,7 +16,7 @@ import {
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
-import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { LESSON_PHASES, MSG_TYPES } from './constants.js';
 
 function ts() { return Date.now(); }
 
