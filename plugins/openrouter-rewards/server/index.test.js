@@ -168,6 +168,29 @@ describe('OpenRouter rewards routes', () => {
     assert.equal(openrouter.calls.length, 0);
   });
 
+  it('returns 400 without reserving when reward policy is invalid', async () => {
+    store.set('_system', 'plugins:activation', {
+      [PLUGIN_ID]: {
+        settings: {
+          managementKey: 'sk-management',
+          workspaceId: 'ws_1',
+          rules: [
+            { id: 'rule-1', name: 'First lesson', enabled: true, trigger: 'lesson-count', value: 1, creditAmount: 5, limitReset: 'monthly', expiresAfterDays: null },
+            { id: 'rule-2', name: 'Second lesson', enabled: true, trigger: 'lesson-count', value: 1, creditAmount: 5, limitReset: 'daily', expiresAfterDays: null },
+          ],
+        },
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/check-pending', { lessonId: 'lesson-a' });
+
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /same reset cadence/);
+    assert.equal(openrouter.calls.length, 0);
+    assert.equal(store.read('usr_user', `userMeta:${PLUGIN_ID}`), undefined);
+  });
+
   it('patches top-up to an absolute target limit when the user already has a key', async () => {
     store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
       ...emptyState(),
@@ -185,6 +208,32 @@ describe('OpenRouter rewards routes', () => {
     const patch = openrouter.calls.find((call) => call.method === 'patchKey');
     assert.ok(patch);
     assert.equal(patch.body.limit, 15); // currentKey.limit (10) + amount (5)
+  });
+
+  it('mints a replacement when stored key hash is missing in OpenRouter', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_deleted',
+      lifetimeAwarded: 10,
+      firedRuleIds: [],
+    });
+    openrouter.getKey = async () => {
+      const err = new Error('not found');
+      err.status = 404;
+      throw err;
+    };
+
+    const res = await userReq(app(), 'POST', '/check-pending', { lessonId: 'lesson-a' });
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'minted');
+    assert.equal(data.plaintext, 'sk-or-v1-minted');
+    assert.ok(openrouter.calls.find((call) => call.method === 'createKey'));
+    assert.equal(openrouter.calls.some((call) => call.method === 'patchKey'), false);
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.deepEqual(persisted.firedRuleIds, ['rule-1']);
   });
 
   it('retires a newly minted key when award recovery state cannot be persisted', async () => {

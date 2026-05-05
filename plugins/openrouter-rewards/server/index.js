@@ -419,17 +419,31 @@ export function createRoutes({
     }
 
     const completions = await listCompletedLessons(user.userId);
-    const matched = evaluateRules(rewardRules(settings), state, completions, lessonId);
+    let matched;
+    try {
+      matched = evaluateRules(rewardRules(settings), state, completions, lessonId);
+    } catch (err) {
+      return jsonError(c, err, 400);
+    }
     if (matched.length === 0) return c.json({ status: 'no-claim' });
 
     const client = createClient({ managementKey: settings.managementKey });
     const amount = matched.reduce((sum, rule) => sum + Number(rule.creditAmount || 0), 0);
-    const currentKey = state.keyHash ? await client.getKey(state.keyHash) : null;
+    let awardState = state;
+    let currentKey = null;
+    if (state.keyHash) {
+      try {
+        currentKey = await client.getKey(state.keyHash);
+      } catch (err) {
+        if (!isMissingRemoteKey(err)) throw err;
+        awardState = { ...state, keyHash: null };
+      }
+    }
     const targetLimit = Number(currentKey?.limit || 0) + amount;
     const award = buildAward(matched, { targetLimit });
     const reservationId = uuid();
     const createdAt = now().toISOString();
-    const reserved = reserveAward(state, matched, { ...award, reservationId, createdAt });
+    const reserved = reserveAward(awardState, matched, { ...award, reservationId, createdAt });
 
     let writeResult;
     try {

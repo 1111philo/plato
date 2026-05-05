@@ -280,7 +280,7 @@ export default function AdminSettingsPanel({ settings = {}, onSave }) {
       </label>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={handleTest} disabled={testing || (!managementKey.trim() && !settings.workspaceId)}>
+        <Button variant="outline" onClick={handleTest} disabled={testing || (!managementKey.trim() && !workspaceId.trim())}>
           {testing ? 'Testing...' : 'Test connection'}
         </Button>
         <Button onClick={handleSave} disabled={saving}>

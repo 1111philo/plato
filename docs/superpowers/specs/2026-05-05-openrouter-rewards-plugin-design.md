@@ -1,34 +1,30 @@
 # OpenRouter Rewards Plugin - Design
 
-**Status:** Design, pre-implementation, gated by OpenRouter API spike
+**Status:** Implemented design, pending production OpenRouter smoke test
 **Date:** 2026-05-05
 **Author:** brainstormed with Henry Perkins
 **Repo:** plato
 
 ## Summary
 
-A new plato plugin, `plugins/openrouter-rewards/`, issues OpenRouter API keys to learners as configurable lesson-completion rewards. Admins define reward rules such as "after N lessons" or "after a specific lesson." When a learner satisfies a rule, plato either asks them to connect an OpenRouter account via OAuth PKCE or, if they are already connected, tops up their existing workspace-scoped key.
+A new plato plugin, `plugins/openrouter-rewards/`, issues OpenRouter API keys to learners as configurable lesson-completion rewards. Admins define reward rules such as "after N lessons" or "after a specific lesson." When a learner satisfies a rule, plato synchronously uses the classroom's write-only OpenRouter management key to mint a workspace-scoped key, or tops up the learner's existing key when one is still present.
 
-The target design satisfies the original ask with one external dependency: OpenRouter must support creating or managing classroom workspace keys for OAuth-created learner users.
+The target design satisfies the original ask with one external dependency: OpenRouter must support creating and managing classroom workspace keys from the management key without learner OAuth or callback routing.
 
 - Provision keys after completing X lessons or after a specific lesson.
-- Let learners complete quick OpenRouter signup/authorization through OAuth PKCE.
 - Display the key in plato once when plaintext exists.
 - Optionally DM the learner through Slack if the admin explicitly enables Slack key delivery.
 
-## Gating API Assumptions
+## OpenRouter API Assumptions
 
-OpenRouter's documented `POST /api/v1/workspaces/{id}/members/add` endpoint adds organization members to a workspace. This design depends on one of these being true:
+This implementation uses OpenRouter's management-key API directly:
 
-- An OAuth-created `user_id` is, or can be made, an organization member by the classroom's management key.
-- A workspace API key can be created with `workspace_id` and `creator_user_id` for a user who is not already a workspace member.
-- OpenRouter has another invite/member endpoint that completes the organization-membership step without manual admin work.
+- `POST /api/v1/keys` can create a key scoped to the configured `workspace_id`.
+- `GET /api/v1/keys/:hash` can read an existing key before top-up or reissue.
+- `PATCH /api/v1/keys/:hash` can increase an existing key limit and update reset/expiry policy.
+- `DELETE /api/v1/keys/:hash` or a disabling `PATCH` can retire replaced keys.
 
-OpenRouter's organization docs also currently state that an organization can only have 10 members. If workspace-scoped learner keys require every learner to become an organization member, this design will not scale for normal classrooms without OpenRouter support or enterprise changes.
-
-Before implementation, run a real API spike with a management key and a learner account that is not already in the organization. If none of the membership/key-creation paths works, this spec must change to an org-invite/manual-approval flow or drop the workspace-scoped reward requirement.
-
-The API spike must also verify whether OpenRouter supports in-place key top-ups via `PATCH /api/v1/keys/:hash`. The preferred design keeps one stable key per learner and increases its limit. If OpenRouter cannot increase an existing key limit, replacement-key top-ups become an explicit degraded mode with user-facing warnings.
+A production smoke test must verify these calls with a non-production classroom workspace before enabling rewards for learners. If in-place limit increases are unsupported, replacement-key top-ups must become an explicit degraded mode with user-facing warnings.
 
 ## Non-Goals
 
@@ -118,10 +114,9 @@ Slack delivery warning copy:
 
 `AdminProfileFields` slot in the admin user-edit page shows, when the plugin is enabled:
 
-- Connected OpenRouter user ID, truncated, with connection status.
 - Current key hash, truncated, plus lifetime awarded and rules fired count.
 - Active key policy.
-- Pending OAuth, pending claim, and pending reissue indicators.
+- Pending reward processing and pending reissue indicators.
 - Link to `https://openrouter.ai/settings/keys` in a new tab. Admin can see key record, status, and usage in OpenRouter, not plaintext.
 - Buttons: Revoke and Queue reissue.
 
@@ -138,7 +133,7 @@ Admin reissue is queued, not forced. The admin action records `pendingReissue`; 
        { status: 'no-claim' }
        { status: 'topped-up', addedCredit, lifetimeAwarded, limit }
        { status: 'minted', plaintext, lifetimeAwarded, limit, limitReset }
-       { status: 'pending-oauth', accumulatedAmount, ruleNames }
+       { status: 'processing' }
 ```
 
 Behavior by response:
@@ -146,19 +141,16 @@ Behavior by response:
 - `no-claim`: render nothing.
 - `topped-up`: show a non-secret confirmation that the learner's existing key limit increased.
 - `minted`: render a one-time reveal modal with copy-to-clipboard and plain-English limit/reset details.
-- `pending-oauth`: render "Claim your $X OpenRouter credits" CTA.
+- `processing`: show a short "reward is being prepared" message while an existing reservation is recovered or completed.
 
-OAuth claim flow:
+Synchronous award flow:
 
-1. Client generates `code_verifier` and `code_challenge`.
-2. Client calls `POST /v1/plugins/openrouter-rewards/oauth/start` with `{ codeChallenge }`.
-3. Server verifies the learner has a `pendingClaim`, computes `claimFingerprint`, stores `{ stateHash, codeChallenge, claimFingerprint, expiresAt }` in user metadata, and returns `{ authorizationUrl, state }`.
-4. Client stores `code_verifier` in `sessionStorage` as `or-pkce-verifier:<state>` and redirects to `authorizationUrl`.
-5. OpenRouter redirects back with `?code=...&state=...`.
-6. `LearnerHomeBanner` reads `state`, loads and removes `or-pkce-verifier:<state>`, and calls `POST /claim` with `{ code, state, codeVerifier }`.
-7. Server hashes `state`, consumes a non-expired session for this user, verifies the stored `codeChallenge` matches `codeVerifier`, verifies `pendingClaim.claimFingerprint` still matches, then exchanges the OAuth code.
-8. Server associates the learner with the workspace if the API spike proves this is possible, creates the first key, persists non-secret state, returns plaintext, and optionally emits a targeted Slack secret event.
-9. Reveal modal shows the key once.
+1. Server evaluates enabled reward rules for the learner's completed lessons.
+2. Server reserves matching rule IDs in plugin-owned user metadata with optimistic locking before calling OpenRouter.
+3. If the learner has a stored key hash, server reads the remote key and patches its absolute limit upward. If the remote key is missing, server treats it as stale state and mints a replacement key.
+4. If the learner has no current key, server creates a new workspace-scoped key with the configured policy.
+5. Server persists non-secret final state, returns plaintext only when a new key was minted, and optionally emits a targeted Slack secret event.
+6. Reveal modal shows newly minted plaintext once.
 
 Learner reveal copy must include:
 
@@ -190,7 +182,7 @@ plugins/openrouter-rewards/
   plugin.json
   server/
     index.js             - routes, activation/backfill, event emit
-    openrouter-client.js - OAuth, key CRUD, workspace member-add
+    openrouter-client.js - management-key key CRUD
     rules.js             - pure rule evaluation and policy validation
     rules.test.js
     openrouter-client.test.js
@@ -384,14 +376,13 @@ Stored at `userMeta:openrouter-rewards`. This is admin-owned per the `userMeta:*
 ]
 ```
 
-Reservations make the rule-award and OpenRouter side-effect boundary idempotent. `evaluateRules` treats `firedRuleIds`, `pendingClaim.ruleIds`, and `reservations[*].ruleIds` as unavailable so repeated completion UI mounts cannot accumulate the same rule twice. Reservation phases are `reserved` before an OpenRouter mutation and `external-succeeded` after the mutation succeeds but before final state persistence completes.
+Reservations make the rule-award and OpenRouter side-effect boundary idempotent. `evaluateRules` treats `firedRuleIds` and `reservations[*].ruleIds` as unavailable so repeated completion UI mounts cannot accumulate the same rule twice. Reservation phases are `reserved` before an OpenRouter mutation and `external-succeeded` after the mutation succeeds but before final state persistence completes.
 
 ### Plaintext Invariant
 
 plato never stores plaintext OpenRouter keys at rest. Plaintext exists only in:
 
 - The HTTP response body of `POST /check-pending` when first minting a key.
-- The HTTP response body of `POST /claim`.
 - The HTTP response body of `POST /reissue`.
 - The targeted in-process secret event payload sent to a manifest-declared handler such as Slack.
 
@@ -401,32 +392,16 @@ OpenRouter Rewards never emits plaintext on the open plugin hook bus. Public/ope
 
 ### Endpoints Used
 
-All management endpoints use `Authorization: Bearer <managementKey>`. The OAuth exchange auth requirement is ambiguous in OpenRouter docs and must be verified in Phase 0.
+All OpenRouter calls use `Authorization: Bearer <managementKey>`.
 
 | Method | Path | Purpose | Body |
 |---|---|---|---|
-| POST | `/api/v1/auth/keys` | Exchange OAuth code | `{ code, code_verifier, code_challenge_method: "S256" }` -> `{ key, user_id }` |
-| POST | `/api/v1/workspaces/{id}/members/add` | Add learner to workspace | `{ user_ids: [user_id] }` |
-| POST | `/api/v1/keys` | Mint key | `{ name, workspace_id, creator_user_id, limit, limit_reset, expires_at }` -> `{ key, data: { hash, ... } }` |
+| POST | `/api/v1/keys` | Mint key | `{ name, workspace_id, limit, limit_reset, expires_at }` -> `{ key, data: { hash, ... } }` |
 | GET | `/api/v1/keys/:hash` | Read usage before reissue/top-up | `{ data: { limit, usage, limit_remaining, ... } }` |
 | PATCH | `/api/v1/keys/:hash` | Top up or update key | `{ limit, disabled, name, limit_reset, expires_at }` |
 | DELETE | `/api/v1/keys/:hash` | Delete old key after replacement | none |
 
-The `key` returned from `POST /api/v1/auth/keys` is discarded if the workspace-scoped management flow works. The OAuth round trip exists to obtain `user_id` and ensure the learner has an OpenRouter identity.
-
-### OAuth PKCE Specifics
-
-- Client starts OAuth only through `POST /v1/plugins/openrouter-rewards/oauth/start` with `{ codeChallenge }`.
-- Server refuses OAuth start without an existing `pendingClaim`.
-- Server stores one-time `{ stateHash, codeChallenge, claimFingerprint, expiresAt }` in user metadata and returns the raw `state` only once.
-- Authorization URL: `https://openrouter.ai/auth?callback_url=<spa-url>/&code_challenge=<challenge>&code_challenge_method=S256&state=<state>`.
-- `<challenge>` is `base64url(sha256(code_verifier))`.
-- `<code_verifier>` is 64+ random characters, generated client-side and stored in `sessionStorage` as `or-pkce-verifier:<state>`.
-- `/claim` consumes the state, verifies the PKCE challenge, verifies the pending claim fingerprint did not change, and then exchanges the OAuth code.
-- Callback URL must match exactly what was sent at authorization time.
-- Client uses `window.location.origin + '/'` for callback target.
-- Server uses `APP_URL` only for links/messages.
-- No client registration required per OpenRouter docs as of 2026-05, pending spike verification.
+The plaintext `key` returned from `POST /api/v1/keys` is shown once to the learner and optionally sent through a targeted Slack secret event. The plugin stores only the returned key hash and non-secret metadata.
 
 ## Rule Evaluation
 
@@ -444,15 +419,14 @@ This avoids surprising aggregation behavior and preserves the one-key-per-learne
 
 ```js
 function evaluateRules(rules, state, completions, justCompletedLessonId) {
-  const firedOrPending = new Set([
+  const firedOrReserved = new Set([
     ...(state.firedRuleIds ?? []),
-    ...(state.pendingClaim?.ruleIds ?? []),
     ...((state.reservations ?? []).flatMap((r) => r.ruleIds ?? [])),
   ]);
 
   return rules.filter((rule) => {
     if (!rule.enabled) return false;
-    if (firedOrPending.has(rule.id)) return false;
+    if (firedOrReserved.has(rule.id)) return false;
     if (rule.trigger === 'lesson-count') return completions.length >= rule.value;
     if (rule.trigger === 'specific-lesson') return completions.some((c) => c.lessonId === rule.value);
     return false;
@@ -468,8 +442,8 @@ The hot path reserves matched rules before calling OpenRouter. A conditional wri
 
 Route ordering is part of the idempotency contract:
 
-- If `state.pendingClaim` exists, return `pending-oauth` before evaluating new rules.
 - If an award reservation exists with phase `reserved` or `external-succeeded`, return `processing` and do not create another reservation.
+- If settings validation fails, return 400 before reserving or calling OpenRouter.
 - Only call `clearReservation` for failures that happen before any OpenRouter mutation succeeds.
 - After an OpenRouter mutation succeeds, retry finalization from latest metadata. If persistence remains unavailable, run the documented compensation path instead of clearing the reservation.
 
@@ -479,35 +453,32 @@ async function checkPending({ userId, lessonId }) {
   const { data: state, version } = await getUserMetaWithVersion(userId, 'openrouter-rewards');
   const current = state ?? emptyState();
 
-  if (current.pendingClaim) {
-    return {
-      status: 'pending-oauth',
-      accumulatedAmount: current.pendingClaim.accumulatedAmount,
-      ruleIds: current.pendingClaim.ruleIds,
-    };
-  }
-
   if ((current.reservations || []).some((r) => r.kind === 'award')) {
     return { status: 'processing' };
   }
 
   const completions = await listCompletedLessons(userId);
-  const matched = evaluateRules(settings.rules, current, completions, lessonId);
+  const matched = evaluateRules(rewardRules(settings), current, completions, lessonId);
 
   if (matched.length === 0) return { status: 'no-claim' };
 
-  const award = buildAward(matched); // allowed only after policy validation
-  const reservationId = crypto.randomUUID();
-  const reserved = reserveAward(current, matched, award, reservationId);
-  await putUserMetaConditional(userId, 'openrouter-rewards', reserved, version);
-
-  if (!reserved.openrouterUserId) {
-    return {
-      status: 'pending-oauth',
-      accumulatedAmount: reserved.pendingClaim.accumulatedAmount,
-      ruleNames: matched.map((r) => r.name),
-    };
+  const client = createOpenRouterClient({ managementKey: settings.managementKey });
+  const amount = matched.reduce((sum, rule) => sum + Number(rule.creditAmount || 0), 0);
+  let awardState = current;
+  let currentKey = null;
+  if (current.keyHash) {
+    try {
+      currentKey = await client.getKey(current.keyHash);
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      awardState = { ...current, keyHash: null };
+    }
   }
+
+  const award = buildAward(matched, { targetLimit: Number(currentKey?.limit || 0) + amount });
+  const reservationId = crypto.randomUUID();
+  const reserved = reserveAward(awardState, matched, award, reservationId);
+  await putUserMetaConditional(userId, 'openrouter-rewards', reserved, version);
 
   let externalSucceeded = false;
   try {
@@ -520,7 +491,7 @@ async function checkPending({ userId, lessonId }) {
       return { status: 'topped-up', addedCredit: award.amount, lifetimeAwarded: finalState.lifetimeAwarded, limit: topUp.limit };
     }
 
-    const minted = await mintInitial(reserved.openrouterUserId, award, settings);
+    const minted = await mintKey(award, settings);
     externalSucceeded = true;
     const latest = await getUserMetaWithVersion(userId, 'openrouter-rewards');
     const finalState = finalizeReservation(latest.data, reservationId, { award, keyHash: minted.hash });
@@ -570,10 +541,10 @@ Backfill must be rule-versioned, not a single `backfilledAt` guard.
 
 Preferred v1 behavior:
 
-- On first activation, run a bounded backfill that creates pending claims only.
+- On first activation, do not mint keys or create hidden reward state.
 - Do not mint keys or send Slack DMs during backfill.
 - When rules change, settings UI shows "Rules changed. Run backfill to award learners who already qualify."
-- Admin can run `POST /admin/backfill` for the current `rulesVersion`.
+- Admin can run `POST /admin/backfill` for the current `rulesVersion`; v1 may return a no-op response until a queued backfill worker exists.
 - Each user records `lastBackfilledRulesVersion` and `backfillRuns`.
 - Rule IDs already fired, pending, or reserved are skipped.
 
@@ -616,9 +587,8 @@ Admin-queued reissue:
 
 ### Learner Routes
 
-- `POST /v1/plugins/openrouter-rewards/check-pending`: returns `no-claim`, `pending-oauth`, `minted`, or `topped-up`.
-- `POST /v1/plugins/openrouter-rewards/claim`: completes OAuth and mints first key.
-- `GET /v1/plugins/openrouter-rewards/status`: returns non-secret state, top-up history, current key hash suffix, active policy, pending claim, and pending reissue.
+- `POST /v1/plugins/openrouter-rewards/check-pending`: returns `no-claim`, `processing`, `minted`, or `topped-up`.
+- `GET /v1/plugins/openrouter-rewards/status`: returns non-secret state, top-up history, current key hash suffix, active policy, available reward summary, and pending reissue.
 - `POST /v1/plugins/openrouter-rewards/reissue`: learner-initiated or admin-queued key replacement; returns plaintext only on success.
 
 ### Admin Routes
@@ -634,17 +604,15 @@ Admin-queued reissue:
 |---|---|
 | OpenRouter API 4xx before mutation | Surface useful OpenRouter error to client. Log `openrouter_api_4xx` with endpoint and status. Clear the in-flight reservation only when no OpenRouter mutation succeeded. Do not append `firedRuleIds`. |
 | OpenRouter API 5xx or network before mutation | Log `openrouter_api_5xx`. Client shows retry message. Clear the in-flight reservation only when no OpenRouter mutation succeeded. |
-| OAuth code expired or replayed | Claim returns 4xx. `pendingClaim` survives so learner can click Claim again. |
-| Workspace member-add fails | Fatal for the claim attempt. Do not mint. Keep `pendingClaim` reserved so retry works after admin fixes config. |
+| Stored key hash no longer exists in OpenRouter | Treat the hash as stale, mint a replacement key, and overwrite `state.keyHash` during finalization so the learner is not stuck. |
 | Existing key top-up unsupported | Use degraded replacement-key mode only if Phase 0 documented this limitation and UI warns learner. |
-| Duplicate completion UI mounts | Second request sees rule IDs in `firedRuleIds`, `pendingClaim`, or `reservations` and returns `pending-oauth`, `processing`, or `no-claim` without creating a duplicate reservation. |
+| Duplicate completion UI mounts | Second request sees rule IDs in `firedRuleIds` or `reservations` and returns `processing` or `no-claim` without creating a duplicate reservation. |
 | Concurrent `check-pending` | First conditional metadata write wins. Loser re-reads and does not mint/top-up duplicate credit. |
 | OpenRouter key created but final state write fails | Retry finalization from latest state using `reservationId`. If bounded retries fail, compensate by disabling the created key and logging `openrouter_created_key_compensated`; if compensation fails, log `openrouter_orphan_key_created` for admin cleanup. Never return plaintext until final state is persisted. |
 | Reissue replacement key created but reservation persistence fails | Attempt to delete or disable the replacement key. If cleanup also fails, clear the reserved reissue reservation so the learner is not stuck in perpetual `processing`; the orphaned OpenRouter key is an admin cleanup item. |
 | Admin revoke partially fails | Continue attempting remaining key retirements. Persist each successful retirement so already-dead OpenRouter hashes are removed from plato state before returning the failure. |
 | Slack DM fails | Log and record `deliveryAttempts`; in-app reveal remains source of truth. |
 | Reveal modal closed before copy | Learner can reissue from Settings; cooldown applies unless admin queued it. |
-| Lambda cold start during OAuth callback | No impact; verifier is in browser `sessionStorage`. |
 
 ## Security Review
 
@@ -652,37 +620,32 @@ Admin-queued reissue:
 - **Plaintext keys:** plato never stores plaintext at rest and never sends plaintext over the open plugin hook bus. Plaintext leaves the OpenRouter plugin only in authenticated HTTP responses and targeted secret events.
 - **Slack delivery:** disabled by default and guarded by admin warning.
 - **Admin reissue:** admins queue reissue; they cannot generate or view plaintext.
-- **OAuth verifier:** generated client-side, stored in `sessionStorage`, removed after claim POST. PKCE protects against code interception.
 - **Workspace validation:** settings save/test verifies configured workspace belongs to the management key.
-- **Workspace membership validation:** Phase 0 must prove workspace membership or workspace key creation works for OAuth-created learners. No silent fallback to personal keys.
+- **Workspace-scoped keys:** key creation includes the configured workspace ID when present. No silent fallback to learner personal keys.
 - **Learner cannot escalate:** all routes authenticate; learners can only act on their own state. Admin routes require `requireAdmin`.
 - **CSRF:** plugin routes require bearer JWT in the `Authorization` header. plato does not use ambient auth cookies, so cross-site forms/images cannot authenticate. Current CORS is permissive and must not be cited as the primary CSRF control.
 
 ## Testing
 
-### Phase 0 API Spike
+### Production API Smoke Test
 
-- Complete OAuth as a test learner account that is not already an organization member.
-- Verify whether `POST /api/v1/auth/keys` requires Authorization.
-- Verify whether `POST /api/v1/workspaces/{id}/members/add { user_ids: [oauthUserId] }` succeeds.
-- If workspace add fails, verify whether `POST /api/v1/keys { workspace_id, creator_user_id: oauthUserId, ... }` succeeds.
+- Create a test key with `POST /api/v1/keys { workspace_id, ... }` using a non-production management key.
 - Verify whether `PATCH /api/v1/keys/:hash` can increase an existing key limit.
 - Verify whether `PATCH /api/v1/keys/:hash` can preserve or change `limit_reset` and expiry fields.
-- Document response bodies/status codes in this spec before implementation starts.
-- If neither workspace add nor workspace key creation works for non-member learners, stop and redesign around OpenRouter organization invites or manual approval.
+- Verify whether `DELETE /api/v1/keys/:hash` or disabling with `PATCH` retires replaced keys as expected.
+- Document response bodies/status codes in this spec before production enablement.
 
 ## Phase 0 API Spike Results
 
 Date: not yet run in this implementation branch
 
-This branch implements the plugin behind the API assumptions above, but the production PR remains gated on a real OpenRouter spike with a non-production classroom workspace and a learner account that is not already an organization member. Before merge, replace this section with observed status codes, response body notes, and decisions for:
+This branch implements the plugin behind the API assumptions above, but production enablement remains gated on a real OpenRouter smoke test with a non-production classroom workspace. Before enabling rewards for learners, replace this section with observed status codes, response body notes, and decisions for:
 
 | Call | Status | Result | Decision |
 |---|---:|---|---|
-| POST /api/v1/auth/keys | not run | pending real OAuth exchange | keep or revise OAuth exchange implementation |
-| POST /api/v1/workspaces/{id}/members/add | not run | pending membership behavior | keep workspace-member design or redesign |
-| POST /api/v1/keys with workspace_id + creator_user_id | not run | pending key-creation behavior | keep learner-owned workspace key design or redesign |
+| POST /api/v1/keys with workspace_id | not run | pending key-creation behavior | keep workspace-scoped management-key design or redesign |
 | PATCH /api/v1/keys/:hash limit increase | not run | pending top-up behavior | keep in-place top-up or use replacement-key degraded mode |
+| DELETE or disable key | not run | pending retirement behavior | keep current reissue/revoke compensation behavior or revise |
 
 ### Core Tests
 
@@ -694,23 +657,22 @@ This branch implements the plugin behind the API assumptions above, but the prod
 ### Plugin Server Tests
 
 - `rules.test.js`: count rules, specific-lesson rules, dedup via fired/pending/reserved IDs, disabled rules, multi-rule fan-out, policy validation rejection.
-- `openrouter-client.test.js`: OAuth exchange, workspace add, mint, top-up patch, get, delete, error surfacing.
-- `index.test.js`: `check-pending` statuses, pending OAuth idempotency, concurrent reservation, claim end-to-end, top-up without plaintext, reissue cooldown, admin-queued reissue, revoke admin gate.
+- `openrouter-client.test.js`: mint, top-up patch, get, delete, error surfacing.
+- `index.test.js`: `check-pending` statuses, invalid policy handling, stale remote-key replacement, concurrent reservation, top-up without plaintext, reissue cooldown, admin-queued reissue, revoke admin gate.
 - Slack secret handler tests in `plugins/slack/`: manifest-declared handler, opt-in gate, no matching Slack user, fail-open behavior.
 
 ### Client Tests
 
 - Settings panel preserves management key when omitted.
 - Settings panel displays Slack retention warning before enabling Slack delivery.
-- Completion slot handles `no-claim`, `pending-oauth`, `minted`, and `topped-up`.
-- Home/settings CTA handles pending OAuth and pending reissue.
+- Completion slot handles `no-claim`, `processing`, `minted`, and `topped-up`.
+- Home/settings CTA handles pending reissue.
 - Admin profile slot displays "Queue reissue" and never reveals plaintext.
 
 ### Manual Smoke
 
 - Configure plugin with a real OpenRouter management key and workspace.
 - Complete a lesson with `lesson-count: 1` active.
-- Walk through OAuth.
 - Verify first key works against `https://openrouter.ai/api/v1/chat/completions`.
 - Complete another qualifying rule and verify top-up does not rotate key if OpenRouter supports patch.
 - Enable Slack delivery and verify DM arrives.
@@ -731,9 +693,8 @@ This branch implements the plugin behind the API assumptions above, but the prod
 
 ## Open Questions
 
-1. Can a management key add an OAuth-created learner user to a workspace if that learner is not already an organization member?
-2. Does `POST /api/v1/auth/keys` require Authorization in this flow?
-3. Can `PATCH /api/v1/keys/:hash` increase an existing key's limit while preserving reset/expiry policy?
+1. Can `PATCH /api/v1/keys/:hash` increase an existing key's limit while preserving reset/expiry policy?
+2. Does disabling or deleting a key have the best learner/admin recovery semantics for reissue and revoke?
 
 ## Decisions
 
@@ -745,7 +706,7 @@ This branch implements the plugin behind the API assumptions above, but the prod
 | 4 | Reveal UX | One-time in-app reveal for plaintext-producing flows. |
 | 5 | Slack delivery | Optional admin-enabled channel; off by default with retention warning. |
 | 6 | Admin reissue | Queue learner-claimed reissue; admins never see plaintext. |
-| 7 | Backfill | Rule-versioned pending claims only; no offline minting. |
-| 8 | OpenRouter identity | Workspace-scoped keys tied to learner `user_id` if Phase 0 proves support. |
+| 7 | Backfill | Rule-versioned no-op/queued backfill only; no offline minting. |
+| 8 | OpenRouter identity | Workspace-scoped keys are created by management key without learner OAuth. |
 | 9 | Mint trigger | Client-initiated `POST /check-pending`; no completion semantics changes. |
-| 10 | Implementation gate | Do not implement plugin until core API changes and Phase 0 spike are complete. |
+| 10 | Implementation gate | Do not enable rewards in production until core API changes are merged and OpenRouter smoke tests pass. |

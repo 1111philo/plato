@@ -13,6 +13,8 @@ export default function LearnerCompletionAfter({ lessonId }) {
     if (!lessonId || checkedRef.current === lessonId) return;
     checkedRef.current = lessonId;
     let cancelled = false;
+    setError('');
+    setResult(null);
     (async () => {
       try {
         const res = await authenticatedFetch('/v1/plugins/openrouter-rewards/check-pending', {
@@ -23,7 +25,10 @@ export default function LearnerCompletionAfter({ lessonId }) {
         const data = await res.json();
         if (!cancelled) {
           if (!res.ok) setError(data.error || 'Reward request failed');
-          else setResult(data);
+          else {
+            setError('');
+            setResult(data);
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.message);
