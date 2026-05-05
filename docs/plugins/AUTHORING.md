@@ -56,7 +56,7 @@ node scripts/validate-plugins.js
 Server-side code lives in `server/index.js` and exports a default object:
 
 ```js
-import { Hono, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+import { Hono, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
 
 const routes = new Hono();
 routes.use('*', authenticate, requireAdmin);
@@ -76,7 +76,7 @@ export default {
 };
 ```
 
-The plugin SDK at `server/src/lib/plugins/sdk.js` re-exports the host primitives plugins need (`Hono`, `db`, `authenticate`, `requireAdmin`, `generateInviteToken`, `APP_URL`). Adding new dependencies to the SDK is a core change.
+The plugin SDK at `src/lib/plugins/sdk.js` re-exports the host primitives plugins need (`Hono`, `db`, `authenticate`, `requireAdmin`, `generateInviteToken`, `APP_URL`). Adding new dependencies to the SDK is a core change.
 
 Plugin routes are mounted under `/v1/plugins/<id>/`. So `routes.get('/admin/items')` becomes `GET /v1/plugins/<id>/admin/items`. Always include auth middleware — the host only gates on enabled state, not auth.
 

@@ -19,7 +19,7 @@ import {
   getUserMeta,
   putUserMeta,
   deleteUserMeta,
-} from '../../../server/src/lib/plugins/sdk.js';
+} from '../../../src/lib/plugins/sdk.js';
 
 const PLUGIN_ID = 'teacher-comments';
 const MAX_LEN = 4000;

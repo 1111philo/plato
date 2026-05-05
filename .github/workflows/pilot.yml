@@ -39,15 +39,18 @@ jobs:
           echo "Generated pilot report:"
           cat /tmp/pilot-report.md
 
+      - name: Configure AWS credentials (Bedrock OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: us-east-2
+
       - uses: anthropics/claude-code-action@v1
         id: agent
         with:
-          # OAuth-only broke in PR #94 (Max token got 401 from Anthropic API).
-          # Restored API-key fallback; investigate OAuth scope before re-trying.
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_bedrock: "true"
           show_full_output: true
-          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 50"
+          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 50 --model us.anthropic.claude-sonnet-4-5-20250929-v1:0"
           prompt: |
             You are plato-pilot, an autonomous engineering advisor for plato.
             You have a turn budget — be efficient. Don't over-explore. Pick one thing, fix it, test it, ship it.

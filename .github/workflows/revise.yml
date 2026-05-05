@@ -36,21 +36,24 @@ jobs:
           gh label create plato-pilot-revised --color 9B59B6 --description "Revise workflow has already run once on this PR" 2>/dev/null || true
           gh pr edit "$PR_NUMBER" --add-label plato-pilot-revised
 
+      - name: Configure AWS credentials (Bedrock OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          aws-region: us-east-2
+
       - uses: anthropics/claude-code-action@v1
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_ID: ${{ github.event.review.id }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         with:
-          # OAuth-only broke in PR #94 (Max token got 401 from Anthropic API).
-          # Restored API-key fallback; investigate OAuth scope before re-trying.
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_bedrock: "true"
           allowed_bots: "claude"
           show_full_output: true
           # Haiku handles mechanical fixup edits well — saves ~3x on per-run cost.
           # If revise quality regresses on complex reviews, swap back to Sonnet.
-          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30 --model claude-haiku-4-5-20251001"
+          claude_args: "--allowedTools Bash(*),Read(*),Write(*),Edit,Glob,Grep --max-turns 30 --model us.anthropic.claude-haiku-4-5-20251001-v1:0"
           prompt: |
             You are plato-pilot-revise. A code reviewer requested changes on PR #${{ env.PR_NUMBER }}.
             Address the review in ONE fixup commit. One shot — you do not get a second pass.

@@ -6,7 +6,7 @@
  * plugin directory and finds nothing). Instead, plugins import from this file
  * via a relative path:
  *
- *   import { Hono, db, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+ *   import { Hono, db, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
  *
  * This file lives inside server/ where node_modules is available, so its bare
  * imports resolve cleanly. Plugins get a single, stable surface to import from.

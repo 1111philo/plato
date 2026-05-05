@@ -189,7 +189,7 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 
 A plugin using an extension point without declaring its capability fails registration with `plugin_capability_missing`.
 
-## Server SDK exports (`server/src/lib/plugins/sdk.js`)
+## Server SDK exports (`src/lib/plugins/sdk.js`)
 
 | Export | Purpose |
 |---|---|

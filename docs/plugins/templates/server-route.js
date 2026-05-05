@@ -8,7 +8,7 @@
  *   "extensionPoints": { "serverRoutes": "server/index.js#default" }
  */
 
-import { Hono, authenticate, requireAdmin } from '../../../server/src/lib/plugins/sdk.js';
+import { Hono, authenticate, requireAdmin } from '../../../src/lib/plugins/sdk.js';
 
 const routes = new Hono();
 
