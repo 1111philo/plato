@@ -316,44 +316,24 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
   } else if (parsed.kbUpdate?.insights?.length) {
     // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join(' ');
+    const insightText = parsed.kbUpdate.insights.join('. ');
     updateProfileFromObservation(lessonKB, insightText);
   }
-
-  // Increment exchange counter (only during active learning, not post-completion)
-  if (!isCompleted(lessonKB)) {
-    lessonKB.activitiesCompleted = (lessonKB.activitiesCompleted ?? 0) + 1;
-    await saveLessonKB(lessonId, lessonKB);
-    syncInBackground(`lessonKB:${lessonId}`);
-  }
-
-  // Save new messages
-  const userMsg = {
-    role: 'user',
-    content: text || '',
-    imageKey,
-    msgType: MSG_TYPES.USER,
-    phase: phase,
-    timestamp: ts(),
-  };
-  const assistantMsg = {
-    role: 'assistant',
-    content: parsed.text,
-    msgType: MSG_TYPES.GUIDE,
-    phase: phase,
-    timestamp: ts(),
-  };
-
-  const newMessages = [userMsg, assistantMsg];
-  const updatedMessages = [...allMsgs, ...newMessages];
-  await saveLessonMessages(lessonId, updatedMessages);
-  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
-
   if (achieved) {
-    updateProfileOnCompletionInBackground(lessonId, lessonKB);
+    updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
-  return { messages: newMessages, lessonKB, phase, achieved };
+  // Save messages
+  const newMessages = [
+    { role: 'user', content: text || (imageKey ? '[image]' : ''), msgType: MSG_TYPES.USER, phase,
+      metadata: imageKey ? { imageKey } : null, timestamp: ts() },
+    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
+  ];
+
+  await saveLessonMessages(lessonId, newMessages);
+  syncInBackground(`messages:${lessonId}`);
+
+  return { messages: newMessages, progress: parsed.progress, achieved, phase };
 }
 
 // -- KB application (pure) ----------------------------------------------------
@@ -370,30 +350,37 @@ function isCompleted(lessonKB) {
  * Returns { lessonKB, achieved, phase }.
  */
 export function applyCoachResponseToKB(lessonKB, parsed, { now = Date.now } = {}) {
-  // Post-completion: freeze activitiesCompleted, suppress further progress awards
-  if (isCompleted(lessonKB)) {
-    return { lessonKB, achieved: false, phase: LESSON_PHASES.COMPLETED };
-  }
+  const wasCompleted = lessonKB?.status === 'completed';
+  const next = { ...lessonKB };
 
-  const updated = { ...lessonKB };
-
-  // Apply KB update
   if (parsed.kbUpdate) {
-    Object.assign(updated, parsed.kbUpdate);
+    if (parsed.kbUpdate.insights?.length) {
+      next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
+      // Prune old insights (keep last 10)
+      if (next.insights.length > 10) {
+        const older = next.insights.slice(0, next.insights.length - 10);
+        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
+      }
+    }
+    if (parsed.kbUpdate.learnerPosition) {
+      next.learnerPosition = parsed.kbUpdate.learnerPosition;
+    }
   }
-
-  // Apply progress
   if (parsed.progress != null) {
-    updated.progress = Math.max(updated.progress ?? 0, parsed.progress);
+    next.progress = parsed.progress;
+  }
+  if (!wasCompleted) {
+    next.activitiesCompleted = (next.activitiesCompleted || 0) + 1;
   }
 
-  // Check for completion
-  const achieved = updated.progress >= 10;
+  // `achieved` means "just achieved on this turn" — one-shot. Without this
+  // guard it would re-fire on every post-completion message, triggering
+  // confetti + completion-profile updates repeatedly in the feedback thread.
+  const achieved = parsed.progress >= 10 && !wasCompleted;
   if (achieved) {
-    updated.status = 'completed';
-    updated.completedAt = now();
+    next.status = 'completed';
+    next.completedAt = now();
   }
-
-  const phase = achieved ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
-  return { lessonKB: updated, achieved, phase };
+  const phase = next.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
+  return { lessonKB: next, achieved, phase };
 }
