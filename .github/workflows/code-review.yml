@@ -107,7 +107,7 @@ jobs:
             echo
             echo "## PR metadata"
             gh pr view "$PR_NUMBER" --json number,title,author,body,baseRefName,headRefName \
-              --jq '"PR #\(.number): \(.title)\nAuthor: \(.author.login)\nBase: \(.baseRefName) ← Head: \(.headRefName)\n\n--- PR body ---\n\(.body // \"(no body)\")"'
+              --jq '"PR #\(.number): \(.title)\nAuthor: \(.author.login)\nBase: \(.baseRefName) ← Head: \(.headRefName)\n\n--- PR body ---\n\(.body // "(no body)")"'
             echo
           } >> "$CTX"
 
