@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
+import { authenticatedFetch } from '../../js/auth.js';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,11 +11,23 @@ import {
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 
+// 1.8 min/exchange matches the ~20 min / 11 exchange MAX_EXCHANGES target.
+const MINS_PER_EXCHANGE = 1.8;
+
+function formatTimeRange(p20, p80) {
+  if (typeof p20 !== 'number' || typeof p80 !== 'number') return null;
+  const low = Math.round(p20 * MINS_PER_EXCHANGE);
+  const high = Math.round(p80 * MINS_PER_EXCHANGE);
+  if (low === high) return `~${low} min`;
+  return `${low}–${high} min`;
+}
+
 export default function LessonsList() {
   const { state } = useApp();
   const navigate = useNavigate();
   const { lessons } = state;
   const [lessonData, setLessonData] = useState({});
+  const [timeStats, setTimeStats] = useState({});
   const [detailLesson, setDetailLesson] = useState(null);
 
   useEffect(() => {
@@ -30,6 +43,19 @@ export default function LessonsList() {
       setLessonData(data);
     })();
   }, [lessons]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authenticatedFetch('/v1/lessons/time-stats');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setTimeStats(data || {});
+      } catch { /* time tags are optional */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   function statusIcon(lessonId) {
     const d = lessonData[lessonId];
@@ -83,6 +109,21 @@ export default function LessonsList() {
               <div className="flex items-center gap-2 flex-wrap">
                 {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
                 {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
+                {(() => {
+                  const stats = timeStats[c.lessonId];
+                  if (!stats || (stats.sampleSize ?? 0) < 3) return null;
+                  const range = formatTimeRange(stats.p20, stats.p80);
+                  if (!range) return null;
+                  return (
+                    <Badge
+                      variant="outline"
+                      className="text-xs"
+                      title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
+                    >
+                      Most learners finish in {range}
+                    </Badge>
+                  );
+                })()}
                 <span className="text-xs text-primary hover:underline cursor-pointer"
                   role="button" tabIndex={0}
                   onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}

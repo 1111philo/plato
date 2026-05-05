@@ -89,6 +89,71 @@ content.get('/v1/lessons', async (c) => {
   return c.json(lessons);
 });
 
+// GET /v1/lessons/time-stats — per-lesson completion-time estimates derived from
+// completed lesson KBs across all users. Returns { [lessonId]: { p20, p80, sampleSize } }
+// where p20/p80 are exchange counts at the 20th/80th percentile (middle 60% range).
+// Lessons with fewer than 3 completions are omitted. Response is filtered to lessons
+// the requesting user can see (public + private shared with them) so we don't leak
+// information about lessons the user has no access to. Cached for 60 s in-process.
+const TIME_STATS_TTL_MS = 60_000;
+let _timeStatsCache = null; // { computedAt, byLesson }
+
+async function computeAllLessonTimeStats() {
+  if (_timeStatsCache && Date.now() - _timeStatsCache.computedAt < TIME_STATS_TTL_MS) {
+    return _timeStatsCache.byLesson;
+  }
+  const users = await db.listAllUsers();
+  const exchangesByLesson = new Map();
+  for (const user of users) {
+    const items = await db.getAllSyncData(user.userId);
+    for (const item of items) {
+      if (!item.dataKey?.startsWith('lessonKB:')) continue;
+      const kb = item.data;
+      if (kb?.status !== 'completed') continue;
+      const exchanges = kb.activitiesCompleted;
+      if (typeof exchanges !== 'number' || exchanges <= 0) continue;
+      const lessonId = item.dataKey.slice('lessonKB:'.length);
+      if (!exchangesByLesson.has(lessonId)) exchangesByLesson.set(lessonId, []);
+      exchangesByLesson.get(lessonId).push(exchanges);
+    }
+  }
+  const byLesson = {};
+  for (const [lessonId, counts] of exchangesByLesson.entries()) {
+    if (counts.length < 3) continue;
+    counts.sort((a, b) => a - b);
+    const p20Idx = Math.floor(counts.length * 0.2);
+    const p80Idx = Math.min(Math.floor(counts.length * 0.8), counts.length - 1);
+    byLesson[lessonId] = { p20: counts[p20Idx], p80: counts[p80Idx], sampleSize: counts.length };
+  }
+  _timeStatsCache = { computedAt: Date.now(), byLesson };
+  return byLesson;
+}
+
+// Exposed for tests so the in-process cache doesn't leak between cases.
+export function _resetTimeStatsCache() { _timeStatsCache = null; }
+
+content.get('/v1/lessons/time-stats', async (c) => {
+  const userId = c.get('userId');
+  const [systemItems, allStats] = await Promise.all([
+    db.getAllSyncData('_system'),
+    computeAllLessonTimeStats(),
+  ]);
+  const visible = new Set();
+  for (const i of systemItems) {
+    if (!i.dataKey?.startsWith('lesson:')) continue;
+    const status = normalizeStatus(i.data.status, !!i.data.markdown);
+    if (status === 'draft') continue;
+    if (status === 'public' || (Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId))) {
+      visible.add(i.dataKey.slice('lesson:'.length));
+    }
+  }
+  const filtered = {};
+  for (const [lessonId, stats] of Object.entries(allStats)) {
+    if (visible.has(lessonId)) filtered[lessonId] = stats;
+  }
+  return c.json(filtered);
+});
+
 // GET /v1/lessons/:lessonId — get a lesson (public, or private if user is in sharedWith)
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');

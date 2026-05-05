@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import content from '../../src/routes/content.js';
+import content, { _resetTimeStatsCache } from '../../src/routes/content.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
@@ -129,5 +129,76 @@ describe('GET /v1/lessons/:lessonId — access control', () => {
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons/draft-1', 'usr_1');
     assert.equal(res.status, 404);
+  });
+});
+
+describe('GET /v1/lessons/time-stats', () => {
+  // Counts under 3 are dropped (need a minimum sample). For pub-1: [4,6,8,10,12,14,16,18]
+  // p20Idx = floor(8 * 0.2) = 1 → 6; p80Idx = floor(8 * 0.8) = 6 → 16. So {p20:6, p80:16}.
+  const completionExchanges = {
+    'pub-1': [4, 6, 8, 10, 12, 14, 16, 18],
+    'priv-1': [10, 11, 12], // shared with usr_1 only
+    'too-few': [5, 7],      // <3 completions, omitted
+  };
+
+  function buildKbItems() {
+    const items = [];
+    let userIdx = 0;
+    for (const [lessonId, counts] of Object.entries(completionExchanges)) {
+      for (const exchanges of counts) {
+        items.push({
+          userId: `learner-${userIdx++}`,
+          dataKey: `lessonKB:${lessonId}`,
+          data: { status: 'completed', activitiesCompleted: exchanges },
+        });
+      }
+    }
+    // Mixed in: an in-progress KB and a completed-but-zero record that must be ignored.
+    items.push({ userId: 'learner-x', dataKey: 'lessonKB:pub-1', data: { status: 'in_progress', activitiesCompleted: 5 } });
+    items.push({ userId: 'learner-y', dataKey: 'lessonKB:pub-1', data: { status: 'completed', activitiesCompleted: 0 } });
+    return items;
+  }
+
+  beforeEach(() => {
+    _resetTimeStatsCache();
+    db.getUserById = async (id) => ({ userId: id, role: 'user', name: 'User' });
+    const allKbItems = buildKbItems();
+    const userIds = [...new Set(allKbItems.map(i => i.userId))];
+    db.listAllUsers = async () => userIds.map(uid => ({ userId: uid, role: 'user' }));
+    db.getAllSyncData = async (uid) => {
+      if (uid === '_system') {
+        return [
+          { dataKey: 'lesson:pub-1', data: { name: 'Public', markdown: '# P', status: 'public' } },
+          { dataKey: 'lesson:priv-1', data: { name: 'Private Shared', markdown: '# PS', status: 'private', sharedWith: ['usr_1'] } },
+          { dataKey: 'lesson:too-few', data: { name: 'New Lesson', markdown: '# N', status: 'public' } },
+        ];
+      }
+      return allKbItems.filter(i => i.userId === uid);
+    };
+  });
+
+  it('returns p20/p80/sampleSize for lessons with >=3 completions, visible to user', async () => {
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/time-stats', 'usr_1');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data['pub-1'], { p20: 6, p80: 16, sampleSize: 8 });
+    assert.deepEqual(data['priv-1'], { p20: 10, p80: 12, sampleSize: 3 });
+    assert.equal(data['too-few'], undefined, 'lessons with <3 completions are omitted');
+  });
+
+  it('omits private lessons not shared with the user', async () => {
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/time-stats', 'usr_99');
+    const data = await res.json();
+    assert.ok(data['pub-1'], 'public lesson stats included for any user');
+    assert.equal(data['priv-1'], undefined, 'private lesson hidden from non-shared user');
+  });
+
+  it('does not eclipse /v1/lessons/:lessonId routing (route order)', async () => {
+    db.getSyncData = async () => ({ data: { name: 'Public', status: 'public', markdown: '# P' }, version: 1 });
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/some-real-lesson');
+    assert.equal(res.status, 200);
   });
 });
