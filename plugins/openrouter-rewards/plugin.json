@@ -1,0 +1,67 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "openrouter-rewards",
+  "name": "OpenRouter Rewards",
+  "version": "0.1.0",
+  "apiVersion": "^1.3.0",
+  "description": "Issue OpenRouter API keys as configurable lesson-completion rewards.",
+  "author": "plato core",
+  "license": "AGPL-3.0-or-later",
+  "capabilities": [
+    "server.routes",
+    "settings.read",
+    "settings.write",
+    "user.metadata.read",
+    "user.metadata.write",
+    "ui.slot.adminSettingsPanel",
+    "ui.slot.adminProfileFields",
+    "ui.slot.learnerProfileFields",
+    "ui.slot.learnerCompletionAfter",
+    "ui.slot.learnerHomeBanner"
+  ],
+  "extensionPoints": {
+    "serverRoutes": "server/index.js#default",
+    "slots": {
+      "adminSettingsPanel": "client/AdminSettingsPanel.jsx",
+      "adminProfileFields": "client/AdminProfileFields.jsx",
+      "learnerProfileFields": "client/LearnerProfileFields.jsx",
+      "learnerCompletionAfter": "client/LearnerCompletionAfter.jsx",
+      "learnerHomeBanner": "client/LearnerHomeBanner.jsx"
+    }
+  },
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "managementKey": {
+        "type": "string",
+        "writeOnly": true,
+        "description": "OpenRouter management/provisioning key."
+      },
+      "workspaceId": {
+        "type": "string",
+        "description": "OpenRouter workspace ID or slug for the classroom."
+      },
+      "reissueCooldownHours": {
+        "type": "number",
+        "default": 24
+      },
+      "keyNameTemplate": {
+        "type": "string",
+        "default": "plato:{classroomName}:{userEmail}"
+      },
+      "delivery": {
+        "type": "object",
+        "properties": {
+          "inAppReveal": {
+            "type": "boolean",
+            "default": true
+          },
+          "slackDmEnabled": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}

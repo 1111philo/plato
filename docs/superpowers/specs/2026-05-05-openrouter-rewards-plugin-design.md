@@ -666,6 +666,19 @@ Admin-queued reissue:
 - Document response bodies/status codes in this spec before implementation starts.
 - If neither workspace add nor workspace key creation works for non-member learners, stop and redesign around OpenRouter organization invites or manual approval.
 
+## Phase 0 API Spike Results
+
+Date: not yet run in this implementation branch
+
+This branch implements the plugin behind the API assumptions above, but the production PR remains gated on a real OpenRouter spike with a non-production classroom workspace and a learner account that is not already an organization member. Before merge, replace this section with observed status codes, response body notes, and decisions for:
+
+| Call | Status | Result | Decision |
+|---|---:|---|---|
+| POST /api/v1/auth/keys | not run | pending real OAuth exchange | keep or revise OAuth exchange implementation |
+| POST /api/v1/workspaces/{id}/members/add | not run | pending membership behavior | keep workspace-member design or redesign |
+| POST /api/v1/keys with workspace_id + creator_user_id | not run | pending key-creation behavior | keep learner-owned workspace key design or redesign |
+| PATCH /api/v1/keys/:hash limit increase | not run | pending top-up behavior | keep in-place top-up or use replacement-key degraded mode |
+
 ### Core Tests
 
 - Write-only settings preservation.

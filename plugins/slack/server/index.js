@@ -24,6 +24,7 @@ import {
   listChannelMembers,
   sendSlackDM,
 } from './slack-client.js';
+import { deliverOpenRouterKey } from './openrouter-delivery.js';
 
 const routes = new Hono();
 
@@ -40,6 +41,17 @@ async function getClassroomName() {
   const item = await db.getSyncData('_system', 'settings');
   const s = item?.data || {};
   return s.classroomName || s.logoAlt || 'plato';
+}
+
+function createSlackDeliveryClient(botToken) {
+  return {
+    async findUserByEmail(email) {
+      const users = await searchSlackUsers(botToken, email);
+      const match = users.find((user) => user.email?.toLowerCase() === String(email || '').toLowerCase());
+      return match ? { id: match.slackUserId } : null;
+    },
+    sendDm: (userId, text) => sendSlackDM(botToken, userId, text),
+  };
 }
 
 // POST /v1/plugins/slack/admin/test — validate a bot token
@@ -185,6 +197,16 @@ async function migrateLegacySettings(ctx) {
 
 export default {
   routes,
+  secretEvents: {
+    async 'openrouter-rewards.keyAwarded'(payload, ctx) {
+      return deliverOpenRouterKey({
+        payload,
+        settings: ctx.settings,
+        slack: createSlackDeliveryClient(ctx.settings.botToken),
+        logger: ctx.logger,
+      });
+    },
+  },
   async onActivate(ctx) {
     await migrateLegacySettings(ctx);
   },

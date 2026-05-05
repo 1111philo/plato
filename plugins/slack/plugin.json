@@ -13,13 +13,17 @@
     "server.routes",
     "settings.read",
     "settings.write",
-    "ui.slot.adminSettingsPanel"
+    "ui.slot.adminSettingsPanel",
+    "secretEvent.receive.openrouter-rewards.keyAwarded"
   ],
   "extensionPoints": {
     "serverRoutes": "server/index.js#default",
     "slots": {
       "adminSettingsPanel": "client/SlackSettingsPanel.jsx"
-    }
+    },
+    "secretEvents": [
+      { "event": "openrouter-rewards.keyAwarded" }
+    ]
   },
   "settingsSchema": {
     "type": "object",
