@@ -44,7 +44,7 @@ export default function AdminProfileFields({ user }) {
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || !user?.userId}
+            disabled={busy || !user?.userId || !status?.keyHashSuffix}
             onClick={() => post(`/v1/plugins/openrouter-rewards/admin/reissue-request/${user.userId}`, 'Reissue queued.')}
           >
             Queue reissue

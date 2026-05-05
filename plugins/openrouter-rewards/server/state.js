@@ -4,6 +4,7 @@
 const LEGACY_OAUTH_FIELDS = ['pendingClaim', 'oauthSessions', 'openrouterUserId'];
 
 const DEFAULT_AWARD_RESERVATION_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_REISSUE_RESERVATION_TTL_MS = DEFAULT_AWARD_RESERVATION_TTL_MS;
 
 export function emptyState() {
   return {
@@ -39,6 +40,18 @@ export function pruneStaleAwardReservations(stateInput, { now = new Date(), stal
       if (r.kind !== 'award') return true;
       return (r.createdAt || '') > cutoff;
     }),
+  };
+}
+
+export function pruneStaleReissueReservation(stateInput, { now = new Date(), staleAfterMs = DEFAULT_REISSUE_RESERVATION_TTL_MS } = {}) {
+  const state = normalizeState(stateInput);
+  const reservation = state.reissueReservation;
+  if (!reservation || reservation.phase === 'external-succeeded') return state;
+  const cutoff = new Date(now.getTime() - staleAfterMs).toISOString();
+  if ((reservation.createdAt || '') > cutoff) return state;
+  return {
+    ...state,
+    reissueReservation: null,
   };
 }
 
@@ -111,6 +124,32 @@ export function reserveReissue(stateInput, { reservationId, oldKeyHash, remainin
       phase: 'reserved',
       createdAt,
     },
+  };
+}
+
+export function markReissueExternalSucceeded(stateInput, { keyHash, externalSucceededAt }) {
+  const state = normalizeState(stateInput);
+  if (!state.reissueReservation) return state;
+  return {
+    ...state,
+    reissueReservation: {
+      ...state.reissueReservation,
+      phase: 'external-succeeded',
+      newKeyHash: keyHash,
+      externalSucceededAt,
+    },
+  };
+}
+
+export function clearReissueReservation(stateInput, reservationId) {
+  const state = normalizeState(stateInput);
+  if (!state.reissueReservation || state.reissueReservation.id !== reservationId) return state;
+  if (state.reissueReservation.phase === 'external-succeeded') {
+    throw new Error('must not clear reissue reservation after external side effect succeeds');
+  }
+  return {
+    ...state,
+    reissueReservation: null,
   };
 }
 

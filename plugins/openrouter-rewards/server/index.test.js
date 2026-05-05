@@ -11,9 +11,16 @@ const PLUGIN_ID = 'openrouter-rewards';
 
 function fakeSyncStore() {
   const store = new Map();
+  let failedWrites = 0;
   const key = (userId, dataKey) => `${userId}\0${dataKey}`;
   const getSyncData = async (userId, dataKey) => store.get(key(userId, dataKey)) || null;
   const putSyncData = async (userId, dataKey, data, expectedVersion) => {
+    if (failedWrites > 0) {
+      failedWrites -= 1;
+      const err = new Error('injected write failure');
+      err.name = 'ConditionalCheckFailedException';
+      throw err;
+    }
     const k = key(userId, dataKey);
     const cur = store.get(k);
     const version = cur?.version || 0;
@@ -34,11 +41,21 @@ function fakeSyncStore() {
       .map(([k, value]) => ({ dataKey: k.split('\0')[1], ...value })),
     set: (userId, dataKey, data, version = 1) => store.set(key(userId, dataKey), { data, version }),
     read: (userId, dataKey) => store.get(key(userId, dataKey))?.data,
+    failNextPuts: (count) => { failedWrites = count; },
   };
 }
 
 async function userReq(app, method, path, body) {
   const token = await signAccessToken('usr_user', 'user');
+  return app.request(path, {
+    method,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+async function adminReq(app, method, path, body) {
+  const token = await signAccessToken('usr_admin', 'admin');
   return app.request(path, {
     method,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -71,7 +88,11 @@ describe('OpenRouter rewards routes', () => {
       },
     });
     store.set('usr_user', 'lessonKB:lesson-a', { status: 'completed' });
-    db.getUserById = async (id) => ({ userId: id, email: 'learner@example.com', role: 'user' });
+    db.getUserById = async (id) => ({
+      userId: id,
+      email: id === 'usr_admin' ? 'admin@example.com' : 'learner@example.com',
+      role: id === 'usr_admin' ? 'admin' : 'user',
+    });
     db.getSyncData = store.getSyncData;
     db.putSyncData = store.putSyncData;
     db.getAllSyncData = store.getAllSyncData;
@@ -85,6 +106,14 @@ describe('OpenRouter rewards routes', () => {
       createKey: async (body) => {
         openrouter.calls.push({ method: 'createKey', body });
         return { hash: 'hash_new', plaintext: 'sk-or-v1-minted', limit: body.limit };
+      },
+      deleteKey: async (hash) => {
+        openrouter.calls.push({ method: 'deleteKey', hash });
+        return { ok: true };
+      },
+      disableKey: async (hash) => {
+        openrouter.calls.push({ method: 'disableKey', hash });
+        return { ok: true };
       },
       listKeys: async () => [],
     };
@@ -156,6 +185,48 @@ describe('OpenRouter rewards routes', () => {
     const patch = openrouter.calls.find((call) => call.method === 'patchKey');
     assert.ok(patch);
     assert.equal(patch.body.limit, 15); // currentKey.limit (10) + amount (5)
+  });
+
+  it('retires a newly minted key when award recovery state cannot be persisted', async () => {
+    openrouter.createKey = async (body) => {
+      openrouter.calls.push({ method: 'createKey', body });
+      store.failNextPuts(8);
+      return { hash: 'hash_new', plaintext: 'sk-or-v1-minted', limit: body.limit };
+    };
+
+    const res = await userReq(app(), 'POST', '/check-pending', { lessonId: 'lesson-a' });
+
+    assert.equal(res.status, 409);
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_new'));
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, null);
+    assert.equal(persisted.reservations.length, 0);
+    assert.deepEqual(persisted.firedRuleIds, []);
+  });
+
+  it('rolls back a top-up when award recovery state cannot be persisted', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+      firedRuleIds: [],
+    });
+    openrouter.patchKey = async (hash, body) => {
+      openrouter.calls.push({ method: 'patchKey', hash, body });
+      if (body.limit === 15) store.failNextPuts(8);
+      return { hash, limit: body.limit };
+    };
+
+    const res = await userReq(app(), 'POST', '/check-pending', { lessonId: 'lesson-a' });
+
+    assert.equal(res.status, 409);
+    const patches = openrouter.calls.filter((call) => call.method === 'patchKey');
+    assert.equal(patches[0].body.limit, 15);
+    assert.equal(patches[1].body.limit, 10);
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_1');
+    assert.equal(persisted.lifetimeAwarded, 10);
+    assert.equal(persisted.reservations.length, 0);
   });
 
   it('returns processing 202 when an in-flight award reservation already exists', async () => {
@@ -267,5 +338,230 @@ describe('OpenRouter rewards routes', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.availableReward, null);
+  });
+
+  it('allows learner-initiated reissue without an admin request', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+    });
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'reissued');
+    assert.equal(data.plaintext, 'sk-or-v1-minted');
+    assert.equal(data.limit, 9);
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_1'));
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.equal(persisted.pendingReissue, null);
+    assert.equal(persisted.reissueReservation, null);
+  });
+
+  it('applies cooldown to learner-initiated reissue', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lastReissueAt: '2026-05-05T11:30:00.000Z',
+    });
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 429);
+    assert.equal(openrouter.calls.find((call) => call.method === 'createKey'), undefined);
+  });
+
+  it('lets an admin-queued reissue bypass cooldown', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lastReissueAt: '2026-05-05T11:30:00.000Z',
+      pendingReissue: {
+        requestedAt: '2026-05-05T11:59:00.000Z',
+        requestedBy: 'usr_admin',
+        reason: 'admin-requested',
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'reissued');
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.equal(persisted.pendingReissue, null);
+  });
+
+  it('keeps the replacement key canonical when old-key retirement fails', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+    });
+    openrouter.deleteKey = async (hash) => {
+      openrouter.calls.push({ method: 'deleteKey', hash });
+      const err = new Error('delete unavailable');
+      err.status = 502;
+      throw err;
+    };
+    openrouter.disableKey = async (hash) => {
+      openrouter.calls.push({ method: 'disableKey', hash });
+      const err = new Error('disable unavailable');
+      err.status = 502;
+      throw err;
+    };
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'reissued');
+    assert.equal(data.plaintext, 'sk-or-v1-minted');
+    assert.equal(data.oldKeyRetirementPending, true);
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.equal(persisted.reissueReservation, null);
+  });
+
+  it('finalizes an external-succeeded reissue reservation on retry without plaintext', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+      reissueReservation: {
+        id: 'res-existing',
+        oldKeyHash: 'hash_1',
+        newKeyHash: 'hash_new',
+        remainingCredit: 7,
+        phase: 'external-succeeded',
+        createdAt: '2026-05-05T11:59:00.000Z',
+        externalSucceededAt: '2026-05-05T11:59:30.000Z',
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'reissued');
+    assert.equal(data.plaintext, null);
+    assert.equal(data.revealUnavailable, true);
+    assert.equal(data.limit, 7);
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_1'));
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.equal(persisted.reissueReservation, null);
+  });
+
+  it('clears a reserved reissue when replacement persistence and cleanup both fail', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+    });
+    openrouter.createKey = async (body) => {
+      openrouter.calls.push({ method: 'createKey', body });
+      store.failNextPuts(4);
+      return { hash: 'hash_new', plaintext: 'sk-or-v1-minted', limit: body.limit };
+    };
+    openrouter.deleteKey = async (hash) => {
+      openrouter.calls.push({ method: 'deleteKey', hash });
+      if (hash === 'hash_new') {
+        const err = new Error('delete unavailable');
+        err.status = 502;
+        throw err;
+      }
+      return { ok: true };
+    };
+    openrouter.disableKey = async (hash) => {
+      openrouter.calls.push({ method: 'disableKey', hash });
+      if (hash === 'hash_new') {
+        const err = new Error('disable unavailable');
+        err.status = 502;
+        throw err;
+      }
+      return { ok: true };
+    };
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 409);
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_new'));
+    assert.ok(openrouter.calls.find((call) => call.method === 'disableKey' && call.hash === 'hash_new'));
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_1');
+    assert.equal(persisted.reissueReservation, null);
+  });
+
+  it('prunes stale reserved reissue reservations before returning processing', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+      reissueReservation: {
+        id: 'stale-reissue',
+        oldKeyHash: 'hash_1',
+        remainingCredit: 9,
+        phase: 'reserved',
+        createdAt: '2026-05-05T11:00:00.000Z',
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/reissue');
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'reissued');
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, 'hash_new');
+    assert.equal(persisted.reissueReservation, null);
+  });
+
+  it('persists admin revoke progress when a later key retirement fails', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      keyHash: 'hash_1',
+      lifetimeAwarded: 10,
+      reissueReservation: {
+        id: 'res-existing',
+        oldKeyHash: 'hash_1',
+        newKeyHash: 'hash_new',
+        remainingCredit: 7,
+        phase: 'external-succeeded',
+        createdAt: '2026-05-05T11:59:00.000Z',
+        externalSucceededAt: '2026-05-05T11:59:30.000Z',
+      },
+    });
+    openrouter.deleteKey = async (hash) => {
+      openrouter.calls.push({ method: 'deleteKey', hash });
+      if (hash === 'hash_new') {
+        const err = new Error('delete unavailable');
+        err.status = 502;
+        throw err;
+      }
+      return { ok: true };
+    };
+    openrouter.disableKey = async (hash) => {
+      openrouter.calls.push({ method: 'disableKey', hash });
+      if (hash === 'hash_new') {
+        const err = new Error('disable unavailable');
+        err.status = 502;
+        throw err;
+      }
+      return { ok: true };
+    };
+
+    const res = await adminReq(app(), 'POST', '/admin/revoke/usr_user');
+
+    assert.equal(res.status, 502);
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_1'));
+    assert.ok(openrouter.calls.find((call) => call.method === 'deleteKey' && call.hash === 'hash_new'));
+    const persisted = store.read('usr_user', `userMeta:${PLUGIN_ID}`);
+    assert.equal(persisted.keyHash, null);
+    assert.equal(persisted.reissueReservation.newKeyHash, 'hash_new');
   });
 });

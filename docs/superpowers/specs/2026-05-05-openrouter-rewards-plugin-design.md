@@ -589,6 +589,8 @@ Learner-initiated reissue:
 - If remaining credit is zero, delete or disable the old key, set `keyHash = null`, and return a friendly no-credit response.
 - Creates the replacement key before deleting/disabling the old key.
 - Updates `keyHash`, `lastReissueAt`, clears `pendingReissue`, returns plaintext, and optionally emits Slack delivery.
+- Reserved reissue reservations older than the reservation TTL are treated as abandoned before returning `processing`, because no OpenRouter mutation is known to have succeeded yet.
+- If a previous attempt already persisted `external-succeeded` but the HTTP response was lost, a retry finalizes from the durable replacement hash and returns `revealUnavailable: true` without plaintext. Admins can queue another reissue if the learner needs a newly revealable key; that mints a fresh replacement key and leaves the previous plaintext path unrecoverable.
 
 If old-key deletion fails after the new key is created, keep the new key as canonical, log `openrouter_old_key_delete_failed`, and surface a non-blocking admin warning. Do not roll back state or discard the new plaintext.
 
@@ -606,6 +608,7 @@ Admin-queued reissue:
 - Requires admin.
 - Deletes or disables the current OpenRouter key.
 - Sets `state.keyHash = null`.
+- When multiple hashes are in play, persists each successful retirement before attempting the next one. If a later retirement fails, the route returns an error but already-retired hashes are no longer shown as active in plato state.
 - Appends `{ revokedAt, revokedBy }` to audit state.
 - Writes host audit log.
 
@@ -637,6 +640,8 @@ Admin-queued reissue:
 | Duplicate completion UI mounts | Second request sees rule IDs in `firedRuleIds`, `pendingClaim`, or `reservations` and returns `pending-oauth`, `processing`, or `no-claim` without creating a duplicate reservation. |
 | Concurrent `check-pending` | First conditional metadata write wins. Loser re-reads and does not mint/top-up duplicate credit. |
 | OpenRouter key created but final state write fails | Retry finalization from latest state using `reservationId`. If bounded retries fail, compensate by disabling the created key and logging `openrouter_created_key_compensated`; if compensation fails, log `openrouter_orphan_key_created` for admin cleanup. Never return plaintext until final state is persisted. |
+| Reissue replacement key created but reservation persistence fails | Attempt to delete or disable the replacement key. If cleanup also fails, clear the reserved reissue reservation so the learner is not stuck in perpetual `processing`; the orphaned OpenRouter key is an admin cleanup item. |
+| Admin revoke partially fails | Continue attempting remaining key retirements. Persist each successful retirement so already-dead OpenRouter hashes are removed from plato state before returning the failure. |
 | Slack DM fails | Log and record `deliveryAttempts`; in-app reveal remains source of truth. |
 | Reveal modal closed before copy | Learner can reissue from Settings; cooldown applies unless admin queued it. |
 | Lambda cold start during OAuth callback | No impact; verifier is in browser `sessionStorage`. |

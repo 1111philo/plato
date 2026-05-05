@@ -85,7 +85,7 @@ export default function LessonChat() {
 
   useEffect(() => {
     if (displayText === null && pendingAfterStreamRef.current) {
-      const { msgs, p, confetti } = pendingAfterStreamRef.current;
+      const { msgs, p, confetti, kb } = pendingAfterStreamRef.current;
       pendingAfterStreamRef.current = null;
       if (msgs) {
         setMessages(prev => [...prev, ...msgs]);
@@ -116,6 +116,7 @@ export default function LessonChat() {
         }
       }
       if (p) setPhase(p);
+      if (kb !== undefined) setLessonKB(kb ?? null);
       if (confetti) launchConfetti();
       setLoading('');
     }
@@ -194,11 +195,14 @@ export default function LessonChat() {
         (partial) => setStreamingText(partial)
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
-      pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
-      setStreamingText(null);
-
       const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
+      pendingAfterStreamRef.current = {
+        msgs: assistantMsg ? [assistantMsg] : [],
+        p: result.phase,
+        confetti: result.achieved,
+        kb: freshKB,
+      };
+      setStreamingText(null);
     } catch (e) {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
@@ -363,7 +367,7 @@ export default function LessonChat() {
       </div>
 
       {lessonKB?.status === 'completed' && (
-        <div className="mx-auto w-full max-w-5xl px-4 pb-3">
+        <div className="mx-auto w-full max-w-3xl px-4 pb-3">
           <PluginSlot name="learnerCompletionAfter" context={{ lessonId: lessonGroupId, lessonKB }} />
         </div>
       )}

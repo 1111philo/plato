@@ -52,7 +52,15 @@ export default function LearnerProfileFields() {
       const res = await authenticatedFetch('/v1/plugins/openrouter-rewards/reissue', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Reissue failed');
-      setMessage({ type: 'success', plaintext: data.plaintext });
+      if (data.status === 'processing') {
+        setMessage({ type: 'error', text: 'A replacement key is already being prepared. Try again in a moment.' });
+      } else if (data.revealUnavailable) {
+        setMessage({ type: 'error', text: 'The replacement key was finalized, but its plaintext is no longer available. Ask an admin to queue another reissue.' });
+      } else if (data.plaintext) {
+        setMessage({ type: 'success', plaintext: data.plaintext });
+      } else {
+        setMessage({ type: 'success', text: 'Your replacement key was finalized.' });
+      }
       await loadStatus();
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
@@ -70,7 +78,23 @@ export default function LearnerProfileFields() {
       </CardHeader>
       <CardContent className="space-y-3">
         {status?.keyHashSuffix && (
-          <p className="text-sm">Active key ending in {status.keyHashSuffix}. Lifetime awarded: ${status.lifetimeAwarded}.</p>
+          <div className="space-y-1">
+            <p className="text-sm">
+              Your OpenRouter API key is active. Use it at{' '}
+              <a
+                href="https://openrouter.ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                openrouter.ai
+              </a>{' '}
+              to access AI models with the credits you've earned.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Lifetime credits awarded: ${status.lifetimeAwarded}.
+            </p>
+          </div>
         )}
         {status?.availableReward && (
           <div className="space-y-2">
@@ -78,7 +102,10 @@ export default function LearnerProfileFields() {
             <Button onClick={claim} disabled={busy}>{busy ? 'Minting your key…' : 'Claim OpenRouter credits'}</Button>
           </div>
         )}
-        {status?.pendingReissue && <p className="text-sm">A replacement key is ready to claim.</p>}
+        {status?.pendingReissue && status?.keyHashSuffix && <p className="text-sm">A replacement key is ready to claim.</p>}
+        {status?.pendingReissue && !status?.keyHashSuffix && (
+          <p className="text-sm text-muted-foreground">A replacement key was requested, but there is no active key to reissue.</p>
+        )}
         {status?.keyHashSuffix && (
           <Button variant="outline" onClick={reissue} disabled={busy}>{busy ? 'Reissuing…' : 'Reissue key'}</Button>
         )}
