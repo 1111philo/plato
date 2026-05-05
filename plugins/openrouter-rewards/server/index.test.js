@@ -135,4 +135,47 @@ describe('OpenRouter rewards routes', () => {
     assert.equal(res.status, 200);
     assert.equal(openrouter.calls[0].body.limit, 15);
   });
+
+  it('uses a validated client callback URL for local OAuth starts', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      pendingClaim: {
+        ruleIds: ['rule-1'],
+        reservationIds: ['res-1'],
+        accumulatedAmount: 5,
+        qualifiedAt: '2026-05-05T12:00:00.000Z',
+        claimFingerprint: 'sha256:claim',
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/oauth/start', {
+      codeChallenge: 'challenge-1',
+      callbackUrl: 'http://localhost:5173/settings',
+    });
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    const authUrl = new URL(data.authorizationUrl);
+    assert.equal(authUrl.searchParams.get('callback_url'), 'http://localhost:5173/settings');
+  });
+
+  it('rejects non-local OAuth callback URLs', async () => {
+    store.set('usr_user', `userMeta:${PLUGIN_ID}`, {
+      ...emptyState(),
+      pendingClaim: {
+        ruleIds: ['rule-1'],
+        reservationIds: ['res-1'],
+        accumulatedAmount: 5,
+        qualifiedAt: '2026-05-05T12:00:00.000Z',
+        claimFingerprint: 'sha256:claim',
+      },
+    });
+
+    const res = await userReq(app(), 'POST', '/oauth/start', {
+      codeChallenge: 'challenge-1',
+      callbackUrl: 'https://evil.example/settings',
+    });
+
+    assert.equal(res.status, 400);
+  });
 });

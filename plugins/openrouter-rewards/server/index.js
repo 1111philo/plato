@@ -60,6 +60,33 @@ function expiresAtFor(rule, now) {
   return new Date(now.getTime() + Number(rule.expiresAfterDays) * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function defaultCallbackUrl() {
+  return `${APP_URL || ''}/`;
+}
+
+function isLocalhost(hostname) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+}
+
+function resolveCallbackUrl(candidate) {
+  const fallback = defaultCallbackUrl();
+  if (!candidate) return fallback;
+
+  const url = new URL(candidate);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Invalid OpenRouter callback URL');
+  }
+
+  const app = new URL(fallback);
+  const sameOrigin = url.origin === app.origin;
+  const localDev = isLocalhost(url.hostname) && isLocalhost(app.hostname);
+  if (!sameOrigin && !localDev) {
+    throw new Error('Invalid OpenRouter callback URL');
+  }
+
+  return url.toString();
+}
+
 function publicState(state) {
   const s = normalizeState(state);
   return {
@@ -197,7 +224,7 @@ export function createRoutes({
 
   routes.post('/oauth/start', authenticate, async (c) => {
     const user = c.get('user');
-    const { codeChallenge } = await c.req.json().catch(() => ({}));
+    const { codeChallenge, callbackUrl } = await c.req.json().catch(() => ({}));
     const latest = await getUserMetaWithVersion(user.userId, PLUGIN_ID);
     const state = normalizeState(latest.data || emptyState());
     try {
@@ -208,7 +235,7 @@ export function createRoutes({
         authorizationUrl: buildAuthorizationUrl({
           state: oauthState,
           codeChallenge,
-          callbackUrl: `${APP_URL || ''}/`,
+          callbackUrl: resolveCallbackUrl(callbackUrl),
         }),
       });
     } catch (err) {

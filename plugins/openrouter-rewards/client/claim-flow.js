@@ -6,6 +6,7 @@ export async function startOpenRouterClaim({
   createChallenge = createPkceChallenge,
   fetcher = authenticatedFetch,
   storage = globalThis.sessionStorage,
+  getCallbackUrl = () => globalThis.window.location.href,
   assign = (url) => globalThis.window.location.assign(url),
 } = {}) {
   const verifier = createVerifier();
@@ -13,7 +14,7 @@ export async function startOpenRouterClaim({
   const res = await fetcher('/v1/plugins/openrouter-rewards/oauth/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ codeChallenge }),
+    body: JSON.stringify({ codeChallenge, callbackUrl: getCallbackUrl() }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'Could not start OpenRouter sign-in');

@@ -11,11 +11,15 @@ describe('OpenRouter claim flow', () => {
       createVerifier: () => 'verifier-1',
       createChallenge: async (verifier) => `challenge-for-${verifier}`,
       storage: { setItem: (key, value) => stored.set(key, value) },
+      getCallbackUrl: () => 'http://localhost:5173/settings',
       assign: (url) => { assigned = url; },
       fetcher: async (url, opts) => {
         assert.equal(url, '/v1/plugins/openrouter-rewards/oauth/start');
         assert.equal(opts.method, 'POST');
-        assert.deepEqual(JSON.parse(opts.body), { codeChallenge: 'challenge-for-verifier-1' });
+        assert.deepEqual(JSON.parse(opts.body), {
+          codeChallenge: 'challenge-for-verifier-1',
+          callbackUrl: 'http://localhost:5173/settings',
+        });
         return {
           ok: true,
           json: async () => ({ state: 'state-1', authorizationUrl: 'https://openrouter.ai/auth?state=state-1' }),
@@ -35,6 +39,7 @@ describe('OpenRouter claim flow', () => {
       createVerifier: () => 'verifier-1',
       createChallenge: async () => 'challenge-1',
       storage: { setItem: (key, value) => stored.set(key, value) },
+      getCallbackUrl: () => 'http://localhost:5173/settings',
       assign: () => {},
       fetcher: async () => ({
         ok: false,
