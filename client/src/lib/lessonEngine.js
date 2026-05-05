@@ -239,7 +239,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
   ];
 
-  await saveLessonMessages(lessonId, [...allMsgs, ...newMessages]);
+  await saveLessonMessages(lessonId, newMessages);
   syncInBackground(`messages:${lessonId}`);
 
   return { messages: newMessages, progress: parsed.progress, achieved, phase };
