@@ -50,6 +50,27 @@ export default function ComposeBar({
     if (fileRef.current) fileRef.current.value = '';
   };
 
+  const handlePaste = (e) => {
+    if (!allowImages) return;
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+        if (file.size > MAX_IMAGE_BYTES) {
+          alert('Image must be under 5 MB.');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => setImage({ dataUrl: reader.result, name: file.name || 'pasted-image.png' });
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  };
+
   const hasContent = text.trim() || image;
 
   return (
@@ -81,6 +102,7 @@ export default function ComposeBar({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
           }}
+          onPaste={handlePaste}
           disabled={disabled}
         />
         <div className="flex items-center gap-1 px-2 pb-2">
