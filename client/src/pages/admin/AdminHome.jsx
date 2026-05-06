@@ -168,40 +168,42 @@ export default function AdminHome() {
     ]).then(([users, invites, kb, stats]) => {
       setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setHasKB(!!(kb && kb.content));
-      setLessonStats(stats && typeof stats === 'object' ? stats : null);
+      setHasKB(!!kb?.content);
+      setLessonStats(stats);
     }).catch(() => {});
   }, []);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+    <div>
+      <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+      <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <Card>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeCount}</div>
-            <div className="text-sm text-muted-foreground">Active users</div>
-          </CardContent>
-        </Card>
-        <Card className={pendingCount > 0 ? 'border-yellow-300 bg-yellow-50' : ''}>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingCount}</div>
-            <div className="text-sm text-muted-foreground">Pending invites</div>
-          </CardContent>
-        </Card>
-        <Card className={!hasKB ? 'border-yellow-300 bg-yellow-50' : ''}>
-          <CardContent>
-            <div className="text-2xl font-bold">{hasKB ? '✓' : '!'}</div>
-            <div className="text-sm text-muted-foreground">Knowledge base</div>
-            {!hasKB && (
-              <div className="text-xs mt-1 text-yellow-800">
-                No knowledge base configured.{' '}
-                <Link to="/plato/knowledge-base" className="underline">Set it up</Link>.
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {!hasKB && (
+        <Link to="/plato/setup-kb" className="block no-underline mb-6">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors" role="alert">
+            <strong>Set up your knowledge base</strong> — tell plato about your program so the AI can give learners informed answers.{' '}
+            <span className="underline">Get started</span>
+          </div>
+        </Link>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link to="/plato/users" className="no-underline">
+          <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
+            <CardContent>
+              <div className="text-3xl font-bold">{activeCount}</div>
+              <div className="text-sm text-muted-foreground">Active users</div>
+            </CardContent>
+          </Card>
+        </Link>
+        <Link to="/plato/users" className="no-underline">
+          <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
+            <CardContent>
+              <div className="text-3xl font-bold">{pendingCount}</div>
+              <div className="text-sm text-muted-foreground">Pending invites</div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {lessonStats && <PacingSection stats={lessonStats} />}
