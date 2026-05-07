@@ -29,12 +29,14 @@ function PacingSection({ stats }) {
   const estimatedDuration = estimateDuration(avgExchangesPerCompletion);
   const durationWarning = estimatedDuration != null && estimatedDuration > 25;
 
-  // Flag when over-target lessons are running significantly long (≥15 exchanges)
-  const overTargetWarning = avgExchangesOverTarget != null && avgExchangesOverTarget >= 15;
+  // Flag when over-target lessons are running significantly long (≥13 exchanges avg).
+  // Threshold lowered from 15 to catch lesson-design issues before they compound.
+  const overTargetWarning = avgExchangesOverTarget != null && avgExchangesOverTarget >= 13;
 
-  // Flag when a large fraction of completions are going over target (>25%)
+  // Flag when a meaningful fraction of completions are going over target (>20%).
+  // Threshold lowered from 25% for earlier visibility into pacing regressions.
   const overTargetFraction = hasCompletions ? overTarget / totalCompletions : 0;
-  const overTargetFractionHigh = overTargetFraction > 0.25;
+  const overTargetFractionHigh = overTargetFraction > 0.20;
 
   let cardClasses = '';
   let signal = '';
@@ -46,7 +48,17 @@ function PacingSection({ stats }) {
     } else if (rate >= 50) {
       cardClasses = 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200';
       signal = 'Some lessons are running long — review objectives or coach pacing';
-      signalDetail = 'Common causes: too many learning objectives, an exemplar that sets a very high bar, or a lesson topic that requires more scaffolding exchanges. Try simplifying objectives to 2–3 focused outcomes or tightening the exemplar scope.';
+      signalDetail = (
+        overTargetFraction > 0.35
+          ? `Over ${Math.round(overTargetFraction * 100)}% of completions exceeded the ${exchangeTarget}-exchange target` +
+            (avgExchangesOverTarget != null ? `, averaging ${avgExchangesOverTarget} exchanges` : '') +
+            `. This typically means lessons have too many objectives or an exemplar that requires many coaching rounds. ` +
+            `Try reducing each lesson to 2 focused objectives and narrowing the exemplar scope. ` +
+            `Consider splitting any lesson with 3–4 broad objectives into two focused lessons.`
+          : `Common causes: too many learning objectives, an exemplar that sets a very high bar, or a lesson topic ` +
+            `that requires more scaffolding exchanges. Try simplifying objectives to 2–3 focused outcomes or ` +
+            `tightening the exemplar scope.`
+      );
     } else {
       cardClasses = 'border-red-300 bg-red-50 ring-2 ring-red-200';
       signal = 'Most lessons exceed the target — simplify objectives or raise the target';
@@ -130,7 +142,7 @@ function PacingSection({ stats }) {
             )}
             {overTargetFractionHigh && (
               <div className="text-xs mt-1 text-yellow-800">
-                More than 1 in 4 completions ran long — consider reviewing lesson scope.
+                More than 1 in 5 completions ran long — consider reviewing lesson scope.
               </div>
             )}
           </CardContent>
@@ -138,7 +150,12 @@ function PacingSection({ stats }) {
         <Card>
           <CardContent>
             <div className="text-2xl font-bold">{extendedLessons}</div>
-            <div className="text-sm text-muted-foreground" title="Completed lessons that ran past 2× the target. Informational — a signal the lesson design or starting point mismatched, not a failure of the coach.">Extended lessons</div>
+            <div
+              className="text-sm text-muted-foreground"
+              title={`Completed lessons that ran past ${extendedThreshold} exchanges (2× the target). Informational — a signal the lesson design or starting point mismatched, not a failure of the coach or learner.`}
+            >
+              Extended lessons
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -166,44 +183,42 @@ export default function AdminHome() {
       adminApi('GET', '/v1/admin/knowledge-base'),
       adminApi('GET', '/v1/admin/stats/lessons'),
     ]).then(([users, invites, kb, stats]) => {
-      setActiveCount(Array.isArray(users) ? users.length : 0);
+      setActiveCount(Array.isArray(users) ? users.filter(u => u.role !== 'admin').length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setHasKB(!!kb?.content);
-      setLessonStats(stats);
+      setHasKB(!!(kb && kb.content && kb.content.trim()));
+      setLessonStats(stats || null);
     }).catch(() => {});
   }, []);
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
-      <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
 
-      {!hasKB && (
-        <Link to="/plato/setup-kb" className="block no-underline mb-6">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors" role="alert">
-            <strong>Set up your knowledge base</strong> — tell plato about your program so the AI can give learners informed answers.{' '}
-            <span className="underline">Get started</span>
-          </div>
-        </Link>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Link to="/plato/users" className="no-underline">
-          <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
-            <CardContent>
-              <div className="text-3xl font-bold">{activeCount}</div>
-              <div className="text-sm text-muted-foreground">Active users</div>
-            </CardContent>
-          </Card>
-        </Link>
-        <Link to="/plato/users" className="no-underline">
-          <Card className="hover:ring-2 hover:ring-primary/30 transition-shadow cursor-pointer">
-            <CardContent>
-              <div className="text-3xl font-bold">{pendingCount}</div>
-              <div className="text-sm text-muted-foreground">Pending invites</div>
-            </CardContent>
-          </Card>
-        </Link>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+        <Card>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeCount}</div>
+            <div className="text-sm text-muted-foreground">Active learners</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <div className="text-2xl font-bold">{pendingCount}</div>
+            <div className="text-sm text-muted-foreground">Pending invites</div>
+          </CardContent>
+        </Card>
+        <Card className={!hasKB ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
+          <CardContent>
+            <div className="text-2xl font-bold">{hasKB ? '✓' : '!'}</div>
+            <div className="text-sm text-muted-foreground">Knowledge base</div>
+            {!hasKB && (
+              <div className="text-xs mt-1 text-yellow-800">
+                No knowledge base yet.{' '}
+                <Link to="/plato/knowledge-base" className="underline">Add one</Link> to improve coach quality.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {lessonStats && <PacingSection stats={lessonStats} />}
