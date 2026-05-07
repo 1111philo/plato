@@ -9,7 +9,6 @@ import {
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 
 const NAME_MAX = 80;
-const DESC_MAX = 500;
 
 function newCourseId() {
   return `course-${Math.random().toString(36).slice(2, 10)}`;
@@ -17,9 +16,8 @@ function newCourseId() {
 
 /**
  * Modal for managing courses. Mirrors the User Groups modal pattern in
- * AdminUsers.jsx but accommodates an optional course description by
- * combining a small inline create/edit form with a list of existing
- * courses below it.
+ * AdminUsers.jsx — small inline create/edit form on top, list of
+ * existing courses below it.
  *
  * The parent should call `onMutated` after a successful add / edit /
  * delete so that any list (e.g. the lessons-list course-name lookup or
@@ -30,7 +28,6 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null); // null = add mode, course id = edit mode
   const [formName, setFormName] = useState('');
-  const [formDescription, setFormDescription] = useState('');
   const [error, setError] = useState('');
   const [confirm, setConfirm] = useState(null);
   // sr-only announcement that updates after each successful mutation so
@@ -59,14 +56,12 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
   function resetForm() {
     setEditingId(null);
     setFormName('');
-    setFormDescription('');
     setError('');
   }
 
   function startEdit(course) {
     setEditingId(course.courseId);
     setFormName(course.name || '');
-    setFormDescription(course.description || '');
     setError('');
   }
 
@@ -81,16 +76,11 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
       setError(`Course name must be ${NAME_MAX} characters or fewer.`);
       return;
     }
-    if (formDescription.length > DESC_MAX) {
-      setError(`Description must be ${DESC_MAX} characters or fewer.`);
-      return;
-    }
     const targetId = editingId || newCourseId();
     const wasEdit = !!editingId;
     try {
       await adminApi('PUT', `/v1/admin/courses/${encodeURIComponent(targetId)}`, {
         name: trimmedName,
-        description: formDescription,
       });
       resetForm();
       await loadCourses();
@@ -133,7 +123,7 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
           <DialogHeader>
             <DialogTitle>Courses</DialogTitle>
             <DialogDescription>
-              Group lessons under named courses. The coach receives the course name and description as part of its context when a lesson is assigned to one.
+              Group lessons under named courses. The coach receives the course name as part of its context when a lesson is assigned to one.
             </DialogDescription>
           </DialogHeader>
 
@@ -157,18 +147,6 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
                   onChange={(e) => setFormName(e.target.value)}
                   required
                 />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="course-form-description">Description (optional)</Label>
-                <textarea
-                  id="course-form-description"
-                  className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  rows={3}
-                  value={formDescription}
-                  maxLength={DESC_MAX}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">{formDescription.length}/{DESC_MAX}</p>
               </div>
               {error && (
                 <p role="alert" className="text-sm text-destructive">{error}</p>
@@ -196,9 +174,6 @@ export default function CoursesModal({ open, onOpenChange, onMutated }) {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium truncate">{c.name}</div>
-                        {c.description && (
-                          <div className="text-xs text-muted-foreground line-clamp-2">{c.description}</div>
-                        )}
                         <div className="text-xs text-muted-foreground/80 mt-0.5">{c.lessonCount} lesson{c.lessonCount === 1 ? '' : 's'}</div>
                       </div>
                       <div className="flex gap-1 shrink-0">

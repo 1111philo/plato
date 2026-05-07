@@ -497,24 +497,19 @@ admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
 // ── Courses ──
 //
 // Courses are an optional taxonomy for grouping lessons. Each course is a first-class
-// _system:course:<id> sync-data record with { name, description }. Each lesson optionally
-// carries a `course` field (the course's id). Courses are pure organization — they don't
-// carry their own visibility/ACL; lesson visibility (public/private/draft + sharedWith)
-// is unchanged. Coach receives course { name, description } in its context JSON when a
-// lesson belongs to one.
+// _system:course:<id> sync-data record with { name }. Each lesson optionally carries
+// a `course` field (the course's id). Courses are pure organization — they don't carry
+// their own visibility/ACL; lesson visibility (public/private/draft + sharedWith) is
+// unchanged. Coach receives course { name } in its context JSON when a lesson belongs
+// to one.
 
 const COURSE_NAME_MAX = 80;
-const COURSE_DESC_MAX = 500;
 
 function validateCourseBody(body) {
   if (!body || typeof body !== 'object') return 'Request body is required';
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) return 'Course name is required';
   if (name.length > COURSE_NAME_MAX) return `Course name must be ${COURSE_NAME_MAX} characters or fewer`;
-  if (body.description !== undefined && body.description !== null) {
-    if (typeof body.description !== 'string') return 'description must be a string';
-    if (body.description.length > COURSE_DESC_MAX) return `description must be ${COURSE_DESC_MAX} characters or fewer`;
-  }
   return null;
 }
 
@@ -534,7 +529,6 @@ admin.get('/v1/admin/courses', async (c) => {
       return {
         courseId,
         name: i.data.name || courseId,
-        description: i.data.description || '',
         createdByName: i.data.createdByName || null,
         updatedByName: i.data.updatedByName || null,
         updatedAt: i.updatedAt,
@@ -561,7 +555,6 @@ admin.put('/v1/admin/courses/:courseId', async (c) => {
   const err = validateCourseBody(body);
   if (err) return c.json({ error: err }, 400);
   const trimmedName = body.name.trim();
-  const description = (body.description || '').trim();
 
   // Reject duplicate names (case-insensitive) across other courses. Lookups are
   // cheap — we already iterate _system syncdata for the list endpoint and
@@ -580,7 +573,6 @@ admin.put('/v1/admin/courses/:courseId', async (c) => {
   const now = new Date().toISOString();
   const data = {
     name: trimmedName,
-    description,
     createdBy: current?.data?.createdBy || adminUser.userId,
     createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || now,

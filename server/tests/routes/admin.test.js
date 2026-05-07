@@ -647,8 +647,8 @@ describe('Courses CRUD', () => {
 
   it('GET /v1/admin/courses returns sorted list with lessonCount', async () => {
     db.getAllSyncData = async () => [
-      { dataKey: 'course:c-1', data: { name: 'Beta Course', description: 'desc-b' }, updatedAt: '2026-01-02', version: 1 },
-      { dataKey: 'course:c-2', data: { name: 'Alpha Course', description: '' }, updatedAt: '2026-01-01', version: 1 },
+      { dataKey: 'course:c-1', data: { name: 'Beta Course' }, updatedAt: '2026-01-02', version: 1 },
+      { dataKey: 'course:c-2', data: { name: 'Alpha Course' }, updatedAt: '2026-01-01', version: 1 },
       { dataKey: 'lesson:l-1', data: { name: 'Lesson 1', markdown: '# x', status: 'public', course: 'c-1' } },
       { dataKey: 'lesson:l-2', data: { name: 'Lesson 2', markdown: '# y', status: 'public', course: 'c-1' } },
       { dataKey: 'lesson:l-3', data: { name: 'Lesson 3', markdown: '# z', status: 'public', course: 'c-2' } },
@@ -666,7 +666,7 @@ describe('Courses CRUD', () => {
   });
 
   it('GET /v1/admin/courses/:id returns the course', async () => {
-    db.getSyncData = async () => ({ data: { name: 'AI Foundations', description: 'Intro' }, updatedAt: '2026-01-01', version: 1 });
+    db.getSyncData = async () => ({ data: { name: 'AI Foundations' }, updatedAt: '2026-01-01', version: 1 });
     const app = new Hono(); app.route('/', admin);
     const res = await adminReq(app, 'GET', '/v1/admin/courses/c-1');
     assert.equal(res.status, 200);
@@ -688,12 +688,12 @@ describe('Courses CRUD', () => {
     let saved = null;
     db.putSyncData = async (userId, dataKey, data) => { saved = { userId, dataKey, data }; };
     const app = new Hono(); app.route('/', admin);
-    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-new', { name: '  New Course  ', description: 'A description' });
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-new', { name: '  New Course  ' });
     assert.equal(res.status, 200);
     assert.equal(saved.userId, '_system');
     assert.equal(saved.dataKey, 'course:c-new');
     assert.equal(saved.data.name, 'New Course');
-    assert.equal(saved.data.description, 'A description');
+    assert.equal(saved.data.description, undefined);
     assert.equal(saved.data.createdBy, 'usr_admin');
     assert.equal(saved.data.updatedBy, 'usr_admin');
   });
@@ -712,12 +712,6 @@ describe('Courses CRUD', () => {
     assert.equal(res.status, 400);
   });
 
-  it('PUT /v1/admin/courses/:id rejects oversize description', async () => {
-    const app = new Hono(); app.route('/', admin);
-    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-bad', { name: 'OK', description: 'x'.repeat(501) });
-    assert.equal(res.status, 400);
-  });
-
   it('PUT /v1/admin/courses/:id rejects duplicate name (case-insensitive)', async () => {
     db.getAllSyncData = async () => [
       { dataKey: 'course:c-1', data: { name: 'AI Foundations' }, version: 1 },
@@ -731,16 +725,15 @@ describe('Courses CRUD', () => {
 
   it('PUT /v1/admin/courses/:id allows renaming an existing course (same id)', async () => {
     db.getAllSyncData = async () => [
-      { dataKey: 'course:c-1', data: { name: 'AI Foundations', description: 'Old' }, version: 2 },
+      { dataKey: 'course:c-1', data: { name: 'AI Foundations' }, version: 2 },
     ];
-    db.getSyncData = async () => ({ data: { name: 'AI Foundations', description: 'Old', createdBy: 'usr_admin', createdAt: '2026-01-01' }, version: 2 });
+    db.getSyncData = async () => ({ data: { name: 'AI Foundations', createdBy: 'usr_admin', createdAt: '2026-01-01' }, version: 2 });
     let saved = null;
     db.putSyncData = async (userId, dataKey, data, version) => { saved = { userId, dataKey, data, version }; };
     const app = new Hono(); app.route('/', admin);
-    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-1', { name: 'AI Foundations Updated', description: 'New' });
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-1', { name: 'AI Foundations Updated' });
     assert.equal(res.status, 200);
     assert.equal(saved.data.name, 'AI Foundations Updated');
-    assert.equal(saved.data.description, 'New');
     assert.equal(saved.data.createdAt, '2026-01-01'); // preserved
   });
 

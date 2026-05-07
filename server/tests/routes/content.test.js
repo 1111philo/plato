@@ -209,20 +209,20 @@ describe('Course inlining on lesson endpoints', () => {
   });
 
   const buildItems = () => ([
-    { dataKey: 'course:c-1', data: { name: 'AI Foundations', description: 'Intro to LLMs' }, updatedAt: '2026-01-01' },
+    { dataKey: 'course:c-1', data: { name: 'AI Foundations' }, updatedAt: '2026-01-01' },
     { dataKey: 'lesson:l-with-course', data: { name: 'Lesson A', markdown: '# A', status: 'public', course: 'c-1' }, updatedAt: '2026-01-02' },
     { dataKey: 'lesson:l-no-course', data: { name: 'Lesson B', markdown: '# B', status: 'public' }, updatedAt: '2026-01-02' },
     { dataKey: 'lesson:l-orphan', data: { name: 'Lesson C', markdown: '# C', status: 'public', course: 'c-deleted' }, updatedAt: '2026-01-02' },
   ]);
 
-  it('GET /v1/lessons inlines course as { id, name, description }', async () => {
+  it('GET /v1/lessons inlines course as { id, name }', async () => {
     db.getAllSyncData = async () => buildItems();
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons', 'usr_1');
     assert.equal(res.status, 200);
     const data = await res.json();
     const withCourse = data.find(l => l.lessonId === 'l-with-course');
-    assert.deepEqual(withCourse.course, { id: 'c-1', name: 'AI Foundations', description: 'Intro to LLMs' });
+    assert.deepEqual(withCourse.course, { id: 'c-1', name: 'AI Foundations' });
   });
 
   it('GET /v1/lessons sets course to null when lesson has no course', async () => {
@@ -246,14 +246,14 @@ describe('Course inlining on lesson endpoints', () => {
   it('GET /v1/lessons/:id inlines course on a single lesson', async () => {
     db.getSyncData = async (uid, key) => {
       if (key === 'lesson:l-1') return { data: { name: 'L', markdown: '# L', status: 'public', course: 'c-1' }, version: 1 };
-      if (key === 'course:c-1') return { data: { name: 'AI Foundations', description: 'Intro' }, version: 1 };
+      if (key === 'course:c-1') return { data: { name: 'AI Foundations' }, version: 1 };
       return null;
     };
     const app = new Hono(); app.route('/', content);
     const res = await userReq(app, 'GET', '/v1/lessons/l-1');
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.deepEqual(data.course, { id: 'c-1', name: 'AI Foundations', description: 'Intro' });
+    assert.deepEqual(data.course, { id: 'c-1', name: 'AI Foundations' });
   });
 
   it('GET /v1/lessons/:id returns course=null when course was deleted', async () => {

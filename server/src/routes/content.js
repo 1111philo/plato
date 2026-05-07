@@ -66,9 +66,9 @@ content.get('/v1/prompts/:name', async (c) => {
 // GET /v1/lessons — list lessons the user has access to
 // Public lessons visible to all; private lessons visible only to users in sharedWith.
 // Drafts (admin-only work-in-progress) are never exposed to learners.
-// When a lesson has a `course` field (course id), it's inlined as
-// `{ id, name, description }` so the client can display + the coach context can
-// reference it without a second fetch.
+// When a lesson has a `course` field (course id), it's inlined as `{ id, name }`
+// so the client can display + the coach context can reference it without a
+// second fetch.
 content.get('/v1/lessons', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData('_system');
@@ -89,7 +89,7 @@ content.get('/v1/lessons', async (c) => {
       const { sharedWith: _sharedWith, course: courseId, ...data } = i.data;
       const courseRecord = courseId ? coursesById.get(courseId) : null;
       const course = courseRecord
-        ? { id: courseId, name: courseRecord.name || courseId, description: courseRecord.description || '' }
+        ? { id: courseId, name: courseRecord.name || courseId }
         : null;
       return {
         lessonId: i.dataKey.slice('lesson:'.length),
@@ -175,7 +175,7 @@ content.get('/v1/lessons/time-stats', async (c) => {
 });
 
 // GET /v1/lessons/:lessonId — get a lesson (public, or private if user is in sharedWith)
-// When a lesson has a `course` field, the response inlines `course: { id, name, description }`.
+// When a lesson has a `course` field, the response inlines `course: { id, name }`.
 // If the referenced course was deleted (transient drift between cascade and read), `course` is null.
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
@@ -197,7 +197,6 @@ content.get('/v1/lessons/:lessonId', async (c) => {
       course = {
         id: courseId,
         name: courseItem.data.name || courseId,
-        description: courseItem.data.description || '',
       };
     }
   }

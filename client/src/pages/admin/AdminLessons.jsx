@@ -227,6 +227,7 @@ export default function AdminLessons() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>Course</TableHead>
               <TableHead>Created by</TableHead>
               <TableHead>Updated by</TableHead>
               <TableHead>Updated</TableHead>
@@ -241,21 +242,17 @@ export default function AdminLessons() {
               return (
                 <TableRow key={c.lessonId}>
                   <TableCell>
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-2">
-                        {c.name || c.lessonId}
-                        {isDraft
-                          ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
-                          : isPublic
-                            ? <Badge variant="outline" className="text-xs">Public</Badge>
-                            : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
-                        }
-                      </span>
-                      {courseName && (
-                        <span className="text-xs text-muted-foreground">in <span className="font-medium">{courseName}</span></span>
-                      )}
-                    </div>
+                    <span className="flex items-center gap-2">
+                      {c.name || c.lessonId}
+                      {isDraft
+                        ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
+                        : isPublic
+                          ? <Badge variant="outline" className="text-xs">Public</Badge>
+                          : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
+                      }
+                    </span>
                   </TableCell>
+                  <TableCell className="text-muted-foreground">{courseName || '\u2014'}</TableCell>
                   <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
                   <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
@@ -277,7 +274,7 @@ export default function AdminLessons() {
             })}
             {lessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
+                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
