@@ -311,6 +311,15 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // Optional course taxonomy: when a lesson belongs to a wider course, the
+  // server inlines `lesson.course = { id, name, description }`. Surface name +
+  // description so the coach can frame this lesson within the course's arc.
+  if (lesson.course && lesson.course.name) {
+    context.course = {
+      name: lesson.course.name,
+      description: lesson.course.description || '',
+    };
+  }
   if (lessonStatus === 'completed') {
     // Completed threads are feedback-only. Skip pacing nudges — they'd
     // conflict with the feedback directive — and tell the coach plainly not

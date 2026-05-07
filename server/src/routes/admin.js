@@ -401,6 +401,7 @@ admin.get('/v1/admin/lessons', async (c) => {
       isBuiltIn: i.data.isBuiltIn || false,
       status: normalizeStatus(i.data.status, !!i.data.markdown),
       sharedWith: i.data.sharedWith || [],
+      course: i.data.course || null,
       createdByName: i.data.createdByName || null,
       updatedByName: i.data.updatedByName || null,
       updatedAt: i.updatedAt,
@@ -444,12 +445,21 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   if (sharedWith.length > 0 && (!Array.isArray(sharedWith) || !sharedWith.every(id => typeof id === 'string'))) {
     return c.json({ error: 'sharedWith must be an array of user ID strings' }, 400);
   }
+  // course is an optional string courseId or null. Don't validate that the
+  // courseId points to an existing course — DELETE on a course cascades to
+  // clear it from lessons, but we tolerate transient drift.
+  let course = body.course !== undefined ? body.course : (current?.data?.course ?? null);
+  if (course !== null && course !== undefined && typeof course !== 'string') {
+    return c.json({ error: 'course must be a string courseId or null' }, 400);
+  }
+  if (course === '') course = null;
   const data = {
     markdown: markdownToValidate || '',
     name: body.name || current?.data?.name || lessonId,
     isBuiltIn: body.isBuiltIn || false,
     status: newStatus,
     sharedWith,
+    course,
     conversation: body.conversation !== undefined ? body.conversation : (current?.data?.conversation || null),
     readiness: body.readiness !== undefined ? body.readiness : (current?.data?.readiness ?? null),
     updatedBy: adminUser.userId,
@@ -481,6 +491,123 @@ admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
   await db.deleteSyncData('_system', `lesson:${lessonId}`);
+  return c.json({ ok: true });
+});
+
+// ── Courses ──
+//
+// Courses are an optional taxonomy for grouping lessons. Each course is a first-class
+// _system:course:<id> sync-data record with { name, description }. Each lesson optionally
+// carries a `course` field (the course's id). Courses are pure organization — they don't
+// carry their own visibility/ACL; lesson visibility (public/private/draft + sharedWith)
+// is unchanged. Coach receives course { name, description } in its context JSON when a
+// lesson belongs to one.
+
+const COURSE_NAME_MAX = 80;
+const COURSE_DESC_MAX = 500;
+
+function validateCourseBody(body) {
+  if (!body || typeof body !== 'object') return 'Request body is required';
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) return 'Course name is required';
+  if (name.length > COURSE_NAME_MAX) return `Course name must be ${COURSE_NAME_MAX} characters or fewer`;
+  if (body.description !== undefined && body.description !== null) {
+    if (typeof body.description !== 'string') return 'description must be a string';
+    if (body.description.length > COURSE_DESC_MAX) return `description must be ${COURSE_DESC_MAX} characters or fewer`;
+  }
+  return null;
+}
+
+// GET /v1/admin/courses — list all courses with a per-course lesson count
+admin.get('/v1/admin/courses', async (c) => {
+  const items = await db.getAllSyncData('_system');
+  const lessonCounts = new Map();
+  for (const i of items) {
+    if (!i.dataKey.startsWith('lesson:')) continue;
+    const cid = i.data?.course;
+    if (cid) lessonCounts.set(cid, (lessonCounts.get(cid) || 0) + 1);
+  }
+  const courses = items
+    .filter(i => i.dataKey.startsWith('course:'))
+    .map(i => {
+      const courseId = i.dataKey.slice('course:'.length);
+      return {
+        courseId,
+        name: i.data.name || courseId,
+        description: i.data.description || '',
+        createdByName: i.data.createdByName || null,
+        updatedByName: i.data.updatedByName || null,
+        updatedAt: i.updatedAt,
+        lessonCount: lessonCounts.get(courseId) || 0,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  return c.json(courses);
+});
+
+// GET /v1/admin/courses/:courseId
+admin.get('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const item = await db.getSyncData('_system', `course:${courseId}`);
+  if (!item) return c.json({ error: 'Course not found' }, 404);
+  return c.json({ courseId, ...item.data, updatedAt: item.updatedAt });
+});
+
+// PUT /v1/admin/courses/:courseId — create or update
+admin.put('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const body = await c.req.json();
+  const adminUser = c.get('user');
+  const err = validateCourseBody(body);
+  if (err) return c.json({ error: err }, 400);
+  const trimmedName = body.name.trim();
+  const description = (body.description || '').trim();
+
+  // Reject duplicate names (case-insensitive) across other courses. Lookups are
+  // cheap — we already iterate _system syncdata for the list endpoint and
+  // there's typically only a handful of courses.
+  const items = await db.getAllSyncData('_system');
+  for (const i of items) {
+    if (!i.dataKey.startsWith('course:')) continue;
+    const otherId = i.dataKey.slice('course:'.length);
+    if (otherId === courseId) continue;
+    if ((i.data?.name || '').trim().toLowerCase() === trimmedName.toLowerCase()) {
+      return c.json({ error: 'A course with that name already exists' }, 409);
+    }
+  }
+
+  const current = await db.getSyncData('_system', `course:${courseId}`);
+  const now = new Date().toISOString();
+  const data = {
+    name: trimmedName,
+    description,
+    createdBy: current?.data?.createdBy || adminUser.userId,
+    createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
+    createdAt: current?.data?.createdAt || now,
+    updatedBy: adminUser.userId,
+    updatedByName: adminUser.username || adminUser.email,
+  };
+  await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);
+  return c.json({ courseId, ok: true });
+});
+
+// DELETE /v1/admin/courses/:courseId — delete + cascade-clear `course` on lessons
+admin.delete('/v1/admin/courses/:courseId', async (c) => {
+  const courseId = c.req.param('courseId');
+  const item = await db.getSyncData('_system', `course:${courseId}`);
+  if (!item) return c.json({ error: 'Course not found' }, 404);
+
+  await db.deleteSyncData('_system', `course:${courseId}`);
+
+  // Clear the course field on any lesson that referenced it. Mirrors the
+  // userGroups delete cascade above.
+  const items = await db.getAllSyncData('_system');
+  await Promise.all(
+    items
+      .filter(i => i.dataKey.startsWith('lesson:') && i.data?.course === courseId)
+      .map(i => db.putSyncData('_system', i.dataKey, { ...i.data, course: null }, i.version || 0))
+  );
+
   return c.json({ ok: true });
 });
 

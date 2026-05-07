@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { to: '/plato', label: 'Home', end: true },
   { to: '/plato/lessons', label: 'Lessons' },
   { to: '/plato/users', label: 'Users' },
+  { to: '/plato/courses', label: 'Courses' },
   { to: '/plato/customizer', label: 'Customizer' },
   { to: '/plato/plugins', label: 'Plugins' },
 ];

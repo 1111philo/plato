@@ -636,3 +636,196 @@ describe('GET /v1/admin/logs', () => {
   });
 
 });
+
+describe('Courses CRUD', () => {
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin', username: 'admin' };
+      return { userId: id, role: 'user', name: 'User' };
+    };
+  });
+
+  it('GET /v1/admin/courses returns sorted list with lessonCount', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'course:c-1', data: { name: 'Beta Course', description: 'desc-b' }, updatedAt: '2026-01-02', version: 1 },
+      { dataKey: 'course:c-2', data: { name: 'Alpha Course', description: '' }, updatedAt: '2026-01-01', version: 1 },
+      { dataKey: 'lesson:l-1', data: { name: 'Lesson 1', markdown: '# x', status: 'public', course: 'c-1' } },
+      { dataKey: 'lesson:l-2', data: { name: 'Lesson 2', markdown: '# y', status: 'public', course: 'c-1' } },
+      { dataKey: 'lesson:l-3', data: { name: 'Lesson 3', markdown: '# z', status: 'public', course: 'c-2' } },
+      { dataKey: 'lesson:l-4', data: { name: 'Lesson 4', markdown: '# w', status: 'public' } }, // no course
+    ];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/courses');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.length, 2);
+    assert.equal(data[0].name, 'Alpha Course');
+    assert.equal(data[0].lessonCount, 1);
+    assert.equal(data[1].name, 'Beta Course');
+    assert.equal(data[1].lessonCount, 2);
+  });
+
+  it('GET /v1/admin/courses/:id returns the course', async () => {
+    db.getSyncData = async () => ({ data: { name: 'AI Foundations', description: 'Intro' }, updatedAt: '2026-01-01', version: 1 });
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/courses/c-1');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.courseId, 'c-1');
+    assert.equal(data.name, 'AI Foundations');
+  });
+
+  it('GET /v1/admin/courses/:id returns 404 for missing course', async () => {
+    db.getSyncData = async () => null;
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/courses/missing');
+    assert.equal(res.status, 404);
+  });
+
+  it('PUT /v1/admin/courses/:id creates a new course', async () => {
+    db.getAllSyncData = async () => [];
+    db.getSyncData = async () => null;
+    let saved = null;
+    db.putSyncData = async (userId, dataKey, data) => { saved = { userId, dataKey, data }; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-new', { name: '  New Course  ', description: 'A description' });
+    assert.equal(res.status, 200);
+    assert.equal(saved.userId, '_system');
+    assert.equal(saved.dataKey, 'course:c-new');
+    assert.equal(saved.data.name, 'New Course');
+    assert.equal(saved.data.description, 'A description');
+    assert.equal(saved.data.createdBy, 'usr_admin');
+    assert.equal(saved.data.updatedBy, 'usr_admin');
+  });
+
+  it('PUT /v1/admin/courses/:id rejects empty name', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-bad', { name: '   ' });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /name is required/i);
+  });
+
+  it('PUT /v1/admin/courses/:id rejects oversize name', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-bad', { name: 'x'.repeat(81) });
+    assert.equal(res.status, 400);
+  });
+
+  it('PUT /v1/admin/courses/:id rejects oversize description', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-bad', { name: 'OK', description: 'x'.repeat(501) });
+    assert.equal(res.status, 400);
+  });
+
+  it('PUT /v1/admin/courses/:id rejects duplicate name (case-insensitive)', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'course:c-1', data: { name: 'AI Foundations' }, version: 1 },
+    ];
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => {};
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-2', { name: 'ai foundations' });
+    assert.equal(res.status, 409);
+  });
+
+  it('PUT /v1/admin/courses/:id allows renaming an existing course (same id)', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'course:c-1', data: { name: 'AI Foundations', description: 'Old' }, version: 2 },
+    ];
+    db.getSyncData = async () => ({ data: { name: 'AI Foundations', description: 'Old', createdBy: 'usr_admin', createdAt: '2026-01-01' }, version: 2 });
+    let saved = null;
+    db.putSyncData = async (userId, dataKey, data, version) => { saved = { userId, dataKey, data, version }; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/courses/c-1', { name: 'AI Foundations Updated', description: 'New' });
+    assert.equal(res.status, 200);
+    assert.equal(saved.data.name, 'AI Foundations Updated');
+    assert.equal(saved.data.description, 'New');
+    assert.equal(saved.data.createdAt, '2026-01-01'); // preserved
+  });
+
+  it('DELETE /v1/admin/courses/:id removes the course and clears it from lessons', async () => {
+    db.getSyncData = async () => ({ data: { name: 'Doomed' }, version: 1 });
+    const initialItems = [
+      { dataKey: 'lesson:l-1', data: { name: 'L1', markdown: '#', status: 'public', course: 'c-doom' }, version: 1 },
+      { dataKey: 'lesson:l-2', data: { name: 'L2', markdown: '#', status: 'public', course: 'c-other' }, version: 1 },
+      { dataKey: 'lesson:l-3', data: { name: 'L3', markdown: '#', status: 'public', course: 'c-doom' }, version: 1 },
+    ];
+    db.getAllSyncData = async () => initialItems;
+    let deleted = null;
+    db.deleteSyncData = async (uid, key) => { deleted = key; };
+    const cleared = [];
+    db.putSyncData = async (uid, key, data) => { cleared.push({ key, course: data.course }); };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'DELETE', '/v1/admin/courses/c-doom');
+    assert.equal(res.status, 200);
+    assert.equal(deleted, 'course:c-doom');
+    assert.equal(cleared.length, 2);
+    assert.ok(cleared.every(c => c.course === null));
+    assert.deepEqual(cleared.map(c => c.key).sort(), ['lesson:l-1', 'lesson:l-3']);
+  });
+
+  it('DELETE /v1/admin/courses/:id returns 404 when course is missing', async () => {
+    db.getSyncData = async () => null;
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'DELETE', '/v1/admin/courses/missing');
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('PUT /v1/admin/lessons/:lessonId — course assignment', () => {
+  const validMarkdown = `# Test Lesson
+
+A test lesson.
+
+## Exemplar
+Produce a thing.
+
+## Learning Objectives
+- Can do thing one
+- Can do thing two`;
+
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin', username: 'admin' });
+    db.getSyncData = async () => null;
+  });
+
+  it('persists the course field on create', async () => {
+    let saved = null;
+    db.putSyncData = async (uid, key, data) => { saved = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/l-1', {
+      markdown: validMarkdown, name: 'Test Lesson', course: 'c-1',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(saved.course, 'c-1');
+  });
+
+  it('clears the course field when course=null is sent', async () => {
+    db.getSyncData = async () => ({ data: { markdown: validMarkdown, name: 'Test', status: 'public', course: 'c-old' }, version: 1 });
+    let saved = null;
+    db.putSyncData = async (uid, key, data) => { saved = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/l-1', { course: null });
+    assert.equal(res.status, 200);
+    assert.equal(saved.course, null);
+  });
+
+  it('rejects non-string course values', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/l-1', {
+      markdown: validMarkdown, name: 'Test Lesson', course: 123,
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('preserves existing course when body omits the field', async () => {
+    db.getSyncData = async () => ({ data: { markdown: validMarkdown, name: 'Test', status: 'public', course: 'c-keep' }, version: 1 });
+    let saved = null;
+    db.putSyncData = async (uid, key, data) => { saved = data; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'PUT', '/v1/admin/lessons/l-1', { name: 'Renamed' });
+    assert.equal(res.status, 200);
+    assert.equal(saved.course, 'c-keep');
+  });
+});

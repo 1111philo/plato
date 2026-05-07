@@ -66,9 +66,17 @@ content.get('/v1/prompts/:name', async (c) => {
 // GET /v1/lessons — list lessons the user has access to
 // Public lessons visible to all; private lessons visible only to users in sharedWith.
 // Drafts (admin-only work-in-progress) are never exposed to learners.
+// When a lesson has a `course` field (course id), it's inlined as
+// `{ id, name, description }` so the client can display + the coach context can
+// reference it without a second fetch.
 content.get('/v1/lessons', async (c) => {
   const userId = c.get('userId');
   const items = await db.getAllSyncData('_system');
+  const coursesById = new Map();
+  for (const i of items) {
+    if (!i.dataKey.startsWith('course:')) continue;
+    coursesById.set(i.dataKey.slice('course:'.length), i.data || {});
+  }
   const lessons = items
     .filter(i => {
       if (!i.dataKey.startsWith('lesson:')) return false;
@@ -78,10 +86,15 @@ content.get('/v1/lessons', async (c) => {
       return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
-      const { sharedWith: _sharedWith, ...data } = i.data;
+      const { sharedWith: _sharedWith, course: courseId, ...data } = i.data;
+      const courseRecord = courseId ? coursesById.get(courseId) : null;
+      const course = courseRecord
+        ? { id: courseId, name: courseRecord.name || courseId, description: courseRecord.description || '' }
+        : null;
       return {
         lessonId: i.dataKey.slice('lesson:'.length),
         ...data,
+        course,
         updatedAt: i.updatedAt,
       };
     })
@@ -162,6 +175,8 @@ content.get('/v1/lessons/time-stats', async (c) => {
 });
 
 // GET /v1/lessons/:lessonId — get a lesson (public, or private if user is in sharedWith)
+// When a lesson has a `course` field, the response inlines `course: { id, name, description }`.
+// If the referenced course was deleted (transient drift between cascade and read), `course` is null.
 content.get('/v1/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
@@ -174,8 +189,19 @@ content.get('/v1/lessons/:lessonId', async (c) => {
       return c.json({ error: 'Lesson not found' }, 404);
     }
   }
-  const { sharedWith: _sharedWith, ...data } = item.data;
-  return c.json({ lessonId, ...data, updatedAt: item.updatedAt });
+  const { sharedWith: _sharedWith, course: courseId, ...data } = item.data;
+  let course = null;
+  if (courseId) {
+    const courseItem = await db.getSyncData('_system', `course:${courseId}`);
+    if (courseItem?.data) {
+      course = {
+        id: courseId,
+        name: courseItem.data.name || courseId,
+        description: courseItem.data.description || '',
+      };
+    }
+  }
+  return c.json({ lessonId, ...data, course, updatedAt: item.updatedAt });
 });
 
 // GET /v1/knowledge-base — get the knowledge base content
