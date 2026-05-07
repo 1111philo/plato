@@ -62,7 +62,15 @@ function PacingSection({ stats }) {
     } else {
       cardClasses = 'border-red-300 bg-red-50 ring-2 ring-red-200';
       signal = 'Most lessons exceed the target — simplify objectives or raise the target';
-      signalDetail = 'Most learners are taking significantly more exchanges than the target. Review your lessons for scope creep: each lesson should target one narrow skill. Consider splitting broad lessons into two focused ones.';
+      signalDetail = (
+        overTargetFraction > 0.35
+          ? `Over ${Math.round(overTargetFraction * 100)}% of completions exceeded the ${exchangeTarget}-exchange target` +
+            (avgExchangesOverTarget != null ? `, averaging ${avgExchangesOverTarget} exchanges` : '') +
+            `. This typically means lessons have too many objectives or an exemplar that requires many coaching rounds. ` +
+            `Try reducing each lesson to 2 focused objectives and narrowing the exemplar scope. ` +
+            `Consider splitting any lesson with 3–4 broad objectives into two focused lessons.`
+          : 'Most learners are taking significantly more exchanges than the target. Review your lessons for scope creep: each lesson should target one narrow skill. Consider splitting broad lessons into two focused ones.'
+      );
     }
   }
 
@@ -183,22 +191,22 @@ export default function AdminHome() {
       adminApi('GET', '/v1/admin/knowledge-base'),
       adminApi('GET', '/v1/admin/stats/lessons'),
     ]).then(([users, invites, kb, stats]) => {
-      setActiveCount(Array.isArray(users) ? users.filter(u => u.role !== 'admin').length : 0);
+      setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setHasKB(!!(kb && kb.content && kb.content.trim()));
+      setHasKB(!!(kb && kb.content));
       setLessonStats(stats || null);
     }).catch(() => {});
   }, []);
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+    <div className="px-4 py-8">
+      <h1 className="text-2xl font-bold mb-6">Dashboard</h1>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 gap-4 mb-6">
         <Card>
           <CardContent>
             <div className="text-2xl font-bold">{activeCount}</div>
-            <div className="text-sm text-muted-foreground">Active learners</div>
+            <div className="text-sm text-muted-foreground">Active users</div>
           </CardContent>
         </Card>
         <Card>
