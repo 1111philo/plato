@@ -144,10 +144,20 @@ function formatReadyIssues(issues, closedPilotPrs) {
   const sections = [];
   for (const tier of [...byTier.keys()].sort()) {
     sections.push(`### Tier ${tier}`);
-    for (const issue of byTier.get(tier)) {
+    // Within a tier, list community-authored issues first (anything not
+    // authored by `plato-pilot` itself). The pilot prompt picks community
+    // issues before self-filed ones, so surfacing them up top here makes
+    // the priority order obvious in the report.
+    const tierIssues = byTier.get(tier);
+    const community = tierIssues.filter((i) => i.author?.login !== 'plato-pilot');
+    const selfFiled = tierIssues.filter((i) => i.author?.login === 'plato-pilot');
+    for (const issue of [...community, ...selfFiled]) {
       const attempted = attemptedIssues.get(issue.number);
       const attemptNote = attempted?.length ? ` — ⚠️ previously attempted in closed PRs: ${attempted.map((n) => `#${n}`).join(', ')}` : '';
-      sections.push(`- #${issue.number}: ${issue.title}${attemptNote}`);
+      const authorTag = issue.author?.login === 'plato-pilot'
+        ? ' _(self-filed)_'
+        : ` (by @${issue.author?.login || 'unknown'})`;
+      sections.push(`- #${issue.number}: ${issue.title}${authorTag}${attemptNote}`);
     }
   }
   return sections.join('\n');
@@ -231,7 +241,11 @@ async function main() {
     '--state', 'open',
     '--label', 'ready-for-pilot',
     '--limit', '30',
-    '--json', 'number,title,body,createdAt',
+    // `author` is required so the pilot can prioritize community-filed
+    // issues over self-filed (plato-pilot) ones. The report's tier sections
+    // surface the author so the agent doesn't need a separate `gh issue
+    // view` round trip per candidate.
+    '--json', 'number,title,body,createdAt,author',
   ]);
 
   const onTargetRate = kpis.totalCompletions

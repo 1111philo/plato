@@ -9,7 +9,7 @@ plato runs an automated pilot agent (`plato-pilot`) on a daily schedule. It read
 When you open an issue:
 
 1. The intake agent (`.github/workflows/issue-intake.yml`) reads it and labels it `ready-for-pilot` (enough detail to act on), `needs-info` (asks up to 3 clarifying questions), or closes it as off-topic with an explanation.
-2. If labeled `ready-for-pilot`, the next pilot run may pick it up. plato-pilot tier-ranks picks by impact on learners — concrete bug reports about coaching behavior, accessibility, or admin UX move first.
+2. If labeled `ready-for-pilot`, the next pilot run picks it up. plato-pilot follows a strict picking order: **community-authored issues first** (anyone who isn't the bot itself), then self-filed maintenance tickets, then KPI/log signals as a last resort. Within each group, picks are tier-ranked by impact — coaching behavior, accessibility, and admin UX move first. Volume isn't a tie-breaker against authored issues: a one-line concrete report from a contributor beats a 50-instance log error.
 3. The pilot opens a PR that references the issue with `Fixes #N`. When that PR merges, **the issue author is credited as a co-author** on the merge commit (via `Co-Authored-By:` trailer), so they appear as a repository contributor.
 
 To make your issue actionable:

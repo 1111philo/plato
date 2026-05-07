@@ -105,16 +105,21 @@ jobs:
             2. If the report's "Looped issues" section names an issue, **DO NOT PICK IT**. Two or more closed-unmerged PRs already tried and failed — the reporter needs to clarify before another attempt makes sense.
             3. Do NOT violate any anti-goal (see below).
 
-            **Signal weighting:**
-            - A Tier 1/2 `ready-for-pilot` issue with specifics (exact string change, screenshot, error message) → strongest signal
-            - A high-count server error code tied to a learner-facing surface → strong signal
-            - A Tier 1/2 issue overlapping a log error → strongest combined signal
-            - A Tier 4/5 error with no Tier 1/2 alternative → acceptable, but narrow the fix
-            - A Tier 3+ issue when Tier 1/2 is covered or missing → acceptable if clearly scoped
+            **Strict picking order — pick the first match that exists, do not skip ahead because something later looks higher-impact:**
+
+            1. **Community-authored `ready-for-pilot` issue.** Any issue in the report's "Tier" sections whose author is *not* `plato-pilot` (the report tags these `(by @username)`; self-filed ones are tagged `_(self-filed)_`). When multiple exist, pick by Tier (1 > 2 > 3 > 4 > 5), then by oldest `createdAt`. **Community issues take priority over KPIs and log errors, even when those would have a larger numeric impact.** Someone took the time to file a clear actionable request — that's the strongest signal of an actual learner or admin pain point.
+
+            2. **Self-filed `ready-for-pilot` issue** (author == `plato-pilot`). Same tier + age tie-breaks. These are maintenance tickets the bot opened from log analysis on a previous run.
+
+            3. **High-count server error code** tied to a learner-facing surface (Tier 1–3 by source path). Only fall to this when no `ready-for-pilot` issues exist, or all of them are blocked by the dup-list / loop list.
+
+            4. **KPI signal** that points to a lesson-design or coach-prompt diagnosis. Same fallback condition as (3). Never use a KPI to justify a forced-closure or hard-cutoff change (see anti-goals).
+
+            Volume is not a tie-breaker against authored issues. A 50-line server error and a one-line community issue both count as "one signal"; the community issue wins because it has a named author with context the bot does not.
 
             **SKIP outcomes (exit 0 with a single line to stdout):**
-            - `SKIP: all Tier 1/2 signals are covered by open pilot PRs (#N, #M)` — blocklist ate everything worth picking
-            - `SKIP: no actionable signal today` — nothing meets the hard rules or signal weighting
+            - `SKIP: all community ready-for-pilot issues are covered by open pilot PRs (#N, #M)` — blocklist ate every community-authored candidate; falling further would mean working on lower-priority signals while real asks wait
+            - `SKIP: no actionable signal today` — nothing meets the hard rules
             - `SKIP: only candidate is an anti-goal (<describe>)` — the loudest signal would force a bad fix
 
             Print the SKIP line and stop. Do not invent work, do not "find something small to ship." SKIP is success.
