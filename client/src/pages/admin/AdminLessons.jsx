@@ -11,6 +11,7 @@ import {
 
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
+import CoursesModal from './CoursesModal.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
@@ -32,6 +33,7 @@ export default function AdminLessons() {
 
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [coursesOpen, setCoursesOpen] = useState(false);
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft, initialCourse }
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -182,7 +184,19 @@ export default function AdminLessons() {
   // Lesson list
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Lessons</h1>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">Lessons</h1>
+        <div className="flex gap-2">
+          <Button onClick={() => navigate('/plato/lessons/new')}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Lesson
+          </Button>
+          <Button variant="outline" onClick={() => setCoursesOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Courses
+          </Button>
+        </div>
+      </div>
 
       {/* Always-mounted live region — guarantees screen readers announce the
           success/error message even when the editor unmounts in the same
@@ -207,11 +221,6 @@ export default function AdminLessons() {
           <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
-
-      <Button className="mb-4" onClick={() => navigate('/plato/lessons/new')}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Add Lesson
-      </Button>
 
       <Card className="p-0 overflow-hidden">
         <Table aria-label="Lessons">
@@ -286,6 +295,12 @@ export default function AdminLessons() {
           onConfirm={() => { setConfirmModal(null); confirmModal.onConfirm(); }}
         />
       )}
+
+      <CoursesModal
+        open={coursesOpen}
+        onOpenChange={setCoursesOpen}
+        onMutated={() => { loadCourses(); loadLessons(); }}
+      />
 
       {shareModal && (
         <ShareLessonModal
