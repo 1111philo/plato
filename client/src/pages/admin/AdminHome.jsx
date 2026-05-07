@@ -119,13 +119,18 @@ function PacingSection({ stats }) {
             )}
           </CardContent>
         </Card>
-        <Card className={overTargetFractionHigh ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : (overTarget > 0 ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : '')}>
+        <Card className={overTargetFractionHigh ? 'border-yellow-300 bg-yellow-50 ring-2 ring-yellow-200' : ''}>
           <CardContent>
             <div className="text-2xl font-bold">{overTarget}</div>
             <div className="text-sm text-muted-foreground">Went over target</div>
+            {hasCompletions && (
+              <div className="text-xs mt-1 text-muted-foreground">
+                {Math.round(overTargetFraction * 100)}% of completions
+              </div>
+            )}
             {overTargetFractionHigh && (
               <div className="text-xs mt-1 text-yellow-800">
-                {Math.round(overTargetFraction * 100)}% of completions — consider reviewing lesson scope.
+                More than 1 in 4 completions ran long — consider reviewing lesson scope.
               </div>
             )}
           </CardContent>
