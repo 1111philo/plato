@@ -156,12 +156,19 @@ export default function AdminLessons() {
         needsAgentReply={editing.needsAgentReply}
         initialCourse={editing.initialCourse}
         onSave={async (name, markdown, conversation, readiness) => {
-          const body = { markdown, name, conversation, readiness };
-          if (editing.isDraft) {
-            body.status = 'private';
-            body.sharedWith = [user.userId];
+          // null name + markdown = the editor decided there was nothing new
+          // to extract (e.g. admin only changed the course dropdown). Skip
+          // the lesson PUT — those metadata changes auto-saved on edit —
+          // but still show the toast and refresh the list so the admin
+          // gets visible confirmation.
+          if (name && markdown) {
+            const body = { markdown, name, conversation, readiness };
+            if (editing.isDraft) {
+              body.status = 'private';
+              body.sharedWith = [user.userId];
+            }
+            await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, body);
           }
-          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, body);
           setMessage({ text: editing.isDraft ? 'Lesson created (private).' : 'Lesson updated.', type: 'success' });
           setEditing(null);
           loadLessons();
@@ -176,6 +183,16 @@ export default function AdminLessons() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Lessons</h1>
+
+      {/* Always-mounted live region — guarantees screen readers announce the
+          success/error message even when the editor unmounts in the same
+          render as the message is set (a conditionally-rendered role="alert"
+          is sometimes missed because it's present on the list's first render
+          rather than appearing dynamically). The visible alert below stays
+          for sighted users; this sr-only region drives the announcement. */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {message?.text || ''}
+      </div>
 
       {message && (
         <div
@@ -467,13 +484,21 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     // just to change a metadata field (e.g. the course assignment) without
     // chatting with the agent. Those changes auto-save on edit, so there's
     // nothing for the lesson-extractor to do and the conversation hasn't
-    // grown beyond the seed prompt + the agent's first reply. Treat the
-    // Update button as a graceful close in that case rather than trying to
-    // re-extract markdown from a near-empty conversation (which would fail
-    // with "Could not build a complete lesson").
+    // grown beyond the seed prompt + the agent's first reply. Skip the
+    // re-extraction (which would fail with "Could not build a complete
+    // lesson") and call onSave with null markdown — the parent skips the
+    // lesson PUT but still shows the success toast and refreshes the list,
+    // so the admin gets visible confirmation that their metadata change
+    // landed.
     const userMsgCount = chatMessages.filter(m => m.role === 'user').length;
     if (!isCreate && userMsgCount <= 1) {
-      onCancel();
+      setBusy('creating');
+      try {
+        await onSave(null, null, null, null);
+      } catch (e) {
+        setError(e.message || 'Failed to update lesson.');
+        setBusy('');
+      }
       return;
     }
     setBusy('creating');
