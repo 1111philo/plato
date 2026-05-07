@@ -2,6 +2,34 @@
 
 Thank you for your interest in contributing to plato. This project is maintained by [11:11 Philosopher's Group](https://github.com/1111philo).
 
+## The fastest way to contribute: file an issue
+
+plato runs an automated pilot agent (`plato-pilot`) on a daily schedule. It reads open `ready-for-pilot` issues, picks one, and opens a focused PR that addresses it. **Most contributions to plato start as a clear issue, not a PR.** That includes bug reports, copy changes, small feature requests, and accessibility fixes.
+
+When you open an issue:
+
+1. The intake agent (`.github/workflows/issue-intake.yml`) reads it and labels it `ready-for-pilot` (enough detail to act on), `needs-info` (asks up to 3 clarifying questions), or closes it as off-topic with an explanation.
+2. If labeled `ready-for-pilot`, the next pilot run may pick it up. plato-pilot tier-ranks picks by impact on learners — concrete bug reports about coaching behavior, accessibility, or admin UX move first.
+3. The pilot opens a PR that references the issue with `Fixes #N`. When that PR merges, **the issue author is credited as a co-author** on the merge commit (via `Co-Authored-By:` trailer), so they appear as a repository contributor.
+
+To make your issue actionable:
+
+- Name something concrete: an exact string/copy change, a specific error message or screenshot, or a named component plus observed-vs-expected behavior. Vague reports ("make X better", "headings need updating") get routed to `needs-info`.
+- For UI bugs: include the URL/page, what you did, what you expected, what happened, browser, role (learner/admin), and a screenshot if visible.
+- For copy or content fixes: include the exact current text and the exact replacement.
+
+You don't need a fork, a dev environment, or any code knowledge to file an issue.
+
+## When to skip the issue and write a PR yourself
+
+You're a regular contributor or have direct collaborator access, AND:
+
+- You're building a plugin (lighter review bar — see below).
+- You're addressing an issue you opened that's been triaged but not picked up yet.
+- The change is so specific (e.g. fixing an obvious typo in a doc) that the issue + pilot detour adds friction.
+
+Otherwise, file an issue first — the pilot is faster than the round trip of a PR review for small changes, and you still get credit.
+
 > **Are you building a plugin?** Plugins live in `plugins/<id>/` and have a lighter review bar than core changes. Read [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md) (humans) or [docs/plugins/AGENTS.md](docs/plugins/AGENTS.md) (AI agents) — you don't need to read the full core-contribution guide. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one.
 
 ## Plugin vs. core changes
@@ -183,17 +211,30 @@ The `main` branch is protected — direct pushes are not allowed. All changes go
 1. Create a branch from `main`.
 2. Make focused, well-described commits.
 3. Run tests — they must pass.
-4. Open a pull request with a clear summary of what changed and why.
+4. **Open the pull request as a Draft** while you iterate (see below).
+5. When the PR is genuinely ready, mark it as Ready for review.
+
+### Open PRs as Draft while iterating
+
+If you're working interactively — testing in a browser, getting feedback from a reviewer, tweaking UX — open the PR as **Draft** (`gh pr create --draft`, or use the dropdown when creating in the GitHub UI). Push commits as you iterate without re-running the full review pipeline on every micro-change.
+
+Mark the PR as Ready (`gh pr ready <n>`, or "Ready for review" in the UI) only when you actually want a review. The automated `claude[bot]` reviewer skips draft PRs and runs once you flip the PR to Ready.
+
+If a Ready PR is already open and you discover more iteration is needed, convert it back to Draft (`gh pr ready <n> --undo`).
 
 ### Automated review
 
-When you open or push to a PR, the Code Review workflow (`.github/workflows/code-review.yml`) runs an automated reviewer (`claude[bot]`) that reads the diff, runs the server test suite, and posts a single `gh pr review` call. The workflow is per-commit idempotent: each HEAD sha is reviewed at most once, and re-runs on the same sha are no-ops. Pushing new commits produces fresh reviews. The `review` status check must pass before merging.
+When you mark a PR as Ready (or push to a PR that's already Ready), the Code Review workflow (`.github/workflows/code-review.yml`) runs an automated reviewer (`claude[bot]`) that reads the diff, runs the server test suite, and posts a single `gh pr review` call. The workflow is per-commit idempotent: each HEAD sha is reviewed at most once, and re-runs on the same sha are no-ops. Pushing new commits to a Ready PR produces fresh reviews. Draft PRs are skipped — the workflow exits before invoking the reviewer.
+
+The `review` status check must pass before merging.
 
 One caveat: if your PR modifies `.github/workflows/code-review.yml` itself, the action's own security check will fail the `review` status because the workflow file on the branch differs from the one on `main`. That failure is expected on workflow-editing PRs and requires maintainer bypass to merge.
 
 ### Automated PRs (plato-pilot)
 
-You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis. If a plato-pilot PR's review requests changes, a companion workflow (`revise.yml`) tags the PR with `plato-pilot-revised` to prevent re-runs and then makes a one-shot fixup commit addressing the feedback — any further changes require human review.
+You may see PRs opened by a scheduled agent called "plato-pilot" (branch prefix `pilot/`, label `plato-pilot`). These are autonomous small fixes proposed from KPI and log analysis or from `ready-for-pilot` issues. plato-pilot PRs are opened as Ready for review by design — they're standalone proposals, not collaborative iteration loops. If the auto-review requests changes, a companion workflow (`revise.yml`) tags the PR with `plato-pilot-revised` to prevent re-runs and then makes a one-shot fixup commit addressing the feedback — any further changes require human review.
+
+When a pilot PR addresses an issue (`Fixes #N` in the body), the commit message includes a `Co-Authored-By:` trailer crediting the issue author so they appear as a contributor on the repository when the PR merges.
 
 ### Automated issue intake
 

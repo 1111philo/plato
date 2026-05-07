@@ -2,7 +2,12 @@ name: Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    # `ready_for_review` fires when a Draft PR is flipped to Ready — that's
+    # the moment we want to invoke the auto-reviewer for the first time on a
+    # PR that was iterated as a draft. `synchronize` covers further pushes
+    # once the PR is Ready (we gate on draft inside the job). `opened`
+    # covers PRs opened directly as Ready.
+    types: [opened, synchronize, ready_for_review]
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -21,9 +26,19 @@ on:
 
 jobs:
   review:
-    # Skip dependabot PRs entirely — they're mechanical bumps already gated by
-    # the Lint job and don't need an AI review.
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.login != 'dependabot[bot]'
+    # Skip when:
+    # - The PR is still Draft (the documented contributor flow opens PRs as
+    #   Draft for collaborative iteration; we only want to invoke the
+    #   reviewer once the PR is genuinely ready). `workflow_dispatch` and
+    #   `ready_for_review` events bypass this check so the maintainer can
+    #   force a review and the Draft → Ready transition still triggers.
+    # - The PR is from dependabot (mechanical bumps; the Lint job gates).
+    if: |
+      (github.event_name == 'workflow_dispatch' ||
+        github.event.action == 'ready_for_review' ||
+        github.event.pull_request.draft != true) &&
+      (github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: ubuntu-latest
     # Wall-clock budget replaces the previous --max-turns 30 cap. Turn counts
     # were a fragile proxy: a thorough review that read several modified files
