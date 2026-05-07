@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -31,7 +31,7 @@ function formatTimeRange(p20, p80) {
 export default function LessonsList() {
   const { state } = useApp();
   const navigate = useNavigate();
-  const { lessons } = state;
+  const { lessons, loaded } = state;
   const [lessonData, setLessonData] = useState({});
   const [timeStats, setTimeStats] = useState({});
   const [detailLesson, setDetailLesson] = useState(null);
@@ -131,11 +131,18 @@ export default function LessonsList() {
   }, [courseFilter, courseOptions.named]);
 
   const announcement = useMemo(() => {
+    // Empty while still loading. Once `loaded` flips, the live region's
+    // content changes from '' to a real announcement — that content change
+    // is what reliably fires the screen-reader announcement (live regions
+    // commonly skip initial-mount content). Avoids double-announcement
+    // with the visible "Loading lessons…" div below.
+    if (!loaded) return '';
     const total = filtered.length;
     // Skip the "in <filter>" scope phrase when no course filter is shown —
     // saying "in all courses" in a classroom without any courses would be
     // misleading.
     const scope = hasCourseFilter ? ` in ${filterLabel}` : '';
+    if (lessons.length === 0) return 'No lessons yet.';
     if (total === 0) {
       return hasCourseFilter ? `No lessons match ${filterLabel}.` : 'No lessons.';
     }
@@ -146,7 +153,7 @@ export default function LessonsList() {
     const showingFrom = pageStart + 1;
     const showingTo = pageStart + visibleLessons.length;
     return `Showing ${showingFrom} to ${showingTo} of ${total} ${lessonWord}${scope}, page ${currentPage} of ${totalPages}.`;
-  }, [filtered.length, filterLabel, totalPages, pageStart, visibleLessons.length, currentPage, hasCourseFilter]);
+  }, [loaded, lessons.length, filtered.length, filterLabel, totalPages, pageStart, visibleLessons.length, currentPage, hasCourseFilter]);
 
   function statusIcon(lessonId) {
     const d = lessonData[lessonId];
@@ -196,7 +203,18 @@ export default function LessonsList() {
         {announcement}
       </div>
 
-      {filtered.length === 0 ? (
+      {!loaded ? (
+        // Plain visible state — no role/aria-live here. The sr-only live
+        // region above is the single announcer; it fires when its content
+        // transitions from '' (loading) to "Showing N lessons" (loaded).
+        <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
+          Loading lessons…
+        </div>
+      ) : lessons.length === 0 ? (
+        <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
+          No lessons yet.
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
           No lessons match this filter.
         </div>
@@ -212,60 +230,67 @@ export default function LessonsList() {
               className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
               style={{ animationDelay: `${i * 30}ms` }}
             >
-              <button
-                className="w-full text-left h-full"
-                onClick={() => navigate(`/lessons/${c.lessonId}`)}
-                aria-label={`Open lesson ${c.name}${c.course?.name ? ` (in course ${c.course.name})` : ''}`}
-              >
-                <Card className="transition-colors hover:bg-accent/50 cursor-pointer h-full">
-                  <CardContent className="flex flex-col gap-2 h-full">
-                    <div className="flex items-start gap-3">
-                      <span
-                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
-                        aria-hidden="true"
-                      >
-                        {statusIcon(c.lessonId)}
-                      </span>
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <strong className="text-sm font-medium">{c.name}</strong>
-                        {c.course?.name && (
-                          <p className="text-xs text-muted-foreground">{c.course.name}</p>
-                        )}
-                        {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
-                      </div>
+              {/* Two real buttons live inside a single Card — the primary
+                  "Open lesson" trigger and a secondary "Overview" button.
+                  Earlier this was one outer <button> wrapping the whole
+                  card with a nested role="button" span for Overview, which
+                  is invalid (interactive within interactive) and screen
+                  readers handle inconsistently. Now both are real <button>s
+                  at the same DOM level, each its own focus stop. */}
+              <Card className="h-full overflow-hidden transition-shadow hover:shadow-md flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/lessons/${c.lessonId}`)}
+                  aria-label={`Open lesson ${c.name}${c.course?.name ? ` (in course ${c.course.name})` : ''}`}
+                  className="text-left flex-1 px-4 pt-4 pb-2 hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none transition-colors"
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
+                      aria-hidden="true"
+                    >
+                      {statusIcon(c.lessonId)}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <strong className="text-sm font-medium block">{c.name}</strong>
+                      {c.course?.name && (
+                        <p className="text-xs text-muted-foreground">{c.course.name}</p>
+                      )}
+                      {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap mt-auto pt-1">
-                      {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
-                      {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
-                      {(() => {
-                        const stats = timeStats[c.lessonId];
-                        if (!stats || (stats.sampleSize ?? 0) < 3) return null;
-                        const range = formatTimeRange(stats.p20, stats.p80);
-                        if (!range) return null;
-                        return (
-                          <Badge
-                            variant="outline"
-                            className="text-xs"
-                            title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                            aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                          >
-                            Most learners finish in {range}
-                          </Badge>
-                        );
-                      })()}
-                      <span
-                        className="text-xs text-primary hover:underline cursor-pointer ml-auto"
-                        role="button" tabIndex={0}
-                        onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); setDetailLesson(c); } }}
-                        aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}
+                  </div>
+                </button>
+                <div className="px-4 pb-4 pt-1 flex items-center gap-2 flex-wrap">
+                  {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
+                  {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
+                  {(() => {
+                    const stats = timeStats[c.lessonId];
+                    if (!stats || (stats.sampleSize ?? 0) < 3) return null;
+                    const range = formatTimeRange(stats.p20, stats.p80);
+                    if (!range) return null;
+                    return (
+                      <Badge
+                        variant="outline"
+                        className="text-xs"
+                        title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
+                        aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
                       >
-                        Overview ({c.learningObjectives.length})
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </button>
+                        Most learners finish in {range}
+                      </Badge>
+                    );
+                  })()}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto text-xs h-auto px-2 py-1 text-primary hover:underline"
+                    onClick={() => setDetailLesson(c)}
+                    aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}
+                  >
+                    Overview ({c.learningObjectives.length})
+                  </Button>
+                </div>
+              </Card>
             </li>
           ))}
         </ul>
