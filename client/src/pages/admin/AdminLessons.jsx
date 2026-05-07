@@ -463,6 +463,19 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
 
   async function handleCreate() {
     setError('');
+    // When editing an existing finalized lesson, an admin may open the editor
+    // just to change a metadata field (e.g. the course assignment) without
+    // chatting with the agent. Those changes auto-save on edit, so there's
+    // nothing for the lesson-extractor to do and the conversation hasn't
+    // grown beyond the seed prompt + the agent's first reply. Treat the
+    // Update button as a graceful close in that case rather than trying to
+    // re-extract markdown from a near-empty conversation (which would fail
+    // with "Could not build a complete lesson").
+    const userMsgCount = chatMessages.filter(m => m.role === 'user').length;
+    if (!isCreate && userMsgCount <= 1) {
+      onCancel();
+      return;
+    }
     setBusy('creating');
     try {
       const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
