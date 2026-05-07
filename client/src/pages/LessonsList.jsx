@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
@@ -13,6 +13,12 @@ import {
 
 // 1.8 min/exchange matches the ~20 min / 11 exchange MAX_EXCHANGES target.
 const MINS_PER_EXCHANGE = 1.8;
+const PAGE_SIZE = 12;
+
+// Sentinel filter values. 'all' shows everything; 'none' isolates lessons
+// that have no course assigned (e.g. legacy or admin-personal customs).
+const FILTER_ALL = 'all';
+const FILTER_NONE = 'none';
 
 function formatTimeRange(p20, p80) {
   if (typeof p20 !== 'number' || typeof p80 !== 'number') return null;
@@ -29,6 +35,8 @@ export default function LessonsList() {
   const [lessonData, setLessonData] = useState({});
   const [timeStats, setTimeStats] = useState({});
   const [detailLesson, setDetailLesson] = useState(null);
+  const [courseFilter, setCourseFilter] = useState(FILTER_ALL);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     (async () => {
@@ -57,11 +65,94 @@ export default function LessonsList() {
     return () => { cancelled = true; };
   }, []);
 
+  // Build the course list for the filter dropdown from the inlined `course`
+  // field on each lesson. Sorted alphabetically. We add an "Uncategorized"
+  // option only when at least one lesson has no course — so learners aren't
+  // confronted with a meaningless option in classrooms where every lesson
+  // belongs to a course. The whole filter UI is hidden when no courses
+  // exist (named.length === 0) — there's nothing meaningful to filter by.
+  const courseOptions = useMemo(() => {
+    const map = new Map();
+    let hasUncategorized = false;
+    for (const l of lessons) {
+      if (l.course?.id) map.set(l.course.id, l.course.name);
+      else hasUncategorized = true;
+    }
+    const named = [...map.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    return { named, hasUncategorized };
+  }, [lessons]);
+  const hasCourseFilter = courseOptions.named.length > 0;
+
+  // If the classroom has no courses (or the only course referenced by the
+  // current filter was just deleted server-side), fall back to "all" so the
+  // user isn't stranded on a stale filter that matches nothing.
+  useEffect(() => {
+    if (!hasCourseFilter && courseFilter !== FILTER_ALL) {
+      setCourseFilter(FILTER_ALL);
+    } else if (
+      courseFilter !== FILTER_ALL &&
+      courseFilter !== FILTER_NONE &&
+      !courseOptions.named.some((c) => c.id === courseFilter)
+    ) {
+      setCourseFilter(FILTER_ALL);
+    }
+  }, [hasCourseFilter, courseFilter, courseOptions.named]);
+
+  // Apply the course filter.
+  const filtered = useMemo(() => {
+    if (courseFilter === FILTER_ALL) return lessons;
+    if (courseFilter === FILTER_NONE) return lessons.filter((l) => !l.course?.id);
+    return lessons.filter((l) => l.course?.id === courseFilter);
+  }, [lessons, courseFilter]);
+
+  // Pagination math. We clamp the current page to the available range so a
+  // filter that shrinks the list below the current page doesn't strand us.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const visibleLessons = filtered.slice(pageStart, pageStart + PAGE_SIZE);
+
+  // Reset to page 1 whenever the filter changes so we never land on an
+  // out-of-range page after a tighter filter.
+  useEffect(() => { setPage(1); }, [courseFilter]);
+
+  // Live announcement: assembled from filter + page state. Updates whenever
+  // either changes, which is exactly the moment screen reader users need to
+  // know the visible content shifted. Kept in an always-mounted sr-only
+  // region so the announcement fires reliably (a region that appears for
+  // the first time on render is sometimes missed).
+  const filterLabel = useMemo(() => {
+    if (courseFilter === FILTER_ALL) return 'all courses';
+    if (courseFilter === FILTER_NONE) return 'lessons without a course';
+    const name = courseOptions.named.find((c) => c.id === courseFilter)?.name;
+    return name ? `the course "${name}"` : 'the selected course';
+  }, [courseFilter, courseOptions.named]);
+
+  const announcement = useMemo(() => {
+    const total = filtered.length;
+    // Skip the "in <filter>" scope phrase when no course filter is shown —
+    // saying "in all courses" in a classroom without any courses would be
+    // misleading.
+    const scope = hasCourseFilter ? ` in ${filterLabel}` : '';
+    if (total === 0) {
+      return hasCourseFilter ? `No lessons match ${filterLabel}.` : 'No lessons.';
+    }
+    const lessonWord = total === 1 ? 'lesson' : 'lessons';
+    if (totalPages === 1) {
+      return `Showing ${total} ${lessonWord}${scope}.`;
+    }
+    const showingFrom = pageStart + 1;
+    const showingTo = pageStart + visibleLessons.length;
+    return `Showing ${showingFrom} to ${showingTo} of ${total} ${lessonWord}${scope}, page ${currentPage} of ${totalPages}.`;
+  }, [filtered.length, filterLabel, totalPages, pageStart, visibleLessons.length, currentPage, hasCourseFilter]);
+
   function statusIcon(lessonId) {
     const d = lessonData[lessonId];
-    if (d?.status === 'completed') return '\u2713';
-    if (d?.status) return '\u25B6';
-    return '\u25CB';
+    if (d?.status === 'completed') return '✓';
+    if (d?.status) return '▶';
+    return '○';
   }
 
   function progressLabel(lesson) {
@@ -72,72 +163,139 @@ export default function LessonsList() {
     return null;
   }
 
-  const LessonIcon = ({ children }) => (
-    <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary" aria-hidden="true">
-      {children}
-    </span>
-  );
-
-  const LessonItem = ({ index, onClick, dashed, children }) => (
-    <li
-      className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
-      style={{ animationDelay: `${index * 40}ms` }}
-    >
-      <button
-        className="w-full text-left"
-        onClick={onClick}
-      >
-        <Card className={`transition-colors hover:bg-accent/50 cursor-pointer ${dashed ? 'border-dashed' : ''}`}>
-          <CardContent className="flex items-start gap-3">
-            {children}
-          </CardContent>
-        </Card>
-      </button>
-    </li>
-  );
-
   return (
-    <div className="mx-auto max-w-lg p-4">
-      <h2 className="text-xl font-semibold mb-4">Lessons</h2>
-      <ul className="space-y-3" role="list">
-        {lessons.map((c, i) => (
-          <LessonItem key={c.lessonId} index={i} onClick={() => navigate(`/lessons/${c.lessonId}`)}>
-            <LessonIcon>{statusIcon(c.lessonId)}</LessonIcon>
-            <div className="min-w-0 flex-1 space-y-1">
-              <strong className="text-sm font-medium">{c.name}</strong>
-              {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
-              <div className="flex items-center gap-2 flex-wrap">
-                {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
-                {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
-                {(() => {
-                  const stats = timeStats[c.lessonId];
-                  if (!stats || (stats.sampleSize ?? 0) < 3) return null;
-                  const range = formatTimeRange(stats.p20, stats.p80);
-                  if (!range) return null;
-                  return (
-                    <Badge
-                      variant="outline"
-                      className="text-xs"
-                      title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                      aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                    >
-                      Most learners finish in {range}
-                    </Badge>
-                  );
-                })()}
-                <span className="text-xs text-primary hover:underline cursor-pointer"
-                  role="button" tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); setDetailLesson(c); } }}
-                  aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}>
-                  Lesson Overview ({c.learningObjectives.length} Objectives)
-                </span>
-              </div>
-            </div>
-          </LessonItem>
-        ))}
+    <div className="mx-auto max-w-5xl p-4">
+      <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-xl font-semibold">Lessons</h2>
+        {hasCourseFilter && (
+          <div className="flex items-center gap-2">
+            <label htmlFor="course-filter" className="text-sm text-muted-foreground">Course</label>
+            <select
+              id="course-filter"
+              value={courseFilter}
+              onChange={(e) => setCourseFilter(e.target.value)}
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <option value={FILTER_ALL}>All courses</option>
+              {courseOptions.named.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+              {courseOptions.hasUncategorized && (
+                <option value={FILTER_NONE}>Uncategorized</option>
+              )}
+            </select>
+          </div>
+        )}
+      </div>
 
-      </ul>
+      {/* Always-mounted live region. Updates whenever filter or page changes.
+          Persistent rather than conditional so screen readers reliably pick
+          up the change. No visible counterpart — sighted learners get the
+          same signal from the grid itself shifting and the pagination row. */}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
+          No lessons match this filter.
+        </div>
+      ) : (
+        <ul
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+          role="list"
+          aria-label="Lessons"
+        >
+          {visibleLessons.map((c, i) => (
+            <li
+              key={c.lessonId}
+              className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
+              style={{ animationDelay: `${i * 30}ms` }}
+            >
+              <button
+                className="w-full text-left h-full"
+                onClick={() => navigate(`/lessons/${c.lessonId}`)}
+                aria-label={`Open lesson ${c.name}${c.course?.name ? ` (in course ${c.course.name})` : ''}`}
+              >
+                <Card className="transition-colors hover:bg-accent/50 cursor-pointer h-full">
+                  <CardContent className="flex flex-col gap-2 h-full">
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
+                        aria-hidden="true"
+                      >
+                        {statusIcon(c.lessonId)}
+                      </span>
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <strong className="text-sm font-medium">{c.name}</strong>
+                        {c.course?.name && (
+                          <p className="text-xs text-muted-foreground">{c.course.name}</p>
+                        )}
+                        {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mt-auto pt-1">
+                      {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
+                      {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
+                      {(() => {
+                        const stats = timeStats[c.lessonId];
+                        if (!stats || (stats.sampleSize ?? 0) < 3) return null;
+                        const range = formatTimeRange(stats.p20, stats.p80);
+                        if (!range) return null;
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="text-xs"
+                            title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
+                            aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
+                          >
+                            Most learners finish in {range}
+                          </Badge>
+                        );
+                      })()}
+                      <span
+                        className="text-xs text-primary hover:underline cursor-pointer ml-auto"
+                        role="button" tabIndex={0}
+                        onClick={(e) => { e.stopPropagation(); setDetailLesson(c); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); setDetailLesson(c); } }}
+                        aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}
+                      >
+                        Overview ({c.learningObjectives.length})
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {totalPages > 1 && (
+        <nav aria-label="Lessons pagination" className="flex items-center justify-center gap-2 mt-6">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            aria-label="Previous page"
+          >
+            &larr; Previous
+          </Button>
+          <span className="text-sm text-muted-foreground tabular-nums" aria-current="page">
+            Page {currentPage} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={currentPage >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            aria-label="Next page"
+          >
+            Next &rarr;
+          </Button>
+        </nav>
+      )}
 
       {detailLesson && (
         <LessonDetailDialog
@@ -163,6 +321,10 @@ function LessonDetailDialog({ lesson, progress, open, onOpenChange }) {
             <DialogDescription>{lesson.description}</DialogDescription>
           )}
         </DialogHeader>
+
+        {lesson.course?.name && (
+          <p className="text-sm text-muted-foreground">Part of <span className="font-medium">{lesson.course.name}</span></p>
+        )}
 
         {pct != null && (
           <div
