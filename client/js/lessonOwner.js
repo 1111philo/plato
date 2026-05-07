@@ -22,7 +22,15 @@ export async function loadLessons() {
       const serverLessons = await resp.json();
       for (const lesson of serverLessons) {
         if (lesson.markdown) {
-          lessons.push(parseLessonPrompt(lesson.lessonId, lesson.markdown));
+          // parseLessonPrompt only knows about fields encoded inside the
+          // markdown (name, description, exemplar, objectives). Top-level
+          // server fields like `course` (the inlined { id, name } block)
+          // need to be carried forward explicitly so they survive into the
+          // client-side lesson model used by the classroom UI and the coach
+          // context builder.
+          const parsed = parseLessonPrompt(lesson.lessonId, lesson.markdown);
+          if (lesson.course) parsed.course = lesson.course;
+          lessons.push(parsed);
         }
       }
     }
