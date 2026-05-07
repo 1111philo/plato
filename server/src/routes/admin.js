@@ -589,16 +589,30 @@ admin.delete('/v1/admin/courses/:courseId', async (c) => {
   const item = await db.getSyncData('_system', `course:${courseId}`);
   if (!item) return c.json({ error: 'Course not found' }, 404);
 
+  // Snapshot the affected lesson keys *before* the delete, so a concurrent
+  // /v1/lessons fetch in the gap can't see stale course refs without the
+  // course record existing — the inlining logic on the read path tolerates
+  // a missing course (returns course: null) but it still helps to keep the
+  // happy path tight.
+  const items = await db.getAllSyncData('_system');
+  const affectedKeys = items
+    .filter(i => i.dataKey.startsWith('lesson:') && i.data?.course === courseId)
+    .map(i => i.dataKey);
+
   await db.deleteSyncData('_system', `course:${courseId}`);
 
-  // Clear the course field on any lesson that referenced it. Mirrors the
-  // userGroups delete cascade above.
-  const items = await db.getAllSyncData('_system');
-  await Promise.all(
-    items
-      .filter(i => i.dataKey.startsWith('lesson:') && i.data?.course === courseId)
-      .map(i => db.putSyncData('_system', i.dataKey, { ...i.data, course: null }, i.version || 0))
-  );
+  // Cascade with per-lesson re-read so a concurrent admin edit on one of
+  // these lessons doesn't trigger a ConditionalCheckFailedException — we
+  // pick up the latest version and any new field values, then override
+  // just `course`. Skip the PUT if the lesson no longer references this
+  // course (another admin already moved it), so we don't clobber an
+  // intentional re-assignment.
+  for (const dataKey of affectedKeys) {
+    const fresh = await db.getSyncData('_system', dataKey);
+    if (!fresh) continue;
+    if (fresh.data?.course !== courseId) continue;
+    await db.putSyncData('_system', dataKey, { ...fresh.data, course: null }, fresh.version || 0);
+  }
 
   return c.json({ ok: true });
 });

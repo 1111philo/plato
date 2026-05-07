@@ -738,12 +738,19 @@ describe('Courses CRUD', () => {
   });
 
   it('DELETE /v1/admin/courses/:id removes the course and clears it from lessons', async () => {
-    db.getSyncData = async () => ({ data: { name: 'Doomed' }, version: 1 });
     const initialItems = [
       { dataKey: 'lesson:l-1', data: { name: 'L1', markdown: '#', status: 'public', course: 'c-doom' }, version: 1 },
       { dataKey: 'lesson:l-2', data: { name: 'L2', markdown: '#', status: 'public', course: 'c-other' }, version: 1 },
       { dataKey: 'lesson:l-3', data: { name: 'L3', markdown: '#', status: 'public', course: 'c-doom' }, version: 1 },
     ];
+    // The cascade re-reads each affected lesson before clearing its course,
+    // so the per-lesson getSyncData has to return them freshly. The course
+    // record itself is also looked up first to confirm it exists.
+    db.getSyncData = async (uid, key) => {
+      if (key === 'course:c-doom') return { data: { name: 'Doomed' }, version: 1 };
+      const found = initialItems.find(i => i.dataKey === key);
+      return found ? { data: found.data, version: found.version } : null;
+    };
     db.getAllSyncData = async () => initialItems;
     let deleted = null;
     db.deleteSyncData = async (uid, key) => { deleted = key; };
@@ -756,6 +763,35 @@ describe('Courses CRUD', () => {
     assert.equal(cleared.length, 2);
     assert.ok(cleared.every(c => c.course === null));
     assert.deepEqual(cleared.map(c => c.key).sort(), ['lesson:l-1', 'lesson:l-3']);
+  });
+
+  it('DELETE /v1/admin/courses/:id skips lessons whose course was reassigned mid-cascade', async () => {
+    // Initial scan: l-1 references the doomed course. Then by the time the
+    // per-lesson re-read happens, another admin has reassigned l-1 to a
+    // different course. Our cascade should leave that reassignment alone.
+    const initialItems = [
+      { dataKey: 'lesson:l-1', data: { name: 'L1', markdown: '#', status: 'public', course: 'c-doom' }, version: 1 },
+    ];
+    let lessonRereadCount = 0;
+    db.getSyncData = async (uid, key) => {
+      if (key === 'course:c-doom') return { data: { name: 'Doomed' }, version: 1 };
+      if (key === 'lesson:l-1') {
+        lessonRereadCount++;
+        // Simulated concurrent reassignment: by the time the cascade re-reads,
+        // l-1 has been moved to a different course.
+        return { data: { name: 'L1', markdown: '#', status: 'public', course: 'c-new' }, version: 2 };
+      }
+      return null;
+    };
+    db.getAllSyncData = async () => initialItems;
+    db.deleteSyncData = async () => {};
+    const cleared = [];
+    db.putSyncData = async (uid, key, data) => { cleared.push({ key, course: data.course }); };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'DELETE', '/v1/admin/courses/c-doom');
+    assert.equal(res.status, 200);
+    assert.equal(lessonRereadCount, 1, 'cascade should re-read the lesson before deciding to write');
+    assert.equal(cleared.length, 0, 'cascade should not touch a lesson whose course no longer matches');
   });
 
   it('DELETE /v1/admin/courses/:id returns 404 when course is missing', async () => {
