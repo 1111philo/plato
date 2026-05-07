@@ -2,6 +2,10 @@
 
 Thank you for your interest in contributing to plato. This project is maintained by [11:11 Philosopher's Group](https://github.com/1111philo).
 
+**The primary way to contribute is by filing issues.** plato uses an autonomous agent called [plato-pilot](https://github.com/UIC-OSF/plato-pilot) that runs daily maintenance and triage, picking up issues labeled `ready-for-pilot` and proposing fixes as pull requests. When a pilot PR merges, **the original issue author is credited as a contributor** via co-author tags in the commit and GitHub's contributor graph.
+
+To file the most useful issues: include the URL/page, what you did, what you expected, what happened, and any error message or screenshot. The intake agent will label your issue `ready-for-pilot` if it has enough detail, or `needs-info` if clarification is needed.
+
 > **Are you building a plugin?** Plugins live in `plugins/<id>/` and have a lighter review bar than core changes. Read [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md) (humans) or [docs/plugins/AGENTS.md](docs/plugins/AGENTS.md) (AI agents) — you don't need to read the full core-contribution guide. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one.
 
 ## Plugin vs. core changes
