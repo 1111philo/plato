@@ -237,12 +237,12 @@ export default function LessonsList() {
                   is invalid (interactive within interactive) and screen
                   readers handle inconsistently. Now both are real <button>s
                   at the same DOM level, each its own focus stop. */}
-              <Card className="h-full overflow-hidden transition-shadow hover:shadow-md flex flex-col">
+              <Card className="h-full transition-shadow hover:shadow-md group gap-2">
                 <button
                   type="button"
                   onClick={() => navigate(`/lessons/${c.lessonId}`)}
                   aria-label={`Open lesson ${c.name}${c.course?.name ? ` (in course ${c.course.name})` : ''}`}
-                  className="text-left flex-1 px-4 pt-4 pb-2 hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none transition-colors"
+                  className="text-left px-4 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                 >
                   <div className="flex items-start gap-3">
                     <span
@@ -252,7 +252,7 @@ export default function LessonsList() {
                       {statusIcon(c.lessonId)}
                     </span>
                     <div className="min-w-0 flex-1 space-y-1">
-                      <strong className="text-sm font-medium block">{c.name}</strong>
+                      <strong className="text-sm font-medium block transition-colors group-hover:text-primary">{c.name}</strong>
                       {c.course?.name && (
                         <p className="text-xs text-muted-foreground">{c.course.name}</p>
                       )}
@@ -260,7 +260,7 @@ export default function LessonsList() {
                     </div>
                   </div>
                 </button>
-                <div className="px-4 pb-4 pt-1 flex items-center gap-2 flex-wrap">
+                <div className="px-4 flex items-center gap-2 flex-wrap">
                   {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
                   {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
                   {(() => {
