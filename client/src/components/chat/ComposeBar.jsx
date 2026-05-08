@@ -1,4 +1,4 @@
-import { useState, useRef, useId } from 'react';
+import { useState, useRef, useId, useEffect } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
 import { Button } from '@/components/ui/button';
 
@@ -23,6 +23,22 @@ export default function ComposeBar({
   const fileRef = useRef(null);
   const handleResize = useAutoResize();
   const inputId = useId();
+
+  // The lesson chat mounts two ComposeBar instances — an inline one and a
+  // fixed-overlay one — and a window-scroll listener swaps which is visible
+  // (`composePinned` in `LessonChat.jsx`). Each instance owns its own
+  // textarea ref. Without this effect, the freshly-mounted instance renders
+  // at `rows={1}` (its default) even when `text` already has multiple lines,
+  // because `useAutoResize` only fires on the `change` event and never sees
+  // the externally-supplied initial value. Result before this fix: when the
+  // user scrolls and the overlay swap happens, the textarea collapses back
+  // to a single line. (Bug #161.) Resync on every change to `text`, which
+  // covers both mount-with-prefilled-value and the rare case of the parent
+  // setting text from outside (e.g. retry / paste flows).
+  useEffect(() => {
+    if (!inputRef.current) return;
+    handleResize({ target: inputRef.current });
+  }, [text, handleResize]);
 
   const send = () => {
     const val = text.trim();
