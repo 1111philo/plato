@@ -106,7 +106,8 @@ function formatBlocklist(openPrs) {
     // runs and which come from a human contributor mid-flight.
     const isPilot = (pr.labels || []).some((l) => l.name === 'plato-pilot');
     const sourceTag = isPilot ? '`plato-pilot`' : '_human_';
-    rows.push(`| #${pr.number} | ${sourceTag} | ${pr.title.replace(/\|/g, '\\|')} | ${ref} |`);
+    const escapedTitle = pr.title.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
+    rows.push(`| #${pr.number} | ${sourceTag} | ${escapedTitle} | ${ref} |`);
   }
 
   const marker = `<!-- PILOT_BLOCKLIST: ${[...blocked].sort((a, b) => a - b).join(',')} -->`;
