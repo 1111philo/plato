@@ -14,6 +14,9 @@ on:
   push:
     branches: [main, playground]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
