@@ -371,7 +371,16 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
               <span className="whitespace-nowrap">
                 {idx > 0 && <span aria-hidden="true">· </span>}
                 {part.title ? (
-                  <span title={part.title} aria-label={part.aria}>{part.text}</span>
+                  // aria-label on a plain <span> is ignored by most screen
+                  // readers (no implicit role to attach the label to). Use
+                  // the visually-hidden pattern instead: aria-hidden on the
+                  // visible text + a sibling sr-only span with the full
+                  // description. The native `title` tooltip still fires on
+                  // hover for sighted users.
+                  <span title={part.title}>
+                    <span aria-hidden="true">{part.text}</span>
+                    <span className="sr-only">{part.aria}</span>
+                  </span>
                 ) : part.text}
               </span>
             </Fragment>
