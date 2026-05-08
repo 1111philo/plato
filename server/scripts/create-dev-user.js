@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomBytes } from 'node:crypto';
 /**
  * Dev helper: create a learner directly in the SQLite db so you can log in
  * (and impersonate) without going through the email-invite flow.
@@ -21,7 +22,7 @@ if (!email || !password) {
   process.exit(1);
 }
 
-const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const userId = `usr_${Date.now()}_${randomBytes(4).toString('hex')}`;
 const username = email.split('@')[0].replace(/[^a-z0-9_-]/gi, '').toLowerCase();
 const displayName = name || username;
 const passwordHash = await hashPassword(password);
