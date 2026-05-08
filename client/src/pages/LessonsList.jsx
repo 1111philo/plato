@@ -316,6 +316,7 @@ export default function LessonsList() {
         <LessonDetailDialog
           lesson={detailLesson}
           progress={lessonData[detailLesson.lessonId]}
+          timeStats={timeStats[detailLesson.lessonId]}
           open={!!detailLesson}
           onOpenChange={(open) => { if (!open) setDetailLesson(null); }}
         />
@@ -435,14 +436,16 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
   );
 }
 
-// Visual status indicator that doubles as a progress meter: not-started
-// renders as a muted outline ring, in-progress as a brand-colored arc
-// filled to the learner's percentage, and completed as a green check on a
-// green wash. The visual conveys state to sighted users without needing a
-// duplicate text label in the meta strip; the matching wording is folded
-// into the open-lesson button's aria-label so SR users get the same info.
-// `title` gives sighted hover users the precise % when the arc alone is
-// hard to read at a glance.
+// Visual status indicator that doubles as a progress meter. Three
+// well-differentiated states with distinct hues so the icon is
+// glanceable in a grid without relying on shape alone:
+//   - not-started: muted gray outline ring
+//   - in-progress: amber arc on amber wash (warm "in flight" cue, kept
+//     out of the brand palette so it doesn't blend into themed UI)
+//   - completed:   green check on green wash
+// The visual is aria-hidden — the matching status text is folded into
+// the open-lesson button's aria-label, and `title` gives sighted hover
+// users the precise % when the arc alone is hard to read.
 function StatusIndicator({ progress, statusText }) {
   const sharedClass = 'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full';
   if (progress?.status === 'completed') {
@@ -462,7 +465,7 @@ function StatusIndicator({ progress, statusText }) {
       <span
         aria-hidden="true"
         title={statusText}
-        className={`${sharedClass} text-primary`}
+        className={`${sharedClass} bg-amber-100 text-amber-700`}
       >
         <ProgressRing pct={pct} />
       </span>
@@ -501,54 +504,80 @@ function ProgressRing({ pct, size = 22, stroke = 2.5 }) {
   );
 }
 
-function LessonDetailDialog({ lesson, progress, open, onOpenChange }) {
+function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange }) {
   const pct = progress?.status === 'completed' ? 100 : (progress?.progress != null ? progress.progress * 10 : null);
+  const progressText = progress?.status === 'completed' ? 'Completed' : (pct != null ? `${pct}% complete` : null);
+  const range = timeStats && (timeStats.sampleSize ?? 0) >= 3
+    ? formatTimeRange(timeStats.p20, timeStats.p80)
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
+          {/* Course tag above the title — establishes scope before the
+              learner reads the title, matches the card's visual order. */}
+          {lesson.course?.name && (
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {lesson.course.name}
+            </p>
+          )}
           <DialogTitle>{lesson.name}</DialogTitle>
           {lesson.description && (
             <DialogDescription>{lesson.description}</DialogDescription>
           )}
         </DialogHeader>
 
-        {lesson.course?.name && (
-          <p className="text-sm text-muted-foreground">Part of <span className="font-medium">{lesson.course.name}</span></p>
-        )}
+        {/* Body sections share consistent vertical spacing so the dialog
+            reads as a structured outline (Progress → Expected time →
+            Exemplar → Objectives) rather than a stack of loose blocks. */}
+        <div className="space-y-5">
+          {pct != null && (
+            <div>
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <h3 className="text-sm font-medium">Your progress</h3>
+                <span aria-hidden="true" className="text-sm tabular-nums text-muted-foreground">
+                  {progressText}
+                </span>
+              </div>
+              <div
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={pct}
+                aria-label={progressText}
+                className="h-2 rounded-full bg-muted overflow-hidden"
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )}
 
-        {pct != null && (
-          <div
-            className="space-y-1"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={pct}
-            aria-label={`Lesson progress: ${pct}%`}
-          >
-            <div className="flex justify-between text-xs text-muted-foreground" aria-hidden="true">
-              <span>Starting</span>
-              <span>{progress.status === 'completed' ? 'Completed' : `${pct}%`}</span>
+          {range && (
+            <div>
+              <h3 className="text-sm font-medium mb-1">Expected time</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Most learners finish in {range}, based on {timeStats.sampleSize} learner completion{timeStats.sampleSize === 1 ? '' : 's'}.
+              </p>
             </div>
-            <div className="h-1 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
-            </div>
+          )}
+
+          <div>
+            <h3 className="text-sm font-medium mb-1">Exemplar</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
           </div>
-        )}
 
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Exemplar</h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
-        </div>
-
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium">Learning Objectives</h3>
-          <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
-            {lesson.learningObjectives.map((obj, i) => (
-              <li key={i}>{obj}</li>
-            ))}
-          </ul>
+          <div>
+            <h3 className="text-sm font-medium mb-1">Learning objectives</h3>
+            <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
+              {lesson.learningObjectives.map((obj, i) => (
+                <li key={i}>{obj}</li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         <DialogFooter>
