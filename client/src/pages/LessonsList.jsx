@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -230,67 +229,19 @@ export default function LessonsList() {
               className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
               style={{ animationDelay: `${i * 30}ms` }}
             >
-              {/* Two real buttons live inside a single Card — the primary
-                  "Open lesson" trigger and a secondary "Overview" button.
-                  Earlier this was one outer <button> wrapping the whole
-                  card with a nested role="button" span for Overview, which
-                  is invalid (interactive within interactive) and screen
-                  readers handle inconsistently. Now both are real <button>s
-                  at the same DOM level, each its own focus stop. */}
-              <Card className="h-full transition-shadow hover:shadow-md group gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate(`/lessons/${c.lessonId}`)}
-                  aria-label={`Open lesson ${c.name}${c.course?.name ? ` (in course ${c.course.name})` : ''}`}
-                  className="text-left px-4 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                >
-                  <div className="flex items-start gap-3">
-                    <span
-                      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
-                      aria-hidden="true"
-                    >
-                      {statusIcon(c.lessonId)}
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <strong className="text-sm font-medium block transition-colors group-hover:text-primary">{c.name}</strong>
-                      {c.course?.name && (
-                        <p className="text-xs text-muted-foreground">{c.course.name}</p>
-                      )}
-                      {c.description && <p className="text-sm text-muted-foreground line-clamp-2">{c.description}</p>}
-                    </div>
-                  </div>
-                </button>
-                <div className="px-4 flex items-center gap-2 flex-wrap">
-                  {c.lessonId.startsWith('custom-') && <Badge variant="outline" className="text-xs">My Lesson</Badge>}
-                  {progressLabel(c) && <Badge variant="secondary" className="text-xs">{progressLabel(c)}</Badge>}
-                  {(() => {
-                    const stats = timeStats[c.lessonId];
-                    if (!stats || (stats.sampleSize ?? 0) < 3) return null;
-                    const range = formatTimeRange(stats.p20, stats.p80);
-                    if (!range) return null;
-                    return (
-                      <Badge
-                        variant="outline"
-                        className="text-xs"
-                        title={`Based on the middle 60% of ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                        aria-label={`Estimated completion time: ${range}, based on ${stats.sampleSize} learner completion${stats.sampleSize === 1 ? '' : 's'}`}
-                      >
-                        Most learners finish in {range}
-                      </Badge>
-                    );
-                  })()}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="ml-auto text-xs h-auto px-2 py-1 text-primary hover:underline"
-                    onClick={() => setDetailLesson(c)}
-                    aria-label={`View ${c.learningObjectives.length} objectives for ${c.name}`}
-                  >
-                    Overview ({c.learningObjectives.length})
-                  </Button>
-                </div>
-              </Card>
+              {/* Title-first layout: lesson name leads, description supports,
+                  and metadata (course / expected time / status) collapses to
+                  one muted line in the footer. The Open and Overview triggers
+                  are sibling buttons so screen readers never see
+                  interactive-within-interactive. */}
+              <LessonCard
+                lesson={c}
+                progressText={progressLabel(c)}
+                timeStats={timeStats[c.lessonId]}
+                statusGlyph={statusIcon(c.lessonId)}
+                onOpen={() => navigate(`/lessons/${c.lessonId}`)}
+                onShowOverview={() => setDetailLesson(c)}
+              />
             </li>
           ))}
         </ul>
@@ -331,6 +282,102 @@ export default function LessonsList() {
         />
       )}
     </div>
+  );
+}
+
+function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onShowOverview }) {
+  // Stable id per card so the open-lesson button can describe itself with
+  // the meta strip — Tab navigation then announces course/time/status as
+  // supplementary context, instead of forcing screen-reader users to
+  // switch into reading mode just to discover those signals.
+  const metaId = useId();
+
+  const range = timeStats && (timeStats.sampleSize ?? 0) >= 3
+    ? formatTimeRange(timeStats.p20, timeStats.p80)
+    : null;
+
+  const parts = [];
+  if (lesson.lessonId.startsWith('custom-')) {
+    parts.push({ key: 'custom', text: 'My Lesson' });
+  }
+  if (lesson.course?.name) {
+    parts.push({ key: 'course', text: lesson.course.name });
+  }
+  if (range) {
+    const completionWord = `learner completion${timeStats.sampleSize === 1 ? '' : 's'}`;
+    parts.push({
+      key: 'time',
+      text: range,
+      title: `Based on the middle 60% of ${timeStats.sampleSize} ${completionWord}`,
+      aria: `Estimated completion time ${range}, based on ${timeStats.sampleSize} ${completionWord}`,
+    });
+  }
+  if (progressText) {
+    parts.push({ key: 'status', text: progressText });
+  }
+
+  return (
+    <Card className="h-full transition-shadow hover:shadow-md group gap-0 p-0">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open lesson ${lesson.name}`}
+        aria-describedby={parts.length > 0 ? metaId : undefined}
+        className="flex-1 text-left px-4 pt-4 pb-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      >
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <h3 className="text-base font-semibold leading-snug transition-colors group-hover:text-primary">
+              {lesson.name}
+            </h3>
+            {lesson.description && (
+              <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
+                {lesson.description}
+              </p>
+            )}
+          </div>
+          <span
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
+            aria-hidden="true"
+          >
+            {statusGlyph}
+          </span>
+        </div>
+      </button>
+      <div className="px-4 pb-3 pt-1 flex items-baseline gap-2 flex-wrap">
+        {/* Visible separators are middle-dots; screen readers read commas
+            instead so the run-on string parses as a list with natural
+            pauses. */}
+        <p
+          id={metaId}
+          className="text-xs text-muted-foreground flex-1 min-w-0 leading-relaxed"
+        >
+          {parts.map((part, idx) => (
+            <span key={part.key}>
+              {idx > 0 && (
+                <>
+                  <span aria-hidden="true"> · </span>
+                  <span className="sr-only">, </span>
+                </>
+              )}
+              {part.title ? (
+                <span title={part.title} aria-label={part.aria}>{part.text}</span>
+              ) : part.text}
+            </span>
+          ))}
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="ml-auto text-xs h-auto px-2 py-1 text-primary hover:underline shrink-0"
+          onClick={onShowOverview}
+          aria-label={`View ${lesson.learningObjectives.length} objectives for ${lesson.name}`}
+        >
+          Overview ({lesson.learningObjectives.length})
+        </Button>
+      </div>
+    </Card>
   );
 }
 
