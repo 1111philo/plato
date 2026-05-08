@@ -75,6 +75,57 @@ admin.get('/v1/admin/users/:userId', async (c) => {
   });
 });
 
+// POST /v1/admin/impersonation/start — admin "View as User" entry point.
+// Verifies the target exists, brackets the session in audit_log so cross-user
+// reads downstream (`?asUserId=` on /v1/sync, /v1/lessons, etc.) are
+// accountable, and returns the target's display profile for the banner UI.
+// Per-read audit entries would spam the log; bracket entries are sufficient
+// at the same granularity as `user_deleted`.
+admin.post('/v1/admin/impersonation/start', async (c) => {
+  const { targetUserId } = await c.req.json();
+  if (!targetUserId) {
+    return c.json({ error: 'targetUserId is required' }, 400);
+  }
+  const target = await db.getUserById(targetUserId);
+  if (!target) {
+    return c.json({ error: 'Target user not found' }, 404);
+  }
+  const adminUser = c.get('user');
+  await db.createAuditLog({
+    action: 'admin_view_as_user_started',
+    userId: target.userId,
+    email: target.email,
+    performedBy: adminUser.userId,
+    details: { targetUsername: target.username, targetName: target.name },
+  });
+  return c.json({
+    userId: target.userId,
+    email: target.email,
+    username: target.username,
+    name: target.name,
+  });
+});
+
+// POST /v1/admin/impersonation/end — closes the audit-log bracket. Best-effort:
+// if the admin closes the tab without calling this, the session simply lacks
+// an end entry; the start entry is the source of truth for "an admin looked".
+admin.post('/v1/admin/impersonation/end', async (c) => {
+  const { targetUserId } = await c.req.json().catch(() => ({}));
+  const adminUser = c.get('user');
+  let target = null;
+  if (targetUserId) {
+    target = await db.getUserById(targetUserId);
+  }
+  await db.createAuditLog({
+    action: 'admin_view_as_user_ended',
+    userId: target?.userId || targetUserId || null,
+    email: target?.email || null,
+    performedBy: adminUser.userId,
+    details: target ? { targetUsername: target.username, targetName: target.name } : null,
+  });
+  return c.json({ ok: true });
+});
+
 // POST /v1/admin/invites — create invite and send email
 admin.post('/v1/admin/invites', async (c) => {
   const { email } = await c.req.json();

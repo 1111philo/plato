@@ -9,14 +9,17 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
+import ViewAsUserModal from './modals/ViewAsUserModal.jsx';
 
 export default function AppShell({ children }) {
   const navigate = useNavigate();
-  const { user, logout, sessionExpired } = useAuth();
+  const { user, logout, sessionExpired, impersonatedUser, stopImpersonation } = useAuth();
   const branding = useBranding();
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
   const isAdmin = user?.role === 'admin';
+  const impersonating = !!impersonatedUser;
 
   useEffect(() => {
     if (sessionExpired) {
@@ -30,8 +33,19 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
+  const handleStopImpersonation = async () => {
+    await stopImpersonation();
+    navigate('/lessons', { replace: true });
+  };
+
+  const handleStartedImpersonation = () => {
+    navigate('/lessons', { replace: true });
+  };
+
   const classroomLogo = branding?.logoBase64 || null;
   const classroomName = branding?.classroomName || branding?.logoAlt || 'plato';
+  const impersonatedLabel =
+    impersonatedUser?.name || impersonatedUser?.username || impersonatedUser?.email || 'learner';
 
   return (
     <>
@@ -50,6 +64,30 @@ export default function AppShell({ children }) {
             <button onClick={() => navigate('/plato')} className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               Admin Dashboard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonation status strip — high-visibility, admin-only. Always
+          underneath the purple admin bar so it's the first thing the admin sees. */}
+      {impersonating && (
+        <div
+          className="px-4 py-2 text-sm flex items-center gap-3 border-b"
+          style={{ backgroundColor: '#fef3c7', color: '#78350f', borderColor: '#fde68a' }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="mx-auto max-w-5xl flex items-center w-full gap-3">
+            <span className="flex-1">
+              Viewing as <strong>{impersonatedLabel}</strong> — input is disabled.
+            </span>
+            <button
+              type="button"
+              onClick={handleStopImpersonation}
+              className="rounded border border-yellow-700/40 px-2 py-0.5 text-xs font-medium hover:bg-yellow-700/10 cursor-pointer bg-transparent transition-colors"
+            >
+              Exit
             </button>
           </div>
         </div>
@@ -99,6 +137,23 @@ export default function AppShell({ children }) {
                 >
                   User Settings
                 </DropdownMenuRadix.Item>
+                {isAdmin && !impersonating && (
+                  <DropdownMenuRadix.Item
+                    className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent"
+                    onSelect={() => setViewAsOpen(true)}
+                  >
+                    View as user…
+                  </DropdownMenuRadix.Item>
+                )}
+                {isAdmin && impersonating && (
+                  <DropdownMenuRadix.Item
+                    className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent font-medium"
+                    style={{ color: '#78350f' }}
+                    onSelect={handleStopImpersonation}
+                  >
+                    Stop viewing as {impersonatedLabel}
+                  </DropdownMenuRadix.Item>
+                )}
                 <DropdownMenuRadix.Item
                   className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm text-destructive outline-none hover:bg-destructive/10 focus:bg-destructive/10"
                   onSelect={() => setSignOutOpen(true)}
@@ -138,6 +193,12 @@ export default function AppShell({ children }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ViewAsUserModal
+        open={viewAsOpen}
+        onOpenChange={setViewAsOpen}
+        onStarted={handleStartedImpersonation}
+      />
     </>
   );
 }

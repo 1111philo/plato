@@ -26,6 +26,23 @@ content.use('/v1/lessons', authenticate);
 content.use('/v1/lessons/*', authenticate);
 content.use('/v1/knowledge-base', authenticate);
 
+/**
+ * Resolve the userId a learner-facing lesson read should be scoped to.
+ * Admins may pass `?asUserId=<id>` to evaluate ACLs (sharedWith) as that
+ * learner — this powers the "View as User" admin feature. Non-admins
+ * passing the param get a 403; everyone else falls back to their own
+ * JWT-derived userId.
+ */
+function resolveReadUserId(c) {
+  const url = new URL(c.req.url);
+  const asUserId = url.searchParams.get('asUserId');
+  if (!asUserId) return { userId: c.get('userId') };
+  if (c.get('role') !== 'admin') {
+    return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
+  }
+  return { userId: asUserId };
+}
+
 // GET /v1/version — public
 content.get('/v1/version', (c) => {
   const paths = [
@@ -70,7 +87,9 @@ content.get('/v1/prompts/:name', async (c) => {
 // so the client can display + the coach context can reference it without a
 // second fetch.
 content.get('/v1/lessons', async (c) => {
-  const userId = c.get('userId');
+  const resolved = resolveReadUserId(c);
+  if (resolved.error) return resolved.error;
+  const userId = resolved.userId;
   const items = await db.getAllSyncData('_system');
   const coursesById = new Map();
   for (const i of items) {
@@ -153,7 +172,9 @@ async function computeAllLessonTimeStats() {
 export function _resetTimeStatsCache() { _timeStatsCache = null; }
 
 content.get('/v1/lessons/time-stats', async (c) => {
-  const userId = c.get('userId');
+  const resolved = resolveReadUserId(c);
+  if (resolved.error) return resolved.error;
+  const userId = resolved.userId;
   const [systemItems, allStats] = await Promise.all([
     db.getAllSyncData('_system'),
     computeAllLessonTimeStats(),
@@ -178,14 +199,15 @@ content.get('/v1/lessons/time-stats', async (c) => {
 // When a lesson has a `course` field, the response inlines `course: { id, name }`.
 // If the referenced course was deleted (transient drift between cascade and read), `course` is null.
 content.get('/v1/lessons/:lessonId', async (c) => {
+  const resolved = resolveReadUserId(c);
+  if (resolved.error) return resolved.error;
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
   const status = normalizeStatus(item.data.status, !!item.data.markdown);
   if (status === 'draft') return c.json({ error: 'Lesson not found' }, 404);
   if (status !== 'public') {
-    const userId = c.get('userId');
-    if (!Array.isArray(item.data.sharedWith) || !item.data.sharedWith.includes(userId)) {
+    if (!Array.isArray(item.data.sharedWith) || !item.data.sharedWith.includes(resolved.userId)) {
       return c.json({ error: 'Lesson not found' }, 404);
     }
   }

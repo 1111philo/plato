@@ -183,3 +183,95 @@ describe('DELETE /v1/sync/:dataKey', () => {
     assert.ok(deleted);
   });
 });
+
+// "View as User" admin feature: ?asUserId=<id> on GET routes scopes the
+// read to another user. Writes are always rejected when the param is
+// present — the admin's own JWT is the only thing allowed to mutate.
+describe('?asUserId= (admin View as User)', () => {
+  async function adminReq(app, method, path, body) {
+    const token = await signAccessToken('usr_admin', 'admin');
+    return app.request(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+  async function userReq(app, method, path, body) {
+    const token = await signAccessToken('usr_test', 'user');
+    return app.request(path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  }
+
+  it('GET /v1/sync as admin with ?asUserId= reads target user data', async () => {
+    db.getUserById = async (id) => ({ userId: id, role: id === 'usr_admin' ? 'admin' : 'user' });
+    let queriedUserId = null;
+    db.getAllSyncData = async (uid) => {
+      queriedUserId = uid;
+      return [{ dataKey: 'profile', data: { name: 'Target' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' }];
+    };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'GET', '/v1/sync?asUserId=usr_target');
+    assert.equal(res.status, 200);
+    assert.equal(queriedUserId, 'usr_target', 'DB read scoped to impersonated user');
+  });
+
+  it('GET /v1/sync/:dataKey as admin with ?asUserId= reads target item', async () => {
+    db.getUserById = async (id) => ({ userId: id, role: 'admin' });
+    let queriedUserId = null;
+    db.getSyncData = async (uid, key) => {
+      queriedUserId = uid;
+      return { dataKey: key, data: { name: 'X' }, version: 1, updatedAt: '2024-01-01T00:00:00Z' };
+    };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'GET', '/v1/sync/profile?asUserId=usr_target');
+    assert.equal(res.status, 200);
+    assert.equal(queriedUserId, 'usr_target');
+  });
+
+  it('GET /v1/sync as non-admin with ?asUserId= returns 403', async () => {
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await userReq(app, 'GET', '/v1/sync?asUserId=usr_target');
+    assert.equal(res.status, 403);
+  });
+
+  it('PUT /v1/sync/:dataKey as admin with ?asUserId= returns 403', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'PUT', '/v1/sync/profile?asUserId=usr_target', { data: { name: 'X' } });
+    assert.equal(res.status, 403);
+  });
+
+  it('PUT /v1/sync/batch as admin with ?asUserId= returns 403', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'PUT', '/v1/sync/batch?asUserId=usr_target', {
+      items: [{ dataKey: 'profile', data: {}, version: 0 }],
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('DELETE /v1/sync as admin with ?asUserId= returns 403', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'DELETE', '/v1/sync?asUserId=usr_target');
+    assert.equal(res.status, 403);
+  });
+
+  it('DELETE /v1/sync/:dataKey as admin with ?asUserId= returns 403', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await adminReq(app, 'DELETE', '/v1/sync/profile?asUserId=usr_target');
+    assert.equal(res.status, 403);
+  });
+});

@@ -20,6 +20,21 @@ import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
 
+/**
+ * Defense-in-depth guard for the "View as User" admin feature: if the SPA
+ * is currently impersonating a learner, no write paths in the lesson engine
+ * may execute — they would corrupt the impersonated learner's record using
+ * the admin's own JWT (which is what the Function URL actually authorizes
+ * against). The compose bar is also disabled in the UI; this guard catches
+ * programmatic / future-bug callers.
+ */
+function assertNotImpersonating(action) {
+  if (typeof sessionStorage === 'undefined') return;
+  if (sessionStorage.getItem('plato_impersonation')) {
+    throw new Error(`Cannot ${action} while viewing as another user`);
+  }
+}
+
 // Bedrock hard limit for base64-encoded image payloads.
 // 5 MB decoded = 5 * 1024 * 1024 bytes. Base64 string length * 3/4 ≈ decoded bytes.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -122,6 +137,7 @@ export function cleanStream(onStream) {
  * Start a new lesson: Lesson Owner generates KB, Coach opens conversation.
  */
 export async function startLesson(lessonId, lesson, onStream) {
+  assertNotImpersonating('start a lesson');
   await ensureProfileExists();
   const profileSummary = await getLearnerProfileSummary();
 
@@ -164,6 +180,7 @@ export async function startLesson(lessonId, lesson, onStream) {
  * Send a message in the lesson conversation.
  */
 export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream) {
+  assertNotImpersonating('send a message');
   let lessonKB = await getLessonKB(lessonId);
   const profileSummary = await getLearnerProfileSummary();
 

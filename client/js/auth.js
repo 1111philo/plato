@@ -12,6 +12,49 @@ import {
 // Falls back to the Lambda Function URL for local development.
 const SERVICE_URL = globalThis.__SERVICE_URL || '';
 
+// "View as User" admin feature: when an admin starts an impersonation session,
+// the target's userId is stashed in sessionStorage (per-tab, doesn't survive
+// close — safer than localStorage). authenticatedFetch reads this and appends
+// `?asUserId=<id>` to GET requests. Writes never carry the param; the server
+// rejects them as a defense-in-depth.
+const IMPERSONATION_KEY = 'plato_impersonation';
+
+function readImpersonatedUserId() {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.userId || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getImpersonation() {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(IMPERSONATION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setImpersonation(target) {
+  if (typeof sessionStorage === 'undefined') return;
+  if (target) {
+    sessionStorage.setItem(IMPERSONATION_KEY, JSON.stringify(target));
+  } else {
+    sessionStorage.removeItem(IMPERSONATION_KEY);
+  }
+}
+
+function appendQueryParam(path, key, value) {
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}${key}=${encodeURIComponent(value)}`;
+}
+
 // -- Session expiry event -----------------------------------------------------
 
 const _sessionExpiredListeners = new Set();
@@ -117,7 +160,17 @@ export async function authenticatedFetch(path, options = {}) {
   const tokens = await getAuthTokens();
   if (!tokens?.accessToken) throw new Error('Not logged in');
 
-  const doFetch = (token) => fetch(`${SERVICE_URL}${path}`, {
+  // GET-only impersonation: if an admin is "viewing as" a learner, attach
+  // ?asUserId=<id> to reads. Writes never carry it — both as a client guard
+  // and to match the server-side write rejection in /v1/sync.
+  const method = (options.method || 'GET').toUpperCase();
+  let effectivePath = path;
+  if (method === 'GET') {
+    const asUserId = readImpersonatedUserId();
+    if (asUserId) effectivePath = appendQueryParam(path, 'asUserId', asUserId);
+  }
+
+  const doFetch = (token) => fetch(`${SERVICE_URL}${effectivePath}`, {
     ...options,
     headers: { ...options.headers, Authorization: `Bearer ${token}` },
   });

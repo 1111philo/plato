@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStreamedText } from '../hooks/useStreamedText.js';
 import { useTitleNotification } from '../hooks/useTitleNotification.js';
 import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
@@ -31,6 +32,8 @@ export default function LessonChat() {
   const { state, dispatch } = useApp();
   const { lessons } = state;
   const lesson = lessons.find(c => c.lessonId === lessonGroupId);
+  const { impersonatedUser } = useAuth();
+  const impersonating = !!impersonatedUser;
 
   const [phase, setPhase] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -153,6 +156,12 @@ export default function LessonChat() {
         setMessages(existing.messages);
         setLessonKB(existing.lessonKB);
         setPhase(existing.phase);
+      } else if (impersonating) {
+        // Admin "View as User": the target hasn't started this lesson yet.
+        // Don't auto-start (engine guard would throw, and we'd be writing
+        // with the admin's JWT anyway). Show an informational state instead.
+        setError('This learner has not started this lesson yet — there is nothing to view.');
+        setPhase(LESSON_PHASES.LEARNING);
       } else {
         setLoading('starting');
         setStreamingText('');
@@ -172,7 +181,7 @@ export default function LessonChat() {
     })();
 
     return () => { cancelled = true; };
-  }, [lessonGroupId, lesson]);
+  }, [lessonGroupId, lesson, impersonating]);
 
   const handleSend = useCallback(async ({ text, imageDataUrl }) => {
     if (!text && !imageDataUrl) return;
@@ -365,9 +374,9 @@ export default function LessonChat() {
       {phase && (
         <div ref={composeAnchorRef} aria-hidden={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
           <ComposeBar
-            placeholder={composePlaceholder}
+            placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy}
+            disabled={busy || impersonating}
             allowImages
             text={composeText}
             onTextChange={setComposeText}
@@ -381,9 +390,9 @@ export default function LessonChat() {
       {phase && composePinned && (
         <div className="fixed bottom-9 left-0 right-0 z-50">
           <ComposeBar
-            placeholder={composePlaceholder}
+            placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy}
+            disabled={busy || impersonating}
             allowImages
             elevated
             text={composeText}

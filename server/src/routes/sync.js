@@ -20,12 +20,40 @@ function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
 }
 
+/**
+ * Resolve which userId a request should read on behalf of.
+ *
+ * Admins can read another user's data by passing `?asUserId=<id>` (the
+ * "View as User" feature — admin-only audit of a learner's classroom).
+ * Non-admins passing `asUserId` get 403; anyone else falls back to their
+ * own JWT-derived userId. Writes never honor `asUserId` — callers must
+ * reject the request before reaching the DB.
+ */
+function resolveReadUserId(c) {
+  const url = new URL(c.req.url);
+  const asUserId = url.searchParams.get('asUserId');
+  if (!asUserId) return { userId: c.get('userId'), impersonating: false };
+  if (c.get('role') !== 'admin') {
+    return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
+  }
+  return { userId: asUserId, impersonating: true };
+}
+
+function rejectWriteIfImpersonating(c) {
+  const url = new URL(c.req.url);
+  if (url.searchParams.get('asUserId')) {
+    return c.json({ error: 'Writes are not allowed while viewing as another user' }, 403);
+  }
+  return null;
+}
+
 // GET /v1/sync — get all synced data. Plugin-owned per-user records
 // (`userMeta:<pluginId>`) are filtered out — they're admin-only by default,
 // and the plugin's own routes are responsible for any learner exposure.
 sync.get('/v1/sync', async (c) => {
-  const userId = c.get('userId');
-  const items = await db.getAllSyncData(userId);
+  const resolved = resolveReadUserId(c);
+  if (resolved.error) return resolved.error;
+  const items = await db.getAllSyncData(resolved.userId);
   return c.json(items
     .filter((item) => !item.dataKey?.startsWith('userMeta:'))
     .map((item) => ({
@@ -38,14 +66,15 @@ sync.get('/v1/sync', async (c) => {
 
 // GET /v1/sync/:dataKey — get specific item
 sync.get('/v1/sync/:dataKey', async (c) => {
-  const userId = c.get('userId');
+  const resolved = resolveReadUserId(c);
+  if (resolved.error) return resolved.error;
   const dataKey = c.req.param('dataKey');
 
   if (!validateDataKey(dataKey)) {
     return c.json({ error: 'Invalid dataKey' }, 400);
   }
 
-  const item = await db.getSyncData(userId, dataKey);
+  const item = await db.getSyncData(resolved.userId, dataKey);
   if (!item) {
     return c.json({ dataKey, data: null, version: 0 });
   }
@@ -59,6 +88,8 @@ sync.get('/v1/sync/:dataKey', async (c) => {
 
 // PUT /v1/sync/batch — batch upsert (must be before :dataKey route)
 sync.put('/v1/sync/batch', async (c) => {
+  const reject = rejectWriteIfImpersonating(c);
+  if (reject) return reject;
   const userId = c.get('userId');
   const { items } = await c.req.json();
 
@@ -95,6 +126,8 @@ sync.put('/v1/sync/batch', async (c) => {
 
 // PUT /v1/sync/:dataKey — upsert data with optimistic locking
 sync.put('/v1/sync/:dataKey', async (c) => {
+  const reject = rejectWriteIfImpersonating(c);
+  if (reject) return reject;
   const userId = c.get('userId');
   const dataKey = c.req.param('dataKey');
 
@@ -129,6 +162,8 @@ sync.put('/v1/sync/:dataKey', async (c) => {
 // they're cleaned up only via account deletion (DELETE /v1/me / admin-delete),
 // which fires `userDeleted` first so plugins can react.
 sync.delete('/v1/sync', async (c) => {
+  const reject = rejectWriteIfImpersonating(c);
+  if (reject) return reject;
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
   const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:'));
@@ -138,6 +173,8 @@ sync.delete('/v1/sync', async (c) => {
 
 // DELETE /v1/sync/:dataKey
 sync.delete('/v1/sync/:dataKey', async (c) => {
+  const reject = rejectWriteIfImpersonating(c);
+  if (reject) return reject;
   const userId = c.get('userId');
   const dataKey = c.req.param('dataKey');
 
