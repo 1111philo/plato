@@ -80,6 +80,47 @@ describe('buildContext', () => {
     assert.ok(context.pacingDirective);
     assert.equal(context.postCompletionDirective, undefined);
   });
+
+  // Course taxonomy: when a lesson is part of a course, the server inlines
+  // `lesson.course = { id, name }` and buildContext surfaces just the name to
+  // the coach. Lessons without a course must produce no `course` key at all
+  // so the existing prompt contract for legacy lessons doesn't change.
+  it('includes course.name in the context when the lesson belongs to a course', () => {
+    const lesson = sampleLesson();
+    lesson.course = { id: 'course-abc', name: 'AI Foundations' };
+    const context = JSON.parse(buildContext(
+      lesson,
+      { status: 'active', progress: 2, activitiesCompleted: 3 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.deepEqual(context.course, { name: 'AI Foundations' });
+  });
+
+  it('omits course entirely when the lesson is not part of a course', () => {
+    const context = JSON.parse(buildContext(
+      sampleLesson(),
+      { status: 'active', progress: 2, activitiesCompleted: 3 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.equal('course' in context, false, 'no course key should be emitted');
+  });
+
+  it('omits course when lesson.course exists but has no name (defensive)', () => {
+    const lesson = sampleLesson();
+    lesson.course = { id: 'course-broken' }; // server returned a malformed inline
+    const context = JSON.parse(buildContext(
+      lesson,
+      { status: 'active', progress: 2, activitiesCompleted: 3 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.equal('course' in context, false);
+  });
 });
 
 describe('applyCoachResponseToKB', () => {
