@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import HelpCircle from 'lucide-react/dist/esm/icons/help-circle';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -164,7 +165,7 @@ export default function LessonsList() {
   function progressLabel(lesson) {
     const d = lessonData[lesson.lessonId];
     if (d?.status === 'completed') return 'Completed';
-    if (d?.progress != null) return `${d.progress * 10}% toward exemplar`;
+    if (d?.progress != null) return `${d.progress * 10}% complete`;
     if (d?.status) return 'In progress';
     return null;
   }
@@ -376,15 +377,19 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
             </Fragment>
           ))}
         </p>
+        {/* Icon-only "?" button so it doesn't compete with the primary
+            "Open lesson" affordance. Sighted users get a familiar
+            help-style glyph; SR users get the full "View N objectives for
+            {name}" label. */}
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="ml-auto text-xs h-auto px-2 py-1 text-primary hover:underline shrink-0"
+          className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-primary shrink-0"
           onClick={onShowOverview}
           aria-label={`View ${lesson.learningObjectives.length} objectives for ${lesson.name}`}
         >
-          Overview ({lesson.learningObjectives.length})
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
         </Button>
       </div>
     </Card>
