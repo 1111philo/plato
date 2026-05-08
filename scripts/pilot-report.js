@@ -101,18 +101,23 @@ function formatBlocklist(openPrs) {
     const issues = linkedIssues(pr.body);
     for (const i of issues) blocked.add(i);
     const ref = issues.length ? issues.map((i) => `#${i}`).join(', ') : '_(no issue ref)_';
-    rows.push(`| #${pr.number} | ${pr.title.replace(/\|/g, '\\|')} | ${ref} |`);
+    // Distinguish pilot-authored PRs from human-authored ones in the table
+    // so the agent sees at a glance which blocks come from earlier pilot
+    // runs and which come from a human contributor mid-flight.
+    const isPilot = (pr.labels || []).some((l) => l.name === 'plato-pilot');
+    const sourceTag = isPilot ? '`plato-pilot`' : '_human_';
+    rows.push(`| #${pr.number} | ${sourceTag} | ${pr.title.replace(/\|/g, '\\|')} | ${ref} |`);
   }
 
   const marker = `<!-- PILOT_BLOCKLIST: ${[...blocked].sort((a, b) => a - b).join(',')} -->`;
 
   if (!openPrs.length) {
-    return `${marker}\n_No open pilot PRs. Nothing is blocked._`;
+    return `${marker}\n_No open PRs claim any issue. Nothing is blocked._`;
   }
 
   const table = [
-    '| Open PR | Title | Linked issues |',
-    '|---------|-------|---------------|',
+    '| Open PR | Source | Title | Linked issues |',
+    '|---------|--------|-------|---------------|',
     ...rows,
   ].join('\n');
 
@@ -120,7 +125,7 @@ function formatBlocklist(openPrs) {
     ? `**Issues blocked from re-picking:** ${[...blocked].sort((a, b) => a - b).map((i) => `#${i}`).join(', ')}`
     : '_No issues linked from open PRs._';
 
-  return `${marker}\n\n${blockedList}\n\n${table}\n\n**Rule:** Do NOT open a PR that references any blocked issue. If the best signal points at a blocked issue, pick a different signal or SKIP.`;
+  return `${marker}\n\n${blockedList}\n\n${table}\n\n**Rule:** Do NOT open a PR that references any blocked issue — including issues already claimed by a human-authored PR. If the best signal points at a blocked issue, pick a different signal or SKIP.`;
 }
 
 function formatReadyIssues(issues, closedPilotPrs) {
@@ -236,6 +241,20 @@ async function main() {
   const openPilotPrs = pilotPrs.filter((p) => p.state === 'OPEN');
   const closedPilotPrs = pilotPrs.filter((p) => p.state === 'CLOSED');
 
+  // Blocklist construction needs every open PR that references an issue,
+  // not just `plato-pilot`-labeled ones. Without this, a maintainer-authored
+  // PR that handles a `ready-for-pilot` issue (without applying the label)
+  // doesn't block the pilot from picking the same issue, leading to dup PRs
+  // (see #160 for an example). Fetch all open PRs once and filter in memory
+  // to the ones that actually link an issue via "Fixes/Closes/Resolves #N".
+  const allOpenPrs = ghJson([
+    'pr', 'list',
+    '--state', 'open',
+    '--limit', '100',
+    '--json', 'number,title,body,labels',
+  ]);
+  const openIssueLinkedPrs = allOpenPrs.filter((p) => linkedIssues(p.body).length > 0);
+
   const readyIssues = ghJson([
     'issue', 'list',
     '--state', 'open',
@@ -286,9 +305,9 @@ ${formatGroups(logs)}
 
 ${formatCloudWatchStatus(logs)}
 
-## Open pilot PRs (BLOCKLIST)
+## Open PRs claiming issues (BLOCKLIST)
 
-${formatBlocklist(openPilotPrs)}
+${formatBlocklist(openIssueLinkedPrs)}
 
 ## Pilot track record (last 30 days)
 
