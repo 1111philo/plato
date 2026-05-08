@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useId } from 'react';
+import { Fragment, useState, useEffect, useMemo, useId } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
@@ -352,18 +352,28 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
           id={metaId}
           className="text-xs text-muted-foreground flex-1 min-w-0 leading-relaxed"
         >
+          {/* Each item is whitespace-nowrap so wrapping happens between
+              items (clean line endings), not inside a phrase. The leading
+              separator lives inside the nowrap span so when the line wraps,
+              the dot travels with the item it precedes — no orphan " ·"
+              dangling at the end of a line. SR users hear sr-only commas
+              between items instead of the visible middle-dot, which gives
+              natural pauses in the reading flow. */}
           {parts.map((part, idx) => (
-            <span key={part.key}>
+            <Fragment key={part.key}>
               {idx > 0 && (
                 <>
-                  <span aria-hidden="true"> · </span>
+                  {' '}
                   <span className="sr-only">, </span>
                 </>
               )}
-              {part.title ? (
-                <span title={part.title} aria-label={part.aria}>{part.text}</span>
-              ) : part.text}
-            </span>
+              <span className="whitespace-nowrap">
+                {idx > 0 && <span aria-hidden="true">· </span>}
+                {part.title ? (
+                  <span title={part.title} aria-label={part.aria}>{part.text}</span>
+                ) : part.text}
+              </span>
+            </Fragment>
           ))}
         </p>
         <Button
