@@ -9,14 +9,17 @@ import {
   AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
+import ViewAsUserModal from './modals/ViewAsUserModal.jsx';
 
 export default function AppShell({ children }) {
   const navigate = useNavigate();
-  const { user, logout, sessionExpired } = useAuth();
+  const { user, logout, sessionExpired, impersonatedUser, stopImpersonation } = useAuth();
   const branding = useBranding();
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [viewAsOpen, setViewAsOpen] = useState(false);
   const isAdmin = user?.role === 'admin';
+  const impersonating = !!impersonatedUser;
 
   useEffect(() => {
     if (sessionExpired) {
@@ -30,8 +33,15 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
+  // start/stopImpersonation in AuthContext do a hard reload to /lessons;
+  // no further navigation needed here.
+  const handleStopImpersonation = () => stopImpersonation();
+  const handleStartedImpersonation = () => { /* AuthContext handles navigation */ };
+
   const classroomLogo = branding?.logoBase64 || null;
   const classroomName = branding?.classroomName || branding?.logoAlt || 'plato';
+  const impersonatedLabel =
+    impersonatedUser?.name || impersonatedUser?.username || impersonatedUser?.email || 'learner';
 
   return (
     <>
@@ -42,14 +52,49 @@ export default function AppShell({ children }) {
       {/* Admin bar — plato branding, quick links to dashboard */}
       {isAdmin && (
         <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
-          <div className="mx-auto max-w-5xl flex items-center">
+          <div className="mx-auto max-w-5xl flex items-center gap-2">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
               <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
+            {!impersonating && (
+              <button
+                type="button"
+                onClick={() => setViewAsOpen(true)}
+                className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/></svg>
+                View as user
+              </button>
+            )}
             <button onClick={() => navigate('/plato')} className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               Admin Dashboard
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonation status strip — high-visibility, admin-only. Always
+          underneath the purple admin bar so it's the first thing the admin sees. */}
+      {impersonating && (
+        <div
+          className="px-4 py-2 text-sm flex items-center gap-3 border-b"
+          style={{ backgroundColor: '#fef3c7', color: '#78350f', borderColor: '#fde68a' }}
+          role="status"
+          aria-live="polite"
+        >
+          <div className="mx-auto max-w-5xl flex items-center w-full gap-3">
+            <span className="flex-1">
+              Viewing as <strong>{impersonatedLabel}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={handleStopImpersonation}
+              aria-label={`Exit viewing as ${impersonatedLabel}`}
+              className="rounded border border-yellow-700/40 px-2 py-0.5 text-xs font-medium hover:bg-yellow-700/10 cursor-pointer bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow-700"
+            >
+              Exit
             </button>
           </div>
         </div>
@@ -138,6 +183,12 @@ export default function AppShell({ children }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ViewAsUserModal
+        open={viewAsOpen}
+        onOpenChange={setViewAsOpen}
+        onStarted={handleStartedImpersonation}
+      />
     </>
   );
 }

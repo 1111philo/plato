@@ -278,3 +278,59 @@ describe('Course inlining on lesson endpoints', () => {
     assert.equal(data.course, null);
   });
 });
+
+describe('?asUserId= (admin View as User)', () => {
+  async function adminReq(app, method, path) {
+    const token = await signAccessToken('usr_admin', 'admin');
+    return app.request(path, {
+      method,
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+  }
+
+  beforeEach(() => {
+    db.getUserById = async (id) => ({ userId: id, role: id === 'usr_admin' ? 'admin' : 'user', name: 'X' });
+  });
+
+  it('GET /v1/lessons honors the impersonated learners sharedWith ACL', async () => {
+    // Private lesson shared only with usr_target. Admin (usr_admin) should NOT
+    // see it without ?asUserId=, but SHOULD see it when impersonating the target.
+    db.getAllSyncData = async () => [
+      { dataKey: 'lesson:priv-target', data: { name: 'Target Only', markdown: '# T', status: 'private', sharedWith: ['usr_target'] }, updatedAt: '2025-01-01' },
+      { dataKey: 'lesson:pub', data: { name: 'Public', markdown: '# P', status: 'public' }, updatedAt: '2025-01-01' },
+    ];
+    const app = new Hono(); app.route('/', content);
+
+    // Without ?asUserId= — only the public lesson is visible to the admin.
+    const baseRes = await adminReq(app, 'GET', '/v1/lessons');
+    const baseIds = (await baseRes.json()).map(l => l.lessonId);
+    assert.ok(!baseIds.includes('priv-target'), 'admin must not see lessons not shared with them');
+
+    // With ?asUserId=usr_target — admin sees the private lesson the target can see.
+    const asRes = await adminReq(app, 'GET', '/v1/lessons?asUserId=usr_target');
+    const asIds = (await asRes.json()).map(l => l.lessonId);
+    assert.ok(asIds.includes('priv-target'), 'admin should see the impersonated learners lessons');
+  });
+
+  it('GET /v1/lessons/:id with ?asUserId= grants access via the targets sharedWith', async () => {
+    db.getSyncData = async () => ({ data: { name: 'P', status: 'private', sharedWith: ['usr_target'], markdown: '# P' }, version: 1 });
+    const app = new Hono(); app.route('/', content);
+
+    const baseRes = await adminReq(app, 'GET', '/v1/lessons/priv');
+    assert.equal(baseRes.status, 404, 'admin without ?asUserId= cannot reach the targets private lesson');
+
+    const asRes = await adminReq(app, 'GET', '/v1/lessons/priv?asUserId=usr_target');
+    assert.equal(asRes.status, 200);
+  });
+
+  it('GET /v1/lessons as non-admin with ?asUserId= returns 403', async () => {
+    const token = await signAccessToken('usr_test', 'user');
+    db.getAllSyncData = async () => [];
+    const app = new Hono(); app.route('/', content);
+    const res = await app.request('/v1/lessons?asUserId=usr_target', {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    assert.equal(res.status, 403);
+  });
+});

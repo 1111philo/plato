@@ -54,6 +54,77 @@ describe('GET /v1/admin/users', () => {
   });
 });
 
+describe('POST /v1/admin/impersonation/start + end', () => {
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', email: 'admin@x.com', role: 'admin', name: 'Admin' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
+      if (id === 'usr_target') return { userId: 'usr_target', email: 't@x.com', username: 'target', name: 'Target', role: 'user' };
+      return null;
+    };
+  });
+
+  it('start writes audit_log entry with action=admin_view_as_user_started', async () => {
+    let logged = null;
+    db.createAuditLog = async (entry) => { logged = entry; };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'POST', '/v1/admin/impersonation/start', { targetUserId: 'usr_target' });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.userId, 'usr_target');
+    assert.equal(body.username, 'target');
+    assert.equal(logged?.action, 'admin_view_as_user_started');
+    assert.equal(logged?.userId, 'usr_target');
+    assert.equal(logged?.performedBy, 'usr_admin');
+  });
+
+  it('start returns 404 when target does not exist', async () => {
+    db.createAuditLog = async () => {};
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'POST', '/v1/admin/impersonation/start', { targetUserId: 'usr_nope' });
+    assert.equal(res.status, 404);
+  });
+
+  it('start returns 400 when targetUserId missing', async () => {
+    db.createAuditLog = async () => {};
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'POST', '/v1/admin/impersonation/start', {});
+    assert.equal(res.status, 400);
+  });
+
+  it('start rejects non-admins', async () => {
+    db.createAuditLog = async () => {};
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await userReq(app, 'POST', '/v1/admin/impersonation/start', { targetUserId: 'usr_target' });
+    assert.equal(res.status, 403);
+  });
+
+  it('end writes audit_log entry with action=admin_view_as_user_ended', async () => {
+    let logged = null;
+    db.createAuditLog = async (entry) => { logged = entry; };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'POST', '/v1/admin/impersonation/end', { targetUserId: 'usr_target' });
+    assert.equal(res.status, 200);
+    assert.equal(logged?.action, 'admin_view_as_user_ended');
+    assert.equal(logged?.performedBy, 'usr_admin');
+  });
+
+  it('end is best-effort when targetUserId is missing', async () => {
+    let logged = null;
+    db.createAuditLog = async (entry) => { logged = entry; };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'POST', '/v1/admin/impersonation/end', {});
+    assert.equal(res.status, 200);
+    assert.equal(logged?.action, 'admin_view_as_user_ended');
+  });
+});
+
 describe('POST /v1/admin/invites', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
