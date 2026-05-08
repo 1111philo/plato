@@ -94,24 +94,26 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
           ) : filtered.length === 0 ? (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No learners found.</div>
           ) : (
-            <ul className="p-2 space-y-1" role="listbox" aria-label="Select learner">
-              {filtered.map(u => (
-                <li key={u.userId}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected="false"
-                    onClick={() => handlePick(u)}
-                    disabled={submitting}
-                    className="w-full flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted text-left text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none outline-none focus:bg-muted"
-                  >
-                    <span className="flex-1 min-w-0">
-                      <span className="font-medium truncate block">{u.name || u.username || u.email}</span>
-                      {u.name && <span className="text-xs text-muted-foreground truncate block">{u.email}</span>}
-                    </span>
-                  </button>
-                </li>
-              ))}
+            <ul className="p-2 space-y-1" aria-label="Learners">
+              {filtered.map(u => {
+                const label = u.name || u.username || u.email;
+                return (
+                  <li key={u.userId}>
+                    <button
+                      type="button"
+                      onClick={() => handlePick(u)}
+                      disabled={submitting}
+                      aria-label={`View as ${label}`}
+                      className="w-full flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted text-left text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none outline-none focus:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="flex-1 min-w-0">
+                        <span className="font-medium truncate block">{label}</span>
+                        {u.name && <span className="text-xs text-muted-foreground truncate block">{u.email}</span>}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </ScrollArea>

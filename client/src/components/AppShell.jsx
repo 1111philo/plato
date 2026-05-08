@@ -59,8 +59,9 @@ export default function AppShell({ children }) {
             <div className="flex-1" />
             {!impersonating && (
               <button
+                type="button"
                 onClick={() => setViewAsOpen(true)}
-                className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors"
+                className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
               >
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/></svg>
                 View as user
@@ -90,7 +91,8 @@ export default function AppShell({ children }) {
             <button
               type="button"
               onClick={handleStopImpersonation}
-              className="rounded border border-yellow-700/40 px-2 py-0.5 text-xs font-medium hover:bg-yellow-700/10 cursor-pointer bg-transparent transition-colors"
+              aria-label={`Exit viewing as ${impersonatedLabel}`}
+              className="rounded border border-yellow-700/40 px-2 py-0.5 text-xs font-medium hover:bg-yellow-700/10 cursor-pointer bg-transparent transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-yellow-700"
             >
               Exit
             </button>
