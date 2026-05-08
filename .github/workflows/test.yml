@@ -1,0 +1,35 @@
+name: Test
+
+# Runs `npm test` for both workspaces on every PR (drafts included — tests are
+# cheap and catching a regression early is the point) and on every push to a
+# protected branch. Independent of the AI Code Review workflow: that one runs
+# tests inside its prep step but soft-swallows failures (the agent is supposed
+# to flag them in its review). This workflow makes the test outcome a
+# first-class status check that gates the PR regardless of whether the AI
+# review fires.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  push:
+    branches: [main, playground]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [client, server]
+    defaults:
+      run:
+        working-directory: ${{ matrix.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+      - run: npm ci
+      - run: npm test
