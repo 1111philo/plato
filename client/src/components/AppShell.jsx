@@ -33,14 +33,10 @@ export default function AppShell({ children }) {
     setSignOutOpen(false);
   };
 
-  const handleStopImpersonation = async () => {
-    await stopImpersonation();
-    navigate('/lessons', { replace: true });
-  };
-
-  const handleStartedImpersonation = () => {
-    navigate('/lessons', { replace: true });
-  };
+  // start/stopImpersonation in AuthContext do a hard reload to /lessons;
+  // no further navigation needed here.
+  const handleStopImpersonation = () => stopImpersonation();
+  const handleStartedImpersonation = () => { /* AuthContext handles navigation */ };
 
   const classroomLogo = branding?.logoBase64 || null;
   const classroomName = branding?.classroomName || branding?.logoAlt || 'plato';
@@ -56,11 +52,20 @@ export default function AppShell({ children }) {
       {/* Admin bar — plato branding, quick links to dashboard */}
       {isAdmin && (
         <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
-          <div className="mx-auto max-w-5xl flex items-center">
+          <div className="mx-auto max-w-5xl flex items-center gap-2">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
               <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
+            {!impersonating && (
+              <button
+                onClick={() => setViewAsOpen(true)}
+                className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/></svg>
+                View as user
+              </button>
+            )}
             <button onClick={() => navigate('/plato')} className="flex items-center gap-1 cursor-pointer border border-white/30 rounded px-2 py-0.5 text-white/90 hover:text-white hover:bg-white/10 bg-transparent text-xs transition-colors">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
               Admin Dashboard
@@ -137,23 +142,6 @@ export default function AppShell({ children }) {
                 >
                   User Settings
                 </DropdownMenuRadix.Item>
-                {isAdmin && !impersonating && (
-                  <DropdownMenuRadix.Item
-                    className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent"
-                    onSelect={() => setViewAsOpen(true)}
-                  >
-                    View as user…
-                  </DropdownMenuRadix.Item>
-                )}
-                {isAdmin && impersonating && (
-                  <DropdownMenuRadix.Item
-                    className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent font-medium"
-                    style={{ color: '#78350f' }}
-                    onSelect={handleStopImpersonation}
-                  >
-                    Stop viewing as {impersonatedLabel}
-                  </DropdownMenuRadix.Item>
-                )}
                 <DropdownMenuRadix.Item
                   className="flex cursor-pointer items-center rounded-md px-2 py-1.5 text-sm text-destructive outline-none hover:bg-destructive/10 focus:bg-destructive/10"
                   onSelect={() => setSignOutOpen(true)}

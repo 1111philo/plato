@@ -78,24 +78,34 @@ export function AuthProvider({ children }) {
     }
     const target = await res.json();
     authModule.setImpersonation(target);
-    clearCache(); // admin's own sync-data must not leak into target's view
+    clearCache(); // admins sync-data must not leak into the targets view
     setImpersonatedUserState(target);
+    // Hard reload to /lessons. clearCache() handles the storage layer, but
+    // AppContext (lesson list, lesson KB summaries on cards) and any other
+    // component-level state would still hold the admins data otherwise.
+    // For an audit/security feature, "no stale data" is more important than
+    // a faster transition.
+    if (typeof location !== 'undefined') location.assign('/lessons');
     return target;
   }, []);
 
   const stopImpersonation = useCallback(async () => {
     const current = authModule.getImpersonation();
     authModule.setImpersonation(null);
-    clearCache(); // target's data must not linger after exit
+    clearCache(); // targets data must not linger after exit
     setImpersonatedUserState(null);
-    // Best-effort end notification — don't block the UI on it.
-    try {
-      await authenticatedFetch('/v1/admin/impersonation/end', {
+    // Best-effort end notification — fire-and-forget so the reload below
+    // doesnt have to wait on it.
+    if (current?.userId) {
+      authenticatedFetch('/v1/admin/impersonation/end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUserId: current?.userId }),
-      });
-    } catch { /* audit-log is best-effort; the start entry is the source of truth */ }
+        body: JSON.stringify({ targetUserId: current.userId }),
+      }).catch(() => { /* audit-log is best-effort; the start entry is the source of truth */ });
+    }
+    // Same hard-reload reasoning as startImpersonation — AppContext etc.
+    // would otherwise still hold the targets state.
+    if (typeof location !== 'undefined') location.assign('/lessons');
   }, []);
 
   return (

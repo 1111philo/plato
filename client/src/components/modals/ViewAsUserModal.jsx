@@ -28,6 +28,7 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
     if (!open) return;
     setSearch('');
     setError(null);
+    setSubmitting(false);
     let cancelled = false;
     (async () => {
       setLoading(true);
