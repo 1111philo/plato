@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import Check from 'lucide-react/dist/esm/icons/check';
 import HelpCircle from 'lucide-react/dist/esm/icons/help-circle';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,33 @@ const PAGE_SIZE = 12;
 const FILTER_ALL = 'all';
 const FILTER_NONE = 'none';
 
+// Status filter values map to the lessonKB.status field on each lesson:
+// completed → status === 'completed'; in-progress → any truthy non-completed
+// status; not-started → no kb record at all.
+const STATUS_ALL = 'all';
+const STATUS_NOT_STARTED = 'not-started';
+const STATUS_IN_PROGRESS = 'in-progress';
+const STATUS_COMPLETED = 'completed';
+
+function lessonStatusKey(d) {
+  if (d?.status === 'completed') return STATUS_COMPLETED;
+  if (d?.status) return STATUS_IN_PROGRESS;
+  return STATUS_NOT_STARTED;
+}
+
+// Single source of truth for the human-readable status announcement (used
+// both by the icon's aria-label/title and by the open-lesson button's
+// accessible name). Keeping it here means SR users hear the same wording
+// no matter which path led them to the status info.
+function statusAnnouncement(d) {
+  if (d?.status === 'completed') return 'Completed';
+  if (d?.status) {
+    const pct = d.progress != null ? d.progress * 10 : null;
+    return pct != null ? `In progress, ${pct}% complete` : 'In progress';
+  }
+  return 'Not started';
+}
+
 function formatTimeRange(p20, p80) {
   if (typeof p20 !== 'number' || typeof p80 !== 'number') return null;
   const low = Math.round(p20 * MINS_PER_EXCHANGE);
@@ -36,6 +64,7 @@ export default function LessonsList() {
   const [timeStats, setTimeStats] = useState({});
   const [detailLesson, setDetailLesson] = useState(null);
   const [courseFilter, setCourseFilter] = useState(FILTER_ALL);
+  const [statusFilter, setStatusFilter] = useState(STATUS_ALL);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -100,12 +129,18 @@ export default function LessonsList() {
     }
   }, [hasCourseFilter, courseFilter, courseOptions.named]);
 
-  // Apply the course filter.
+  // Apply both filters. Course narrows by taxonomy; status narrows by the
+  // learner's progress on each lesson. Combined as logical AND so the grid
+  // only shows lessons matching every active filter.
   const filtered = useMemo(() => {
-    if (courseFilter === FILTER_ALL) return lessons;
-    if (courseFilter === FILTER_NONE) return lessons.filter((l) => !l.course?.id);
-    return lessons.filter((l) => l.course?.id === courseFilter);
-  }, [lessons, courseFilter]);
+    let result = lessons;
+    if (courseFilter === FILTER_NONE) result = result.filter((l) => !l.course?.id);
+    else if (courseFilter !== FILTER_ALL) result = result.filter((l) => l.course?.id === courseFilter);
+    if (statusFilter !== STATUS_ALL) {
+      result = result.filter((l) => lessonStatusKey(lessonData[l.lessonId]) === statusFilter);
+    }
+    return result;
+  }, [lessons, courseFilter, statusFilter, lessonData]);
 
   // Pagination math. We clamp the current page to the available range so a
   // filter that shrinks the list below the current page doesn't strand us.
@@ -114,21 +149,27 @@ export default function LessonsList() {
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const visibleLessons = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  // Reset to page 1 whenever the filter changes so we never land on an
+  // Reset to page 1 whenever any filter changes so we never land on an
   // out-of-range page after a tighter filter.
-  useEffect(() => { setPage(1); }, [courseFilter]);
+  useEffect(() => { setPage(1); }, [courseFilter, statusFilter]);
 
   // Live announcement: assembled from filter + page state. Updates whenever
   // either changes, which is exactly the moment screen reader users need to
   // know the visible content shifted. Kept in an always-mounted sr-only
   // region so the announcement fires reliably (a region that appears for
   // the first time on render is sometimes missed).
-  const filterLabel = useMemo(() => {
-    if (courseFilter === FILTER_ALL) return 'all courses';
-    if (courseFilter === FILTER_NONE) return 'lessons without a course';
-    const name = courseOptions.named.find((c) => c.id === courseFilter)?.name;
-    return name ? `the course "${name}"` : 'the selected course';
-  }, [courseFilter, courseOptions.named]);
+  const filterPhrase = useMemo(() => {
+    const phrases = [];
+    if (courseFilter === FILTER_NONE) phrases.push('without a course');
+    else if (courseFilter !== FILTER_ALL) {
+      const name = courseOptions.named.find((c) => c.id === courseFilter)?.name;
+      phrases.push(name ? `in the course "${name}"` : 'in the selected course');
+    }
+    if (statusFilter === STATUS_NOT_STARTED) phrases.push('not started');
+    else if (statusFilter === STATUS_IN_PROGRESS) phrases.push('in progress');
+    else if (statusFilter === STATUS_COMPLETED) phrases.push('completed');
+    return phrases.join(', ');
+  }, [courseFilter, statusFilter, courseOptions.named]);
 
   const announcement = useMemo(() => {
     // Empty while still loading. Once `loaded` flips, the live region's
@@ -138,13 +179,10 @@ export default function LessonsList() {
     // with the visible "Loading lessons…" div below.
     if (!loaded) return '';
     const total = filtered.length;
-    // Skip the "in <filter>" scope phrase when no course filter is shown —
-    // saying "in all courses" in a classroom without any courses would be
-    // misleading.
-    const scope = hasCourseFilter ? ` in ${filterLabel}` : '';
+    const scope = filterPhrase ? ` ${filterPhrase}` : '';
     if (lessons.length === 0) return 'No lessons yet.';
     if (total === 0) {
-      return hasCourseFilter ? `No lessons match ${filterLabel}.` : 'No lessons.';
+      return filterPhrase ? `No lessons ${filterPhrase}.` : 'No lessons.';
     }
     const lessonWord = total === 1 ? 'lesson' : 'lessons';
     if (totalPages === 1) {
@@ -153,46 +191,47 @@ export default function LessonsList() {
     const showingFrom = pageStart + 1;
     const showingTo = pageStart + visibleLessons.length;
     return `Showing ${showingFrom} to ${showingTo} of ${total} ${lessonWord}${scope}, page ${currentPage} of ${totalPages}.`;
-  }, [loaded, lessons.length, filtered.length, filterLabel, totalPages, pageStart, visibleLessons.length, currentPage, hasCourseFilter]);
-
-  function statusIcon(lessonId) {
-    const d = lessonData[lessonId];
-    if (d?.status === 'completed') return '✓';
-    if (d?.status) return '▶';
-    return '○';
-  }
-
-  function progressLabel(lesson) {
-    const d = lessonData[lesson.lessonId];
-    if (d?.status === 'completed') return 'Completed';
-    if (d?.progress != null) return `${d.progress * 10}% complete`;
-    if (d?.status) return 'In progress';
-    return null;
-  }
+  }, [loaded, lessons.length, filtered.length, filterPhrase, totalPages, pageStart, visibleLessons.length, currentPage]);
 
   return (
     <div className="mx-auto max-w-5xl p-4">
       <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold">Lessons</h2>
-        {hasCourseFilter && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {hasCourseFilter && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="course-filter" className="text-sm text-muted-foreground">Course</label>
+              <select
+                id="course-filter"
+                value={courseFilter}
+                onChange={(e) => setCourseFilter(e.target.value)}
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <option value={FILTER_ALL}>All courses</option>
+                {courseOptions.named.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+                {courseOptions.hasUncategorized && (
+                  <option value={FILTER_NONE}>Uncategorized</option>
+                )}
+              </select>
+            </div>
+          )}
           <div className="flex items-center gap-2">
-            <label htmlFor="course-filter" className="text-sm text-muted-foreground">Course</label>
+            <label htmlFor="status-filter" className="text-sm text-muted-foreground">Status</label>
             <select
-              id="course-filter"
-              value={courseFilter}
-              onChange={(e) => setCourseFilter(e.target.value)}
+              id="status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
               className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value={FILTER_ALL}>All courses</option>
-              {courseOptions.named.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-              {courseOptions.hasUncategorized && (
-                <option value={FILTER_NONE}>Uncategorized</option>
-              )}
+              <option value={STATUS_ALL}>All statuses</option>
+              <option value={STATUS_NOT_STARTED}>Not started</option>
+              <option value={STATUS_IN_PROGRESS}>In progress</option>
+              <option value={STATUS_COMPLETED}>Completed</option>
             </select>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Always-mounted live region. Updates whenever filter or page changes.
@@ -237,9 +276,8 @@ export default function LessonsList() {
                   interactive-within-interactive. */}
               <LessonCard
                 lesson={c}
-                progressText={progressLabel(c)}
+                progress={lessonData[c.lessonId]}
                 timeStats={timeStats[c.lessonId]}
-                statusGlyph={statusIcon(c.lessonId)}
                 onOpen={() => navigate(`/lessons/${c.lessonId}`)}
                 onShowOverview={() => setDetailLesson(c)}
               />
@@ -286,11 +324,11 @@ export default function LessonsList() {
   );
 }
 
-function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onShowOverview }) {
+function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
   // Stable id per card so the open-lesson button can describe itself with
-  // the meta strip — Tab navigation then announces course/time/status as
-  // supplementary context, instead of forcing screen-reader users to
-  // switch into reading mode just to discover those signals.
+  // the meta strip — Tab navigation announces course + time as
+  // supplementary context (status now lives in the indicator and the
+  // button label, so it's not duplicated here).
   const metaId = useId();
 
   const range = timeStats && (timeStats.sampleSize ?? 0) >= 3
@@ -313,16 +351,18 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
       aria: `Estimated completion time ${range}, based on ${timeStats.sampleSize} ${completionWord}`,
     });
   }
-  if (progressText) {
-    parts.push({ key: 'status', text: progressText });
-  }
+
+  const statusText = statusAnnouncement(progress);
 
   return (
     <Card className="h-full transition-shadow hover:shadow-md group gap-0 p-0">
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`Open lesson ${lesson.name}`}
+        // Status is folded into the button's accessible name — the visual
+        // indicator is aria-hidden, so without this the icon's meaning
+        // would be invisible to SR users.
+        aria-label={`Open lesson ${lesson.name}. ${statusText}.`}
         aria-describedby={parts.length > 0 ? metaId : undefined}
         className="flex-1 text-left px-4 pt-4 pb-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
@@ -337,12 +377,7 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
               </p>
             )}
           </div>
-          <span
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs text-primary"
-            aria-hidden="true"
-          >
-            {statusGlyph}
-          </span>
+          <StatusIndicator progress={progress} statusText={statusText} />
         </div>
       </button>
       <div className="px-4 pb-3 pt-1 flex items-baseline gap-2 flex-wrap">
@@ -402,6 +437,72 @@ function LessonCard({ lesson, progressText, timeStats, statusGlyph, onOpen, onSh
         </Button>
       </div>
     </Card>
+  );
+}
+
+// Visual status indicator that doubles as a progress meter: not-started
+// renders as a muted outline ring, in-progress as a brand-colored arc
+// filled to the learner's percentage, and completed as a green check on a
+// green wash. The visual conveys state to sighted users without needing a
+// duplicate text label in the meta strip; the matching wording is folded
+// into the open-lesson button's aria-label so SR users get the same info.
+// `title` gives sighted hover users the precise % when the arc alone is
+// hard to read at a glance.
+function StatusIndicator({ progress, statusText }) {
+  const sharedClass = 'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full';
+  if (progress?.status === 'completed') {
+    return (
+      <span
+        aria-hidden="true"
+        title={statusText}
+        className={`${sharedClass} bg-emerald-100 text-emerald-700`}
+      >
+        <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+    );
+  }
+  if (progress?.status) {
+    const pct = progress.progress != null ? progress.progress * 10 : 0;
+    return (
+      <span
+        aria-hidden="true"
+        title={statusText}
+        className={`${sharedClass} text-primary`}
+      >
+        <ProgressRing pct={pct} />
+      </span>
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      title={statusText}
+      className={`${sharedClass} border border-muted-foreground/30 text-muted-foreground/40`}
+    />
+  );
+}
+
+function ProgressRing({ pct, size = 22, stroke = 2.5 }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  const half = size / 2;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={half} cy={half} r={r} fill="none" stroke="currentColor" strokeOpacity="0.18" strokeWidth={stroke} />
+      <circle
+        cx={half}
+        cy={half}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${half} ${half})`}
+      />
+    </svg>
   );
 }
 
