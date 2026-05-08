@@ -1,434 +1,335 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useApp } from '../contexts/AppContext.jsx';
-import { useStreamedText } from '../hooks/useStreamedText.js';
-import { useTitleNotification } from '../hooks/useTitleNotification.js';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { getLessonById } from '../../js/storage.js';
+import {
+  startLesson, sendMessage, resumeLesson,
+  applyCoachResponseToKB,
+} from '../lib/lessonEngine.js';
 import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
-import { launchConfetti } from '../lib/confetti.js';
-import {
-  getLessonKB, deleteLessonProgress,
-  getUserLessonMarkdown, deleteUserLesson,
-} from '../../js/storage.js';
-import { invalidateLessonsCache, loadLessons } from '../../js/lessonOwner.js';
-import * as engine from '../lib/lessonEngine.js';
+import { PluginSlot } from '../lib/plugins.jsx';
 
-import ChatArea from '../components/chat/ChatArea.jsx';
-import ThinkingSpinner from '../components/chat/ThinkingSpinner.jsx';
-import UserMessage from '../components/chat/UserMessage.jsx';
-import AssistantMessage from '../components/chat/AssistantMessage.jsx';
-import ProgressBar from '../components/chat/ProgressBar.jsx';
-import ComposeBar from '../components/chat/ComposeBar.jsx';
-import ConfirmModal from '../components/modals/ConfirmModal.jsx';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
+const TEXTAREA_MIN_ROWS = 1;
+const TEXTAREA_LINE_HEIGHT = 24; // px — matches the CSS line-height below
+const TEXTAREA_MAX_HEIGHT = 200; // px
+
+/**
+ * Resize a textarea to fit its content without the flicker caused by
+ * the two-step `height='auto'` → `height=scrollHeight+'px'` pattern.
+ *
+ * Setting height to '0' forces the browser to recalculate scrollHeight
+ * against the content (not the current box size), then we set the real
+ * height in the same synchronous call — no intermediate paint-frame
+ * where height is 'auto' and a scroll event can reset it.
+ */
+function resizeTextarea(el) {
+  if (!el) return;
+  el.style.height = '0';
+  const next = Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT);
+  el.style.height = `${Math.max(next, TEXTAREA_LINE_HEIGHT * TEXTAREA_MIN_ROWS)}px`;
+  el.style.overflowY = el.scrollHeight > TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+}
+
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-1 px-4 py-2">
+      <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+      <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+      <span className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
+    </div>
+  );
+}
+
+function ChatBubble({ msg }) {
+  const isUser = msg.role === 'user' || msg.msgType === MSG_TYPES.USER;
+  return (
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-3`}>
+      <div
+        className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+          isUser
+            ? 'bg-primary text-primary-foreground rounded-br-sm'
+            : 'bg-muted text-foreground rounded-bl-sm'
+        }`}
+      >
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{msg.content}</div>
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content || ''}</ReactMarkdown>
+        )}
+        {msg.imageUrl && (
+          <img src={msg.imageUrl} alt="Uploaded" className="mt-2 max-w-full rounded-lg" />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function LessonChat() {
-  const { lessonGroupId } = useParams();
+  const { lessonId } = useParams();
   const navigate = useNavigate();
-  const { state, dispatch } = useApp();
-  const { lessons } = state;
-  const lesson = lessons.find(c => c.lessonId === lessonGroupId);
 
-  const [phase, setPhase] = useState(null);
+  const [lesson, setLesson] = useState(null);
   const [messages, setMessages] = useState([]);
   const [lessonKB, setLessonKB] = useState(null);
-  const [loading, setLoading] = useState('');
-  const [error, setError] = useState('');
+  const [phase, setPhase] = useState(LESSON_PHASES.LESSON_INTRO);
+  const [input, setInput] = useState('');
+  const [imageDataUrl, setImageDataUrl] = useState(null);
+  const [sending, setSending] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
-  const pendingAfterStreamRef = useRef(null);
-  const [srAnnouncement, setSrAnnouncement] = useState('');
-  const srClearTimeoutRef = useRef(null);
-  const srRafRef = useRef(null);
-  const chatAreaRef = useRef(null);
-  const notifyTitle = useTitleNotification(
-    lesson ? `${lesson.name} — plato` : 'Lesson — plato'
-  );
+  const messagesEndRef = useRef(null);
+  const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // Confirm modal state
-  const [confirmModal, setConfirmModal] = useState(null);
-  const [showObjectives, setShowObjectives] = useState(false);
-  const objectivesTitleRef = useRef(null);
-  const [headerPinned, setHeaderPinned] = useState(false);
-  const headerRef = useRef(null);
-  const [composePinned, setComposePinned] = useState(true);
-  const composeAnchorRef = useRef(null);
-  const [composeText, setComposeText] = useState('');
-  const [composeImage, setComposeImage] = useState(null);
+  // ── Scroll helpers ──────────────────────────────────────────────────────────
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
-  // Pin header when its top edge reaches the viewport top
+  useEffect(() => { scrollToBottom(); }, [messages, streamingText, scrollToBottom]);
+
+  // ── Textarea auto-resize ────────────────────────────────────────────────────
+  // Re-measure on every input change.
   useEffect(() => {
-    const el = headerRef.current;
+    resizeTextarea(textareaRef.current);
+  }, [input]);
+
+  // Also re-measure if the container width changes (viewport resize, panel toggle).
+  useEffect(() => {
+    const el = textareaRef.current;
     if (!el) return;
-    const check = () => {
-      const rect = el.getBoundingClientRect();
-      setHeaderPinned(rect.top < 0);
-    };
-    const checkCompose = () => {
-      const anchor = composeAnchorRef.current;
-      if (anchor) {
-        const rect = anchor.getBoundingClientRect();
-        // Unpin only when the bottom of the inline compose is fully visible
-        setComposePinned(rect.bottom > window.innerHeight);
-      }
-    };
-    const checkAll = () => { check(); checkCompose(); };
-    window.addEventListener('scroll', checkAll, true);
-    checkAll();
-    return () => window.removeEventListener('scroll', checkAll, true);
+    const ro = new ResizeObserver(() => resizeTextarea(el));
+    ro.observe(el.parentElement || el);
+    return () => ro.disconnect();
   }, []);
 
+  // ── Lesson bootstrap ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (displayText === null && pendingAfterStreamRef.current) {
-      const { msgs, p, confetti } = pendingAfterStreamRef.current;
-      pendingAfterStreamRef.current = null;
-      if (msgs) {
-        setMessages(prev => [...prev, ...msgs]);
-        const hasAssistant = msgs.some(m => m.role === 'assistant');
-        if (hasAssistant) {
-          if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
-          if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
-          setSrAnnouncement('');
-          notifyTitle();
-          // If focus is inside the chat log, move it to the new message so
-          // VoiceOver announces it via the inline "Coach says:" prefix.
-          // Otherwise fire the live region — both paths must not run together
-          // or VoiceOver reads "Coach says: … New message from coach" as one
-          // utterance, which sounds like the coach said those words.
-          srRafRef.current = requestAnimationFrame(() => {
-            srRafRef.current = null;
-            const log = chatAreaRef.current;
-            const focusInLog = log && (log.contains(document.activeElement) || document.activeElement === log);
-            if (focusInLog) {
-              const assistantMsgs = log.querySelectorAll('[data-chat-message="assistant"]');
-              const last = assistantMsgs[assistantMsgs.length - 1];
-              if (last) last.focus();
-            } else {
-              setSrAnnouncement('New message from coach');
-              srClearTimeoutRef.current = setTimeout(() => setSrAnnouncement(''), 3000);
-            }
+    if (!lessonId) return;
+    setLoading(true);
+    getLessonById(lessonId)
+      .then(async (l) => {
+        if (!l) { navigate('/lessons'); return; }
+        setLesson(l);
+        const resumed = await resumeLesson(lessonId, l, (chunk) => {
+          setStreamingText(chunk);
+          setStreaming(true);
+        });
+        if (resumed) {
+          setMessages(resumed.messages);
+          setLessonKB(resumed.lessonKB);
+          setPhase(resumed.phase);
+          setStreaming(false);
+          setStreamingText('');
+        } else {
+          const started = await startLesson(lessonId, l, (chunk) => {
+            setStreamingText(chunk);
+            setStreaming(true);
           });
+          setMessages(started.messages);
+          setLessonKB(started.lessonKB);
+          setPhase(started.phase);
+          setStreaming(false);
+          setStreamingText('');
         }
-      }
-      if (p) setPhase(p);
-      if (confetti) launchConfetti();
-      setLoading('');
-    }
-  }, [displayText]);
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [lessonId, navigate]);
 
-  useEffect(() => () => {
-    if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
-    if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
-  }, []);
+  // ── Send ────────────────────────────────────────────────────────────────────
+  const handleSend = useCallback(async () => {
+    const trimmed = input.trim();
+    if ((!trimmed && !imageDataUrl) || sending || !lesson) return;
 
-  // Move focus to the Objectives dialog title when it opens so screen
-  // readers announce the dialog's purpose instead of landing on the close
-  // button. Two nested RAFs are required: Base UI runs its own focus
-  // management on open (focusing the close button) which may itself use a
-  // single RAF, so one RAF is not enough to reliably win.
-  useEffect(() => {
-    if (!showObjectives) return;
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        if (!cancelled) objectivesTitleRef.current?.focus();
-      });
-    });
-    return () => { cancelled = true; cancelAnimationFrame(id); };
-  }, [showObjectives]);
-
-  useEffect(() => {
-    if (!lesson) return;
-    let cancelled = false;
-
-    (async () => {
-      const existing = await engine.resumeLesson(lessonGroupId);
-
-      if (existing.messages.length > 0) {
-        setMessages(existing.messages);
-        setLessonKB(existing.lessonKB);
-        setPhase(existing.phase);
-      } else {
-        setLoading('starting');
-        setStreamingText('');
-        try {
-          const result = await engine.startLesson(
-            lessonGroupId, lesson,
-            (partial) => { if (!cancelled) setStreamingText(partial); }
-          );
-          if (cancelled) return;
-          setLessonKB(result.lessonKB);
-          pendingAfterStreamRef.current = { msgs: result.messages, p: result.phase };
-          setStreamingText(null);
-        } catch (e) {
-          if (!cancelled) { setError(e.message || 'Failed to start lesson.'); setLoading(''); setStreamingText(null); }
-        }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [lessonGroupId, lesson]);
-
-  const handleSend = useCallback(async ({ text, imageDataUrl }) => {
-    if (!text && !imageDataUrl) return;
-    setError('');
-    setLoading('qa');
+    const userMsg = {
+      role: 'user',
+      msgType: MSG_TYPES.USER,
+      content: trimmed,
+      imageUrl: imageDataUrl,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setImageDataUrl(null);
+    setSending(true);
+    setStreaming(true);
     setStreamingText('');
 
-    setMessages(prev => [...prev, {
-      role: 'user', content: text || '', msgType: MSG_TYPES.USER,
-      phase: LESSON_PHASES.LEARNING,
-      metadata: imageDataUrl ? { imageDataUrl } : null,
-      timestamp: Date.now(),
-    }]);
+    // Reset textarea height immediately after clearing input
+    requestAnimationFrame(() => resizeTextarea(textareaRef.current));
 
     try {
-      const result = await engine.sendMessage(
-        lessonGroupId, lesson, text, imageDataUrl,
-        (partial) => setStreamingText(partial)
+      const result = await sendMessage(
+        lessonId,
+        lesson,
+        trimmed,
+        imageDataUrl,
+        (chunk) => setStreamingText(chunk),
       );
-      const assistantMsg = result.messages.find(m => m.role === 'assistant');
-      pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
-      setStreamingText(null);
-
-      const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
-    } catch (e) {
-      setError(e.message || 'Failed to send.');
-      setStreamingText(null);
-      setLoading('');
+      setMessages(result.messages);
+      setLessonKB(result.lessonKB);
+      setPhase(result.phase);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+      setStreaming(false);
+      setStreamingText('');
     }
-  }, [lessonGroupId, lesson]);
+  }, [input, imageDataUrl, sending, lesson, lessonId]);
 
-  const isCustomLesson = lessonGroupId?.startsWith('custom-');
+  const handleKeyDown = useCallback(
+    (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
 
-  const handleExport = useCallback(async () => {
-    const markdown = await getUserLessonMarkdown(lessonGroupId);
-    if (!markdown) return;
-    const blob = new Blob([markdown], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${lesson?.name || 'lesson'}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [lessonGroupId, lesson]);
+  const handleImageChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setImageDataUrl(ev.target.result);
+    reader.readAsDataURL(file);
+  }, []);
 
-  const handleReset = () => {
-    setConfirmModal({
-      title: 'Reset Lesson?',
-      message: "This will delete all progress. You'll start from scratch.",
-      confirmLabel: 'Reset Lesson',
-      onConfirm: async () => { await deleteLessonProgress(lessonGroupId); navigate('/lessons'); },
-    });
-  };
+  const isCompleted = lessonKB?.status === 'completed';
+  const canSend = (input.trim() || imageDataUrl) && !sending;
 
-  const handleDelete = () => {
-    setConfirmModal({
-      title: 'Delete Lesson?',
-      message: 'This will permanently delete this lesson and all its progress.',
-      confirmLabel: 'Delete Lesson',
-      onConfirm: async () => {
-        await deleteLessonProgress(lessonGroupId);
-        await deleteUserLesson(lessonGroupId);
-        invalidateLessonsCache();
-        dispatch({ type: 'REFRESH_LESSONS', lessons: await loadLessons() });
-        navigate('/lessons');
-      },
-    });
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-muted-foreground text-sm">Loading lesson…</div>
+      </div>
+    );
+  }
 
-  if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
-  if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
-  const busy = !!loading;
-  const composePlaceholder = phase === LESSON_PHASES.COMPLETED
-    ? 'Share feedback about this lesson...'
-    : 'Chat with your coach...';
-
-  const renderMessage = (msg, idx) => {
-    switch (msg.msgType) {
-      case MSG_TYPES.GUIDE:
-        return <AssistantMessage key={idx} content={msg.content} />;
-      case MSG_TYPES.USER:
-        return (
-          <div key={idx}>
-            {msg.content && <UserMessage content={msg.content} />}
-            {msg.metadata?.imageDataUrl && (
-              <div className="flex justify-end mt-1">
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary p-1.5">
-                  <img src={msg.metadata.imageDataUrl} alt="Your uploaded work" className="max-w-full rounded-lg" />
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      default:
-        return <AssistantMessage key={idx} content={msg.content} />;
-    }
-  };
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4">
+        <div className="text-destructive text-sm">{error}</div>
+        <button
+          className="text-sm underline text-muted-foreground"
+          onClick={() => navigate('/lessons')}
+        >
+          Back to lessons
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-theme(spacing.20))]">
-      {/* Fixed header clone — appears when inline header scrolls out of view */}
-      {headerPinned && (
-        <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
-          <div className="mx-auto max-w-5xl flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
-              &larr;
-            </Button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
-                <button
-                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                  onClick={() => setShowObjectives(true)}
-                >
-                  Lesson Overview ({lesson.learningObjectives.length} Objectives)
-                </button>
-              </div>
-              <ProgressBar lessonKB={lessonKB} />
-            </div>
-            {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleExport} title="Export lesson markdown">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              </Button>
-            )}
-            {phase && (
-              <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset lesson">
-                &#8635;
-              </Button>
-            )}
-            {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleDelete} title="Delete lesson">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Inline header — observed for scroll position */}
-      <div ref={headerRef} id="lesson-header" className="border-b border-border bg-background px-4 py-2">
-        <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
-            &larr;
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
-              <button
-                className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                onClick={() => setShowObjectives(true)}
-                aria-label={`View ${lesson.learningObjectives.length} objectives`}
-              >
-                Lesson Overview ({lesson.learningObjectives.length} Objectives)
-              </button>
-            </div>
-            <ProgressBar lessonKB={lessonKB} />
-          </div>
-          {isCustomLesson && (
-            <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export lesson" title="Export lesson markdown">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </Button>
-          )}
-          {phase && (
-            <Button variant="ghost" size="icon-sm" onClick={handleReset} aria-label="Reset lesson" title="Reset lesson">
-              &#8635;
-            </Button>
-          )}
-          {isCustomLesson && (
-            <Button variant="ghost" size="icon-sm" onClick={handleDelete} aria-label="Delete lesson" title="Delete lesson">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </Button>
-          )}
-        </div>
+    <div className="flex flex-col h-full max-w-2xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b">
+        <button
+          onClick={() => navigate('/lessons')}
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          ← Back
+        </button>
+        <h1 className="text-sm font-semibold truncate max-w-[60%]">{lesson?.name}</h1>
+        <div className="w-16" />
       </div>
 
-      <div className="flex-1">
-      <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
-        {messages.map(renderMessage)}
-        {displayText != null && displayText.length > 0 && (
-          <AssistantMessage content={displayText} streaming />
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {messages.map((msg, i) => (
+          <ChatBubble key={i} msg={msg} />
+        ))}
+        {streaming && streamingText && (
+          <div className="flex justify-start mb-3">
+            <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-4 py-2 text-sm leading-relaxed bg-muted text-foreground">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+            </div>
+          </div>
         )}
-        {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your lesson..." />}
-        {loading === 'qa' && !displayText && <ThinkingSpinner />}
-        {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
-      </ChatArea>
+        {streaming && !streamingText && <TypingIndicator />}
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Inline compose — always in document flow for layout; invisible when pinned */}
-      {phase && (
-        <div ref={composeAnchorRef} aria-hidden={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
-          <ComposeBar
-            placeholder={composePlaceholder}
-            onSend={handleSend}
-            disabled={busy}
-            allowImages
-            text={composeText}
-            onTextChange={setComposeText}
-            image={composeImage}
-            onImageChange={setComposeImage}
-          />
-        </div>
-      )}
-
-      {/* Fixed compose overlay — interactive when pinned */}
-      {phase && composePinned && (
-        <div className="fixed bottom-9 left-0 right-0 z-50">
-          <ComposeBar
-            placeholder={composePlaceholder}
-            onSend={handleSend}
-            disabled={busy}
-            allowImages
-            elevated
-            text={composeText}
-            onTextChange={setComposeText}
-            image={composeImage}
-            onImageChange={setComposeImage}
-          />
-        </div>
-      )}
-
-      {/* Objectives dialog */}
-      <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
-            {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
-          </DialogHeader>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Exemplar</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Learning Objectives</h3>
-            <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
-              {lesson.learningObjectives.map((obj, i) => (
-                <li key={i}>{obj}</li>
-              ))}
-            </ul>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {confirmModal && (
-        <ConfirmModal
-          open={!!confirmModal}
-          onOpenChange={(open) => { if (!open) setConfirmModal(null); }}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          confirmLabel={confirmModal.confirmLabel}
-          onConfirm={() => { setConfirmModal(null); confirmModal.onConfirm(); }}
+      {/* Post-completion plugin slot */}
+      {isCompleted && (
+        <PluginSlot
+          slot="learnerCompletionAfter"
+          props={{ lessonId, lessonKB }}
         />
       )}
+
+      {/* Input area */}
+      <div className="border-t px-4 py-3">
+        {imageDataUrl && (
+          <div className="mb-2 relative inline-block">
+            <img
+              src={imageDataUrl}
+              alt="Preview"
+              className="max-h-24 rounded-lg border"
+            />
+            <button
+              onClick={() => setImageDataUrl(null)}
+              className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center"
+              aria-label="Remove image"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <div className="flex items-end gap-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending}
+            className="shrink-0 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
+            aria-label="Attach image"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageChange}
+          />
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={isCompleted ? 'Share feedback…' : 'Type a message… (Shift+Enter for new line)'}
+            disabled={sending}
+            rows={1}
+            style={{
+              lineHeight: `${TEXTAREA_LINE_HEIGHT}px`,
+              height: `${TEXTAREA_LINE_HEIGHT * TEXTAREA_MIN_ROWS}px`,
+              overflowY: 'hidden',
+            }}
+            className="flex-1 resize-none rounded-xl border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="shrink-0 p-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+            aria-label="Send message"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
