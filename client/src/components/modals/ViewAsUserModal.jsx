@@ -75,7 +75,7 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
         <DialogHeader>
           <DialogTitle>View as User</DialogTitle>
           <DialogDescription>
-            See the classroom as a specific learner. Compose input is disabled — this is a read-only audit view.
+            See the classroom as a specific learner — read-only.
           </DialogDescription>
         </DialogHeader>
 

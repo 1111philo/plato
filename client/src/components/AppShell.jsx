@@ -86,7 +86,7 @@ export default function AppShell({ children }) {
         >
           <div className="mx-auto max-w-5xl flex items-center w-full gap-3">
             <span className="flex-1">
-              Viewing as <strong>{impersonatedLabel}</strong> — input is disabled.
+              Viewing as <strong>{impersonatedLabel}</strong>
             </span>
             <button
               type="button"
