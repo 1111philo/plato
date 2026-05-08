@@ -347,8 +347,12 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
     parts.push({
       key: 'time',
       text: range,
+      // Tooltip-only context. SR reads the short visible "18–23 min"
+      // instead of a verbose "Estimated completion time …, based on N
+      // learners" override — that footnote, repeated on every Tab
+      // through the grid, adds up fast. Sighted hover still surfaces
+      // the empirical detail.
       title: `Based on the middle 60% of ${timeStats.sampleSize} ${completionWord}`,
-      aria: `Estimated completion time ${range}, based on ${timeStats.sampleSize} ${completionWord}`,
     });
   }
 
@@ -406,16 +410,7 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
               <span className="whitespace-nowrap">
                 {idx > 0 && <span aria-hidden="true">· </span>}
                 {part.title ? (
-                  // aria-label on a plain <span> is ignored by most screen
-                  // readers (no implicit role to attach the label to). Use
-                  // the visually-hidden pattern instead: aria-hidden on the
-                  // visible text + a sibling sr-only span with the full
-                  // description. The native `title` tooltip still fires on
-                  // hover for sighted users.
-                  <span title={part.title}>
-                    <span aria-hidden="true">{part.text}</span>
-                    <span className="sr-only">{part.aria}</span>
-                  </span>
+                  <span title={part.title}>{part.text}</span>
                 ) : part.text}
               </span>
             </Fragment>
