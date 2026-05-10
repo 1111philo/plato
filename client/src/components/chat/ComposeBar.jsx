@@ -14,11 +14,12 @@ export default function ComposeBar({
   onImageChange,
 }) {
   const [localText, setLocalText] = useState('');
-  const [localImage, setLocalImage] = useState(null);
+  const [localImages, setLocalImages] = useState([]);
   const text = textProp !== undefined ? textProp : localText;
   const setText = onTextChange || setLocalText;
-  const image = imageProp !== undefined ? imageProp : localImage;
-  const setImage = onImageChange || setLocalImage;
+  // Support both legacy single-image prop and new array-based state
+  const images = imageProp !== undefined ? (imageProp ? [imageProp] : []) : localImages;
+  const setImages = onImageChange ? (imgs) => onImageChange(imgs[0] || null) : setLocalImages;
   const inputRef = useRef(null);
   const fileRef = useRef(null);
   const handleResize = useAutoResize();
@@ -42,10 +43,10 @@ export default function ComposeBar({
 
   const send = () => {
     const val = text.trim();
-    if ((!val && !image) || disabled) return;
-    const payload = { text: val || null, imageDataUrl: image?.dataUrl || null };
+    if ((!val && images.length === 0) || disabled) return;
+    const payload = { text: val || null, imageDataUrls: images.map(img => img.dataUrl) };
     setText('');
-    setImage(null);
+    setImages([]);
     if (inputRef.current) { inputRef.current.style.height = 'auto'; inputRef.current.style.overflowY = 'hidden'; }
     onSend(payload);
   };
@@ -53,16 +54,29 @@ export default function ComposeBar({
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Bedrock 5 MB limit
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith('image/')) return;
-    if (file.size > MAX_IMAGE_BYTES) {
-      alert('Image must be under 5 MB.');
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+
+    const oversized = imageFiles.filter(f => f.size > MAX_IMAGE_BYTES);
+    if (oversized.length > 0) {
+      alert(`${oversized.length} image(s) exceed the 5 MB limit and will be skipped.`);
+    }
+
+    const validFiles = imageFiles.filter(f => f.size <= MAX_IMAGE_BYTES);
+    if (validFiles.length === 0) {
       if (fileRef.current) fileRef.current.value = '';
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setImage({ dataUrl: reader.result, name: file.name });
-    reader.readAsDataURL(file);
+
+    Promise.all(validFiles.map(file => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve({ dataUrl: reader.result, name: file.name });
+      reader.readAsDataURL(file);
+    }))).then(newImages => {
+      setImages(prev => [...prev, ...newImages]);
+    });
+
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -80,30 +94,34 @@ export default function ComposeBar({
           return;
         }
         const reader = new FileReader();
-        reader.onload = () => setImage({ dataUrl: reader.result, name: file.name || 'pasted-image.png' });
+        reader.onload = () => setImages(prev => [...prev, { dataUrl: reader.result, name: file.name || 'pasted-image.png' }]);
         reader.readAsDataURL(file);
         return;
       }
     }
   };
 
-  const hasContent = text.trim() || image;
+  const hasContent = text.trim() || images.length > 0;
 
   return (
     <div className="px-4 pb-4 pt-2">
       <div className={`mx-auto max-w-3xl rounded-lg border border-input bg-background ${elevated ? 'shadow-lg' : ''}`}>
-        {image && (
-          <div className="relative m-2 inline-block">
-            <img src={image.dataUrl} alt={image.name} className="h-20 rounded-md object-cover" />
-            <Button
-              variant="secondary"
-              size="icon-xs"
-              className="absolute -top-1.5 -right-1.5 rounded-full"
-              onClick={() => setImage(null)}
-              aria-label="Remove image"
-            >
-              &times;
-            </Button>
+        {images.length > 0 && (
+          <div className="m-2 flex flex-wrap gap-2">
+            {images.map((img, idx) => (
+              <div key={idx} className="relative inline-block">
+                <img src={img.dataUrl} alt={img.name} className="h-20 rounded-md object-cover" />
+                <Button
+                  variant="secondary"
+                  size="icon-xs"
+                  className="absolute -top-1.5 -right-1.5 rounded-full"
+                  onClick={() => setImages(prev => prev.filter((_, i) => i !== idx))}
+                  aria-label={`Remove ${img.name}`}
+                >
+                  &times;
+                </Button>
+              </div>
+            ))}
           </div>
         )}
         <label htmlFor={inputId} className="sr-only">Your message</label>
@@ -128,16 +146,17 @@ export default function ComposeBar({
                 ref={fileRef}
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={handleFileChange}
                 className="sr-only"
-                aria-label="Upload image"
+                aria-label="Upload images"
               />
               <Button
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => fileRef.current?.click()}
                 disabled={disabled}
-                aria-label="Attach image"
+                aria-label="Attach images"
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>

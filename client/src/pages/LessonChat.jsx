@@ -183,8 +183,8 @@ export default function LessonChat() {
     return () => { cancelled = true; };
   }, [lessonGroupId, lesson, impersonating]);
 
-  const handleSend = useCallback(async ({ text, imageDataUrl }) => {
-    if (!text && !imageDataUrl) return;
+  const handleSend = useCallback(async ({ text, imageDataUrls }) => {
+    if (!text && (!imageDataUrls || imageDataUrls.length === 0)) return;
     setError('');
     setLoading('qa');
     setStreamingText('');
@@ -192,13 +192,13 @@ export default function LessonChat() {
     setMessages(prev => [...prev, {
       role: 'user', content: text || '', msgType: MSG_TYPES.USER,
       phase: LESSON_PHASES.LEARNING,
-      metadata: imageDataUrl ? { imageDataUrl } : null,
+      metadata: imageDataUrls?.length ? { imageDataUrls } : null,
       timestamp: Date.now(),
     }]);
 
     try {
       const result = await engine.sendMessage(
-        lessonGroupId, lesson, text, imageDataUrl,
+        lessonGroupId, lesson, text, imageDataUrls,
         (partial) => setStreamingText(partial)
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
@@ -267,6 +267,15 @@ export default function LessonChat() {
         return (
           <div key={idx}>
             {msg.content && <UserMessage content={msg.content} />}
+            {msg.metadata?.imageDataUrls?.length > 0 && (
+              <div className="flex justify-end mt-1">
+                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary p-1.5 flex flex-wrap gap-1.5">
+                  {msg.metadata.imageDataUrls.map((url, i) => (
+                    <img key={i} src={url} alt={`Your uploaded work ${i + 1}`} className="max-w-full rounded-lg" />
+                  ))}
+                </div>
+              </div>
+            )}
             {msg.metadata?.imageDataUrl && (
               <div className="flex justify-end mt-1">
                 <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-primary p-1.5">

@@ -179,18 +179,21 @@ export async function startLesson(lessonId, lesson, onStream) {
 /**
  * Send a message in the lesson conversation.
  */
-export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream) {
+export async function sendMessage(lessonId, lesson, text, imageDataUrls, onStream) {
   assertNotImpersonating('send a message');
   let lessonKB = await getLessonKB(lessonId);
   const profileSummary = await getLearnerProfileSummary();
 
-  assertImageWithinBedrockLimit(imageDataUrl);
+  // Normalize to array (backward compat: accept single string or array)
+  const images = Array.isArray(imageDataUrls) ? imageDataUrls : (imageDataUrls ? [imageDataUrls] : []);
+  images.forEach(img => assertImageWithinBedrockLimit(img));
 
-  // Save image if provided
-  let imageKey = null;
-  if (imageDataUrl) {
-    imageKey = `lesson-${lessonId}-${ts()}`;
+  // Save images if provided
+  const imageKeys = [];
+  for (const imageDataUrl of images) {
+    const imageKey = `lesson-${lessonId}-${ts()}`;
     await saveScreenshot(imageKey, imageDataUrl);
+    imageKeys.push(imageKey);
   }
 
   // Build conversation tail — filter out messages with empty content (e.g. image-only)
@@ -202,7 +205,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   // Build user message content
   const userParts = [];
   if (text) userParts.push({ type: 'text', text });
-  if (imageDataUrl) {
+  for (const imageDataUrl of images) {
     const match = imageDataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
     if (match) {
       userParts.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
@@ -213,7 +216,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
   const prefs = await getPreferences();
   const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name);
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
-  messages.push({ role: 'user', content: userParts.length === 1 && !imageDataUrl ? text : userParts });
+  messages.push({ role: 'user', content: userParts.length === 1 && images.length === 0 ? text : userParts });
 
   const coachMsg = await orchestrator.converseStream(
     'coach',
