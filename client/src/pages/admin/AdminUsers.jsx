@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PluginSlot } from '@/lib/plugins/Slot.jsx';
+import UserStatsPanel from './UserStatsPanel.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -84,7 +85,7 @@ export default function AdminUsers() {
     setLoading(true);
     try {
       const [usersRes, invitesRes, settingsRes, pluginsRes] = await Promise.all([
-        adminApi('GET', '/v1/admin/users'),
+        adminApi('GET', '/v1/admin/users?include=stats'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/plugins').catch(() => []),
@@ -473,6 +474,9 @@ export default function AdminUsers() {
             <PluginSlot name="adminProfileFields" context={{ user: editUser }} />
           </CardContent>
         </Card>
+        <div className="mt-4">
+          <UserStatsPanel key={editUser.userId} userId={editUser.userId} />
+        </div>
       </div>
     );
   }
@@ -546,6 +550,8 @@ export default function AdminUsers() {
                   <TableHead>Group</TableHead>
                   <TableHead>Role</TableHead>
                   {slackConnected && <TableHead>Slack</TableHead>}
+                  <TableHead className="text-right">Mastered</TableHead>
+                  <TableHead>Last active</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
@@ -559,6 +565,8 @@ export default function AdminUsers() {
                     <TableCell>&mdash;</TableCell>
                     <TableCell><Badge variant="outline">Invited</Badge></TableCell>
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
+                    <TableCell className="text-muted-foreground text-right">&mdash;</TableCell>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -590,6 +598,16 @@ export default function AdminUsers() {
                         ) : <span className="text-muted-foreground">&mdash;</span>}
                       </TableCell>
                     )}
+                    <TableCell className="text-right tabular-nums">
+                      {typeof item._user.lessonsMastered === 'number'
+                        ? item._user.lessonsMastered
+                        : <span className="text-muted-foreground">&mdash;</span>}
+                    </TableCell>
+                    <TableCell>
+                      {item._user.lastActiveAt
+                        ? new Date(item._user.lastActiveAt).toLocaleDateString()
+                        : <span className="text-muted-foreground">&mdash;</span>}
+                    </TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>

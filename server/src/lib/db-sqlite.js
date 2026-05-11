@@ -315,6 +315,13 @@ const db = {
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(logId, action, userId, email, performedBy, details ? JSON.stringify(details) : null, now);
   },
+
+  async listAuditLogsForUser(userId, sinceIso) {
+    const rows = sinceIso
+      ? sqlite.prepare('SELECT * FROM audit_log WHERE userId = ? AND createdAt >= ? ORDER BY createdAt DESC').all(userId, sinceIso)
+      : sqlite.prepare('SELECT * FROM audit_log WHERE userId = ? ORDER BY createdAt DESC').all(userId);
+    return rows.map((r) => ({ ...r, details: r.details ? JSON.parse(r.details) : null }));
+  },
 };
 
 export default db;

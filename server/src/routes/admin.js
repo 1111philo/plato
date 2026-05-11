@@ -5,7 +5,7 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
-import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-limits.js';
+import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
@@ -44,9 +44,15 @@ function normalizeStatus(status, hasMarkdown = true) {
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
+// Pass `?include=stats` to enrich each row with `lessonsMastered` and
+// `lastActiveAt` (derived from a per-user sync-data scan). Opt-in because
+// the scan is O(users × items/user) and most callers (modals, dropdowns)
+// don't need it.
 admin.get('/v1/admin/users', async (c) => {
+  const url = new URL(c.req.url);
+  const includeStats = (url.searchParams.get('include') || '').split(',').includes('stats');
   const users = await db.listAllUsers();
-  return c.json(users.map((p) => ({
+  const baseRow = (p) => ({
     userId: p.userId,
     email: p.email,
     username: p.username,
@@ -55,7 +61,33 @@ admin.get('/v1/admin/users', async (c) => {
     role: p.role,
     slackUserId: p.slackUserId || null,
     createdAt: p.createdAt,
-  })));
+  });
+  if (!includeStats) {
+    return c.json(users.map(baseRow));
+  }
+  const enriched = await Promise.all(users.map(async (p) => {
+    const items = await db.getAllSyncData(p.userId);
+    let lessonsMastered = 0;
+    let lastActiveMs = 0;
+    for (const item of items) {
+      if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
+        lessonsMastered++;
+      } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
+        for (const m of item.data) {
+          const t = typeof m?.timestamp === 'number' ? m.timestamp
+            : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
+            : NaN;
+          if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
+        }
+      }
+    }
+    return {
+      ...baseRow(p),
+      lessonsMastered,
+      lastActiveAt: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
+    };
+  }));
+  return c.json(enriched);
 });
 
 // GET /v1/admin/users/:userId
@@ -899,6 +931,134 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     avgExchangesOverTarget: overTarget ? +(totalExchangesOver / overTarget).toFixed(1) : null,
     avgDurationMinutes,
     activeLessons,
+  });
+});
+
+// GET /v1/admin/users/:userId/stats — per-user activity metrics for the
+// admin user-detail panel (issue #136). Computed on demand from sync-data +
+// audit-log; no precomputation. Window is the last `days` calendar days
+// (default 30) in UTC.
+//
+// Duration is exchange-based (activitiesCompleted × MINS_PER_EXCHANGE) to
+// match `/v1/admin/stats/lessons` and AdminHome — wall-clock minutes inflate
+// from multi-session lessons. Engagement uses message timestamps bucketed
+// into 5-minute windows and is the closest proxy for "active learning time"
+// without adding heartbeat tracking. Logins are read from the audit-log
+// (`user_login` events, scan-with-filter — fine at current scale).
+admin.get('/v1/admin/users/:userId/stats', async (c) => {
+  const userId = c.req.param('userId');
+  const user = await db.getUserById(userId);
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  const url = new URL(c.req.url);
+  const daysParam = parseInt(url.searchParams.get('days') || '30', 10);
+  const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 365 ? daysParam : 30;
+  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
+  const sinceIso = new Date(sinceMs).toISOString();
+
+  // Lesson name lookup
+  const systemItems = await db.getAllSyncData('_system');
+  const lessonNames = new Map();
+  for (const item of systemItems) {
+    if (item.dataKey?.startsWith('lesson:')) {
+      const id = item.dataKey.slice('lesson:'.length);
+      lessonNames.set(id, item.data?.name || id);
+    }
+  }
+
+  const syncItems = await db.getAllSyncData(userId);
+  let lessonsMastered = 0;
+  let lessonsInProgress = 0;
+  const lessonDurations = []; // { lessonId, lessonName, exchanges, minutes, completedAt }
+  const masteredDayCounts = new Map();   // yyyy-mm-dd -> n
+  const engagementWindows = new Map();   // yyyy-mm-dd -> Set<windowIndex>
+
+  const WINDOW_MS = 5 * 60 * 1000;
+  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+  for (const item of syncItems) {
+    if (item.dataKey?.startsWith('lessonKB:')) {
+      const kb = item.data;
+      if (!kb) continue;
+      const lessonId = item.dataKey.slice('lessonKB:'.length);
+      const name = lessonNames.get(lessonId) || lessonId;
+      if (kb.status === 'completed') {
+        lessonsMastered++;
+        const exchanges = kb.activitiesCompleted || 0;
+        const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
+        const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
+          : typeof kb.completedAt === 'string' ? Date.parse(kb.completedAt)
+          : null;
+        lessonDurations.push({
+          lessonId, lessonName: name, exchanges, minutes,
+          completedAt: completedAtMs ? new Date(completedAtMs).toISOString() : null,
+        });
+        if (completedAtMs && completedAtMs >= sinceMs) {
+          const k = dayKey(completedAtMs);
+          masteredDayCounts.set(k, (masteredDayCounts.get(k) || 0) + 1);
+        }
+      } else if ((kb.activitiesCompleted || 0) > 0) {
+        lessonsInProgress++;
+      }
+    } else if (item.dataKey?.startsWith('messages:')) {
+      const msgs = Array.isArray(item.data) ? item.data : [];
+      for (const m of msgs) {
+        const t = typeof m?.timestamp === 'number' ? m.timestamp
+          : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
+          : null;
+        if (!t || t < sinceMs) continue;
+        const k = dayKey(t);
+        if (!engagementWindows.has(k)) engagementWindows.set(k, new Set());
+        engagementWindows.get(k).add(Math.floor(t / WINDOW_MS));
+      }
+    }
+  }
+
+  // Logins from audit-log
+  const auditEntries = await db.listAuditLogsForUser(userId, sinceIso);
+  const loginDayCounts = new Map();
+  for (const entry of auditEntries) {
+    if (entry.action !== 'user_login') continue;
+    const t = Date.parse(entry.createdAt);
+    if (!Number.isFinite(t)) continue;
+    const k = dayKey(t);
+    loginDayCounts.set(k, (loginDayCounts.get(k) || 0) + 1);
+  }
+
+  // Zero-fill day arrays
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const dayArrays = { engagementMinutesByDay: [], loginsByDay: [], masteredByDay: [] };
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+    const k = d.toISOString().slice(0, 10);
+    dayArrays.engagementMinutesByDay.push({
+      date: k,
+      minutes: (engagementWindows.get(k)?.size || 0) * 5,
+    });
+    dayArrays.loginsByDay.push({ date: k, count: loginDayCounts.get(k) || 0 });
+    dayArrays.masteredByDay.push({ date: k, count: masteredDayCounts.get(k) || 0 });
+  }
+
+  // Percentiles over all completed lessons (not just last `days` — career stats)
+  const sorted = lessonDurations.map((l) => l.minutes).sort((a, b) => a - b);
+  const pct = (p) => {
+    if (sorted.length === 0) return null;
+    const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+    return sorted[idx];
+  };
+
+  lessonDurations.sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
+
+  return c.json({
+    userId,
+    windowDays: days,
+    lessonsMastered,
+    lessonsInProgress,
+    minutesToMasteryP50: pct(50),
+    minutesToMasteryP90: pct(90),
+    lessonDurations,
+    ...dayArrays,
   });
 });
 

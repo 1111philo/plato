@@ -101,6 +101,7 @@ describe('POST /v1/auth/login', () => {
   beforeEach(() => {
     db.storeRefreshToken = async () => {};
     db.getUserByUsername = async () => null;
+    db.createAuditLog = async () => {};
   });
 
   it('logs in with correct credentials', async () => {

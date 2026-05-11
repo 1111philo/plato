@@ -309,6 +309,26 @@ const db = {
       Item: { logId, action, userId, email, performedBy, details: details || null, createdAt: now },
     }));
   },
+
+  // Full-table Scan with filter — the audit-log table has no GSI on userId.
+  // Fine at current scale; add a userId-createdAt GSI when the table grows
+  // past ~100k entries.
+  async listAuditLogsForUser(userId, sinceIso) {
+    const items = [];
+    let lastKey;
+    do {
+      const result = await doc.send(new ScanCommand({
+        TableName: AUDIT_LOG_TABLE,
+        FilterExpression: sinceIso ? '#u = :u AND createdAt >= :since' : '#u = :u',
+        ExpressionAttributeNames: { '#u': 'userId' },
+        ExpressionAttributeValues: sinceIso ? { ':u': userId, ':since': sinceIso } : { ':u': userId },
+        ExclusiveStartKey: lastKey,
+      }));
+      items.push(...(result.Items || []));
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+    return items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  },
 };
 
 export default db;

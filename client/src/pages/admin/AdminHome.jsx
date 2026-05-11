@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
+import { MINS_PER_EXCHANGE } from '@/lib/constants.js';
 
 // Estimate active lesson time from exchange count.
 // Wall-clock duration (completedAt - startedAt) is unreliable because learners
 // often leave tabs open between sessions. 1.8 min/exchange matches observed
 // pacing for the ~20 min / 11 exchange target.
-const MINS_PER_EXCHANGE = 1.8;
-
 function estimateDuration(avgExchangesPerCompletion) {
   if (avgExchangesPerCompletion == null) return null;
   return Math.round(avgExchangesPerCompletion * MINS_PER_EXCHANGE * 10) / 10;

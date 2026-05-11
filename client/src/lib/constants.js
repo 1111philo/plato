@@ -5,6 +5,11 @@ export const MAX_EXCHANGES = 11;
 export const MIN_OBJECTIVES = 2;
 export const MAX_OBJECTIVES = 4;
 
+// Exchange-based duration estimate. 11 exchanges ≈ 20 min target.
+// Used for derived duration metrics (admin dashboard) instead of wall-clock,
+// which inflates from multi-session or abandoned-then-resumed lessons.
+export const MINS_PER_EXCHANGE = 1.8;
+
 export const VIEW_DEPTH = {
   '/onboarding': 0,
   '/lessons': 1,

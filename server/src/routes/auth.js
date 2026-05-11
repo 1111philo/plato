@@ -185,6 +185,13 @@ auth.post('/v1/auth/login', async (c) => {
   const refreshToken = generateRefreshToken();
   await db.storeRefreshToken(hashToken(refreshToken), user.userId);
 
+  await db.createAuditLog({
+    action: 'user_login',
+    userId: user.userId,
+    email: user.email,
+    performedBy: user.userId,
+  });
+
   return c.json({
     accessToken,
     refreshToken,

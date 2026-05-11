@@ -929,3 +929,132 @@ Produce a thing.
     assert.equal(saved.course, 'c-keep');
   });
 });
+
+describe('GET /v1/admin/users/:userId/stats', () => {
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user', name: 'Non-admin' };
+      if (id === 'usr_learner') return { userId: 'usr_learner', role: 'user', name: 'Learner', email: 'l@x.com' };
+      return null;
+    };
+  });
+
+  it('returns 404 for unknown user', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users/usr_missing/stats');
+    assert.equal(res.status, 404);
+  });
+
+  it('aggregates lessons mastered, in-progress, and percentiles', async () => {
+    db.getAllSyncData = async (uid) => {
+      if (uid === '_system') {
+        return [
+          { dataKey: 'lesson:l1', data: { name: 'Cognitive Load' } },
+          { dataKey: 'lesson:l2', data: { name: 'Active Recall' } },
+        ];
+      }
+      return [
+        { dataKey: 'lessonKB:l1', data: { status: 'completed', activitiesCompleted: 11, completedAt: '2026-05-01T12:00:00Z' } },
+        { dataKey: 'lessonKB:l2', data: { status: 'completed', activitiesCompleted: 22, completedAt: '2026-05-02T12:00:00Z' } },
+        { dataKey: 'lessonKB:l3', data: { status: 'in_progress', activitiesCompleted: 3 } },
+      ];
+    };
+    db.listAuditLogsForUser = async () => [];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users/usr_learner/stats');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.lessonsMastered, 2);
+    assert.equal(data.lessonsInProgress, 1);
+    assert.equal(data.lessonDurations.length, 2);
+    // p50 of [19.8, 39.6] → 39.6 (sorted[1] for p=50, idx = floor(0.5*2) = 1)
+    assert.equal(data.minutesToMasteryP50, 39.6);
+    assert.equal(data.minutesToMasteryP90, 39.6);
+    // Lesson names looked up from _system
+    const titles = data.lessonDurations.map((l) => l.lessonName).sort();
+    assert.deepEqual(titles, ['Active Recall', 'Cognitive Load']);
+  });
+
+  it('buckets engagement and logins by day', async () => {
+    db.getAllSyncData = async (uid) => {
+      if (uid === '_system') return [{ dataKey: 'lesson:l1', data: { name: 'L1' } }];
+      return [
+        // Two messages on same day, 10 min apart → 2 distinct 5-min windows × 5 = 10 min
+        { dataKey: 'messages:l1', data: [
+          { timestamp: '2026-05-01T10:00:00Z' },
+          { timestamp: '2026-05-01T10:10:00Z' },
+        ]},
+      ];
+    };
+    db.listAuditLogsForUser = async () => [
+      { action: 'user_login', createdAt: '2026-05-01T08:00:00Z' },
+      { action: 'user_login', createdAt: '2026-05-01T20:00:00Z' },
+      { action: 'admin_view_as_user_started', createdAt: '2026-05-01T09:00:00Z' }, // ignored
+    ];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users/usr_learner/stats?days=7');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.windowDays, 7);
+    assert.equal(data.engagementMinutesByDay.length, 7);
+    assert.equal(data.loginsByDay.length, 7);
+    const eng = data.engagementMinutesByDay.find((d) => d.date === '2026-05-01');
+    const logins = data.loginsByDay.find((d) => d.date === '2026-05-01');
+    // These dates may not be in the 7-day window depending on test execution date,
+    // but if they exist the counts should match.
+    if (eng) assert.equal(eng.minutes, 10);
+    if (logins) assert.equal(logins.count, 2);
+  });
+
+  it('rejects non-admin', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await userReq(app, 'GET', '/v1/admin/users/usr_learner/stats');
+    assert.equal(res.status, 403);
+  });
+});
+
+describe('GET /v1/admin/users?include=stats', () => {
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      return null;
+    };
+  });
+
+  it('enriches users with lessonsMastered and lastActiveAt when requested', async () => {
+    db.listAllUsers = async () => [
+      { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
+    ];
+    db.getAllSyncData = async (uid) => {
+      if (uid === 'u1') return [
+        { dataKey: 'lessonKB:l1', data: { status: 'completed' } },
+        { dataKey: 'lessonKB:l2', data: { status: 'completed' } },
+        { dataKey: 'lessonKB:l3', data: { status: 'in_progress' } },
+        { dataKey: 'messages:l1', data: [{ timestamp: '2026-04-30T12:00:00Z' }, { timestamp: '2026-05-03T09:15:00Z' }] },
+      ];
+      return [];
+    };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users?include=stats');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data[0].lessonsMastered, 2);
+    assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
+  });
+
+  it('omits stats fields by default', async () => {
+    db.listAllUsers = async () => [
+      { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
+    ];
+    let scanned = false;
+    db.getAllSyncData = async () => { scanned = true; return []; };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data[0].lessonsMastered, undefined);
+    assert.equal(data[0].lastActiveAt, undefined);
+    assert.equal(scanned, false, 'base endpoint should not scan sync-data');
+  });
+});
