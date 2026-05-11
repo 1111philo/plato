@@ -554,7 +554,7 @@ export default function AdminUsers() {
             <PluginSlot name="adminProfileFields" context={{ user: editUser }} />
           </CardContent>
         </Card>
-        <div className="mt-4">
+        <div className="mt-4 mb-8">
           <UserStatsPanel key={editUser.userId} userId={editUser.userId} />
         </div>
       </div>
