@@ -36,6 +36,8 @@ export default function ComposeBar({
   const fileRef = useRef(null);
   const handleResize = useAutoResize();
   const inputId = useId();
+  const statusId = useId();
+  const [loadingCount, setLoadingCount] = useState(0);
 
   // The lesson chat mounts two ComposeBar instances — an inline one and a
   // fixed-overlay one — and a window-scroll listener swaps which is visible
@@ -88,6 +90,7 @@ export default function ComposeBar({
     if (!valid.length) return;
 
     setLoadingImages(true);
+    setLoadingCount(valid.length);
     try {
       const loaded = await Promise.all(valid.map(readImageAsDataUrl));
       setImages([...images, ...loaded].slice(0, MAX_IMAGES));
@@ -95,6 +98,7 @@ export default function ComposeBar({
       alert('Failed to read image. Please try again.');
     } finally {
       setLoadingImages(false);
+      setLoadingCount(0);
     }
   };
 
@@ -140,7 +144,7 @@ export default function ComposeBar({
                   size="icon-xs"
                   className="absolute -top-1.5 -right-1.5 rounded-full"
                   onClick={() => removeImage(idx)}
-                  aria-label={`Remove image ${img.name}`}
+                  aria-label={`Remove ${img.name}`}
                 >
                   &times;
                 </Button>
@@ -173,22 +177,26 @@ export default function ComposeBar({
                 multiple
                 onChange={handleFileChange}
                 className="sr-only"
-                aria-label="Upload image"
+                aria-label={`Upload images (up to ${MAX_IMAGES})`}
               />
               <Button
                 variant="ghost"
                 size="icon-sm"
                 onClick={() => fileRef.current?.click()}
                 disabled={disabled || images.length >= MAX_IMAGES}
-                aria-label="Attach image"
+                aria-label={images.length >= MAX_IMAGES
+                  ? `Maximum ${MAX_IMAGES} images attached`
+                  : 'Attach images'}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
               </Button>
-              {loadingImages && (
-                <span className="text-xs text-muted-foreground" role="status" aria-live="polite">Loading image…</span>
-              )}
+              {/* Persistent live region — keeps the same node mounted so transitions
+                  (e.g. "Loading 3 images…" → cleared) are announced reliably. */}
+              <span id={statusId} className="text-xs text-muted-foreground" role="status" aria-live="polite">
+                {loadingImages ? `Loading ${loadingCount} image${loadingCount === 1 ? '' : 's'}…` : ''}
+              </span>
             </>
           )}
           <div className="flex-1" />
@@ -197,6 +205,7 @@ export default function ComposeBar({
             size="icon-sm"
             className={`transition-opacity ${hasContent ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
             aria-label="Send"
+            aria-describedby={allowImages && loadingImages ? statusId : undefined}
             onClick={send}
             disabled={disabled || !hasContent || loadingImages}
           >
