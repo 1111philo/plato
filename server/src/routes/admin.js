@@ -44,7 +44,7 @@ function normalizeStatus(status, hasMarkdown = true) {
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
-// Pass `?include=stats` to enrich each row with `lessonsMastered` and
+// Pass `?include=stats` to enrich each row with `lessonsCompleted` and
 // `lastActiveAt` (derived from a per-user sync-data scan). Opt-in because
 // the scan is O(users × items/user) and most callers (modals, dropdowns)
 // don't need it.
@@ -67,11 +67,11 @@ admin.get('/v1/admin/users', async (c) => {
   }
   const enriched = await Promise.all(users.map(async (p) => {
     const items = await db.getAllSyncData(p.userId);
-    let lessonsMastered = 0;
+    let lessonsCompleted = 0;
     let lastActiveMs = 0;
     for (const item of items) {
       if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
-        lessonsMastered++;
+        lessonsCompleted++;
       } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
         for (const m of item.data) {
           const t = typeof m?.timestamp === 'number' ? m.timestamp
@@ -83,7 +83,7 @@ admin.get('/v1/admin/users', async (c) => {
     }
     return {
       ...baseRow(p),
-      lessonsMastered,
+      lessonsCompleted,
       lastActiveAt: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
     };
   }));
@@ -967,10 +967,10 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   }
 
   const syncItems = await db.getAllSyncData(userId);
-  let lessonsMastered = 0;
+  let lessonsCompleted = 0;
   let lessonsInProgress = 0;
   const lessonDurations = []; // { lessonId, lessonName, exchanges, minutes, completedAt }
-  const masteredDayCounts = new Map();   // yyyy-mm-dd -> n
+  const completedDayCounts = new Map();  // yyyy-mm-dd -> n
   const engagementWindows = new Map();   // yyyy-mm-dd -> Set<windowIndex>
 
   const WINDOW_MS = 5 * 60 * 1000;
@@ -983,7 +983,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
       const lessonId = item.dataKey.slice('lessonKB:'.length);
       const name = lessonNames.get(lessonId) || lessonId;
       if (kb.status === 'completed') {
-        lessonsMastered++;
+        lessonsCompleted++;
         const exchanges = kb.activitiesCompleted || 0;
         const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
         const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
@@ -995,7 +995,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
         });
         if (completedAtMs && completedAtMs >= sinceMs) {
           const k = dayKey(completedAtMs);
-          masteredDayCounts.set(k, (masteredDayCounts.get(k) || 0) + 1);
+          completedDayCounts.set(k, (completedDayCounts.get(k) || 0) + 1);
         }
       } else if ((kb.activitiesCompleted || 0) > 0) {
         lessonsInProgress++;
@@ -1028,7 +1028,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   // Zero-fill day arrays
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  const dayArrays = { engagementMinutesByDay: [], loginsByDay: [], masteredByDay: [] };
+  const dayArrays = { engagementMinutesByDay: [], loginsByDay: [], completedByDay: [] };
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
     const k = d.toISOString().slice(0, 10);
@@ -1037,7 +1037,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
       minutes: (engagementWindows.get(k)?.size || 0) * 5,
     });
     dayArrays.loginsByDay.push({ date: k, count: loginDayCounts.get(k) || 0 });
-    dayArrays.masteredByDay.push({ date: k, count: masteredDayCounts.get(k) || 0 });
+    dayArrays.completedByDay.push({ date: k, count: completedDayCounts.get(k) || 0 });
   }
 
   // Percentiles over all completed lessons (not just last `days` — career stats)
@@ -1053,10 +1053,10 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   return c.json({
     userId,
     windowDays: days,
-    lessonsMastered,
+    lessonsCompleted,
     lessonsInProgress,
-    minutesToMasteryP50: pct(50),
-    minutesToMasteryP90: pct(90),
+    completionMinutesP50: pct(50),
+    completionMinutesP90: pct(90),
     lessonDurations,
     ...dayArrays,
   });

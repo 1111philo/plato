@@ -946,7 +946,7 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     assert.equal(res.status, 404);
   });
 
-  it('aggregates lessons mastered, in-progress, and percentiles', async () => {
+  it('aggregates lessons completed, in-progress, and percentiles', async () => {
     db.getAllSyncData = async (uid) => {
       if (uid === '_system') {
         return [
@@ -965,12 +965,12 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     const res = await adminReq(app, 'GET', '/v1/admin/users/usr_learner/stats');
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.equal(data.lessonsMastered, 2);
+    assert.equal(data.lessonsCompleted, 2);
     assert.equal(data.lessonsInProgress, 1);
     assert.equal(data.lessonDurations.length, 2);
     // p50 of [19.8, 39.6] → 39.6 (sorted[1] for p=50, idx = floor(0.5*2) = 1)
-    assert.equal(data.minutesToMasteryP50, 39.6);
-    assert.equal(data.minutesToMasteryP90, 39.6);
+    assert.equal(data.completionMinutesP50, 39.6);
+    assert.equal(data.completionMinutesP90, 39.6);
     // Lesson names looked up from _system
     const titles = data.lessonDurations.map((l) => l.lessonName).sort();
     assert.deepEqual(titles, ['Active Recall', 'Cognitive Load']);
@@ -1022,7 +1022,7 @@ describe('GET /v1/admin/users?include=stats', () => {
     };
   });
 
-  it('enriches users with lessonsMastered and lastActiveAt when requested', async () => {
+  it('enriches users with lessonsCompleted and lastActiveAt when requested', async () => {
     db.listAllUsers = async () => [
       { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
     ];
@@ -1039,7 +1039,7 @@ describe('GET /v1/admin/users?include=stats', () => {
     const res = await adminReq(app, 'GET', '/v1/admin/users?include=stats');
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.equal(data[0].lessonsMastered, 2);
+    assert.equal(data[0].lessonsCompleted, 2);
     assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
   });
 
@@ -1053,7 +1053,7 @@ describe('GET /v1/admin/users?include=stats', () => {
     const res = await adminReq(app, 'GET', '/v1/admin/users');
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.equal(data[0].lessonsMastered, undefined);
+    assert.equal(data[0].lessonsCompleted, undefined);
     assert.equal(data[0].lastActiveAt, undefined);
     assert.equal(scanned, false, 'base endpoint should not scan sync-data');
   });

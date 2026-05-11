@@ -67,9 +67,9 @@ export default function UserStatsPanel({ userId }) {
   }
 
   const {
-    lessonsMastered, lessonsInProgress,
-    minutesToMasteryP50, minutesToMasteryP90,
-    engagementMinutesByDay = [], loginsByDay = [], masteredByDay = [],
+    lessonsCompleted, lessonsInProgress,
+    completionMinutesP50, completionMinutesP90,
+    engagementMinutesByDay = [], loginsByDay = [], completedByDay = [],
     lessonDurations = [], windowDays,
   } = stats;
 
@@ -81,19 +81,19 @@ export default function UserStatsPanel({ userId }) {
         <h2 className="text-lg font-semibold">Activity <span className="text-sm font-normal text-muted-foreground">(last {windowDays} days)</span></h2>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatTile label="Lessons mastered" value={lessonsMastered} />
+          <StatTile label="Lessons completed" value={lessonsCompleted} />
           <StatTile label="In progress" value={lessonsInProgress} />
           <StatTile label={`Logins (${windowDays}d)`} value={totalLogins} />
           <StatTile
-            label="Time to mastery"
-            value={minutesToMasteryP50 != null ? `${minutesToMasteryP50} min` : '—'}
-            sub={minutesToMasteryP90 != null ? `p90: ${minutesToMasteryP90} min` : null}
+            label="Completion time"
+            value={completionMinutesP50 != null ? `${completionMinutesP50} min` : '—'}
+            sub={completionMinutesP90 != null ? `p90: ${completionMinutesP90} min` : null}
           />
         </div>
 
         <div className="grid md:grid-cols-3 gap-4">
           <Sparkline data={engagementMinutesByDay} valueKey="minutes" label="Engagement / day" formatValue={(v) => `${v} min total`} />
-          <Sparkline data={masteredByDay} valueKey="count" label="Mastered / day" formatValue={(v) => `${v} total`} />
+          <Sparkline data={completedByDay} valueKey="count" label="Completed / day" formatValue={(v) => `${v} total`} />
           <Sparkline data={loginsByDay} valueKey="count" label="Logins / day" formatValue={(v) => `${v} total`} />
         </div>
 

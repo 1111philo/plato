@@ -550,7 +550,7 @@ export default function AdminUsers() {
                   <TableHead>Group</TableHead>
                   <TableHead>Role</TableHead>
                   {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead className="text-right">Mastered</TableHead>
+                  <TableHead className="text-right">Completed</TableHead>
                   <TableHead>Last active</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
@@ -599,8 +599,8 @@ export default function AdminUsers() {
                       </TableCell>
                     )}
                     <TableCell className="text-right tabular-nums">
-                      {typeof item._user.lessonsMastered === 'number'
-                        ? item._user.lessonsMastered
+                      {typeof item._user.lessonsCompleted === 'number'
+                        ? item._user.lessonsCompleted
                         : <span className="text-muted-foreground">&mdash;</span>}
                     </TableCell>
                     <TableCell>
