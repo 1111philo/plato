@@ -18,6 +18,18 @@ jobs:
         with:
           fetch-depth: 1
 
+      # Prevent the agent / claude-code-action from committing its own workspace
+      # artifacts (e.g. .claude-pr/CLAUDE.md, a context copy the action stages
+      # inside the checkout). Writing to .git/info/exclude is per-clone — no
+      # tracked .gitignore change required, and `git add -A` will respect it.
+      - name: Ignore Claude Action workspace artifacts
+        run: |
+          mkdir -p .git/info
+          {
+            echo '.claude-pr/'
+            echo '.claude/'
+          } >> .git/info/exclude
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
