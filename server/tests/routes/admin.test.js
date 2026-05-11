@@ -950,8 +950,10 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     db.getAllSyncData = async (uid) => {
       if (uid === '_system') {
         return [
-          { dataKey: 'lesson:l1', data: { name: 'Cognitive Load' } },
-          { dataKey: 'lesson:l2', data: { name: 'Active Recall' } },
+          { dataKey: 'lesson:l1', data: { name: 'Cognitive Load', status: 'public', markdown: '# L1' } },
+          { dataKey: 'lesson:l2', data: { name: 'Active Recall', status: 'public', markdown: '# L2' } },
+          { dataKey: 'lesson:l3', data: { name: 'Spaced Repetition', status: 'public', markdown: '# L3' } },
+          { dataKey: 'lesson:l4', data: { name: 'Draft Lesson', status: 'draft', markdown: '' } }, // excluded
         ];
       }
       return [
@@ -966,6 +968,7 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.lessonsCompleted, 2);
+    assert.equal(data.lessonsAvailable, 3, 'draft lesson should not count toward denominator');
     assert.equal(data.lessonsInProgress, 1);
     assert.equal(data.lessonDurations.length, 2);
     // p50 of [19.8, 39.6] → 39.6 (sorted[1] for p=50, idx = floor(0.5*2) = 1)
@@ -1022,11 +1025,17 @@ describe('GET /v1/admin/users?include=stats', () => {
     };
   });
 
-  it('enriches users with lessonsCompleted and lastActiveAt when requested', async () => {
+  it('enriches users with lessonsCompleted, lessonsAvailable, and lastActiveAt when requested', async () => {
     db.listAllUsers = async () => [
       { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
     ];
     db.getAllSyncData = async (uid) => {
+      if (uid === '_system') return [
+        { dataKey: 'lesson:l1', data: { status: 'public', markdown: '#' } },
+        { dataKey: 'lesson:l2', data: { status: 'public', markdown: '#' } },
+        { dataKey: 'lesson:l3', data: { status: 'private', markdown: '#', sharedWith: ['u1'] } },
+        { dataKey: 'lesson:l4', data: { status: 'private', markdown: '#', sharedWith: ['someone-else'] } },
+      ];
       if (uid === 'u1') return [
         { dataKey: 'lessonKB:l1', data: { status: 'completed' } },
         { dataKey: 'lessonKB:l2', data: { status: 'completed' } },
@@ -1040,6 +1049,7 @@ describe('GET /v1/admin/users?include=stats', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data[0].lessonsCompleted, 2);
+    assert.equal(data[0].lessonsAvailable, 3, 'l1 + l2 (public) + l3 (private, shared); l4 not shared with u1');
     assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
   });
 
@@ -1054,6 +1064,7 @@ describe('GET /v1/admin/users?include=stats', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data[0].lessonsCompleted, undefined);
+    assert.equal(data[0].lessonsAvailable, undefined);
     assert.equal(data[0].lastActiveAt, undefined);
     assert.equal(scanned, false, 'base endpoint should not scan sync-data');
   });

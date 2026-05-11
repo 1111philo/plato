@@ -41,6 +41,21 @@ function normalizeStatus(status, hasMarkdown = true) {
   return 'private';
 }
 
+// Count non-draft lessons visible to a given user (public + private-shared).
+// Mirrors the visibility logic in `/v1/lessons` (content.js).
+function countLessonsAvailableTo(userId, systemItems) {
+  let count = 0;
+  for (const i of systemItems) {
+    if (!i.dataKey?.startsWith('lesson:')) continue;
+    const status = normalizeStatus(i.data?.status, !!i.data?.markdown);
+    if (status === 'draft') continue;
+    if (status === 'public' || (Array.isArray(i.data?.sharedWith) && i.data.sharedWith.includes(userId))) {
+      count++;
+    }
+  }
+  return count;
+}
+
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
@@ -65,6 +80,7 @@ admin.get('/v1/admin/users', async (c) => {
   if (!includeStats) {
     return c.json(users.map(baseRow));
   }
+  const systemItems = await db.getAllSyncData('_system');
   const enriched = await Promise.all(users.map(async (p) => {
     const items = await db.getAllSyncData(p.userId);
     let lessonsCompleted = 0;
@@ -84,6 +100,7 @@ admin.get('/v1/admin/users', async (c) => {
     return {
       ...baseRow(p),
       lessonsCompleted,
+      lessonsAvailable: countLessonsAvailableTo(p.userId, systemItems),
       lastActiveAt: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
     };
   }));
@@ -1054,6 +1071,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
     userId,
     windowDays: days,
     lessonsCompleted,
+    lessonsAvailable: countLessonsAvailableTo(userId, systemItems),
     lessonsInProgress,
     completionMinutesP50: pct(50),
     completionMinutesP90: pct(90),

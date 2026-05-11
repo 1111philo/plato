@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
+import CompletionRing from './CompletionRing.jsx';
 
 function Sparkline({ data, valueKey, label, formatValue }) {
   const max = Math.max(1, ...data.map((d) => d[valueKey] || 0));
@@ -67,7 +68,7 @@ export default function UserStatsPanel({ userId }) {
   }
 
   const {
-    lessonsCompleted, lessonsInProgress,
+    lessonsCompleted, lessonsAvailable, lessonsInProgress,
     completionMinutesP50, completionMinutesP90,
     engagementMinutesByDay = [], loginsByDay = [], completedByDay = [],
     lessonDurations = [], windowDays,
@@ -80,12 +81,19 @@ export default function UserStatsPanel({ userId }) {
       <CardContent className="space-y-4">
         <h2 className="text-lg font-semibold">Activity <span className="text-sm font-normal text-muted-foreground">(last {windowDays} days)</span></h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatTile label="Lessons completed" value={lessonsCompleted} />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-center">
+          <div className="flex justify-center">
+            <CompletionRing
+              completed={lessonsCompleted}
+              available={lessonsAvailable}
+              size={96}
+              label="Lessons completed"
+            />
+          </div>
           <StatTile label="In progress" value={lessonsInProgress} />
           <StatTile label={`Logins (${windowDays}d)`} value={totalLogins} />
           <StatTile
-            label="Completion time"
+            label="Median completion time"
             value={completionMinutesP50 != null ? `${completionMinutesP50} min` : '—'}
             sub={completionMinutesP90 != null ? `p90: ${completionMinutesP90} min` : null}
           />

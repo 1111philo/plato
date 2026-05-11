@@ -15,6 +15,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 import UserStatsPanel from './UserStatsPanel.jsx';
+import CompletionRing from './CompletionRing.jsx';
 
 const PAGE_SIZE = 20;
 
@@ -550,7 +551,7 @@ export default function AdminUsers() {
                   <TableHead>Group</TableHead>
                   <TableHead>Role</TableHead>
                   {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead className="text-right">Completed</TableHead>
+                  <TableHead className="text-center">Completed</TableHead>
                   <TableHead>Last active</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
@@ -565,7 +566,7 @@ export default function AdminUsers() {
                     <TableCell>&mdash;</TableCell>
                     <TableCell><Badge variant="outline">Invited</Badge></TableCell>
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    <TableCell className="text-muted-foreground text-right">&mdash;</TableCell>
+                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
@@ -598,10 +599,18 @@ export default function AdminUsers() {
                         ) : <span className="text-muted-foreground">&mdash;</span>}
                       </TableCell>
                     )}
-                    <TableCell className="text-right tabular-nums">
-                      {typeof item._user.lessonsCompleted === 'number'
-                        ? item._user.lessonsCompleted
-                        : <span className="text-muted-foreground">&mdash;</span>}
+                    <TableCell className="text-center">
+                      {typeof item._user.lessonsCompleted === 'number' ? (
+                        <div className="inline-flex">
+                          <CompletionRing
+                            completed={item._user.lessonsCompleted}
+                            available={item._user.lessonsAvailable}
+                            size={40}
+                            strokeWidth={5}
+                            compact
+                          />
+                        </div>
+                      ) : <span className="text-muted-foreground">&mdash;</span>}
                     </TableCell>
                     <TableCell>
                       {item._user.lastActiveAt
