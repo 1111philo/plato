@@ -19,6 +19,27 @@ import CompletionRing from './CompletionRing.jsx';
 
 const PAGE_SIZE = 20;
 
+function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
+  const active = sortBy.key === sortKey;
+  const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
+  const cellAlign = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '';
+  const btnAlign = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center w-full' : '';
+  return (
+    <TableHead aria-sort={aria} className={cellAlign}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${btnAlign}`}
+      >
+        {children}
+        <span aria-hidden="true" className={`text-xs ${active ? '' : 'opacity-30'}`}>
+          {active ? (sortBy.dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </TableHead>
+  );
+}
+
 function parseCsvEmails(text) {
   const lines = text.split(/\r?\n/);
   const emails = [];
@@ -67,6 +88,7 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
 
   // Groups form
   const [newGroupName, setNewGroupName] = useState('');
@@ -406,12 +428,54 @@ export default function AdminUsers() {
     return list;
   }, [combinedList, filter, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = filteredList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  // Sort comparators. Nullish values always sort last regardless of direction
+  // so that invites (which lack user-stat fields) cluster predictably rather
+  // than ping-ponging between top and bottom on direction flip.
+  const sortKeyFns = {
+    name: (i) => i.name || i.email || '',
+    email: (i) => i.email || '',
+    username: (i) => i.username || '',
+    group: (i) => i.userGroup || '',
+    role: (i) => i.role || '',
+    completed: (i) => {
+      const c = i._user?.lessonsCompleted;
+      const a = i._user?.lessonsAvailable;
+      if (typeof c !== 'number' || typeof a !== 'number' || a <= 0) return null;
+      return c / a;
+    },
+    lastActive: (i) => i._user?.lastActiveAt || null,
+    date: (i) => i.createdAt || '',
+  };
+  const sortedList = useMemo(() => {
+    const keyFn = sortKeyFns[sortBy.key] || sortKeyFns.name;
+    const mult = sortBy.dir === 'desc' ? -1 : 1;
+    return [...filteredList].sort((a, b) => {
+      const va = keyFn(a);
+      const vb = keyFn(b);
+      const aNull = va == null || va === '';
+      const bNull = vb == null || vb === '';
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;   // nullish always last
+      if (bNull) return -1;
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
+      return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredList, sortBy]);
 
-  // Reset page when filter/search changes
-  useEffect(() => { setPage(1); }, [filter, search]);
+  const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = sortedList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  function handleSort(key) {
+    setSortBy((prev) => prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'asc' });
+  }
+
+
+  // Reset page when filter/search/sort changes
+  useEffect(() => { setPage(1); }, [filter, search, sortBy]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -545,15 +609,15 @@ export default function AdminUsers() {
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Group</TableHead>
-                  <TableHead>Role</TableHead>
+                  <SortHeader sortKey="name" sortBy={sortBy} onSort={handleSort}>Name</SortHeader>
+                  <SortHeader sortKey="email" sortBy={sortBy} onSort={handleSort}>Email</SortHeader>
+                  <SortHeader sortKey="username" sortBy={sortBy} onSort={handleSort}>Username</SortHeader>
+                  <SortHeader sortKey="group" sortBy={sortBy} onSort={handleSort}>Group</SortHeader>
+                  <SortHeader sortKey="role" sortBy={sortBy} onSort={handleSort}>Role</SortHeader>
                   {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead className="text-center">Completed</TableHead>
-                  <TableHead>Last active</TableHead>
-                  <TableHead>Date</TableHead>
+                  <SortHeader sortKey="completed" sortBy={sortBy} onSort={handleSort} align="center">Completed</SortHeader>
+                  <SortHeader sortKey="lastActive" sortBy={sortBy} onSort={handleSort}>Last active</SortHeader>
+                  <SortHeader sortKey="date" sortBy={sortBy} onSort={handleSort}>Date</SortHeader>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
               </TableHeader>
