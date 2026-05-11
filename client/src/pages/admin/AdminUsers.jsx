@@ -19,6 +19,12 @@ import CompletionRing from './CompletionRing.jsx';
 
 const PAGE_SIZE = 20;
 
+const SORT_LABELS = {
+  name: 'name', email: 'email', username: 'username',
+  group: 'group', role: 'role', completed: 'completion',
+  lastActive: 'last active', date: 'join date',
+};
+
 function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
   const active = sortBy.key === sortKey;
   const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
@@ -29,7 +35,7 @@ function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 font-medium hover:text-foreground ${btnAlign}`}
+        className={`inline-flex items-center gap-1 font-medium hover:text-foreground rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 ${btnAlign}`}
       >
         {children}
         <span aria-hidden="true" className={`text-xs ${active ? '' : 'opacity-30'}`}>
@@ -89,6 +95,7 @@ export default function AdminUsers() {
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
+  const [sortAnnouncement, setSortAnnouncement] = useState('');
 
   // Groups form
   const [newGroupName, setNewGroupName] = useState('');
@@ -468,9 +475,17 @@ export default function AdminUsers() {
   const pageItems = sortedList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   function handleSort(key) {
-    setSortBy((prev) => prev.key === key
-      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-      : { key, dir: 'asc' });
+    setSortBy((prev) => {
+      const next = prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' };
+      // Announcement goes via setState so SRs hear it from the live region.
+      // We update it from the same click handler (not an effect) so the
+      // message is in sync with the visible sort and we don't cascade re-renders.
+      const label = SORT_LABELS[next.key] || next.key;
+      setSortAnnouncement(`Sorted by ${label}, ${next.dir === 'asc' ? 'ascending' : 'descending'}.`);
+      return next;
+    });
   }
 
 
@@ -602,6 +617,10 @@ export default function AdminUsers() {
           ))}
         </div>
       </div>
+
+      {/* Polite live region announces sort changes for screen-reader users
+          (aria-sort attribute changes aren't reliably announced by NVDA/JAWS). */}
+      <div role="status" aria-live="polite" className="sr-only">{sortAnnouncement}</div>
 
       {filteredList.length > 0 ? (
         <>
