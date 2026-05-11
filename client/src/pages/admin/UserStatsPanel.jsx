@@ -99,11 +99,25 @@ export default function UserStatsPanel({ userId }) {
           />
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4">
-          <Sparkline data={engagementMinutesByDay} valueKey="minutes" label="Engagement / day" formatValue={(v) => `${v} min total`} />
-          <Sparkline data={completedByDay} valueKey="count" label="Completed / day" formatValue={(v) => `${v} total`} />
-          <Sparkline data={loginsByDay} valueKey="count" label="Logins / day" formatValue={(v) => `${v} total`} />
-        </div>
+        {(() => {
+          // Hide each sparkline when its 30-day total is 0 — most learners
+          // won't have signal on all three, and empty bars are just noise.
+          // Tailwind needs the col-count classes in literal form to detect them.
+          const sparks = [
+            { key: 'engagement', total: engagementMinutesByDay.reduce((s, d) => s + (d.minutes || 0), 0), data: engagementMinutesByDay, valueKey: 'minutes', label: 'Engagement / day', formatValue: (v) => `${v} min total` },
+            { key: 'completed', total: completedByDay.reduce((s, d) => s + (d.count || 0), 0), data: completedByDay, valueKey: 'count', label: 'Completed / day', formatValue: (v) => `${v} total` },
+            { key: 'logins', total: loginsByDay.reduce((s, d) => s + (d.count || 0), 0), data: loginsByDay, valueKey: 'count', label: 'Logins / day', formatValue: (v) => `${v} total` },
+          ].filter((s) => s.total > 0);
+          if (sparks.length === 0) return null;
+          const cols = sparks.length === 1 ? 'md:grid-cols-1' : sparks.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3';
+          return (
+            <div className={`grid ${cols} gap-4`}>
+              {sparks.map((s) => (
+                <Sparkline key={s.key} data={s.data} valueKey={s.valueKey} label={s.label} formatValue={s.formatValue} />
+              ))}
+            </div>
+          );
+        })()}
 
         {lessonDurations.length > 0 && (
           <div>
