@@ -3,33 +3,6 @@ import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
 import CompletionRing from './CompletionRing.jsx';
 
-function Sparkline({ data, valueKey, label, formatValue }) {
-  const max = Math.max(1, ...data.map((d) => d[valueKey] || 0));
-  const total = data.reduce((sum, d) => sum + (d[valueKey] || 0), 0);
-  return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between text-xs text-muted-foreground">
-        <span>{label}</span>
-        <span>{formatValue ? formatValue(total) : total}</span>
-      </div>
-      <div className="flex items-end gap-px h-12" role="img" aria-label={`${label}: ${formatValue ? formatValue(total) : total} over ${data.length} days`}>
-        {data.map((d) => {
-          const v = d[valueKey] || 0;
-          const heightPct = max > 0 ? Math.max(2, (v / max) * 100) : 2;
-          return (
-            <div
-              key={d.date}
-              className={`flex-1 rounded-t ${v > 0 ? 'bg-primary/70' : 'bg-muted'}`}
-              style={{ height: `${heightPct}%` }}
-              title={`${d.date}: ${v}`}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function StatTile({ label, value, sub }) {
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -68,20 +41,18 @@ export default function UserStatsPanel({ userId }) {
   }
 
   const {
-    lessonsCompleted, lessonsAvailable, lessonsInProgress,
+    lessonsCompleted, lessonsAvailable,
+    loginsInWindow,
     completionMinutesP50, completionMinutesP90,
-    engagementMinutesByDay = [], loginsByDay = [], completedByDay = [],
     lessonDurations = [], windowDays,
   } = stats;
-
-  const totalLogins = loginsByDay.reduce((s, d) => s + (d.count || 0), 0);
 
   return (
     <Card>
       <CardContent className="space-y-4">
         <h2 className="text-lg font-semibold">Activity <span className="text-sm font-normal text-muted-foreground">(last {windowDays} days)</span></h2>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-center">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
           <div className="flex justify-center">
             <CompletionRing
               completed={lessonsCompleted}
@@ -90,34 +61,13 @@ export default function UserStatsPanel({ userId }) {
               label="Lessons completed"
             />
           </div>
-          <StatTile label="In progress" value={lessonsInProgress} />
-          <StatTile label={`Logins (${windowDays}d)`} value={totalLogins} />
+          <StatTile label={`Logins (${windowDays}d)`} value={loginsInWindow} />
           <StatTile
             label="Median completion time"
             value={completionMinutesP50 != null ? `${completionMinutesP50} min` : '—'}
             sub={completionMinutesP90 != null ? `p90: ${completionMinutesP90} min` : null}
           />
         </div>
-
-        {(() => {
-          // Hide each sparkline when its 30-day total is 0 — most learners
-          // won't have signal on all three, and empty bars are just noise.
-          // Tailwind needs the col-count classes in literal form to detect them.
-          const sparks = [
-            { key: 'engagement', total: engagementMinutesByDay.reduce((s, d) => s + (d.minutes || 0), 0), data: engagementMinutesByDay, valueKey: 'minutes', label: 'Engagement / day', formatValue: (v) => `${v} min total` },
-            { key: 'completed', total: completedByDay.reduce((s, d) => s + (d.count || 0), 0), data: completedByDay, valueKey: 'count', label: 'Completed / day', formatValue: (v) => `${v} total` },
-            { key: 'logins', total: loginsByDay.reduce((s, d) => s + (d.count || 0), 0), data: loginsByDay, valueKey: 'count', label: 'Logins / day', formatValue: (v) => `${v} total` },
-          ].filter((s) => s.total > 0);
-          if (sparks.length === 0) return null;
-          const cols = sparks.length === 1 ? 'md:grid-cols-1' : sparks.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3';
-          return (
-            <div className={`grid ${cols} gap-4`}>
-              {sparks.map((s) => (
-                <Sparkline key={s.key} data={s.data} valueKey={s.valueKey} label={s.label} formatValue={s.formatValue} />
-              ))}
-            </div>
-          );
-        })()}
 
         {lessonDurations.length > 0 && (
           <div>

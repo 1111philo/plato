@@ -958,9 +958,7 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
 //
 // Duration is exchange-based (activitiesCompleted × MINS_PER_EXCHANGE) to
 // match `/v1/admin/stats/lessons` and AdminHome — wall-clock minutes inflate
-// from multi-session lessons. Engagement uses message timestamps bucketed
-// into 5-minute windows and is the closest proxy for "active learning time"
-// without adding heartbeat tracking. Logins are read from the audit-log
+// from multi-session lessons. Logins are read from the audit-log
 // (`user_login` events, scan-with-filter — fine at current scale).
 admin.get('/v1/admin/users/:userId/stats', async (c) => {
   const userId = c.req.param('userId');
@@ -970,8 +968,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   const url = new URL(c.req.url);
   const daysParam = parseInt(url.searchParams.get('days') || '30', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 365 ? daysParam : 30;
-  const sinceMs = Date.now() - days * 24 * 60 * 60 * 1000;
-  const sinceIso = new Date(sinceMs).toISOString();
+  const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
   // Lesson name lookup
   const systemItems = await db.getAllSyncData('_system');
@@ -985,79 +982,35 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
 
   const syncItems = await db.getAllSyncData(userId);
   let lessonsCompleted = 0;
-  let lessonsInProgress = 0;
   const lessonDurations = []; // { lessonId, lessonName, exchanges, minutes, completedAt }
-  const completedDayCounts = new Map();  // yyyy-mm-dd -> n
-  const engagementWindows = new Map();   // yyyy-mm-dd -> Set<windowIndex>
-
-  const WINDOW_MS = 5 * 60 * 1000;
-  const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
 
   for (const item of syncItems) {
-    if (item.dataKey?.startsWith('lessonKB:')) {
-      const kb = item.data;
-      if (!kb) continue;
-      const lessonId = item.dataKey.slice('lessonKB:'.length);
-      const name = lessonNames.get(lessonId) || lessonId;
-      if (kb.status === 'completed') {
-        lessonsCompleted++;
-        const exchanges = kb.activitiesCompleted || 0;
-        const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
-        const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
-          : typeof kb.completedAt === 'string' ? Date.parse(kb.completedAt)
-          : null;
-        lessonDurations.push({
-          lessonId, lessonName: name, exchanges, minutes,
-          completedAt: completedAtMs ? new Date(completedAtMs).toISOString() : null,
-        });
-        if (completedAtMs && completedAtMs >= sinceMs) {
-          const k = dayKey(completedAtMs);
-          completedDayCounts.set(k, (completedDayCounts.get(k) || 0) + 1);
-        }
-      } else if ((kb.activitiesCompleted || 0) > 0) {
-        lessonsInProgress++;
-      }
-    } else if (item.dataKey?.startsWith('messages:')) {
-      const msgs = Array.isArray(item.data) ? item.data : [];
-      for (const m of msgs) {
-        const t = typeof m?.timestamp === 'number' ? m.timestamp
-          : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
-          : null;
-        if (!t || t < sinceMs) continue;
-        const k = dayKey(t);
-        if (!engagementWindows.has(k)) engagementWindows.set(k, new Set());
-        engagementWindows.get(k).add(Math.floor(t / WINDOW_MS));
-      }
-    }
+    if (!item.dataKey?.startsWith('lessonKB:')) continue;
+    const kb = item.data;
+    if (!kb || kb.status !== 'completed') continue;
+    lessonsCompleted++;
+    const lessonId = item.dataKey.slice('lessonKB:'.length);
+    const exchanges = kb.activitiesCompleted || 0;
+    const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
+    const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
+      : typeof kb.completedAt === 'string' ? Date.parse(kb.completedAt)
+      : null;
+    lessonDurations.push({
+      lessonId,
+      lessonName: lessonNames.get(lessonId) || lessonId,
+      exchanges, minutes,
+      completedAt: completedAtMs ? new Date(completedAtMs).toISOString() : null,
+    });
   }
 
   // Logins from audit-log
   const auditEntries = await db.listAuditLogsForUser(userId, sinceIso);
-  const loginDayCounts = new Map();
+  let loginsInWindow = 0;
   for (const entry of auditEntries) {
-    if (entry.action !== 'user_login') continue;
-    const t = Date.parse(entry.createdAt);
-    if (!Number.isFinite(t)) continue;
-    const k = dayKey(t);
-    loginDayCounts.set(k, (loginDayCounts.get(k) || 0) + 1);
+    if (entry.action === 'user_login') loginsInWindow++;
   }
 
-  // Zero-fill day arrays
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  const dayArrays = { engagementMinutesByDay: [], loginsByDay: [], completedByDay: [] };
-  for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-    const k = d.toISOString().slice(0, 10);
-    dayArrays.engagementMinutesByDay.push({
-      date: k,
-      minutes: (engagementWindows.get(k)?.size || 0) * 5,
-    });
-    dayArrays.loginsByDay.push({ date: k, count: loginDayCounts.get(k) || 0 });
-    dayArrays.completedByDay.push({ date: k, count: completedDayCounts.get(k) || 0 });
-  }
-
-  // Percentiles over all completed lessons (not just last `days` — career stats)
+  // Percentiles over all completed lessons (career stats, not window-scoped)
   const sorted = lessonDurations.map((l) => l.minutes).sort((a, b) => a - b);
   const pct = (p) => {
     if (sorted.length === 0) return null;
@@ -1072,11 +1025,10 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
     windowDays: days,
     lessonsCompleted,
     lessonsAvailable: countLessonsAvailableTo(userId, systemItems),
-    lessonsInProgress,
+    loginsInWindow,
     completionMinutesP50: pct(50),
     completionMinutesP90: pct(90),
     lessonDurations,
-    ...dayArrays,
   });
 });
 

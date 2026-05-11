@@ -946,7 +946,7 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     assert.equal(res.status, 404);
   });
 
-  it('aggregates lessons completed, in-progress, and percentiles', async () => {
+  it('aggregates lessons completed, available, and percentiles', async () => {
     db.getAllSyncData = async (uid) => {
       if (uid === '_system') {
         return [
@@ -969,7 +969,6 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     const data = await res.json();
     assert.equal(data.lessonsCompleted, 2);
     assert.equal(data.lessonsAvailable, 3, 'draft lesson should not count toward denominator');
-    assert.equal(data.lessonsInProgress, 1);
     assert.equal(data.lessonDurations.length, 2);
     // p50 of [19.8, 39.6] → 39.6 (sorted[1] for p=50, idx = floor(0.5*2) = 1)
     assert.equal(data.completionMinutesP50, 39.6);
@@ -979,35 +978,19 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     assert.deepEqual(titles, ['Active Recall', 'Cognitive Load']);
   });
 
-  it('buckets engagement and logins by day', async () => {
-    db.getAllSyncData = async (uid) => {
-      if (uid === '_system') return [{ dataKey: 'lesson:l1', data: { name: 'L1' } }];
-      return [
-        // Two messages on same day, 10 min apart → 2 distinct 5-min windows × 5 = 10 min
-        { dataKey: 'messages:l1', data: [
-          { timestamp: '2026-05-01T10:00:00Z' },
-          { timestamp: '2026-05-01T10:10:00Z' },
-        ]},
-      ];
-    };
+  it('counts user_login audit entries within the window and ignores other actions', async () => {
+    db.getAllSyncData = async () => [];
     db.listAuditLogsForUser = async () => [
-      { action: 'user_login', createdAt: '2026-05-01T08:00:00Z' },
-      { action: 'user_login', createdAt: '2026-05-01T20:00:00Z' },
-      { action: 'admin_view_as_user_started', createdAt: '2026-05-01T09:00:00Z' }, // ignored
+      { action: 'user_login', createdAt: new Date().toISOString() },
+      { action: 'user_login', createdAt: new Date(Date.now() - 60_000).toISOString() },
+      { action: 'admin_view_as_user_started', createdAt: new Date().toISOString() }, // ignored
     ];
     const app = new Hono(); app.route('/', admin);
     const res = await adminReq(app, 'GET', '/v1/admin/users/usr_learner/stats?days=7');
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.windowDays, 7);
-    assert.equal(data.engagementMinutesByDay.length, 7);
-    assert.equal(data.loginsByDay.length, 7);
-    const eng = data.engagementMinutesByDay.find((d) => d.date === '2026-05-01');
-    const logins = data.loginsByDay.find((d) => d.date === '2026-05-01');
-    // These dates may not be in the 7-day window depending on test execution date,
-    // but if they exist the counts should match.
-    if (eng) assert.equal(eng.minutes, 10);
-    if (logins) assert.equal(logins.count, 2);
+    assert.equal(data.loginsInWindow, 2);
   });
 
   it('rejects non-admin', async () => {
