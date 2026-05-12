@@ -121,6 +121,23 @@ describe('POST /v1/auth/login', () => {
     assert.equal(data.user.username, 'testuser');
   });
 
+  it('login still succeeds when the audit-log write throws', async () => {
+    const { hashPassword } = await import('../../src/lib/password.js');
+    const hash = await hashPassword('password123');
+    db.getUserByEmail = async () => ({
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
+      role: 'user', passwordHash: hash,
+    });
+    db.createAuditLog = async () => { throw new Error('audit-log throttled'); };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/login', { email: 'test@example.com', password: 'password123' });
+    assert.equal(res.status, 200, 'login must not fail if audit-log write fails');
+    const data = await res.json();
+    assert.ok(data.accessToken);
+    assert.ok(data.refreshToken);
+  });
+
   it('logs in with username', async () => {
     const { hashPassword } = await import('../../src/lib/password.js');
     const hash = await hashPassword('password123');

@@ -185,12 +185,17 @@ auth.post('/v1/auth/login', async (c) => {
   const refreshToken = generateRefreshToken();
   await db.storeRefreshToken(hashToken(refreshToken), user.userId);
 
-  await db.createAuditLog({
-    action: 'user_login',
-    userId: user.userId,
-    email: user.email,
-    performedBy: user.userId,
-  });
+  // Audit-log write is best-effort: login must succeed even if audit-log
+  // is throttled / unavailable. The login itself is what users feel; a
+  // missing audit entry just degrades the admin stats for this user.
+  try {
+    await db.createAuditLog({
+      action: 'user_login',
+      userId: user.userId,
+      email: user.email,
+      performedBy: user.userId,
+    });
+  } catch { /* swallow */ }
 
   return c.json({
     accessToken,
