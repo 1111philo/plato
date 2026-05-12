@@ -5,7 +5,7 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import { generateInviteToken } from '../lib/crypto.js';
 import { sendInviteEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
-import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES } from '../lib/lesson-limits.js';
+import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
@@ -41,12 +41,34 @@ function normalizeStatus(status, hasMarkdown = true) {
   return 'private';
 }
 
+// Count non-draft lessons visible to a given user (public + private-shared).
+// Mirrors the visibility logic in `/v1/lessons` (content.js).
+function countLessonsAvailableTo(userId, systemItems) {
+  let count = 0;
+  for (const i of systemItems) {
+    if (!i.dataKey?.startsWith('lesson:')) continue;
+    const status = normalizeStatus(i.data?.status, !!i.data?.markdown);
+    if (status === 'draft') continue;
+    if (status === 'public' || (Array.isArray(i.data?.sharedWith) && i.data.sharedWith.includes(userId))) {
+      count++;
+    }
+  }
+  return count;
+}
+
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
+// Pass `?include=stats` to enrich each row with `lessonsCompleted`,
+// `lessonsAvailable`, and `lastActiveAt`. Counters are denormalized onto
+// the user record by sync-route hooks (so reads are O(1) per user, no
+// scans). Legacy users (created before #136) get lazy-backfilled on
+// first read; once backfilled, every subsequent read is fast.
 admin.get('/v1/admin/users', async (c) => {
+  const url = new URL(c.req.url);
+  const includeStats = (url.searchParams.get('include') || '').split(',').includes('stats');
   const users = await db.listAllUsers();
-  return c.json(users.map((p) => ({
+  const baseRow = (p) => ({
     userId: p.userId,
     email: p.email,
     username: p.username,
@@ -55,7 +77,49 @@ admin.get('/v1/admin/users', async (c) => {
     role: p.role,
     slackUserId: p.slackUserId || null,
     createdAt: p.createdAt,
-  })));
+  });
+  if (!includeStats) {
+    return c.json(users.map(baseRow));
+  }
+  const systemItems = await db.getAllSyncData('_system');
+  // Lazy-backfill any users whose counters were never initialized. One-time
+  // scan per user; subsequent reads return the stored counters.
+  const enriched = await Promise.all(users.map(async (p) => {
+    let lessonsCompleted = p.lessonsCompleted;
+    let lastActiveAt = p.lastActiveAt || null;
+    if (lessonsCompleted == null || lastActiveAt === null) {
+      const items = await db.getAllSyncData(p.userId);
+      let counted = 0;
+      let lastActiveMs = 0;
+      for (const item of items) {
+        if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
+          counted++;
+        } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
+          for (const m of item.data) {
+            const t = typeof m?.timestamp === 'number' ? m.timestamp
+              : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
+              : NaN;
+            if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
+          }
+        }
+      }
+      if (lessonsCompleted == null) {
+        lessonsCompleted = counted;
+        await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
+      }
+      if (lastActiveAt === null && lastActiveMs > 0) {
+        lastActiveAt = new Date(lastActiveMs).toISOString();
+        await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
+      }
+    }
+    return {
+      ...baseRow(p),
+      lessonsCompleted: lessonsCompleted ?? 0,
+      lessonsAvailable: countLessonsAvailableTo(p.userId, systemItems),
+      lastActiveAt,
+    };
+  }));
+  return c.json(enriched);
 });
 
 // GET /v1/admin/users/:userId
@@ -899,6 +963,87 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     avgExchangesOverTarget: overTarget ? +(totalExchangesOver / overTarget).toFixed(1) : null,
     avgDurationMinutes,
     activeLessons,
+  });
+});
+
+// GET /v1/admin/users/:userId/stats — per-user activity metrics for the
+// admin user-detail panel (issue #136). Computed on demand from sync-data +
+// audit-log; no precomputation. Window is the last `days` calendar days
+// (default 30) in UTC.
+//
+// Duration is exchange-based (activitiesCompleted × MINS_PER_EXCHANGE) to
+// match `/v1/admin/stats/lessons` and AdminHome — wall-clock minutes inflate
+// from multi-session lessons. Logins are read from the audit-log
+// (`user_login` events, scan-with-filter — fine at current scale).
+admin.get('/v1/admin/users/:userId/stats', async (c) => {
+  const userId = c.req.param('userId');
+  const user = await db.getUserById(userId);
+  if (!user) return c.json({ error: 'User not found' }, 404);
+
+  const url = new URL(c.req.url);
+  const daysParam = parseInt(url.searchParams.get('days') || '30', 10);
+  const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 365 ? daysParam : 30;
+  const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  // Lesson name lookup
+  const systemItems = await db.getAllSyncData('_system');
+  const lessonNames = new Map();
+  for (const item of systemItems) {
+    if (item.dataKey?.startsWith('lesson:')) {
+      const id = item.dataKey.slice('lesson:'.length);
+      lessonNames.set(id, item.data?.name || id);
+    }
+  }
+
+  const syncItems = await db.getAllSyncData(userId);
+  let lessonsCompleted = 0;
+  const lessonDurations = []; // { lessonId, lessonName, exchanges, minutes, completedAt }
+
+  for (const item of syncItems) {
+    if (!item.dataKey?.startsWith('lessonKB:')) continue;
+    const kb = item.data;
+    if (!kb || kb.status !== 'completed') continue;
+    lessonsCompleted++;
+    const lessonId = item.dataKey.slice('lessonKB:'.length);
+    const exchanges = kb.activitiesCompleted || 0;
+    const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
+    const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
+      : typeof kb.completedAt === 'string' ? Date.parse(kb.completedAt)
+      : null;
+    lessonDurations.push({
+      lessonId,
+      lessonName: lessonNames.get(lessonId) || lessonId,
+      exchanges, minutes,
+      completedAt: completedAtMs ? new Date(completedAtMs).toISOString() : null,
+    });
+  }
+
+  // Logins from audit-log
+  const auditEntries = await db.listAuditLogsForUser(userId, sinceIso);
+  let loginsInWindow = 0;
+  for (const entry of auditEntries) {
+    if (entry.action === 'user_login') loginsInWindow++;
+  }
+
+  // Percentiles over all completed lessons (career stats, not window-scoped)
+  const sorted = lessonDurations.map((l) => l.minutes).sort((a, b) => a - b);
+  const pct = (p) => {
+    if (sorted.length === 0) return null;
+    const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+    return sorted[idx];
+  };
+
+  lessonDurations.sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || ''));
+
+  return c.json({
+    userId,
+    windowDays: days,
+    lessonsCompleted,
+    lessonsAvailable: countLessonsAvailableTo(userId, systemItems),
+    loginsInWindow,
+    completionMinutesP50: pct(50),
+    completionMinutesP90: pct(90),
+    lessonDurations,
   });
 });
 

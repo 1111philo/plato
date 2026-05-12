@@ -185,6 +185,22 @@ auth.post('/v1/auth/login', async (c) => {
   const refreshToken = generateRefreshToken();
   await db.storeRefreshToken(hashToken(refreshToken), user.userId);
 
+  // Activity-tracking writes are best-effort: login must succeed even if
+  // audit-log / user-record writes are throttled or unavailable. The login
+  // itself is what users feel; missing activity data just degrades admin
+  // stats for this user.
+  try {
+    await db.createAuditLog({
+      action: 'user_login',
+      userId: user.userId,
+      email: user.email,
+      performedBy: user.userId,
+    });
+  } catch { /* swallow */ }
+  try {
+    await db.setUserActivityField(user.userId, 'lastActiveAt', new Date().toISOString());
+  } catch { /* swallow */ }
+
   return c.json({
     accessToken,
     refreshToken,
@@ -217,6 +233,13 @@ auth.post('/v1/auth/refresh', async (c) => {
   await db.storeRefreshToken(hashToken(newRefreshToken), user.userId);
 
   const accessToken = await signAccessToken(user.userId, user.role);
+
+  // Best-effort: a token refresh fires every ~15 min while a learner is
+  // active, so this gives `lastActiveAt` a heartbeat without per-message
+  // write amplification on the user record.
+  try {
+    await db.setUserActivityField(user.userId, 'lastActiveAt', new Date().toISOString());
+  } catch { /* swallow */ }
 
   return c.json({ accessToken, refreshToken: newRefreshToken });
 });

@@ -187,7 +187,7 @@ export default function AdminLayout() {
       </aside>
 
       <main className="flex-1 p-6 md:ml-56">
-        <div className="max-w-4xl">
+        <div className="max-w-4xl pb-4">
           <Outlet />
         </div>
       </main>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,57 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PluginSlot } from '@/lib/plugins/Slot.jsx';
+import UserStatsPanel from './UserStatsPanel.jsx';
+import CompletionRing from './CompletionRing.jsx';
 
 const PAGE_SIZE = 20;
+
+const SORT_LABELS = {
+  name: 'name', email: 'email', username: 'username',
+  group: 'group', role: 'role', completed: 'completion',
+  lastActive: 'last active', date: 'join date',
+};
+
+// Module-level so the function references are stable across renders, which
+// lets sortedList's useMemo cache correctly (and gets rid of the
+// eslint-disable on exhaustive-deps). Items are the wrapper rows from
+// combinedList — see _user for the underlying user record.
+const SORT_KEY_FNS = {
+  name: (i) => i.name || i.email || '',
+  email: (i) => i.email || '',
+  username: (i) => i.username || '',
+  group: (i) => i.userGroup || '',
+  role: (i) => i.role || '',
+  completed: (i) => {
+    const c = i._user?.lessonsCompleted;
+    const a = i._user?.lessonsAvailable;
+    if (typeof c !== 'number' || typeof a !== 'number' || a <= 0) return null;
+    return c / a;
+  },
+  lastActive: (i) => i._user?.lastActiveAt || null,
+  date: (i) => i.createdAt || '',
+};
+
+function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
+  const active = sortBy.key === sortKey;
+  const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
+  const cellAlign = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '';
+  const btnAlign = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center w-full' : '';
+  return (
+    <TableHead aria-sort={aria} className={cellAlign}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 font-medium hover:text-foreground rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 ${btnAlign}`}
+      >
+        {children}
+        <span aria-hidden="true" className={`text-xs ${active ? '' : 'opacity-30'}`}>
+          {active ? (sortBy.dir === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </TableHead>
+  );
+}
 
 function parseCsvEmails(text) {
   const lines = text.split(/\r?\n/);
@@ -41,6 +91,8 @@ function parseCsvEmails(text) {
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function AdminUsers() {
+  const navigate = useNavigate();
+  const { userId: paramUserId } = useParams();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -65,6 +117,8 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
+  const [sortAnnouncement, setSortAnnouncement] = useState('');
 
   // Groups form
   const [newGroupName, setNewGroupName] = useState('');
@@ -84,7 +138,7 @@ export default function AdminUsers() {
     setLoading(true);
     try {
       const [usersRes, invitesRes, settingsRes, pluginsRes] = await Promise.all([
-        adminApi('GET', '/v1/admin/users'),
+        adminApi('GET', '/v1/admin/users?include=stats'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/plugins').catch(() => []),
@@ -338,11 +392,34 @@ export default function AdminUsers() {
   }
 
   // -- Edit user --
+  // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
+  // browser refresh / back-button preserve the selection. openEditUser only
+  // navigates; the effect below populates state from the URL param + users list.
 
   function openEditUser(u) {
+    navigate(`/plato/users/${u.userId}`);
+  }
+
+  function closeEditUser() {
+    navigate('/plato/users');
+  }
+
+  useEffect(() => {
+    if (!paramUserId) {
+      setEditUser(null);
+      return;
+    }
+    // Wait until users have loaded; if userId doesn't resolve to a known user,
+    // route back to the list (e.g. stale URL pointing at a deleted user).
+    if (users.length === 0) return;
+    const u = users.find((x) => x.userId === paramUserId);
+    if (!u) {
+      navigate('/plato/users', { replace: true });
+      return;
+    }
     setEditUser(u);
     setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user' });
-  }
+  }, [paramUserId, users, navigate]);
 
   async function saveEditUser() {
     if (!editUser) return;
@@ -357,7 +434,7 @@ export default function AdminUsers() {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
       }
       setMessage({ text: 'User updated.', type: 'success' });
-      setEditUser(null);
+      closeEditUser();
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -404,12 +481,47 @@ export default function AdminUsers() {
     return list;
   }, [combinedList, filter, search]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredList.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = filteredList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  // Sort comparators live at module level (SORT_KEY_FNS) so their references
+  // are stable; nullish values always sort last regardless of direction so
+  // invites (which lack user-stat fields) cluster predictably rather than
+  // ping-ponging between top and bottom on direction flip.
+  const sortedList = useMemo(() => {
+    const keyFn = SORT_KEY_FNS[sortBy.key] || SORT_KEY_FNS.name;
+    const mult = sortBy.dir === 'desc' ? -1 : 1;
+    return [...filteredList].sort((a, b) => {
+      const va = keyFn(a);
+      const vb = keyFn(b);
+      const aNull = va == null || va === '';
+      const bNull = vb == null || vb === '';
+      if (aNull && bNull) return 0;
+      if (aNull) return 1;   // nullish always last
+      if (bNull) return -1;
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
+      return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
+    });
+  }, [filteredList, sortBy]);
 
-  // Reset page when filter/search changes
-  useEffect(() => { setPage(1); }, [filter, search]);
+  const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = sortedList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  function handleSort(key) {
+    setSortBy((prev) => {
+      const next = prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: 'asc' };
+      // Announcement goes via setState so SRs hear it from the live region.
+      // We update it from the same click handler (not an effect) so the
+      // message is in sync with the visible sort and we don't cascade re-renders.
+      const label = SORT_LABELS[next.key] || next.key;
+      setSortAnnouncement(`Sorted by ${label}, ${next.dir === 'asc' ? 'ascending' : 'descending'}.`);
+      return next;
+    });
+  }
+
+
+  // Reset page when filter/search/sort changes
+  useEffect(() => { setPage(1); }, [filter, search, sortBy]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -419,7 +531,7 @@ export default function AdminUsers() {
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="sm" onClick={() => setEditUser(null)} aria-label="Back to users">&larr; Back</Button>
+          <Button variant="ghost" size="sm" onClick={closeEditUser} aria-label="Back to users">&larr; Back</Button>
           <h1 className="text-2xl font-bold">Edit User</h1>
         </div>
         {message && (
@@ -463,9 +575,9 @@ export default function AdminUsers() {
             )}
             <div className="flex items-center gap-3 pt-2">
               <Button onClick={saveEditUser}>Save</Button>
-              <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
+              <Button variant="outline" onClick={closeEditUser}>Cancel</Button>
               {!isSelf && (
-                <Button variant="destructive" className="ml-auto" onClick={() => { setEditUser(null); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
+                <Button variant="destructive" className="ml-auto" onClick={() => { closeEditUser(); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
                   Delete User
                 </Button>
               )}
@@ -473,6 +585,9 @@ export default function AdminUsers() {
             <PluginSlot name="adminProfileFields" context={{ user: editUser }} />
           </CardContent>
         </Card>
+        <div className="mt-4">
+          <UserStatsPanel key={editUser.userId} userId={editUser.userId} />
+        </div>
       </div>
     );
   }
@@ -534,19 +649,25 @@ export default function AdminUsers() {
         </div>
       </div>
 
+      {/* Polite live region announces sort changes for screen-reader users
+          (aria-sort attribute changes aren't reliably announced by NVDA/JAWS). */}
+      <div role="status" aria-live="polite" className="sr-only">{sortAnnouncement}</div>
+
       {filteredList.length > 0 ? (
         <>
           <div className="rounded-lg border overflow-hidden">
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Username</TableHead>
-                  <TableHead>Group</TableHead>
-                  <TableHead>Role</TableHead>
+                  <SortHeader sortKey="name" sortBy={sortBy} onSort={handleSort}>Name</SortHeader>
+                  <SortHeader sortKey="email" sortBy={sortBy} onSort={handleSort}>Email</SortHeader>
+                  <SortHeader sortKey="username" sortBy={sortBy} onSort={handleSort}>Username</SortHeader>
+                  <SortHeader sortKey="group" sortBy={sortBy} onSort={handleSort}>Group</SortHeader>
+                  <SortHeader sortKey="role" sortBy={sortBy} onSort={handleSort}>Role</SortHeader>
                   {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead>Date</TableHead>
+                  <SortHeader sortKey="completed" sortBy={sortBy} onSort={handleSort} align="center">Completed</SortHeader>
+                  <SortHeader sortKey="lastActive" sortBy={sortBy} onSort={handleSort}>Last active</SortHeader>
+                  <SortHeader sortKey="date" sortBy={sortBy} onSort={handleSort}>Date</SortHeader>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
               </TableHeader>
@@ -559,6 +680,8 @@ export default function AdminUsers() {
                     <TableCell>&mdash;</TableCell>
                     <TableCell><Badge variant="outline">Invited</Badge></TableCell>
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
+                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
@@ -590,6 +713,24 @@ export default function AdminUsers() {
                         ) : <span className="text-muted-foreground">&mdash;</span>}
                       </TableCell>
                     )}
+                    <TableCell className="text-center">
+                      {typeof item._user.lessonsCompleted === 'number' ? (
+                        <div className="inline-flex">
+                          <CompletionRing
+                            completed={item._user.lessonsCompleted}
+                            available={item._user.lessonsAvailable}
+                            size={40}
+                            strokeWidth={5}
+                            compact
+                          />
+                        </div>
+                      ) : <span className="text-muted-foreground">&mdash;</span>}
+                    </TableCell>
+                    <TableCell>
+                      {item._user.lastActiveAt
+                        ? new Date(item._user.lastActiveAt).toLocaleDateString()
+                        : <span className="text-muted-foreground">&mdash;</span>}
+                    </TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>

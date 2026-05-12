@@ -106,6 +106,7 @@ export default function App() {
         }>
           <Route index element={<Suspense fallback={<AdminFallback />}><AdminHome /></Suspense>} />
           <Route path="users" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
+          <Route path="users/:userId" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="lessons" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           <Route path="lessons/new" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           {/* Course management lives inside Admin → Lessons (a "Courses" button

@@ -86,6 +86,31 @@ const db = {
     }));
   },
 
+  // Lightweight writes used by the sync-route hooks. They deliberately do
+  // NOT touch updatedAt — these are activity-tracking side effects, not
+  // user-profile edits.
+  async incrementUserCounter(userId, field, delta = 1) {
+    if (!['lessonsCompleted'].includes(field)) throw new Error(`Unsupported counter field: ${field}`);
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'ADD #f :d',
+      ExpressionAttributeNames: { '#f': field },
+      ExpressionAttributeValues: { ':d': delta },
+    }));
+  },
+
+  async setUserActivityField(userId, field, value) {
+    if (!['lastActiveAt', 'lessonsCompleted'].includes(field)) throw new Error(`Unsupported activity field: ${field}`);
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'SET #f = :v',
+      ExpressionAttributeNames: { '#f': field },
+      ExpressionAttributeValues: { ':v': value },
+    }));
+  },
+
   async listUsers() {
     const items = [];
     let lastKey;
@@ -308,6 +333,26 @@ const db = {
       TableName: AUDIT_LOG_TABLE,
       Item: { logId, action, userId, email, performedBy, details: details || null, createdAt: now },
     }));
+  },
+
+  // Full-table Scan with filter — the audit-log table has no GSI on userId.
+  // Fine at current scale; add a userId-createdAt GSI when the table grows
+  // past ~100k entries.
+  async listAuditLogsForUser(userId, sinceIso) {
+    const items = [];
+    let lastKey;
+    do {
+      const result = await doc.send(new ScanCommand({
+        TableName: AUDIT_LOG_TABLE,
+        FilterExpression: sinceIso ? '#u = :u AND createdAt >= :since' : '#u = :u',
+        ExpressionAttributeNames: { '#u': 'userId' },
+        ExpressionAttributeValues: sinceIso ? { ':u': userId, ':since': sinceIso } : { ':u': userId },
+        ExclusiveStartKey: lastKey,
+      }));
+      items.push(...(result.Items || []));
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+    return items.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   },
 };
 
