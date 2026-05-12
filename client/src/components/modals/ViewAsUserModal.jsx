@@ -8,13 +8,14 @@ import { adminApi } from '../../pages/admin/adminApi.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 
 /**
- * Admin "View as User" picker — single-select learner search.
+ * Admin "View as User" picker — single-select user search.
  *
  * Modeled on ShareLessonModal's user list pattern but with click-to-pick
- * rather than multi-select checkboxes. Admins are filtered out (no point
- * impersonating other admins, less foot-gun risk). On select we kick off
- * the impersonation start API call, persist target to sessionStorage,
- * close the modal, and let the caller redirect to the classroom.
+ * rather than multi-select checkboxes. Self is filtered out (can't view-as
+ * yourself); admins remain in the list so admin↔admin auditing is possible.
+ * On select we kick off the impersonation start API call, persist target
+ * to sessionStorage, close the modal, and let the caller redirect to the
+ * classroom.
  */
 export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
   const { startImpersonation, user: currentUser } = useAuth();
@@ -44,11 +45,10 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
   }, [open]);
 
   const filtered = useMemo(() => {
-    // Hide admins (don't impersonate self / other admins) and apply search.
-    const learners = users.filter(u => u.role !== 'admin' && u.userId !== currentUser?.userId);
-    if (!search.trim()) return learners;
+    const others = users.filter(u => u.userId !== currentUser?.userId);
+    if (!search.trim()) return others;
     const q = search.toLowerCase();
-    return learners.filter(u =>
+    return others.filter(u =>
       (u.name || '').toLowerCase().includes(q) ||
       (u.email || '').toLowerCase().includes(q) ||
       (u.username || '').toLowerCase().includes(q)
@@ -75,7 +75,7 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
         <DialogHeader>
           <DialogTitle>View as User</DialogTitle>
           <DialogDescription>
-            See the classroom as a specific learner — read-only.
+            See the classroom as a specific user — read-only.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,24 +92,30 @@ export default function ViewAsUserModal({ open, onOpenChange, onStarted }) {
           ) : error ? (
             <div className="flex items-center justify-center h-full text-sm text-destructive p-4 text-center" role="alert">{error}</div>
           ) : filtered.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No learners found.</div>
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No users found.</div>
           ) : (
-            <ul className="p-2 space-y-1" aria-label="Learners">
+            <ul className="p-2 space-y-1" aria-label="Users">
               {filtered.map(u => {
                 const label = u.name || u.username || u.email;
+                const isAdmin = u.role === 'admin';
                 return (
                   <li key={u.userId}>
                     <button
                       type="button"
                       onClick={() => handlePick(u)}
                       disabled={submitting}
-                      aria-label={`View as ${label}`}
+                      aria-label={`View as ${label}${isAdmin ? ' (admin)' : ''}`}
                       className="w-full flex items-center gap-3 rounded-md px-2 py-1.5 hover:bg-muted text-left text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed bg-transparent border-none outline-none focus:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex-1 min-w-0">
                         <span className="font-medium truncate block">{label}</span>
                         {u.name && <span className="text-xs text-muted-foreground truncate block">{u.email}</span>}
                       </span>
+                      {isAdmin && (
+                        <span className="text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0" aria-hidden="true">
+                          Admin
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
