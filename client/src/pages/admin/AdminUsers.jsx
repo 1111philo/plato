@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
@@ -70,6 +71,8 @@ function parseCsvEmails(text) {
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function AdminUsers() {
+  const navigate = useNavigate();
+  const { userId: paramUserId } = useParams();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -369,11 +372,34 @@ export default function AdminUsers() {
   }
 
   // -- Edit user --
+  // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
+  // browser refresh / back-button preserve the selection. openEditUser only
+  // navigates; the effect below populates state from the URL param + users list.
 
   function openEditUser(u) {
+    navigate(`/plato/users/${u.userId}`);
+  }
+
+  function closeEditUser() {
+    navigate('/plato/users');
+  }
+
+  useEffect(() => {
+    if (!paramUserId) {
+      setEditUser(null);
+      return;
+    }
+    // Wait until users have loaded; if userId doesn't resolve to a known user,
+    // route back to the list (e.g. stale URL pointing at a deleted user).
+    if (users.length === 0) return;
+    const u = users.find((x) => x.userId === paramUserId);
+    if (!u) {
+      navigate('/plato/users', { replace: true });
+      return;
+    }
     setEditUser(u);
     setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user' });
-  }
+  }, [paramUserId, users, navigate]);
 
   async function saveEditUser() {
     if (!editUser) return;
@@ -388,7 +414,7 @@ export default function AdminUsers() {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
       }
       setMessage({ text: 'User updated.', type: 'success' });
-      setEditUser(null);
+      closeEditUser();
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -500,7 +526,7 @@ export default function AdminUsers() {
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="sm" onClick={() => setEditUser(null)} aria-label="Back to users">&larr; Back</Button>
+          <Button variant="ghost" size="sm" onClick={closeEditUser} aria-label="Back to users">&larr; Back</Button>
           <h1 className="text-2xl font-bold">Edit User</h1>
         </div>
         {message && (
@@ -544,9 +570,9 @@ export default function AdminUsers() {
             )}
             <div className="flex items-center gap-3 pt-2">
               <Button onClick={saveEditUser}>Save</Button>
-              <Button variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
+              <Button variant="outline" onClick={closeEditUser}>Cancel</Button>
               {!isSelf && (
-                <Button variant="destructive" className="ml-auto" onClick={() => { setEditUser(null); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
+                <Button variant="destructive" className="ml-auto" onClick={() => { closeEditUser(); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
                   Delete User
                 </Button>
               )}
