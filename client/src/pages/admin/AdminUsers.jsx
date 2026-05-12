@@ -118,7 +118,7 @@ export default function AdminUsers() {
     setLoading(true);
     try {
       const [usersRes, invitesRes, settingsRes, pluginsRes] = await Promise.all([
-        adminApi('GET', '/v1/admin/users?include=stats'),
+        adminApi('GET', '/v1/admin/users'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/plugins').catch(() => []),
@@ -130,6 +130,15 @@ export default function AdminUsers() {
       // The Slack tab is hidden when the plugin is disabled OR not connected.
       const slack = Array.isArray(pluginsRes) ? pluginsRes.find((entry) => entry.id === 'slack') : null;
       setSlackConnected(!!(slack?.enabled && slack?.settings?.connected));
+      // Background: fetch the per-user stats enrichment (lessonsCompleted /
+      // lessonsAvailable / lastActiveAt). This costs O(N) DynamoDB scans on
+      // the server, so we don't block the table render on it — Completed +
+      // Last active columns show "—" placeholder until stats arrive.
+      adminApi('GET', '/v1/admin/users?include=stats').then((withStats) => {
+        if (!Array.isArray(withStats)) return;
+        const byId = new Map(withStats.map((u) => [u.userId, u]));
+        setUsers((prev) => prev.map((p) => byId.get(p.userId) || p));
+      }).catch(() => { /* keep the table usable even if stats fail */ });
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
