@@ -30,7 +30,9 @@ function estimateDuration(avgExchangesPerCompletion) {
 
 function EngagementWidget({ label, valuePct, count, total, targetPct, targetCopy }) {
   const noData = valuePct == null;
-  const onTarget = !noData && valuePct >= targetPct;
+  // Targets are phrased "over X%" so the threshold is strict — exactly the
+  // target value is still below it. Matches the server's `> 0.5` per-learner rule.
+  const onTarget = !noData && valuePct > targetPct;
   const cardClass = noData
     ? ''
     : onTarget
@@ -88,7 +90,7 @@ function LearnerEngagementSection({ stats }) {
           count={learnersStarted}
           total={activeLearners}
           targetPct={targetStartedPct}
-          targetCopy={`≥${targetStartedPct}% of learners have started at least one lesson`}
+          targetCopy={`Over ${targetStartedPct}% of learners have started at least one lesson`}
         />
         <EngagementWidget
           label="Completed 50%+ of lessons"
@@ -96,7 +98,7 @@ function LearnerEngagementSection({ stats }) {
           count={learnersCompletedHalf}
           total={activeLearners}
           targetPct={targetCompletedHalfPct}
-          targetCopy={`≥${targetCompletedHalfPct}% of learners have completed more than half of their available lessons`}
+          targetCopy={`Over ${targetCompletedHalfPct}% of learners have completed more than half of their available lessons`}
         />
       </div>
     </>
