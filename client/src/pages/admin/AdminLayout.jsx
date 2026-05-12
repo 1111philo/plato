@@ -186,7 +186,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6 pb-16 md:ml-56">
+      <main className="flex-1 p-6 md:ml-56" style={{ paddingBottom: '4rem' }}>
         <div className="max-w-4xl">
           <Outlet />
         </div>
