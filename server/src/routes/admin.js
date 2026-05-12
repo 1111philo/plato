@@ -59,10 +59,11 @@ function countLessonsAvailableTo(userId, systemItems) {
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
-// Pass `?include=stats` to enrich each row with `lessonsCompleted` and
-// `lastActiveAt` (derived from a per-user sync-data scan). Opt-in because
-// the scan is O(users × items/user) and most callers (modals, dropdowns)
-// don't need it.
+// Pass `?include=stats` to enrich each row with `lessonsCompleted`,
+// `lessonsAvailable`, and `lastActiveAt`. Counters are denormalized onto
+// the user record by sync-route hooks (so reads are O(1) per user, no
+// scans). Legacy users (created before #136) get lazy-backfilled on
+// first read; once backfilled, every subsequent read is fast.
 admin.get('/v1/admin/users', async (c) => {
   const url = new URL(c.req.url);
   const includeStats = (url.searchParams.get('include') || '').split(',').includes('stats');
@@ -81,27 +82,41 @@ admin.get('/v1/admin/users', async (c) => {
     return c.json(users.map(baseRow));
   }
   const systemItems = await db.getAllSyncData('_system');
+  // Lazy-backfill any users whose counters were never initialized. One-time
+  // scan per user; subsequent reads return the stored counters.
   const enriched = await Promise.all(users.map(async (p) => {
-    const items = await db.getAllSyncData(p.userId);
-    let lessonsCompleted = 0;
-    let lastActiveMs = 0;
-    for (const item of items) {
-      if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
-        lessonsCompleted++;
-      } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
-        for (const m of item.data) {
-          const t = typeof m?.timestamp === 'number' ? m.timestamp
-            : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
-            : NaN;
-          if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
+    let lessonsCompleted = p.lessonsCompleted;
+    let lastActiveAt = p.lastActiveAt || null;
+    if (lessonsCompleted == null || lastActiveAt === null) {
+      const items = await db.getAllSyncData(p.userId);
+      let counted = 0;
+      let lastActiveMs = 0;
+      for (const item of items) {
+        if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
+          counted++;
+        } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
+          for (const m of item.data) {
+            const t = typeof m?.timestamp === 'number' ? m.timestamp
+              : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
+              : NaN;
+            if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
+          }
         }
+      }
+      if (lessonsCompleted == null) {
+        lessonsCompleted = counted;
+        await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
+      }
+      if (lastActiveAt === null && lastActiveMs > 0) {
+        lastActiveAt = new Date(lastActiveMs).toISOString();
+        await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
       }
     }
     return {
       ...baseRow(p),
-      lessonsCompleted,
+      lessonsCompleted: lessonsCompleted ?? 0,
       lessonsAvailable: countLessonsAvailableTo(p.userId, systemItems),
-      lastActiveAt: lastActiveMs > 0 ? new Date(lastActiveMs).toISOString() : null,
+      lastActiveAt,
     };
   }));
   return c.json(enriched);

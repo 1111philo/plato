@@ -275,3 +275,65 @@ describe('?asUserId= (admin View as User)', () => {
     assert.equal(res.status, 403);
   });
 });
+
+describe('PUT /v1/sync activity counter hooks (#136)', () => {
+  let incCalls;
+  let setCalls;
+  beforeEach(() => {
+    incCalls = [];
+    setCalls = [];
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.putSyncData = async () => ({ version: 1, updatedAt: new Date().toISOString() });
+    db.incrementUserCounter = async (userId, field, delta) => { incCalls.push({ userId, field, delta }); };
+    db.setUserActivityField = async (userId, field, value) => { setCalls.push({ userId, field, value }); };
+  });
+
+  it('first transition to status=completed increments lessonsCompleted', async () => {
+    db.getSyncData = async () => ({ data: { status: 'in_progress' }, version: 1 });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 1 });
+    assert.equal(res.status, 200);
+    assert.equal(incCalls.length, 1);
+    assert.deepEqual(incCalls[0], { userId: 'usr_test', field: 'lessonsCompleted', delta: 1 });
+  });
+
+  it('repeat write with same status=completed does NOT double-count', async () => {
+    db.getSyncData = async () => ({ data: { status: 'completed' }, version: 2 });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed', extraFeedback: true }, version: 2 });
+    assert.equal(res.status, 200);
+    assert.equal(incCalls.length, 0, 'no counter bump when status was already completed');
+  });
+
+  it('messages:* write updates lastActiveAt', async () => {
+    db.getSyncData = async () => null;
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:l1', { data: [{ role: 'user', content: 'hi' }], version: 0 });
+    assert.equal(res.status, 200);
+    assert.equal(setCalls.length, 1);
+    assert.equal(setCalls[0].field, 'lastActiveAt');
+    assert.ok(new Date(setCalls[0].value).getTime() > 0);
+  });
+
+  it('non-lessonKB, non-messages writes do not touch counters', async () => {
+    db.getSyncData = async () => null;
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/preferences', { data: { theme: 'dark' }, version: 0 });
+    assert.equal(res.status, 200);
+    assert.equal(incCalls.length, 0);
+    assert.equal(setCalls.length, 0);
+  });
+
+  it('counter write failures do not break the sync write', async () => {
+    db.getSyncData = async () => ({ data: { status: 'in_progress' }, version: 1 });
+    db.incrementUserCounter = async () => { throw new Error('db hiccup'); };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 1 });
+    assert.equal(res.status, 200, 'sync write succeeds even if counter update throws');
+  });
+});

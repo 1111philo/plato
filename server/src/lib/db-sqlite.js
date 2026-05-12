@@ -107,6 +107,22 @@ if (hasSlackUser.count === 0) {
   sqlite.exec('ALTER TABLE users ADD COLUMN slackUserId TEXT');
 }
 
+// Denormalized stat fields for the Admin → Users table (#136). Maintained
+// by the sync route's PUT hooks; backfilled lazily by the admin stats
+// endpoint when missing.
+const hasLessonsCompleted = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'lessonsCompleted'"
+).get();
+if (hasLessonsCompleted.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN lessonsCompleted INTEGER');
+}
+const hasLastActiveAt = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'lastActiveAt'"
+).get();
+if (hasLastActiveAt.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN lastActiveAt TEXT');
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
@@ -172,6 +188,19 @@ const db = {
 
   async deleteUser(userId) {
     sqlite.prepare('DELETE FROM users WHERE userId = ?').run(userId);
+  },
+
+  // Lightweight writes used by the sync-route hooks. They deliberately do
+  // NOT touch updatedAt — these are activity-tracking side effects, not
+  // user-profile edits.
+  async incrementUserCounter(userId, field, delta = 1) {
+    if (!['lessonsCompleted'].includes(field)) throw new Error(`Unsupported counter field: ${field}`);
+    sqlite.prepare(`UPDATE users SET ${field} = COALESCE(${field}, 0) + ? WHERE userId = ?`).run(delta, userId);
+  },
+
+  async setUserActivityField(userId, field, value) {
+    if (!['lastActiveAt', 'lessonsCompleted'].includes(field)) throw new Error(`Unsupported activity field: ${field}`);
+    sqlite.prepare(`UPDATE users SET ${field} = ? WHERE userId = ?`).run(value, userId);
   },
 
   async listUsers() {

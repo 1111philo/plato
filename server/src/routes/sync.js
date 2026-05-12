@@ -20,6 +20,34 @@ function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
 }
 
+// Maintain denormalized activity counters on the user record (#136). Called
+// after each successful sync write. `oldStatus` is the lessonKB status as
+// it existed *before* the write (or null if no prior record / non-lessonKB);
+// transitions only count on first flip to 'completed' so post-completion
+// feedback turns don't double-count. Failures are swallowed — the primary
+// write already succeeded and stat fields self-heal via lazy backfill in
+// the admin endpoint.
+async function applyActivityEffects(userId, dataKey, oldStatus, data) {
+  try {
+    if (dataKey.startsWith('lessonKB:')) {
+      if (oldStatus !== 'completed' && data?.status === 'completed') {
+        await db.incrementUserCounter(userId, 'lessonsCompleted', 1);
+      }
+    } else if (dataKey.startsWith('messages:')) {
+      await db.setUserActivityField(userId, 'lastActiveAt', new Date().toISOString());
+    }
+  } catch { /* swallow — activity counters are best-effort */ }
+}
+
+// Pre-read the status of a lessonKB before writing it, so the post-write
+// hook can detect a first-time transition to 'completed'. Skips the read
+// for non-lessonKB keys to keep the hot path lean.
+async function readOldLessonKBStatus(userId, dataKey) {
+  if (!dataKey.startsWith('lessonKB:')) return null;
+  const existing = await db.getSyncData(userId, dataKey);
+  return existing?.data?.status ?? null;
+}
+
 /**
  * Resolve which userId a request should read on behalf of.
  *
@@ -106,8 +134,10 @@ sync.put('/v1/sync/batch', async (c) => {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
     try {
+      const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
       await syncNameIfNeeded(userId, item.dataKey, item.data);
+      await applyActivityEffects(userId, item.dataKey, oldStatus, item.data);
       return { dataKey: item.dataKey, status: 'ok', version: result.version };
     } catch (err) {
       if (err.name === 'ConditionalCheckFailedException') {
@@ -141,8 +171,10 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   }
 
   try {
+    const oldStatus = await readOldLessonKBStatus(userId, dataKey);
     const result = await db.putSyncData(userId, dataKey, data, version || 0);
     await syncNameIfNeeded(userId, dataKey, data);
+    await applyActivityEffects(userId, dataKey, oldStatus, data);
     return c.json({ dataKey, version: result.version, updatedAt: result.updatedAt });
   } catch (err) {
     if (err.name === 'ConditionalCheckFailedException') {

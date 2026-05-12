@@ -1008,22 +1008,18 @@ describe('GET /v1/admin/users?include=stats', () => {
     };
   });
 
-  it('enriches users with lessonsCompleted, lessonsAvailable, and lastActiveAt when requested', async () => {
+  it('reads denormalized counters directly when present (no per-user scan)', async () => {
     db.listAllUsers = async () => [
-      { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
+      { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01',
+        lessonsCompleted: 2, lastActiveAt: '2026-05-03T09:15:00.000Z' },
     ];
+    const scanned = [];
     db.getAllSyncData = async (uid) => {
+      scanned.push(uid);
       if (uid === '_system') return [
         { dataKey: 'lesson:l1', data: { status: 'public', markdown: '#' } },
         { dataKey: 'lesson:l2', data: { status: 'public', markdown: '#' } },
         { dataKey: 'lesson:l3', data: { status: 'private', markdown: '#', sharedWith: ['u1'] } },
-        { dataKey: 'lesson:l4', data: { status: 'private', markdown: '#', sharedWith: ['someone-else'] } },
-      ];
-      if (uid === 'u1') return [
-        { dataKey: 'lessonKB:l1', data: { status: 'completed' } },
-        { dataKey: 'lessonKB:l2', data: { status: 'completed' } },
-        { dataKey: 'lessonKB:l3', data: { status: 'in_progress' } },
-        { dataKey: 'messages:l1', data: [{ timestamp: '2026-04-30T12:00:00Z' }, { timestamp: '2026-05-03T09:15:00Z' }] },
       ];
       return [];
     };
@@ -1032,8 +1028,39 @@ describe('GET /v1/admin/users?include=stats', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data[0].lessonsCompleted, 2);
-    assert.equal(data[0].lessonsAvailable, 3, 'l1 + l2 (public) + l3 (private, shared); l4 not shared with u1');
+    assert.equal(data[0].lessonsAvailable, 3);
     assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
+    assert.deepEqual(scanned, ['_system'], 'no per-user sync-data scan when counters exist');
+  });
+
+  it('lazy-backfills counters for legacy users on first read and persists them', async () => {
+    db.listAllUsers = async () => [
+      // No lessonsCompleted / lastActiveAt — pre-#136 user record
+      { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01' },
+    ];
+    db.getAllSyncData = async (uid) => {
+      if (uid === '_system') return [
+        { dataKey: 'lesson:l1', data: { status: 'public', markdown: '#' } },
+        { dataKey: 'lesson:l2', data: { status: 'public', markdown: '#' } },
+      ];
+      if (uid === 'u1') return [
+        { dataKey: 'lessonKB:l1', data: { status: 'completed' } },
+        { dataKey: 'lessonKB:l2', data: { status: 'completed' } },
+        { dataKey: 'messages:l1', data: [{ timestamp: '2026-05-03T09:15:00Z' }] },
+      ];
+      return [];
+    };
+    const writes = [];
+    db.setUserActivityField = async (userId, field, value) => { writes.push({ userId, field, value }); };
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users?include=stats');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data[0].lessonsCompleted, 2);
+    assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
+    // Both fields persisted back to the user record so subsequent reads are O(1)
+    assert.ok(writes.some((w) => w.field === 'lessonsCompleted' && w.value === 2));
+    assert.ok(writes.some((w) => w.field === 'lastActiveAt' && w.value === '2026-05-03T09:15:00.000Z'));
   });
 
   it('omits stats fields by default', async () => {

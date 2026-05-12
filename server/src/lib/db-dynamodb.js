@@ -86,6 +86,31 @@ const db = {
     }));
   },
 
+  // Lightweight writes used by the sync-route hooks. They deliberately do
+  // NOT touch updatedAt — these are activity-tracking side effects, not
+  // user-profile edits.
+  async incrementUserCounter(userId, field, delta = 1) {
+    if (!['lessonsCompleted'].includes(field)) throw new Error(`Unsupported counter field: ${field}`);
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'ADD #f :d',
+      ExpressionAttributeNames: { '#f': field },
+      ExpressionAttributeValues: { ':d': delta },
+    }));
+  },
+
+  async setUserActivityField(userId, field, value) {
+    if (!['lastActiveAt', 'lessonsCompleted'].includes(field)) throw new Error(`Unsupported activity field: ${field}`);
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'SET #f = :v',
+      ExpressionAttributeNames: { '#f': field },
+      ExpressionAttributeValues: { ':v': value },
+    }));
+  },
+
   async listUsers() {
     const items = [];
     let lastKey;
