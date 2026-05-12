@@ -26,6 +26,26 @@ const SORT_LABELS = {
   lastActive: 'last active', date: 'join date',
 };
 
+// Module-level so the function references are stable across renders, which
+// lets sortedList's useMemo cache correctly (and gets rid of the
+// eslint-disable on exhaustive-deps). Items are the wrapper rows from
+// combinedList — see _user for the underlying user record.
+const SORT_KEY_FNS = {
+  name: (i) => i.name || i.email || '',
+  email: (i) => i.email || '',
+  username: (i) => i.username || '',
+  group: (i) => i.userGroup || '',
+  role: (i) => i.role || '',
+  completed: (i) => {
+    const c = i._user?.lessonsCompleted;
+    const a = i._user?.lessonsAvailable;
+    if (typeof c !== 'number' || typeof a !== 'number' || a <= 0) return null;
+    return c / a;
+  },
+  lastActive: (i) => i._user?.lastActiveAt || null,
+  date: (i) => i.createdAt || '',
+};
+
 function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
   const active = sortBy.key === sortKey;
   const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
@@ -461,26 +481,12 @@ export default function AdminUsers() {
     return list;
   }, [combinedList, filter, search]);
 
-  // Sort comparators. Nullish values always sort last regardless of direction
-  // so that invites (which lack user-stat fields) cluster predictably rather
-  // than ping-ponging between top and bottom on direction flip.
-  const sortKeyFns = {
-    name: (i) => i.name || i.email || '',
-    email: (i) => i.email || '',
-    username: (i) => i.username || '',
-    group: (i) => i.userGroup || '',
-    role: (i) => i.role || '',
-    completed: (i) => {
-      const c = i._user?.lessonsCompleted;
-      const a = i._user?.lessonsAvailable;
-      if (typeof c !== 'number' || typeof a !== 'number' || a <= 0) return null;
-      return c / a;
-    },
-    lastActive: (i) => i._user?.lastActiveAt || null,
-    date: (i) => i.createdAt || '',
-  };
+  // Sort comparators live at module level (SORT_KEY_FNS) so their references
+  // are stable; nullish values always sort last regardless of direction so
+  // invites (which lack user-stat fields) cluster predictably rather than
+  // ping-ponging between top and bottom on direction flip.
   const sortedList = useMemo(() => {
-    const keyFn = sortKeyFns[sortBy.key] || sortKeyFns.name;
+    const keyFn = SORT_KEY_FNS[sortBy.key] || SORT_KEY_FNS.name;
     const mult = sortBy.dir === 'desc' ? -1 : 1;
     return [...filteredList].sort((a, b) => {
       const va = keyFn(a);
@@ -493,7 +499,6 @@ export default function AdminUsers() {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
       return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredList, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
