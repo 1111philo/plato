@@ -550,6 +550,40 @@ describe('GET /v1/admin/stats/lessons', () => {
     assert.equal(computeRan, false, 'stale path should NOT recompute synchronously');
   });
 
+  it('?refresh=1 bypasses a fresh cache and recomputes', async () => {
+    const cachedStats = { totalCompletions: 999, fromCache: true };
+    db.getSyncData = async () => ({
+      data: { computedAt: new Date().toISOString(), stats: cachedStats },
+    });
+    let computeRan = false;
+    db.listAllUsers = async () => { computeRan = true; return []; };
+    db.getAllSyncData = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons?refresh=1');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.fromCache, undefined, 'should not return cached payload');
+    assert.equal(data.totalCompletions, 0);
+    assert.equal(typeof data.computedAt, 'string');
+    assert.equal(computeRan, true);
+    assert.equal(putCalls.length, 1, 'should have written fresh cache');
+  });
+
+  it('returns computedAt inlined in the stats payload', async () => {
+    const computedAt = '2026-05-12T17:00:00.000Z';
+    db.getSyncData = async () => ({
+      data: { computedAt, stats: { totalCompletions: 7 } },
+    });
+    db.listAllUsers = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    const data = await res.json();
+    assert.equal(data.computedAt, computedAt);
+    assert.equal(data.totalCompletions, 7);
+  });
+
   it('recomputes synchronously when cache is older than MAX_AGE (>24h)', async () => {
     const expiredAgeMs = 25 * 60 * 60 * 1000; // 25 hours
     db.getSyncData = async () => ({

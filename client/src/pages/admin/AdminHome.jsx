@@ -1,8 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { MINS_PER_EXCHANGE } from '@/lib/constants.js';
+
+function formatRelativeTime(iso) {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return null;
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 45) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
 
 // Estimate active lesson time from exchange count.
 // Wall-clock duration (completedAt - startedAt) is unreliable because learners
@@ -231,6 +246,13 @@ export default function AdminHome() {
   const [pendingCount, setPendingCount] = useState(0);
   const [hasKB, setHasKB] = useState(true);
   const [lessonStats, setLessonStats] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshAnnounce, setRefreshAnnounce] = useState('');
+
+  const loadStats = useCallback(async ({ force = false } = {}) => {
+    const path = force ? '/v1/admin/stats/lessons?refresh=1' : '/v1/admin/stats/lessons';
+    return adminApi('GET', path);
+  }, []);
 
   useEffect(() => {
     document.title = 'Admin — plato';
@@ -238,19 +260,63 @@ export default function AdminHome() {
       adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
       adminApi('GET', '/v1/admin/knowledge-base'),
-      adminApi('GET', '/v1/admin/stats/lessons'),
+      loadStats(),
     ]).then(([users, invites, kb, stats]) => {
       setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
       setHasKB(!!kb?.content);
       setLessonStats(stats);
     }).catch(() => {});
+  }, [loadStats]);
+
+  // Re-render the "Last updated" string every 30s so it stays accurate without
+  // a refetch.
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setNow(n => n + 1), 30000);
+    return () => clearInterval(t);
   }, []);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshAnnounce('');
+    try {
+      const stats = await loadStats({ force: true });
+      setLessonStats(stats);
+      setRefreshAnnounce('Stats refreshed.');
+    } catch {
+      setRefreshAnnounce('Refresh failed. Try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const lastUpdated = formatRelativeTime(lessonStats?.computedAt);
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center gap-3 shrink-0">
+          {lastUpdated && (
+            <span className="text-xs text-muted-foreground" aria-label={`Stats last updated ${lastUpdated}`}>
+              Last updated {lastUpdated}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh dashboard stats"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
       <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
+      <span className="sr-only" role="status" aria-live="polite">{refreshAnnounce}</span>
 
       {!hasKB && (
         <Link to="/plato/setup-kb" className="block no-underline mb-6">

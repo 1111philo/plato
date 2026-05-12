@@ -999,26 +999,26 @@ export async function computeLessonStats() {
 
 export async function recomputeAndCacheLessonStats() {
   const stats = await computeLessonStats();
-  await db.putSyncData('_system', 'stats:lessons', {
-    computedAt: new Date().toISOString(),
-    stats,
-  });
-  return stats;
+  const computedAt = new Date().toISOString();
+  await db.putSyncData('_system', 'stats:lessons', { computedAt, stats });
+  return { computedAt, stats };
 }
 
 admin.get('/v1/admin/stats/lessons', async (c) => {
-  const cached = await db.getSyncData('_system', 'stats:lessons');
-  const status = classifyCache(cached);
-  if (status === 'fresh') {
-    return c.json(cached.data.stats);
+  const force = new URL(c.req.url).searchParams.get('refresh') === '1';
+  if (!force) {
+    const cached = await db.getSyncData('_system', 'stats:lessons');
+    const status = classifyCache(cached);
+    if (status === 'fresh') {
+      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
+    }
+    if (status === 'stale') {
+      kickoffAsyncRefresh(); // fire and forget
+      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
+    }
   }
-  if (status === 'stale') {
-    kickoffAsyncRefresh(); // fire and forget
-    return c.json(cached.data.stats);
-  }
-  // expired or missing — recompute synchronously
-  const stats = await recomputeAndCacheLessonStats();
-  return c.json(stats);
+  const { computedAt, stats } = await recomputeAndCacheLessonStats();
+  return c.json({ ...stats, computedAt });
 });
 
 // GET /v1/admin/users/:userId/stats — per-user activity metrics for the
