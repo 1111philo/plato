@@ -26,26 +26,34 @@ function validateDataKey(dataKey) {
 // transitions only count on first flip to 'completed' so post-completion
 // feedback turns don't double-count. Failures are swallowed — the primary
 // write already succeeded and stat fields self-heal via lazy backfill in
-// the admin endpoint.
+// the admin endpoint. Note: lastActiveAt is NOT touched here — per the
+// denormalization policy in CLAUDE.md, hot-path writes (every learner
+// message) would cause user-table write amplification. It lives on the
+// auth route instead, updated on login + refresh.
 async function applyActivityEffects(userId, dataKey, oldStatus, data) {
   try {
     if (dataKey.startsWith('lessonKB:')) {
       if (oldStatus !== 'completed' && data?.status === 'completed') {
         await db.incrementUserCounter(userId, 'lessonsCompleted', 1);
       }
-    } else if (dataKey.startsWith('messages:')) {
-      await db.setUserActivityField(userId, 'lastActiveAt', new Date().toISOString());
     }
   } catch { /* swallow — activity counters are best-effort */ }
 }
 
 // Pre-read the status of a lessonKB before writing it, so the post-write
 // hook can detect a first-time transition to 'completed'. Skips the read
-// for non-lessonKB keys to keep the hot path lean.
+// for non-lessonKB keys to keep the hot path lean. **Errors must not
+// propagate** — a failed pre-read just means we might miss one counter
+// increment (lazy backfill heals it), but the learner's lesson write
+// must never fail because of an ancillary read.
 async function readOldLessonKBStatus(userId, dataKey) {
   if (!dataKey.startsWith('lessonKB:')) return null;
-  const existing = await db.getSyncData(userId, dataKey);
-  return existing?.data?.status ?? null;
+  try {
+    const existing = await db.getSyncData(userId, dataKey);
+    return existing?.data?.status ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

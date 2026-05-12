@@ -307,18 +307,16 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     assert.equal(incCalls.length, 0, 'no counter bump when status was already completed');
   });
 
-  it('messages:* write updates lastActiveAt', async () => {
+  it('messages:* writes do NOT touch lastActiveAt (write-amplification anti-goal)', async () => {
     db.getSyncData = async () => null;
     const app = new Hono();
     app.route('/', sync);
     const res = await authedReq(app, 'PUT', '/v1/sync/messages:l1', { data: [{ role: 'user', content: 'hi' }], version: 0 });
     assert.equal(res.status, 200);
-    assert.equal(setCalls.length, 1);
-    assert.equal(setCalls[0].field, 'lastActiveAt');
-    assert.ok(new Date(setCalls[0].value).getTime() > 0);
+    assert.equal(setCalls.length, 0, 'lastActiveAt belongs on the auth route, not the message hot path');
   });
 
-  it('non-lessonKB, non-messages writes do not touch counters', async () => {
+  it('non-lessonKB writes do not touch counters', async () => {
     db.getSyncData = async () => null;
     const app = new Hono();
     app.route('/', sync);
@@ -335,5 +333,16 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     app.route('/', sync);
     const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 1 });
     assert.equal(res.status, 200, 'sync write succeeds even if counter update throws');
+  });
+
+  it('pre-read failure does not break the lesson-state write', async () => {
+    // Simulates DynamoDB throttling on the getSyncData call that detects the
+    // status transition. The primary write must still succeed; the counter
+    // just won't bump (lazy backfill heals it later).
+    db.getSyncData = async () => { throw new Error('throttled'); };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 0 });
+    assert.equal(res.status, 200, 'lesson write must not fail because the pre-read failed');
   });
 });

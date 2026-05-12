@@ -102,6 +102,7 @@ describe('POST /v1/auth/login', () => {
     db.storeRefreshToken = async () => {};
     db.getUserByUsername = async () => null;
     db.createAuditLog = async () => {};
+    db.setUserActivityField = async () => {};
   });
 
   it('logs in with correct credentials', async () => {
@@ -119,6 +120,38 @@ describe('POST /v1/auth/login', () => {
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
     assert.equal(data.user.username, 'testuser');
+  });
+
+  it('login updates lastActiveAt on the user record', async () => {
+    const { hashPassword } = await import('../../src/lib/password.js');
+    const hash = await hashPassword('password123');
+    db.getUserByEmail = async () => ({
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
+      role: 'user', passwordHash: hash,
+    });
+    const writes = [];
+    db.setUserActivityField = async (userId, field, value) => { writes.push({ userId, field, value }); };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/login', { email: 'test@example.com', password: 'password123' });
+    assert.equal(res.status, 200);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].field, 'lastActiveAt');
+    assert.ok(new Date(writes[0].value).getTime() > 0);
+  });
+
+  it('login still succeeds when the lastActiveAt write throws', async () => {
+    const { hashPassword } = await import('../../src/lib/password.js');
+    const hash = await hashPassword('password123');
+    db.getUserByEmail = async () => ({
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
+      role: 'user', passwordHash: hash,
+    });
+    db.setUserActivityField = async () => { throw new Error('throttled'); };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/login', { email: 'test@example.com', password: 'password123' });
+    assert.equal(res.status, 200, 'login must not fail if lastActiveAt write fails');
   });
 
   it('login still succeeds when the audit-log write throws', async () => {
@@ -182,6 +215,7 @@ describe('POST /v1/auth/refresh', () => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
+    db.setUserActivityField = async () => {};
     const app = new Hono();
     app.route('/', auth);
     const res = await req(app, 'POST', '/v1/auth/refresh', { refreshToken: 'rt_test' });
@@ -189,6 +223,33 @@ describe('POST /v1/auth/refresh', () => {
     const data = await res.json();
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
+  });
+
+  it('refresh updates lastActiveAt (heartbeat without per-message amplification)', async () => {
+    db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.deleteRefreshToken = async () => {};
+    db.storeRefreshToken = async () => {};
+    const writes = [];
+    db.setUserActivityField = async (userId, field, value) => { writes.push({ userId, field, value }); };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/refresh', { refreshToken: 'rt_test' });
+    assert.equal(res.status, 200);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].field, 'lastActiveAt');
+  });
+
+  it('refresh succeeds even if lastActiveAt write throws', async () => {
+    db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.deleteRefreshToken = async () => {};
+    db.storeRefreshToken = async () => {};
+    db.setUserActivityField = async () => { throw new Error('throttled'); };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/refresh', { refreshToken: 'rt_test' });
+    assert.equal(res.status, 200, 'refresh must not fail if lastActiveAt write fails');
   });
 
   it('rejects invalid refresh token', async () => {
