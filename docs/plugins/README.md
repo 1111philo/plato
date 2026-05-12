@@ -31,6 +31,7 @@ What plugins can NOT do (Phase 1):
 
 | For… | Read |
 |---|---|
+| **Deciding plugin vs. core** | [TRIAGE.md](./TRIAGE.md) — decision tree for whether a feature should be a plugin or core change |
 | **AI agents** building a plugin | [AGENTS.md](./AGENTS.md) — decision tree, DO-NOT list, copy-paste recipes |
 | Humans building a plugin | [AUTHORING.md](./AUTHORING.md) |
 | Looking up a slot/hook/capability | [EXTENSION_REFERENCE.md](./EXTENSION_REFERENCE.md) |
