@@ -31,6 +31,8 @@ Lessons are designed for completion within 11 exchanges (~20 minutes), but the s
 
 The admin dashboard tracks an **On-Target Rate** KPI showing what percentage of lessons complete within the 11-exchange target. A low rate means the **lesson design** or **coach prompt** probably needs tuning — not that pacing should be enforced more aggressively. Extended lessons (2× target or beyond) are surfaced as informational diagnostics, never as metrics to drive to zero.
 
+The dashboard also tracks two **Learner Engagement** KPIs: percentage of learners who have **started** any lesson (target >90%) and percentage who have **completed more than half** of their available lessons (target >50%). Both come from `GET /v1/admin/stats/lessons`, which is stale-while-revalidate cached (~10 min freshness) so dashboard loads stay fast. A **Refresh** button on the dashboard bypasses the cache and recomputes synchronously.
+
 Admins manage everything from `/plato`: lessons, users, a classroom customizer (styles + knowledge base), and plugins.
 
 ## Reporting issues

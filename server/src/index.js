@@ -4,7 +4,7 @@ import { cors } from 'hono/cors';
 import health from './routes/health.js';
 import auth from './routes/auth.js';
 import me from './routes/me.js';
-import admin from './routes/admin.js';
+import admin, { recomputeAndCacheLessonStats } from './routes/admin.js';
 import sync from './routes/sync.js';
 import ai from './routes/ai.js';
 import content from './routes/content.js';
@@ -17,6 +17,7 @@ import { seedDefaultContent } from './lib/seed.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
 import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
+import { isSelfInvokeEvent } from './lib/lesson-stats-cache.js';
 
 const server = new Hono();
 
@@ -100,8 +101,22 @@ server.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-// API Gateway handler (buffered — used by admin dashboard)
-export const handler = handle(server);
+// API Gateway handler (buffered — used by admin dashboard).
+// Wrapped to also handle self-invoke events for async dashboard-stats refresh.
+const _httpHandler = handle(server);
+export const handler = async (event, context) => {
+  if (isSelfInvokeEvent(event)) {
+    try {
+      await recomputeAndCacheLessonStats();
+      logger.event('stats_async_refresh_completed');
+      return { ok: true };
+    } catch (err) {
+      logger.error('stats_async_refresh_failed', { error: err?.message || String(err) });
+      throw err;
+    }
+  }
+  return _httpHandler(event, context);
+};
 
 // Function URL handler (streaming SSE responses)
 export const streamHandler = streamHandle(server);

@@ -1,8 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { MINS_PER_EXCHANGE } from '@/lib/constants.js';
+
+function formatRelativeTime(iso) {
+  if (!iso) return null;
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return null;
+  const diffSec = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (diffSec < 45) return 'just now';
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} hr ago`;
+  const diffDay = Math.round(diffHr / 24);
+  return `${diffDay} day${diffDay === 1 ? '' : 's'} ago`;
+}
 
 // Estimate active lesson time from exchange count.
 // Wall-clock duration (completedAt - startedAt) is unreliable because learners
@@ -11,6 +26,83 @@ import { MINS_PER_EXCHANGE } from '@/lib/constants.js';
 function estimateDuration(avgExchangesPerCompletion) {
   if (avgExchangesPerCompletion == null) return null;
   return Math.round(avgExchangesPerCompletion * MINS_PER_EXCHANGE * 10) / 10;
+}
+
+function EngagementWidget({ label, valuePct, count, total, targetPct, targetCopy }) {
+  const noData = valuePct == null;
+  // Targets are phrased "over X%" so the threshold is strict — exactly the
+  // target value is still below it. Matches the server's `> 0.5` per-learner rule.
+  const onTarget = !noData && valuePct > targetPct;
+  const cardClass = noData
+    ? ''
+    : onTarget
+      ? 'border-green-300 bg-green-50 ring-2 ring-green-200'
+      : 'border-red-300 bg-red-50 ring-2 ring-red-200';
+  const badgeClass = noData
+    ? 'bg-muted text-muted-foreground'
+    : onTarget
+      ? 'bg-green-200 text-green-900'
+      : 'bg-red-200 text-red-900';
+  const badgeText = noData ? '—' : onTarget ? 'On target' : 'Below target';
+  return (
+    <Card className={cardClass}>
+      <CardContent>
+        <div className="flex items-baseline justify-between gap-2">
+          <div>
+            <div className="text-sm font-medium">{label}</div>
+            <div className="text-4xl font-bold mt-1">{noData ? '—' : `${valuePct}%`}</div>
+          </div>
+          <span className={`text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded ${badgeClass}`}>
+            {badgeText}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground mt-2">Target: {targetCopy}</div>
+        {!noData && (
+          <div className="text-sm mt-1">
+            {count} of {total} learner{total !== 1 ? 's' : ''}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearnerEngagementSection({ stats }) {
+  const {
+    activeLearners = 0,
+    learnersStarted = 0,
+    learnersCompletedHalf = 0,
+    pctStarted = null,
+    pctCompletedHalf = null,
+    targetStartedPct = 90,
+    targetCompletedHalfPct = 50,
+  } = stats;
+
+  if (activeLearners === 0) return null;
+
+  return (
+    <>
+      <h2 className="text-lg font-semibold mt-8 mb-4">Learner Engagement</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <EngagementWidget
+          label="Started lessons"
+          valuePct={pctStarted}
+          count={learnersStarted}
+          total={activeLearners}
+          targetPct={targetStartedPct}
+          targetCopy={`Over ${targetStartedPct}% of learners have started at least one lesson`}
+        />
+        <EngagementWidget
+          label="Completed 50%+ of lessons"
+          valuePct={pctCompletedHalf}
+          count={learnersCompletedHalf}
+          total={activeLearners}
+          targetPct={targetCompletedHalfPct}
+          targetCopy={`Over ${targetCompletedHalfPct}% of learners have completed more than half of their available lessons`}
+        />
+      </div>
+    </>
+  );
 }
 
 function PacingSection({ stats }) {
@@ -156,6 +248,13 @@ export default function AdminHome() {
   const [pendingCount, setPendingCount] = useState(0);
   const [hasKB, setHasKB] = useState(true);
   const [lessonStats, setLessonStats] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshAnnounce, setRefreshAnnounce] = useState('');
+
+  const loadStats = useCallback(async ({ force = false } = {}) => {
+    const path = force ? '/v1/admin/stats/lessons?refresh=1' : '/v1/admin/stats/lessons';
+    return adminApi('GET', path);
+  }, []);
 
   useEffect(() => {
     document.title = 'Admin — plato';
@@ -163,19 +262,63 @@ export default function AdminHome() {
       adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
       adminApi('GET', '/v1/admin/knowledge-base'),
-      adminApi('GET', '/v1/admin/stats/lessons'),
+      loadStats(),
     ]).then(([users, invites, kb, stats]) => {
       setActiveCount(Array.isArray(users) ? users.length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
       setHasKB(!!kb?.content);
       setLessonStats(stats);
     }).catch(() => {});
+  }, [loadStats]);
+
+  // Re-render the "Last updated" string every 30s so it stays accurate without
+  // a refetch.
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setNow(n => n + 1), 30000);
+    return () => clearInterval(t);
   }, []);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshAnnounce('');
+    try {
+      const stats = await loadStats({ force: true });
+      setLessonStats(stats);
+      setRefreshAnnounce('Stats refreshed.');
+    } catch {
+      setRefreshAnnounce('Refresh failed. Try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const lastUpdated = formatRelativeTime(lessonStats?.computedAt);
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-1">Dashboard</h1>
+      <div className="flex items-start justify-between gap-4 mb-1">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center gap-3 shrink-0">
+          {lastUpdated && (
+            <span className="text-xs text-muted-foreground" aria-label={`Stats last updated ${lastUpdated}`}>
+              Last updated {lastUpdated}
+            </span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            aria-label="Refresh dashboard stats"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
       <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
+      <span className="sr-only" role="status" aria-live="polite">{refreshAnnounce}</span>
 
       {!hasKB && (
         <Link to="/plato/setup-kb" className="block no-underline mb-6">
@@ -205,6 +348,7 @@ export default function AdminHome() {
         </Link>
       </div>
 
+      {lessonStats && <LearnerEngagementSection stats={lessonStats} />}
       {lessonStats && <PacingSection stats={lessonStats} />}
     </div>
   );

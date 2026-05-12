@@ -10,6 +10,7 @@ import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
+import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
 
 const admin = new Hono();
 
@@ -893,16 +894,40 @@ admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   }
 });
 
-// GET /v1/admin/stats/lessons — lesson pacing KPIs
-// MAX_EXCHANGES is a design target, never a cutoff. Lessons always run until
-// the coach awards progress 10 — the system does not force-complete anyone.
-// `extendedThreshold` (2x target) is informational only: a lesson that runs
-// that long usually means the lesson design mismatched the learner, not that
-// the coach should close harder.
-admin.get('/v1/admin/stats/lessons', async (c) => {
-  // MAX_EXCHANGES imported at top from lesson-limits.js
+// GET /v1/admin/stats/lessons — lesson pacing + learner engagement KPIs
+//
+// Powers the admin dashboard at `/plato`. Two families of metrics:
+//   - Pacing: how on-target completed lessons are (on-target rate, over-target
+//     count, extended-lesson count). MAX_EXCHANGES is a design target, never a
+//     cutoff. `extendedThreshold` (2x target) is informational only — a lesson
+//     that runs that long signals a lesson-design mismatch, not a coach
+//     failure.
+//   - Engagement: `pctStarted` (target >90%) and `pctCompletedHalf` (target
+//     >50%). Denominator is non-admin users; "started" = ≥1 lessonKB:* of any
+//     status; "completed half" = lessonsCompleted / lessonsAvailable > 0.5
+//     (strict — exactly 50% does not count).
+//
+// Response shape: a flat object with all metric fields plus a `computedAt`
+// ISO timestamp (server-generated). The dashboard renders this directly.
+//
+// Caching: stale-while-revalidate (see server/src/lib/lesson-stats-cache.js).
+// Fresh window 10 min; stale window 10 min – 24 h serves cached + fires an
+// async Lambda self-invoke for refresh; older than 24 h or missing recomputes
+// synchronously. The fan-in (every user × every sync-data item) means the
+// recompute should never be on the hot path.
+//
+// `?refresh=1` bypasses the cache and recomputes synchronously — the dashboard's
+// Refresh button uses it. Admin-gated like everything under /v1/admin.
+
+// Pure aggregation — no Hono, no cache, no auth. Exported so the async-refresh
+// path (server/src/index.js handler dispatching a self-invoke) can call it
+// directly without going through the HTTP layer.
+export async function computeLessonStats() {
   const extendedThreshold = MAX_EXCHANGES * 2;
   const users = await db.listAllUsers();
+  const systemItems = await db.getAllSyncData('_system');
+
+  // Pacing aggregates
   let withinTarget = 0;
   let overTarget = 0;
   let extendedLessons = 0; // completed lessons that ran past 2× target
@@ -911,13 +936,24 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
   let activeLessons = 0;
   const durations = []; // in minutes
 
+  // Engagement aggregates (#TARGET_STARTED_PCT / #TARGET_COMPLETED_HALF_PCT)
+  let activeLearners = 0;       // non-admin users
+  let learnersStarted = 0;      // ≥1 lessonKB:* record of any status
+  let learnersCompletedHalf = 0; // completed > 50% of lessons available to them
+
   for (const user of users) {
+    const isLearner = user.role !== 'admin';
     const syncItems = await db.getAllSyncData(user.userId);
+    let userHasStarted = false;
+    let userCompleted = 0;
+
     for (const item of syncItems) {
       if (!item.dataKey?.startsWith('lessonKB:')) continue;
       const kb = item.data;
       if (!kb) continue;
+      userHasStarted = true;
       if (kb.status === 'completed') {
+        userCompleted++;
         const exchanges = kb.activitiesCompleted || 0;
         if (exchanges <= MAX_EXCHANGES) {
           withinTarget++;
@@ -927,11 +963,9 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
           totalExchangesOver += exchanges;
           if (exchanges >= extendedThreshold) extendedLessons++;
         }
-        // Compute duration if timestamps are available
         if (kb.startedAt && kb.completedAt) {
           durations.push((kb.completedAt - kb.startedAt) / 60000);
         } else {
-          // Fallback: try to get duration from message timestamps
           const lessonId = item.dataKey.replace('lessonKB:', '');
           const msgItem = syncItems.find(s => s.dataKey === `messages:${lessonId}`);
           const msgs = msgItem?.data;
@@ -945,13 +979,21 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
         activeLessons++;
       }
     }
+
+    if (isLearner) {
+      activeLearners++;
+      if (userHasStarted) learnersStarted++;
+      const available = countLessonsAvailableTo(user.userId, systemItems);
+      if (available > 0 && userCompleted / available > 0.5) learnersCompletedHalf++;
+    }
   }
 
   const totalCompletions = withinTarget + overTarget;
   const avgDurationMinutes = durations.length
     ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1)
     : null;
-  return c.json({
+
+  return {
     totalCompletions,
     withinTarget,
     overTarget,
@@ -963,7 +1005,39 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     avgExchangesOverTarget: overTarget ? +(totalExchangesOver / overTarget).toFixed(1) : null,
     avgDurationMinutes,
     activeLessons,
-  });
+    // Engagement KPIs
+    activeLearners,
+    learnersStarted,
+    learnersCompletedHalf,
+    pctStarted: activeLearners > 0 ? +((learnersStarted / activeLearners) * 100).toFixed(1) : null,
+    pctCompletedHalf: activeLearners > 0 ? +((learnersCompletedHalf / activeLearners) * 100).toFixed(1) : null,
+    targetStartedPct: 90,
+    targetCompletedHalfPct: 50,
+  };
+}
+
+export async function recomputeAndCacheLessonStats() {
+  const stats = await computeLessonStats();
+  const computedAt = new Date().toISOString();
+  await db.putSyncData('_system', 'stats:lessons', { computedAt, stats });
+  return { computedAt, stats };
+}
+
+admin.get('/v1/admin/stats/lessons', async (c) => {
+  const force = new URL(c.req.url).searchParams.get('refresh') === '1';
+  if (!force) {
+    const cached = await db.getSyncData('_system', 'stats:lessons');
+    const status = classifyCache(cached);
+    if (status === 'fresh') {
+      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
+    }
+    if (status === 'stale') {
+      kickoffAsyncRefresh(); // fire and forget
+      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
+    }
+  }
+  const { computedAt, stats } = await recomputeAndCacheLessonStats();
+  return c.json({ ...stats, computedAt });
 });
 
 // GET /v1/admin/users/:userId/stats — per-user activity metrics for the

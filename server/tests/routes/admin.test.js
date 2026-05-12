@@ -388,15 +388,23 @@ describe('draft lesson records', () => {
 });
 
 describe('GET /v1/admin/stats/lessons', () => {
+  // Stats endpoint is wrapped in a stale-while-revalidate cache stored in
+  // `_system:stats:lessons`. By default each test mocks an empty cache so the
+  // compute path runs synchronously; the cache-behavior tests override.
+  let putCalls;
   beforeEach(() => {
+    putCalls = [];
     db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async (userId, dataKey, data) => { putCalls.push({ userId, dataKey, data }); };
   });
 
   it('returns aggregated lesson stats', async () => {
     db.listAllUsers = async () => [
-      { userId: 'u1' }, { userId: 'u2' }, { userId: 'u3' },
+      { userId: 'u1', role: 'user' }, { userId: 'u2', role: 'user' }, { userId: 'u3', role: 'user' },
     ];
     db.getAllSyncData = async (userId) => {
+      if (userId === '_system') return [];
       if (userId === 'u1') return [
         { dataKey: 'lessonKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 6, startedAt: 1000000, completedAt: 1600000 } },
         { dataKey: 'lessonKB:c2', data: { status: 'active', progress: 4, activitiesCompleted: 3 } },
@@ -424,10 +432,15 @@ describe('GET /v1/admin/stats/lessons', () => {
     assert.equal(data.exchangeTarget, 11);
     assert.equal(data.extendedThreshold, 22);
     assert.equal(data.avgDurationMinutes, 20);
+    // Cache write happened
+    assert.equal(putCalls.length, 1);
+    assert.equal(putCalls[0].userId, '_system');
+    assert.equal(putCalls[0].dataKey, 'stats:lessons');
   });
 
   it('returns nulls when no completions', async () => {
     db.listAllUsers = async () => [];
+    db.getAllSyncData = async () => [];
     const app = new Hono();
     app.route('/', admin);
     const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
@@ -435,6 +448,157 @@ describe('GET /v1/admin/stats/lessons', () => {
     const data = await res.json();
     assert.equal(data.totalCompletions, 0);
     assert.equal(data.avgExchangesPerCompletion, null);
+  });
+
+  it('computes engagement KPIs (started + completed-half), excluding admins from the denominator', async () => {
+    db.listAllUsers = async () => [
+      { userId: 'u1', role: 'user' },      // started + completed 2/2 -> counts as "completed half+"
+      { userId: 'u2', role: 'user' },      // started, completed 0/2 -> started only
+      { userId: 'u3', role: 'user' },      // not started
+      { userId: 'a1', role: 'admin' },     // admin: excluded from denominator
+    ];
+    db.getAllSyncData = async (userId) => {
+      if (userId === '_system') return [
+        { dataKey: 'lesson:L1', data: { status: 'public', markdown: '...' } },
+        { dataKey: 'lesson:L2', data: { status: 'public', markdown: '...' } },
+      ];
+      if (userId === 'u1') return [
+        { dataKey: 'lessonKB:L1', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:L2', data: { status: 'completed', activitiesCompleted: 5 } },
+      ];
+      if (userId === 'u2') return [
+        { dataKey: 'lessonKB:L1', data: { status: 'active', activitiesCompleted: 1 } },
+      ];
+      return []; // u3, a1
+    };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.activeLearners, 3); // admins excluded
+    assert.equal(data.learnersStarted, 2); // u1, u2
+    assert.equal(data.learnersCompletedHalf, 1); // u1 (2/2 > 50%)
+    assert.equal(data.pctStarted, 66.7);
+    assert.equal(data.pctCompletedHalf, 33.3);
+    assert.equal(data.targetStartedPct, 90);
+    assert.equal(data.targetCompletedHalfPct, 50);
+  });
+
+  it('exactly-50% does NOT count as completed-half (rule is > 50%)', async () => {
+    db.listAllUsers = async () => [
+      { userId: 'u1', role: 'user' }, // 1/2 completed = 50% — NOT > 50%
+      { userId: 'u2', role: 'user' }, // 2/3 completed = 66.7% — counts
+    ];
+    db.getAllSyncData = async (userId) => {
+      if (userId === '_system') return [
+        { dataKey: 'lesson:L1', data: { status: 'public', markdown: '...' } },
+        { dataKey: 'lesson:L2', data: { status: 'public', markdown: '...' } },
+        { dataKey: 'lesson:L3', data: { status: 'public', markdown: '...' } },
+      ];
+      if (userId === 'u1') return [
+        { dataKey: 'lessonKB:L1', data: { status: 'completed', activitiesCompleted: 5 } },
+      ];
+      if (userId === 'u2') return [
+        { dataKey: 'lessonKB:L1', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:L2', data: { status: 'completed', activitiesCompleted: 5 } },
+      ];
+      return [];
+    };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    const data = await res.json();
+    assert.equal(data.learnersCompletedHalf, 1); // u2 only
+  });
+
+  it('serves cached value without recomputing when cache is fresh', async () => {
+    const cachedStats = { totalCompletions: 999, fromCache: true };
+    db.getSyncData = async (userId, dataKey) => {
+      if (userId === '_system' && dataKey === 'stats:lessons') {
+        return { data: { computedAt: new Date().toISOString(), stats: cachedStats } };
+      }
+      return null;
+    };
+    let computeRan = false;
+    db.listAllUsers = async () => { computeRan = true; return []; };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.totalCompletions, 999);
+    assert.equal(data.fromCache, true);
+    assert.equal(computeRan, false, 'should not have recomputed');
+    assert.equal(putCalls.length, 0, 'should not have written cache');
+  });
+
+  it('serves cached value and skips synchronous recompute when cache is stale (10min < age < 24h)', async () => {
+    const cachedStats = { totalCompletions: 42, fromCache: true };
+    const staleAgeMs = 30 * 60 * 1000; // 30 minutes
+    db.getSyncData = async () => ({
+      data: { computedAt: new Date(Date.now() - staleAgeMs).toISOString(), stats: cachedStats },
+    });
+    let computeRan = false;
+    db.listAllUsers = async () => { computeRan = true; return []; };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.fromCache, true);
+    assert.equal(computeRan, false, 'stale path should NOT recompute synchronously');
+  });
+
+  it('?refresh=1 bypasses a fresh cache and recomputes', async () => {
+    const cachedStats = { totalCompletions: 999, fromCache: true };
+    db.getSyncData = async () => ({
+      data: { computedAt: new Date().toISOString(), stats: cachedStats },
+    });
+    let computeRan = false;
+    db.listAllUsers = async () => { computeRan = true; return []; };
+    db.getAllSyncData = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons?refresh=1');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.fromCache, undefined, 'should not return cached payload');
+    assert.equal(data.totalCompletions, 0);
+    assert.equal(typeof data.computedAt, 'string');
+    assert.equal(computeRan, true);
+    assert.equal(putCalls.length, 1, 'should have written fresh cache');
+  });
+
+  it('returns computedAt inlined in the stats payload', async () => {
+    const computedAt = '2026-05-12T17:00:00.000Z';
+    db.getSyncData = async () => ({
+      data: { computedAt, stats: { totalCompletions: 7 } },
+    });
+    db.listAllUsers = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    const data = await res.json();
+    assert.equal(data.computedAt, computedAt);
+    assert.equal(data.totalCompletions, 7);
+  });
+
+  it('recomputes synchronously when cache is older than MAX_AGE (>24h)', async () => {
+    const expiredAgeMs = 25 * 60 * 60 * 1000; // 25 hours
+    db.getSyncData = async () => ({
+      data: { computedAt: new Date(Date.now() - expiredAgeMs).toISOString(), stats: { stale: true } },
+    });
+    db.listAllUsers = async () => [];
+    db.getAllSyncData = async () => [];
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.stale, undefined, 'should not return stale cache');
+    assert.equal(data.totalCompletions, 0);
+    assert.equal(putCalls.length, 1, 'should have written fresh cache');
   });
 });
 

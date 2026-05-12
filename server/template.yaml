@@ -76,6 +76,15 @@ Resources:
             - Effect: Allow
               Action: logs:DescribeLogGroups
               Resource: "*"
+        - Statement:
+            # Self-invoke for stale-while-revalidate dashboard stats refresh.
+            # Scoped to functions in this stack (the SAM-generated function
+            # name starts with the stack name). A circular self-reference
+            # via !GetAtt would also work but breaks stack creation order;
+            # the stack-name prefix avoids the dependency.
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-*"
       Events:
         ApiCatchAll:
           Type: HttpApi
