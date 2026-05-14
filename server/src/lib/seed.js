@@ -80,12 +80,24 @@ export async function seedDefaultContent() {
     for (const file of lessonFiles) {
       const lessonId = file.replace(/\.md$/, '');
       const markdown = readFileSync(join(lessonsDir, file), 'utf-8');
+      // Extract lesson name from H1 in markdown (first line starting with "# ")
+      const h1Match = markdown.match(/^#\s+(.+)$/m);
+      const name = h1Match ? h1Match[1].trim() : lessonId;
       const existing = await db.getSyncData('_system', `lesson:${lessonId}`);
       if (!existing) {
         await db.putSyncData('_system', `lesson:${lessonId}`, {
-          markdown, name: lessonId, isBuiltIn: true, updatedBy: 'setup',
+          markdown, name, isBuiltIn: true, updatedBy: 'setup',
           createdAt: new Date().toISOString(),
         }, 0);
+        seeded++;
+      } else if (existing.data.name !== name || existing.data.markdown !== markdown) {
+        // Update existing lessons if name or markdown changed
+        await db.putSyncData('_system', `lesson:${lessonId}`, {
+          ...existing.data,
+          markdown,
+          name,
+          updatedBy: 'setup',
+        }, existing.version);
         seeded++;
       }
     }
