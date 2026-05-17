@@ -139,7 +139,20 @@ export default function LessonsList() {
     if (statusFilter !== STATUS_ALL) {
       result = result.filter((l) => lessonStatusKey(lessonData[l.lessonId]) === statusFilter);
     }
-    return result;
+    // Sort by course name first (uncategorized lessons last), then by lesson
+    // title within each course.
+    return result.slice().sort((a, b) => {
+      const courseA = a.course?.name || '';
+      const courseB = b.course?.name || '';
+      // Push lessons without courses to the end
+      if (!courseA && courseB) return 1;
+      if (courseA && !courseB) return -1;
+      // Compare course names alphabetically
+      const courseCompare = courseA.localeCompare(courseB, undefined, { numeric: true, sensitivity: 'base' });
+      if (courseCompare !== 0) return courseCompare;
+      // Within the same course (or both uncategorized), sort by lesson name
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }, [lessons, courseFilter, statusFilter, lessonData]);
 
   // Pagination math. We clamp the current page to the available range so a
