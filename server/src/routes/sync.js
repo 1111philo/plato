@@ -7,7 +7,7 @@ const sync = new Hono();
 sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
-const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|lessons:.+|onboardingComplete)$/;
+const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete)$/;
 
 // Keep user record name in sync with extension preferences
 async function syncNameIfNeeded(userId, dataKey, data) {
@@ -83,15 +83,19 @@ function rejectWriteIfImpersonating(c) {
   return null;
 }
 
-// GET /v1/sync — get all synced data. Plugin-owned per-user records
-// (`userMeta:<pluginId>`) are filtered out — they're admin-only by default,
-// and the plugin's own routes are responsible for any learner exposure.
+// GET /v1/sync — get all synced data. Two record families are filtered out:
+//   - `userMeta:<pluginId>` — plugin-owned, admin-only by default; the
+//     plugin's own routes are responsible for any learner exposure.
+//   - `screenshot:<key>` — pasted images, stored one-per-record and often
+//     hundreds of KB each. Bundling them into this bulk payload (fetched on
+//     every login *and* every tab refocus) would be wasteful; they're
+//     fetched on demand by key via GET /v1/sync/:dataKey instead.
 sync.get('/v1/sync', async (c) => {
   const resolved = resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const items = await db.getAllSyncData(resolved.userId);
   return c.json(items
-    .filter((item) => !item.dataKey?.startsWith('userMeta:'))
+    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:'))
     .map((item) => ({
       dataKey: item.dataKey,
       data: item.data,

@@ -20,6 +20,7 @@ plato is an Open Source, AI-powered [microlearning](https://philosophers.group/p
 - Content stored as `_system` sync-data: `prompt:*`, `lesson:*`, `knowledgeBase`, `settings`
 - Prompts are bundled in `client/prompts/*.md` and upserted to DB on every server startup — admins cannot edit prompts directly
 - User-created lessons stored under user's own sync-data: `lessons:custom-*`
+- Lesson conversation persistence: a learner's chat history for a lesson lives in one `messages:<lessonId>` sync-data record (append-only via `saveLessonMessages`); progress lives separately in `lessonKB:<lessonId>`. **Pasted/uploaded images are NOT embedded in the messages record** — each image is its own `screenshot:<key>` record, and the message stores only `metadata.imageKeys`. This is load-bearing: DynamoDB caps a single item at 400 KB, and inlining base64 screenshots blew the `messages:` record past that limit. The write then failed, but `client/js/storage.js`'s `putSyncData` swallowed the non-409 error, so the in-memory cache looked fine until the next `loadAll()` (on tab refocus) replaced it with the stale server copy — the learner's conversation silently vanished while the small `lessonKB` record survived (issues #191, #193). Images are compressed client-side on paste (`client/src/lib/imageCompression.js`) to stay well under the per-record limit, persisted one-per-record, and excluded from the bulk `GET /v1/sync` payload (fetched on demand by key). `resumeLesson` re-hydrates `imageKeys` → data URLs for rendering via `hydrateMessageImages`. Legacy messages that still embed `imageDataUrls` directly render unchanged. `putSyncData` now logs rejected/failed writes instead of swallowing them. The `LessonChat` resume effect keys on stable values (`lessonGroupId`, lesson presence) — never the `lesson` object identity, which changes on every tab refocus and used to re-run the effect and reset the conversation mid-lesson.
 - 8 AI agents via Bedrock or Anthropic API (prompt files in `client/prompts/`). Each prompt file has an HTML comment header documenting what it reads, who calls it, and its purpose:
   - **coach** — Reads: lesson prompt, lesson KB, learner profile, program KB. The main learner-facing agent.
   - **lesson-creator** — Reads: program KB. Helps admins design lessons via conversation.
@@ -187,6 +188,7 @@ The site is served via CloudFront -> Lambda Function URL. The Origin Request Pol
 - `client/src/lib/lessonCreationEngine.js` — lesson creation conversation flow
 - `client/js/lessonOwner.js` — lesson loading and markdown parsing
 - `client/js/storage.js` — sync-data cache and persistence
+- `client/src/lib/imageCompression.js` — downscales pasted screenshots so each `screenshot:*` record stays under DynamoDB's 400 KB item limit
 - `client/js/orchestrator.js` — AI agent orchestration
 - `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow keyboard navigation between chat messages
 - `client/src/hooks/useTitleNotification.js` — document title flash for new-message notifications

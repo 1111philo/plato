@@ -46,6 +46,20 @@ describe('GET /v1/sync', () => {
     const keys = data.map((d) => d.dataKey).sort();
     assert.deepEqual(keys, ['preferences', 'profile'], 'userMeta:* must be hidden from learners');
   });
+
+  it('filters out screenshot:* records (fetched on demand, not in the bulk payload)', async () => {
+    db.getAllSyncData = async () => [
+      { dataKey: 'messages:wp-1', data: [], version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+      { dataKey: 'screenshot:lesson-wp-1-0', data: 'data:image/jpeg;base64,abc', version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+      { dataKey: 'screenshot:lesson-wp-2-0', data: 'data:image/jpeg;base64,def', version: 1, updatedAt: '2024-01-01T00:00:00Z' },
+    ];
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'GET', '/v1/sync');
+    const data = await res.json();
+    const keys = data.map((d) => d.dataKey);
+    assert.deepEqual(keys, ['messages:wp-1'], 'screenshot:* must stay out of the bulk sync payload');
+  });
 });
 
 describe('PUT /v1/sync/:dataKey', () => {
@@ -81,6 +95,16 @@ describe('PUT /v1/sync/:dataKey', () => {
     app.route('/', sync);
     const res = await authedReq(app, 'PUT', '/v1/sync/invalid-key', { data: {} });
     assert.equal(res.status, 400);
+  });
+
+  it('accepts screenshot:<key> records (pasted images persist one-per-record)', async () => {
+    db.putSyncData = async () => ({ version: 1, updatedAt: '2024-01-01T00:00:00Z' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/screenshot:lesson-wp-1700000000000-0', {
+      data: 'data:image/jpeg;base64,abc', version: 0,
+    });
+    assert.equal(res.status, 200);
   });
 
   it('accepts progress:lessonId keys', async () => {

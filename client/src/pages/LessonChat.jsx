@@ -35,6 +35,18 @@ export default function LessonChat() {
   const { impersonatedUser } = useAuth();
   const impersonating = !!impersonatedUser;
 
+  // The resume/start effect below must run once per lesson — NOT every time
+  // the lessons array is rebuilt. Returning to the browser tab re-runs
+  // `loadAll()` + `loadLessons()`, which produces a fresh `lesson` object
+  // with the same contents but a new identity. Keying the effect on that
+  // identity made it re-run on every tab refocus, re-fetching messages from
+  // the (just-cleared) cache and resetting the conversation to its last
+  // persisted state mid-lesson (issue #191). The effect reads `lesson` via
+  // this ref and keys only on stable values (id + presence).
+  const lessonRef = useRef(lesson);
+  useEffect(() => { lessonRef.current = lesson; }, [lesson]);
+  const lessonLoaded = !!lesson;
+
   const [phase, setPhase] = useState(null);
   const [messages, setMessages] = useState([]);
   const [lessonKB, setLessonKB] = useState(null);
@@ -146,11 +158,13 @@ export default function LessonChat() {
   }, [showObjectives]);
 
   useEffect(() => {
+    const lesson = lessonRef.current;
     if (!lesson) return;
     let cancelled = false;
 
     (async () => {
       const existing = await engine.resumeLesson(lessonGroupId);
+      if (cancelled) return;
 
       if (existing.messages.length > 0) {
         setMessages(existing.messages);
@@ -181,7 +195,7 @@ export default function LessonChat() {
     })();
 
     return () => { cancelled = true; };
-  }, [lessonGroupId, lesson, impersonating]);
+  }, [lessonGroupId, lessonLoaded, impersonating]);
 
   const handleSend = useCallback(async ({ text, imageDataUrls }) => {
     const hasImages = Array.isArray(imageDataUrls) && imageDataUrls.length > 0;

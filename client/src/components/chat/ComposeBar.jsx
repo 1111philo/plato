@@ -1,5 +1,6 @@
 import { useState, useRef, useId, useEffect } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
+import { compressImageDataUrl } from '../../lib/imageCompression.js';
 import { Button } from '@/components/ui/button';
 
 const MAX_IMAGES = 4;
@@ -93,7 +94,14 @@ export default function ComposeBar({
     setLoadingCount(valid.length);
     try {
       const loaded = await Promise.all(valid.map(readImageAsDataUrl));
-      setImages([...images, ...loaded].slice(0, MAX_IMAGES));
+      // Compress before the image enters the compose state: it's persisted
+      // one-per-record as `screenshot:*` sync data, which DynamoDB caps at
+      // 400 KB. A raw screenshot can blow that limit (issues #191, #193).
+      const compressed = await Promise.all(loaded.map(async (img) => ({
+        ...img,
+        dataUrl: await compressImageDataUrl(img.dataUrl),
+      })));
+      setImages([...images, ...compressed].slice(0, MAX_IMAGES));
     } catch {
       alert('Failed to read image. Please try again.');
     } finally {

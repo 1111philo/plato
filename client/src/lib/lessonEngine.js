@@ -10,7 +10,7 @@
 import {
   getLearnerProfileSummary, getPreferences,
   getLessonKB, saveLessonKB,
-  saveScreenshot,
+  saveScreenshot, getScreenshot,
   saveLessonMessages, getLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
@@ -198,11 +198,15 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
 
   const imageDataUrls = normalizeImageDataUrls(imageDataUrl);
 
-  // Validate and save images
+  // Validate and persist images as individual `screenshot:*` records. The
+  // conversation record stores only these keys (see saveLessonMessages
+  // below) — never the base64 — so it stays small enough for DynamoDB.
+  // The index disambiguates images pasted within the same millisecond.
   const imageKeys = [];
-  for (const url of imageDataUrls) {
+  for (let i = 0; i < imageDataUrls.length; i++) {
+    const url = imageDataUrls[i];
     assertImageWithinBedrockLimit(url);
-    const key = `lesson-${lessonId}-${ts()}`;
+    const key = `lesson-${lessonId}-${ts()}-${i}`;
     await saveScreenshot(key, url);
     imageKeys.push(key);
   }
@@ -257,24 +261,49 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, onStream
     updateProfileOnCompletionInBackground(lessonKB, lesson);
   }
 
-  // Save messages
-  const newMessages = [
-    { role: 'user', content: text || (imageDataUrls.length > 0 ? '[image]' : ''), msgType: MSG_TYPES.USER, phase,
-      metadata: imageDataUrls.length > 0 ? { imageDataUrls: [...imageDataUrls] } : null, timestamp: ts() },
-    { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() },
-  ];
+  // Save messages. The persisted user message references images by KEY only
+  // — the base64 lives in separate `screenshot:*` records. `imageDataUrls`
+  // is attached for the caller's in-session render but is NOT persisted.
+  const persistedUserMsg = {
+    role: 'user', content: text || (imageDataUrls.length > 0 ? '[image]' : ''),
+    msgType: MSG_TYPES.USER, phase,
+    metadata: imageKeys.length > 0 ? { imageKeys } : null, timestamp: ts(),
+  };
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
 
-  await saveLessonMessages(lessonId, newMessages);
+  await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
   syncInBackground(`messages:${lessonId}`);
 
-  return { messages: newMessages, progress: parsed.progress, achieved, phase };
+  const userMsg = imageDataUrls.length > 0
+    ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }
+    : persistedUserMsg;
+  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase };
+}
+
+/**
+ * Resolve persisted image references back to data URLs for rendering.
+ *
+ * Messages persist only `metadata.imageKeys` — the base64 lives in separate
+ * `screenshot:*` records. This fetches each one and attaches a transient
+ * `metadata.imageDataUrls` (never persisted) so the render path is uniform.
+ * Legacy messages that still embed `imageDataUrls` directly (pre-#193) are
+ * returned untouched — that field already drives the same render path.
+ */
+export async function hydrateMessageImages(messages) {
+  return Promise.all((messages || []).map(async (m) => {
+    const keys = m.metadata?.imageKeys;
+    if (!Array.isArray(keys) || keys.length === 0) return m;
+    const urls = (await Promise.all(keys.map((k) => getScreenshot(k)))).filter(Boolean);
+    if (urls.length === 0) return m;
+    return { ...m, metadata: { ...m.metadata, imageDataUrls: urls } };
+  }));
 }
 
 /**
  * Resume an existing lesson. Loads messages and KB.
  */
 export async function resumeLesson(lessonId) {
-  const messages = await getLessonMessages(lessonId);
+  const messages = await hydrateMessageImages(await getLessonMessages(lessonId));
   const lessonKB = await getLessonKB(lessonId);
   const progress = lessonKB?.progress ?? 0;
   const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
