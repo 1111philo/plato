@@ -372,6 +372,16 @@ export default function AdminUsers() {
     catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
+  async function resetUserPassword(userId, email) {
+    if (!confirm(`Send a password reset email to ${email}?`)) return;
+    try {
+      await adminApi('POST', `/v1/admin/users/${userId}/reset-password`);
+      setMessage({ text: `Password reset email sent to ${email}.`, type: 'success' });
+    } catch (e) {
+      setMessage({ text: e.message, type: 'error' });
+    }
+  }
+
   // -- Groups --
 
   async function addGroup() {
@@ -577,9 +587,14 @@ export default function AdminUsers() {
               <Button onClick={saveEditUser}>Save</Button>
               <Button variant="outline" onClick={closeEditUser}>Cancel</Button>
               {!isSelf && (
-                <Button variant="destructive" className="ml-auto" onClick={() => { closeEditUser(); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
-                  Delete User
-                </Button>
+                <>
+                  <Button variant="outline" className="ml-auto" onClick={() => resetUserPassword(editUser.userId, editUser.email)}>
+                    Reset Password
+                  </Button>
+                  <Button variant="destructive" onClick={() => { closeEditUser(); deleteUser(editUser.userId, editUser.name || editUser.email); }}>
+                    Delete User
+                  </Button>
+                </>
               )}
             </div>
             <PluginSlot name="adminProfileFields" context={{ user: editUser }} />

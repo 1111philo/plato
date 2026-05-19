@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
-import { generateInviteToken } from '../lib/crypto.js';
-import { sendInviteEmail } from '../lib/email.js';
+import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
+import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
 import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
 import { logger } from '../lib/logger.js';
@@ -363,6 +363,20 @@ admin.put('/v1/admin/users/:userId/role', async (c) => {
   }
   await db.updateUser(userId, { role });
   return c.json({ ok: true, role });
+});
+
+// POST /v1/admin/users/:userId/reset-password
+// Admin initiates password reset for a user by sending them a reset email.
+admin.post('/v1/admin/users/:userId/reset-password', async (c) => {
+  const userId = c.req.param('userId');
+  const user = await db.getUserById(userId);
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+  const token = generateResetToken();
+  await db.storeResetToken(hashToken(token), user.userId);
+  await sendResetEmail(user.email, token);
+  return c.json({ ok: true });
 });
 
 // GET /v1/admin/settings
