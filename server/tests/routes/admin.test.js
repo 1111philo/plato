@@ -571,7 +571,7 @@ describe('GET /v1/admin/stats/lessons', () => {
   });
 
   it('returns computedAt inlined in the stats payload', async () => {
-    const computedAt = '2026-05-12T17:00:00.000Z';
+    const computedAt = new Date().toISOString();
     db.getSyncData = async () => ({
       data: { computedAt, stats: { totalCompletions: 7 } },
     });
