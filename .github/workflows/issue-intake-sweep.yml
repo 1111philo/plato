@@ -1,0 +1,37 @@
+name: issue-intake-sweep
+
+# Backstop for issue-intake. issue-intake runs on `issues: opened`, but if
+# that run fails (e.g. a transient claude-code-action internal error — that
+# is what left #193 un-triaged and invisible to plato-pilot), the issue keeps
+# no intake label and falls into a silent black hole. This sweep finds those
+# gaps every 6 hours and re-dispatches issue-intake on them. Self-healing:
+# once intake succeeds the label appears and the issue drops out of the sweep.
+on:
+  schedule:
+    - cron: '23 */6 * * *'  # every 6 hours
+  workflow_dispatch:
+
+concurrency:
+  group: issue-intake-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      actions: write  # re-dispatch issue-intake.yml via workflow_dispatch
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Sweep for un-triaged issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/intake-sweep.js
