@@ -15,8 +15,6 @@ export default function LessonPreviewPane({
   isCreate,
   refreshDisabled,
   onRefresh,
-  onHide,
-  hideButtonRef,
 }) {
   const hasContent = !!markdown?.trim();
   const saveLabel = isCreate ? 'Create Lesson' : 'Update Lesson';
@@ -28,26 +26,15 @@ export default function LessonPreviewPane({
     >
       <div className="flex items-center justify-between gap-2 mb-2">
         <h2 className="text-sm font-semibold">Lesson preview</h2>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onRefresh}
-            disabled={refreshDisabled}
-          >
-            {loading ? 'Refreshing…' : 'Refresh preview'}
-          </Button>
-          <Button
-            ref={hideButtonRef}
-            variant="ghost"
-            size="sm"
-            onClick={onHide}
-            aria-label="Hide preview"
-            aria-expanded={true}
-          >
-            Hide
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={onRefresh}
+          disabled={refreshDisabled}
+        >
+          {loading ? 'Refreshing…' : 'Refresh preview'}
+        </Button>
       </div>
 
       {/* Staleness hint — the conversation has advanced past the last refresh. */}

@@ -335,7 +335,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
 
   // Markdown preview pane. Refreshed manually via the lesson-extractor agent;
   // never persisted until the admin clicks Create/Update Lesson.
-  const [previewVisible, setPreviewVisible] = useState(true);
   const [previewMarkdown, setPreviewMarkdown] = useState(initialMarkdown || '');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -345,11 +344,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
   const [previewSyncedAt, setPreviewSyncedAt] = useState(
     initialMarkdown ? (initialMessages?.length || 0) : 0
   );
-  const showPreviewRef = useRef(null);
-  const hidePreviewRef = useRef(null);
-  // Pending focus target after a visibility toggle (the button to focus once
-  // it has mounted). Cleared by the effect below.
-  const pendingPreviewFocus = useRef(null);
 
   // Load course list once on mount so the dropdown can populate.
   useEffect(() => {
@@ -581,24 +575,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     }
   }
 
-  function hidePreview() {
-    setPreviewVisible(false);
-    pendingPreviewFocus.current = 'show';
-  }
-  function showPreview() {
-    setPreviewVisible(true);
-    pendingPreviewFocus.current = 'hide';
-  }
-  // Move keyboard focus to the surviving toggle after a show/hide so focus is
-  // never lost when the clicked button unmounts.
-  useEffect(() => {
-    const target = pendingPreviewFocus.current;
-    if (!target) return;
-    pendingPreviewFocus.current = null;
-    const ref = target === 'show' ? showPreviewRef : hidePreviewRef;
-    ref.current?.focus();
-  }, [previewVisible]);
-
   const renderMessage = (msg, idx) => {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return <AssistantMessage key={idx} content={msg.content} />;
@@ -609,18 +585,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to lessons">&larr; Back</Button>
         <h1 className="text-2xl font-bold">{isCreate ? 'New Lesson' : 'Edit Lesson'}</h1>
-        {!previewVisible && (
-          <Button
-            ref={showPreviewRef}
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={showPreview}
-            aria-expanded={false}
-          >
-            Show preview
-          </Button>
-        )}
       </div>
 
       {error && (
@@ -696,7 +660,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
 
       {/* Chat (left) + markdown preview (right). Stacks vertically below `lg`. */}
       <div className="flex flex-col lg:flex-row gap-4">
-        <div className={previewVisible ? 'lg:w-3/5 min-w-0' : 'w-full min-w-0'}>
+        <div className="lg:w-3/5 min-w-0">
           {/* Chat + compose in a single container */}
           <div className="rounded-2xl bg-muted/40 border border-border p-4">
             <div className="mb-3">
@@ -719,21 +683,17 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
           </div>
         </div>
 
-        {previewVisible && (
-          <div className="lg:w-2/5 min-w-0">
-            <LessonPreviewPane
-              markdown={previewMarkdown}
-              loading={previewLoading}
-              error={previewError}
-              stale={previewStale}
-              isCreate={isCreate}
-              refreshDisabled={previewLoading || isBusy}
-              onRefresh={handleRefreshPreview}
-              onHide={hidePreview}
-              hideButtonRef={hidePreviewRef}
-            />
-          </div>
-        )}
+        <div className="lg:w-2/5 min-w-0">
+          <LessonPreviewPane
+            markdown={previewMarkdown}
+            loading={previewLoading}
+            error={previewError}
+            stale={previewStale}
+            isCreate={isCreate}
+            refreshDisabled={previewLoading || isBusy}
+            onRefresh={handleRefreshPreview}
+          />
+        </div>
       </div>
     </div>
   );
