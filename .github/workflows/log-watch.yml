@@ -1,0 +1,44 @@
+name: log-watch
+
+# Scheduled data-loss alerting. Polls /v1/admin/logs for write-path server
+# errors (an `unhandled_error` on a PUT/POST to /v1/sync = a learner's saved
+# work failing to persist) and opens a GitHub issue when one is firing.
+#
+# This is deliberately SEPARATE from plato-pilot. The pilot runs once per
+# weekday and is a fix-proposer, not a monitor — a 400 KB write-size bug lost
+# learner conversations for 8 days before anyone noticed (#195/#196). This
+# workflow is the missing alarm: faster cadence, narrow job (detect + raise),
+# no AWS credentials (the /v1/admin/logs endpoint proxies CloudWatch).
+on:
+  schedule:
+    - cron: '37 */2 * * *'  # every 2 hours
+  workflow_dispatch:
+
+# A scheduled run and a manual run (or two schedule ticks under Actions lag)
+# must not race on the dedup check + issue creation.
+concurrency:
+  group: log-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Watch for data-loss errors
+        env:
+          PLATO_API_URL: ${{ secrets.PLATO_API_URL }}
+          PLATO_ADMIN_EMAIL: ${{ secrets.PLATO_ADMIN_EMAIL }}
+          PLATO_ADMIN_PASSWORD: ${{ secrets.PLATO_ADMIN_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/log-watch.js
