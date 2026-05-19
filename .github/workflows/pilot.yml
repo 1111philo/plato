@@ -108,7 +108,7 @@ jobs:
             - **Tier 4 — Data integrity**: sync-data consistency, auth, lesson visibility
             - **Tier 5 — DevOps**: CI/CD, AWS infra, deploy tooling
 
-            When a high-count error would land in Tier 4/5 and a concrete Tier 1/2 issue is actionable, **pick the Tier 1/2 issue**. Volume is not the only axis — alignment to the project's mission (serving learners) matters more.
+            When a high-count error would land in Tier 4/5 and a concrete Tier 1/2 issue is actionable, **pick the Tier 1/2 issue**. Volume is not the only axis — alignment to the project's mission (serving learners) matters more. **Exception:** a *data-loss-class* error — a write request failing server-side — is never deprioritized this way. A learner losing saved work is the most direct learner-experience harm there is; see the severity interrupt in Step 2.
 
             ## Step 2: Triage — pick ONE thing or SKIP (1 turn)
 
@@ -116,6 +116,9 @@ jobs:
             1. If a candidate references a blocked issue from /tmp/pilot-blocklist.txt, **DO NOT PICK IT**. An open pilot PR already exists.
             2. If the report's "Looped issues" section names an issue, **DO NOT PICK IT**. Two or more closed-unmerged PRs already tried and failed — the reporter needs to clarify before another attempt makes sense.
             3. Do NOT violate any anti-goal (see below).
+
+            **Severity interrupt — evaluate this BEFORE the picking order below.**
+            Scan the report's "Errors by code" table and its "Data-loss watch" callout. If there is an `unhandled_error` (or any 5xx) whose sample is a **write request** — `PUT` or `POST` to `/v1/sync`, `/v1/ai`, or `/v1/auth` — treat it as a possible **data-loss incident**: a learner's work may be failing to save server-side. It outranks the entire `ready-for-pilot` issue queue regardless of count — even a count of 1. Either open a fix PR for it, or — if it cannot be safely diagnosed and fixed in one PR — SKIP with the loud, specific line `SKIP: ESCALATING <code> on <METHOD path> — N occurrences, possible data loss, needs maintainer`. A data-loss-class error is NEVER deferred behind a one-line issue and NEVER skipped silently. (This rule exists because a 400 KB write-size bug lost learner conversations for 8 days while the pilot picked one-line copy issues — #195.)
 
             **Strict picking order — pick the first match that exists, do not skip ahead because something later looks higher-impact:**
 
@@ -127,9 +130,10 @@ jobs:
 
             4. **KPI signal** that points to a lesson-design or coach-prompt diagnosis. Same fallback condition as (3). Never use a KPI to justify a forced-closure or hard-cutoff change (see anti-goals).
 
-            Volume is not a tie-breaker against authored issues. A 50-line server error and a one-line community issue both count as "one signal"; the community issue wins because it has a named author with context the bot does not.
+            Volume is not a tie-breaker against authored issues. A 50-line server error and a one-line community issue both count as "one signal"; the community issue wins because it has a named author with context the bot does not. This applies to *ordinary* errors only — a data-loss-class error (the severity interrupt above) outranks everything, because silent loss of learner work has no named author to file it.
 
             **SKIP outcomes (exit 0 with a single line to stdout):**
+            - `SKIP: ESCALATING <code> on <METHOD path> — N occurrences, possible data loss, needs maintainer` — the severity interrupt fired but the error can't be safely fixed in one PR; this is a loud escalation, not a silent skip
             - `SKIP: all community ready-for-pilot issues are covered by open pilot PRs (#N, #M)` — blocklist ate every community-authored candidate; falling further would mean working on lower-priority signals while real asks wait
             - `SKIP: no actionable signal today` — nothing meets the hard rules
             - `SKIP: only candidate is an anti-goal (<describe>)` — the loudest signal would force a bad fix

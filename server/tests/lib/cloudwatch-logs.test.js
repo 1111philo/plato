@@ -1,6 +1,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeEvent, logGroupPrefix } from '../../src/lib/cloudwatch-logs.js';
+import {
+  normalizeEvent, logGroupPrefix, belongsToStage,
+  isProcessWarning, filterAllPages,
+} from '../../src/lib/cloudwatch-logs.js';
 
 describe('normalizeEvent', () => {
   it('preserves the logger-emitted logId so buffer + CloudWatch dedupe', () => {
@@ -42,6 +45,90 @@ describe('normalizeEvent', () => {
       const event = { eventId: 'x', timestamp: Date.now(), logStreamName: 's', message: msg };
       assert.equal(normalizeEvent(event, 'g'), null, `should drop: ${msg}`);
     }
+  });
+
+  it('drops Node process warnings — they are not application errors', () => {
+    // Lambda prefixes these stderr lines with "ERROR" so they match the filter
+    // pattern. Surfacing them as errors crowded out and masked real errors
+    // (8 days of data-loss `unhandled_error` events stayed invisible — #195).
+    const lines = [
+      '2026-05-17T21:48:43.266Z\tundefined\tERROR\t(node:2) Warning: NodeVersionSupportWarning: The AWS SDK for JavaScript (v3) will no longer support Node.js 18',
+      '2026-05-17T21:48:43.000Z\tundefined\tERROR\t(node:11) DeprecationWarning: some API is deprecated',
+      '2026-05-17T21:48:43.000Z\tundefined\tERROR\t(node:8) ExperimentalWarning: blah',
+    ];
+    for (const message of lines) {
+      const event = { eventId: 'w', timestamp: Date.now(), logStreamName: 's', message };
+      assert.equal(normalizeEvent(event, 'g'), null, `should drop: ${message}`);
+    }
+  });
+
+  it('still surfaces a real structured error that mentions the word "warning"', () => {
+    // The process-warning filter must not eat genuine errors.
+    const event = {
+      eventId: 'e1', timestamp: Date.parse('2026-05-18T00:05:00Z'), logStreamName: 's',
+      message: '2026-05-18T00:05:00.000Z\treq\tERROR\t{"logId":"log_x","level":"error","code":"unhandled_error","path":"/v1/sync/messages%3Awp","method":"PUT","error":"Item size has exceeded the maximum allowed size"}',
+    };
+    const n = normalizeEvent(event, 'g');
+    assert.equal(n.code, 'unhandled_error');
+    assert.equal(n.meta.method, 'PUT');
+  });
+});
+
+describe('isProcessWarning', () => {
+  it('matches Node process warnings, not application messages', () => {
+    assert.equal(isProcessWarning('(node:2) Warning: NodeVersionSupportWarning: ...'), true);
+    assert.equal(isProcessWarning('(node:99) DeprecationWarning: x'), true);
+    assert.equal(isProcessWarning('ERROR something failed'), false);
+    assert.equal(isProcessWarning('Item size has exceeded the maximum allowed size'), false);
+    assert.equal(isProcessWarning(undefined), false);
+  });
+});
+
+describe('belongsToStage', () => {
+  let origStage;
+  beforeEach(() => { origStage = process.env.STAGE; });
+  afterEach(() => { if (origStage !== undefined) process.env.STAGE = origStage; else delete process.env.STAGE; });
+
+  it('prod excludes playground groups (the prod prefix is also a playground prefix)', () => {
+    process.env.STAGE = 'prod';
+    assert.equal(belongsToStage('/aws/lambda/plato-PlatoStreamFunction-abc'), true);
+    assert.equal(belongsToStage('/aws/lambda/plato-PlatoApiFunction-abc'), true);
+    assert.equal(belongsToStage('/aws/lambda/plato-playground-PlatoStreamFunction-abc'), false);
+  });
+
+  it('non-prod stages keep their own groups', () => {
+    process.env.STAGE = 'playground';
+    assert.equal(belongsToStage('/aws/lambda/plato-playground-PlatoStreamFunction-abc'), true);
+  });
+});
+
+describe('filterAllPages', () => {
+  // A minimal stand-in for FilterLogEventsCommand — just carries the input.
+  const FakeCmd = function (input) { this.input = input; };
+
+  it('follows nextToken across pages and concatenates all events', async () => {
+    const pages = [
+      { events: [{ eventId: 'a' }], nextToken: 't1' },
+      { events: [{ eventId: 'b' }, { eventId: 'c' }], nextToken: 't2' },
+      { events: [{ eventId: 'd' }] }, // no nextToken → stop
+    ];
+    let calls = 0;
+    const tokensSeen = [];
+    const client = {
+      async send(cmd) { tokensSeen.push(cmd.input.nextToken); return pages[calls++]; },
+    };
+    const events = await filterAllPages(client, FakeCmd, { logGroupName: 'g', filterPattern: 'ERROR', startTime: 0 });
+    assert.deepEqual(events.map((e) => e.eventId), ['a', 'b', 'c', 'd']);
+    assert.equal(calls, 3, 'should have followed nextToken to the last page');
+    assert.deepEqual(tokensSeen, [undefined, 't1', 't2']);
+  });
+
+  it('stops after a single page when no nextToken is returned', async () => {
+    let calls = 0;
+    const client = { async send() { calls++; return { events: [{ eventId: 'only' }] }; } };
+    const events = await filterAllPages(client, FakeCmd, { logGroupName: 'g', filterPattern: 'ERROR', startTime: 0 });
+    assert.equal(events.length, 1);
+    assert.equal(calls, 1);
   });
 });
 

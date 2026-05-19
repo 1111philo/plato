@@ -8,7 +8,16 @@
 // matches logger's structured emissions that Lambda prefixes with "ERROR"),
 // one for Lambda runtime timeouts that don't carry an ERROR prefix.
 const FILTER_PATTERNS = ['ERROR', '"Task timed out"'];
-const PER_PATTERN_LIMIT = 100;
+
+// FilterLogEvents page size, and a hard cap on total events pulled per
+// group+pattern query. The query is FULLY paginated (see filterAllPages) so
+// the whole time window is covered. An earlier version passed a bare
+// `limit: 100` with no nextToken follow — on a busy log group that returns
+// only the oldest ~100 matches and silently drops the most recent errors.
+// That is how 8 days of data-loss errors (`unhandled_error` on PUT /v1/sync)
+// stayed invisible to the pilot's log report. See #195.
+const PAGE_SIZE = 10000;
+const MAX_EVENTS_PER_QUERY = 10000;
 
 function stage() {
   return process.env.STAGE || 'prod';
@@ -22,6 +31,16 @@ export function logGroupPrefix() {
   const s = stage();
   const stack = s === 'prod' ? 'plato' : `plato-${s}`;
   return `/aws/lambda/${stack}-`;
+}
+
+// The prod prefix `/aws/lambda/plato-` is ALSO a prefix of every playground
+// group (`/aws/lambda/plato-playground-...`), so DescribeLogGroups returns
+// playground groups for a prod query. Without this guard the prod logs
+// endpoint mixes in playground errors. Exported for testing.
+export function belongsToStage(logGroupName) {
+  if (typeof logGroupName !== 'string') return false;
+  if (stage() === 'prod') return !logGroupName.startsWith('/aws/lambda/plato-playground-');
+  return true;
 }
 
 function parseMessage(message) {
@@ -39,8 +58,18 @@ function isLifecycleLine(message) {
   return /^(START|END|REPORT|INIT_START|EXTENSION) /.test(message.trim());
 }
 
+// Node.js process warnings (Deprecation/Experimental/AWS-SDK version warnings)
+// print to stderr; Lambda prefixes stderr lines with "ERROR" so they match our
+// filter pattern — but they are NOT application errors. A warning emitted on
+// every cold start would otherwise dominate the error report (bucketed as
+// `cloudwatch_raw`) and bury the real errors underneath it. Exported for tests.
+export function isProcessWarning(message) {
+  if (typeof message !== 'string') return false;
+  return /\(node:\d+\)\s+\S*Warning/i.test(message);
+}
+
 export function normalizeEvent(event, logGroupName) {
-  if (isLifecycleLine(event.message)) return null;
+  if (isLifecycleLine(event.message) || isProcessWarning(event.message)) return null;
   const ts = new Date(event.timestamp).toISOString();
   const parsed = parseMessage(event.message);
   if (parsed && typeof parsed.code === 'string') {
@@ -66,6 +95,23 @@ export function normalizeEvent(event, logGroupName) {
   };
 }
 
+// Fully paginate a FilterLogEvents query. FilterLogEvents returns a `nextToken`
+// whenever more matches remain (it can even return one with an empty page
+// while still scanning) — follow it so the entire window is covered, not just
+// the first page. Capped at MAX_EVENTS_PER_QUERY as an OOM guard; hitting the
+// cap is itself a flood signal. `client` / `FilterLogEventsCommand` are passed
+// in so the loop is testable without the AWS SDK. Exported for testing.
+export async function filterAllPages(client, FilterLogEventsCommand, params) {
+  const events = [];
+  let nextToken;
+  do {
+    const res = await client.send(new FilterLogEventsCommand({ ...params, limit: PAGE_SIZE, nextToken }));
+    if (res?.events?.length) events.push(...res.events);
+    nextToken = res?.nextToken;
+  } while (nextToken && events.length < MAX_EVENTS_PER_QUERY);
+  return events;
+}
+
 export async function fetchCloudWatchLogs({ since }) {
   if (!process.env.AWS_REGION) {
     return { entries: [], logGroups: [], error: 'AWS_REGION not set' };
@@ -77,7 +123,10 @@ export async function fetchCloudWatchLogs({ since }) {
     const prefix = logGroupPrefix();
 
     const groupsRes = await client.send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix, limit: 20 }));
-    const logGroups = (groupsRes.logGroups || []).map((g) => g.logGroupName).filter(Boolean);
+    const logGroups = (groupsRes.logGroups || [])
+      .map((g) => g.logGroupName)
+      .filter(Boolean)
+      .filter(belongsToStage);
     if (!logGroups.length) {
       return { entries: [], logGroups: [], error: null };
     }
@@ -87,13 +136,10 @@ export async function fetchCloudWatchLogs({ since }) {
       FILTER_PATTERNS.map((pattern) => ({ name, pattern })),
     );
     const results = await Promise.all(queries.map(async ({ name, pattern }) => {
-      const res = await client.send(new FilterLogEventsCommand({
-        logGroupName: name,
-        filterPattern: pattern,
-        startTime,
-        limit: PER_PATTERN_LIMIT,
-      }));
-      return (res.events || []).map((e) => normalizeEvent(e, name)).filter(Boolean);
+      const events = await filterAllPages(client, FilterLogEventsCommand, {
+        logGroupName: name, filterPattern: pattern, startTime,
+      });
+      return events.map((e) => normalizeEvent(e, name)).filter(Boolean);
     }));
 
     // Dedupe across pattern queries (same event can match both patterns).

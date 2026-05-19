@@ -215,6 +215,31 @@ function formatGroups(logs) {
   ].join('\n');
 }
 
+// Write-path server errors mean a learner's work may have failed to save.
+// This callout is deliberately prominent and uses fixed wording the pilot's
+// "severity interrupt" rule keys off — a failed `/v1/sync` write is silent
+// learner data loss with no named author to file an issue for it (#195).
+function formatDataLossWatch(logs) {
+  const hits = (logs.groups || []).filter((g) => {
+    if (g.code !== 'unhandled_error') return false;
+    const m = g.sample?.meta || {};
+    const method = String(m.method || '').toUpperCase();
+    return (method === 'PUT' || method === 'POST') && String(m.path || '').startsWith('/v1/sync');
+  });
+  if (!hits.length) {
+    return '_No write-path (`/v1/sync`) server errors in the window._';
+  }
+  const lines = hits.map((g) => {
+    const m = g.sample?.meta || {};
+    const err = String(m.error || '').replace(/\s+/g, ' ').slice(0, 140);
+    return `- ⚠️ \`${g.code}\` ×${g.count} — \`${m.method} ${m.path}\` — _${err}_ (first ${g.firstSeen}, last ${g.lastSeen})`;
+  });
+  return [
+    '**SEVERITY INTERRUPT — possible data loss.** Write requests are failing server-side; a learner\'s saved work may not be persisting. Per the pilot picking rules this outranks the entire issue queue — fix it or escalate it (loud SKIP), never defer.',
+    ...lines,
+  ].join('\n');
+}
+
 function formatCloudWatchStatus(logs) {
   if (logs.cloudwatch?.error) {
     return `⚠️ CloudWatch fetch failed: \`${logs.cloudwatch.error}\`. In-process buffer errors above are still reliable; Lambda runtime errors (timeouts, uncaught panics before onError) may be missing.`;
@@ -295,6 +320,10 @@ async function main() {
 | Active lessons | ${kpis.activeLessons} |
 
 _Note: "Over target" means exchanges > target — not a failure. Lessons always run until the coach awards progress 10. If on-target rate is low, diagnose **lesson design** or **coach prompt quality**, not pacing enforcement — never introduce forced closures._
+
+## Data-loss watch
+
+${formatDataLossWatch(logs)}
 
 ## Errors by code (last ${logs.windowHours ?? 24}h)
 
