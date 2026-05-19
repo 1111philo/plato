@@ -86,7 +86,7 @@ export async function putSyncData(syncKey, data) {
   } catch (err) {
     // Network failure — cache is still updated for this session but the
     // write did not reach the server. Log so the loss isn't invisible.
-    console.error(`[storage] sync write failed for "${syncKey}":`, err);
+    console.error('[storage] sync write failed for %s:', syncKey, err);
     return false;
   }
 }
