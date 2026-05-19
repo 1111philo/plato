@@ -11,9 +11,10 @@ import {
   getLearnerProfileSummary, getPreferences,
   getLessonKB, saveLessonKB,
   saveScreenshot, getScreenshot,
-  saveLessonMessages, getLessonMessages,
+  saveLessonMessages, getLessonMessages, replaceLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
+import { compressImageDataUrl } from './imageCompression.js';
 import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
@@ -28,9 +29,13 @@ function ts() { return Date.now(); }
  * against). The compose bar is also disabled in the UI; this guard catches
  * programmatic / future-bug callers.
  */
+function isImpersonating() {
+  return typeof sessionStorage !== 'undefined'
+    && !!sessionStorage.getItem('plato_impersonation');
+}
+
 function assertNotImpersonating(action) {
-  if (typeof sessionStorage === 'undefined') return;
-  if (sessionStorage.getItem('plato_impersonation')) {
+  if (isImpersonating()) {
     throw new Error(`Cannot ${action} while viewing as another user`);
   }
 }
@@ -300,10 +305,76 @@ export async function hydrateMessageImages(messages) {
 }
 
 /**
+ * One-time, lazy migration of pre-#193 conversations.
+ *
+ * Before the fix, pasted images were embedded as base64 directly in the
+ * `messages:<lessonId>` record. Such records can already sit at or past
+ * DynamoDB's 400 KB item limit, so every further turn fails to persist and
+ * the learner keeps losing content. On resume, extract each embedded image
+ * into its own compressed `screenshot:*` record, replace it with a key, and
+ * rewrite the conversation record slim — so the lesson can be continued.
+ *
+ * Idempotent: keys are derived from message + image position, and once a
+ * message carries `imageKeys` it is skipped. A message is only slimmed when
+ * ALL of its images persisted durably — a partial failure leaves that
+ * message embedded so the next resume retries it rather than dropping data.
+ * Returns the (possibly migrated) message array.
+ */
+export async function migrateLegacyImages(lessonId, messages) {
+  let changed = false;
+  const migrated = [];
+
+  for (let mi = 0; mi < messages.length; mi++) {
+    const m = messages[mi];
+    const legacy = m.metadata?.imageDataUrls;
+    const alreadyKeyed = Array.isArray(m.metadata?.imageKeys);
+    if (!Array.isArray(legacy) || legacy.length === 0 || alreadyKeyed) {
+      migrated.push(m);
+      continue;
+    }
+
+    const keys = [];
+    let allSaved = true;
+    for (let ii = 0; ii < legacy.length; ii++) {
+      const key = `${lessonId}-legacy-${mi}-${ii}`;
+      const compressed = await compressImageDataUrl(legacy[ii]);
+      if (await saveScreenshot(key, compressed)) {
+        keys.push(key);
+      } else {
+        allSaved = false;
+        break;
+      }
+    }
+
+    if (allSaved && keys.length === legacy.length) {
+      // Drop the embedded base64 (`imageDataUrls`); keep the rest of metadata.
+      const { imageDataUrls: _dropped, ...restMeta } = m.metadata;
+      migrated.push({ ...m, metadata: { ...restMeta, imageKeys: keys } });
+      changed = true;
+    } else {
+      // Couldn't durably move every image — leave this message embedded and
+      // let a later resume retry. Better a still-bloated record than lost data.
+      migrated.push(m);
+    }
+  }
+
+  if (changed) await replaceLessonMessages(lessonId, migrated);
+  return changed ? migrated : messages;
+}
+
+/**
  * Resume an existing lesson. Loads messages and KB.
  */
 export async function resumeLesson(lessonId) {
-  const messages = await hydrateMessageImages(await getLessonMessages(lessonId));
+  let messages = await getLessonMessages(lessonId);
+  // Heal pre-#193 conversations whose embedded base64 images bloated the
+  // record. Never while impersonating — `resumeLesson` is read-only for the
+  // admin "View as User" audit, and these writes (lacking `?asUserId`) would
+  // land on the admin's own account, not the learner's.
+  if (!isImpersonating()) {
+    messages = await migrateLegacyImages(lessonId, messages);
+  }
+  messages = await hydrateMessageImages(messages);
   const lessonKB = await getLessonKB(lessonId);
   const progress = lessonKB?.progress ?? 0;
   const phase = lessonKB?.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
