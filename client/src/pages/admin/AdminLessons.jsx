@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
@@ -26,24 +26,48 @@ import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 
+// A draft id minted by /plato/lessons/new looks like `admin-<13-digit ms>`.
+// Within a few minutes of minting, a 404 means "not auto-saved yet" rather
+// than "bad id" — so the editor opens in create mode instead of bouncing to
+// the list.
+const FRESH_DRAFT_WINDOW_MS = 5 * 60 * 1000;
+function isFreshlyMintedDraftId(id) {
+  const m = /^admin-(\d{13})$/.exec(id || '');
+  return !!m && Date.now() - Number(m[1]) < FRESH_DRAFT_WINDOW_MS;
+}
+
 export default function AdminLessons() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { lessonId: routeLessonId } = useParams();
   const { user } = useAuth();
-  const isNewRoute = location.pathname.endsWith('/new');
+  const isNewRoute = location.pathname.endsWith('/lessons/new');
 
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]);
   const [coursesOpen, setCoursesOpen] = useState(false);
+  // Editor data for the lesson open at /plato/lessons/:lessonId/edit.
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft, initialCourse, markdown }
+  const [editorLoading, setEditorLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmModal, setConfirmModal] = useState(null);
-  // Stable lesson ID for a fresh /new session; regenerated each time the /new route is entered.
-  const [newDraftId, setNewDraftId] = useState(() => `admin-${Date.now()}`);
+
+  // /plato/lessons/new mints a fresh draft id and redirects to its stable
+  // edit URL, so the editor survives reload and browser-back (it previously
+  // had no route — a reload dropped the admin back to the list). The draft
+  // record is created lazily by the editor's first auto-save.
+  const newDraftIdRef = useRef(null);
+  if (isNewRoute) {
+    if (!newDraftIdRef.current) newDraftIdRef.current = `admin-${Date.now()}`;
+  } else {
+    newDraftIdRef.current = null;
+  }
   useEffect(() => {
-    if (isNewRoute) setNewDraftId(`admin-${Date.now()}`);
-  }, [isNewRoute]);
+    if (isNewRoute && newDraftIdRef.current) {
+      navigate(`/plato/lessons/${encodeURIComponent(newDraftIdRef.current)}/edit`, { replace: true });
+    }
+  }, [isNewRoute, navigate]);
 
   // Map courseId -> name for rendering tags on lesson rows.
   const courseNamesById = new Map(courses.map((c) => [c.courseId, c.name]));
@@ -70,26 +94,57 @@ export default function AdminLessons() {
     setLoading(false);
   }
 
-  async function editLesson(lessonId) {
-    try {
-      const data = await adminApi('GET', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`);
-      // A record is a live draft iff status==='draft' and markdown is empty.
-      // Legacy records with status='draft' but stored markdown are treated as private.
-      const isDraft = data.status === 'draft' && !data.markdown;
-      const initialCourse = data.course || null;
-      const markdown = data.markdown || '';
-      if (data.conversation?.length) {
-        // Resume the creation conversation (drafts always land here)
-        setEditing({ lessonId, conversation: data.conversation, readiness: data.readiness ?? (isDraft ? 1 : 8), isDraft, initialCourse, markdown });
-      } else {
-        // No conversation — seed one with the existing markdown so the agent has context
-        const seedConversation = [
-          { role: 'user', content: `I want to edit an existing lesson. Here is the current lesson markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
-        ];
-        setEditing({ lessonId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true, isDraft, initialCourse, markdown });
-      }
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  // Open the editor for a lesson by navigating to its deep-linkable route.
+  function openLessonEditor(lessonId) {
+    navigate(`/plato/lessons/${encodeURIComponent(lessonId)}/edit`);
   }
+
+  // Load the lesson for the :lessonId edit route. A just-minted draft has no
+  // server record until the editor's first auto-save, so a 404 on a freshly
+  // minted draft id opens create mode; any other failure bounces to the list
+  // (mirrors the users/:userId deep-link pattern).
+  useEffect(() => {
+    if (!routeLessonId) { setEditing(null); return; }
+    let cancelled = false;
+    setEditorLoading(true);
+    (async () => {
+      try {
+        const data = await adminApi('GET', `/v1/admin/lessons/${encodeURIComponent(routeLessonId)}`);
+        if (cancelled) return;
+        // A record is a live draft iff status==='draft' and markdown is empty.
+        // Legacy records with status='draft' but stored markdown are private.
+        const isDraft = data.status === 'draft' && !data.markdown;
+        const initialCourse = data.course || null;
+        const markdown = data.markdown || '';
+        if (data.conversation?.length) {
+          // Resume the in-progress creation/edit conversation.
+          setEditing({ lessonId: routeLessonId, conversation: data.conversation, readiness: data.readiness ?? (isDraft ? 1 : 8), isDraft, initialCourse, markdown });
+        } else if (isDraft) {
+          // Empty draft — open the editor in create mode.
+          setEditing({ lessonId: routeLessonId, conversation: null, readiness: 0, isDraft: true, initialCourse, markdown: '' });
+        } else {
+          // Finalized lesson with no stored conversation — seed one with the
+          // existing markdown so the agent has context to edit from.
+          const seedConversation = [
+            { role: 'user', content: `I want to edit an existing lesson. Here is the current lesson markdown:\n\n${data.markdown}\n\nWhat would you like to know about the changes I want to make?`, msgType: MSG_TYPES.USER },
+          ];
+          setEditing({ lessonId: routeLessonId, conversation: seedConversation, readiness: data.readiness ?? 8, needsAgentReply: true, isDraft: false, initialCourse, markdown });
+        }
+      } catch {
+        if (cancelled) return;
+        if (isFreshlyMintedDraftId(routeLessonId)) {
+          // Brand-new draft that hasn't auto-saved yet — open create mode.
+          setEditing({ lessonId: routeLessonId, conversation: null, readiness: 0, isDraft: true, initialCourse: null, markdown: '' });
+        } else {
+          setMessage({ text: 'That lesson could not be opened.', type: 'error' });
+          navigate('/plato/lessons', { replace: true });
+        }
+      } finally {
+        if (!cancelled) setEditorLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [routeLessonId, navigate]);
 
   const [shareModal, setShareModal] = useState(null); // { lessonId, lessonName, sharedWith, status }
 
@@ -125,34 +180,22 @@ export default function AdminLessons() {
     });
   }
 
-  if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
+  const spinner = (
+    <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>
+  );
 
-  // New lesson creation via AI Chat. Each /new mount gets a fresh draft lesson ID
-  // so multiple drafts can exist in parallel (issue #101).
-  if (isNewRoute) {
+  // Redirecting /plato/lessons/new → the freshly minted draft's edit URL.
+  if (isNewRoute) return spinner;
+
+  // Lesson editor — create a draft, resume a draft, or edit a finalized
+  // lesson. Deep-linked at /plato/lessons/:lessonId/edit so it survives
+  // reload and browser-back. When the record is a draft, finalizing extracts
+  // markdown and flips status draft → private on the same record.
+  if (routeLessonId) {
+    if (editorLoading || !editing) return spinner;
     return (
       <NewLessonView
-        lessonId={newDraftId}
-        isDraft
-        onSave={async (name, markdown, conversation, readiness) => {
-          await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(newDraftId)}`, {
-            markdown, name, status: 'private', sharedWith: [user.userId], conversation, readiness,
-          });
-          setMessage({ text: 'Lesson created (private).', type: 'success' });
-          await loadLessons();
-          navigate('/plato/lessons');
-        }}
-        onCancel={() => navigate('/plato/lessons')}
-        onError={(text) => setMessage({ text, type: 'error' })}
-      />
-    );
-  }
-
-  // Edit existing lesson — always via conversation. When the record is a draft,
-  // finalizing extracts markdown and flips status draft → private on the same record.
-  if (editing) {
-    return (
-      <NewLessonView
+        key={editing.lessonId}
         lessonId={editing.lessonId}
         isDraft={editing.isDraft}
         initialMessages={editing.conversation}
@@ -175,16 +218,18 @@ export default function AdminLessons() {
             await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(editing.lessonId)}`, body);
           }
           setMessage({ text: editing.isDraft ? 'Lesson created (private).' : 'Lesson updated.', type: 'success' });
-          setEditing(null);
-          loadLessons();
+          await loadLessons();
+          navigate('/plato/lessons');
         }}
-        onCancel={() => setEditing(null)}
+        onCancel={async () => { await loadLessons(); navigate('/plato/lessons'); }}
         onError={(text) => setMessage({ text, type: 'error' })}
       />
     );
   }
 
   // Lesson list
+  if (loading) return spinner;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -266,7 +311,7 @@ export default function AdminLessons() {
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
                         </Button>
                       )}
-                      <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => editLesson(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
+                      <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => openLessonEditor(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
                       <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                       </Button>
