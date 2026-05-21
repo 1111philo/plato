@@ -8,6 +8,9 @@ export function esc(s) {
 /** Lightweight markdown to HTML. Handles bold, italic, headings, lists, links, and line breaks. */
 export function renderMd(text) {
   let escaped = esc(text);
+  // Markdown links [text](url) — must come before heading/bold/italic replacements
+  // so nested formatting inside link text is handled correctly
+  escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
   escaped = escaped.replace(/^### (.+)$/gm, '<strong style="font-size:0.85rem;">$1</strong>');
   escaped = escaped.replace(/^## (.+)$/gm, '<strong style="font-size:0.9rem;">$1</strong>');
   escaped = escaped.replace(/^# (.+)$/gm, '<strong style="font-size:1rem;">$1</strong>');
