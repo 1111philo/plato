@@ -64,7 +64,7 @@ export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
 }
 
 export async function sendResetEmail(toEmail, resetToken) {
-  const resetUrl = `${APP_URL}?reset=${resetToken}`;
+  const resetUrl = `${APP_URL}/reset-password?reset=${resetToken}`;
 
   if (process.env.SKIP_EMAIL === 'true') {
     console.log(`[SKIP_EMAIL] Reset for ${toEmail}: ${resetUrl}`);
