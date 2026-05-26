@@ -8,9 +8,21 @@
 // (headless browser or a reader service) — `extractReadable` and the route stay
 // the same.
 
+import { fetch as undiciFetch, Agent } from 'undici';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
-import { assertSafeUrl, assertSafeHost, LinkError } from './url-guard.js';
+import { assertSafeUrl, assertSafeHost, safeLookup, LinkError } from './url-guard.js';
+
+// Fetch agent whose connection-time DNS lookup validates the resolved address
+// and connects to that exact IP — closing the DNS-rebinding TOCTOU gap (a host
+// can't pass an up-front check then re-resolve to an internal IP at connect).
+// Uses undici's own fetch so the dispatcher is guaranteed compatible (mixing
+// Node's internal fetch with an external undici Agent throws). Indirected
+// through `_net` so tests can stub the network without real requests.
+const safeAgent = new Agent({ connect: { lookup: safeLookup } });
+export const _net = {
+  fetch: (url, opts) => undiciFetch(url, { ...opts, dispatcher: safeAgent }),
+};
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BYTES = 3 * 1024 * 1024; // 3 MB cap on the downloaded HTML
@@ -113,9 +125,12 @@ export async function fetchUrlContent(url) {
   try {
     let res;
     // Follow redirects manually so every hop is re-validated against the SSRF
-    // guard — `redirect: 'follow'` would let a public URL bounce to an internal one.
+    // guard — `redirect: 'follow'` would let a public URL bounce to an internal
+    // one. The agent's pinned lookup is the connection-time authority; this
+    // per-hop `assertSafeHost` is a cheap fast-fail and covers literal-IP hosts
+    // (which skip the agent's lookup).
     for (let hop = 0; ; hop++) {
-      res = await fetch(current, {
+      res = await _net.fetch(current.href, {
         redirect: 'manual',
         signal: controller.signal,
         headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml,text/plain' },

@@ -2,10 +2,11 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import links from '../../src/routes/links.js';
+import { _net } from '../../src/lib/link-extractor.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
-const realFetch = globalThis.fetch;
+const realNetFetch = _net.fetch;
 
 async function authedReq(app, body) {
   const token = await signAccessToken('usr_test', 'user');
@@ -35,7 +36,7 @@ describe('POST /v1/links/fetch', () => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
   });
   afterEach(() => {
-    globalThis.fetch = realFetch;
+    _net.fetch = realNetFetch;
   });
 
   it('requires authentication', async () => {
@@ -51,7 +52,7 @@ describe('POST /v1/links/fetch', () => {
 
   it('returns extracted text for a fetchable page', async () => {
     // Public IP literal → assertSafeHost passes without a DNS lookup.
-    globalThis.fetch = async () => htmlResponse(PAGE);
+    _net.fetch = async () => htmlResponse(PAGE);
     const app = new Hono();
     app.route('/', links);
     const res = await authedReq(app, { url: 'http://93.184.216.34/post' });
@@ -85,7 +86,7 @@ describe('POST /v1/links/fetch', () => {
   });
 
   it('415s a non-HTML content type', async () => {
-    globalThis.fetch = async () => htmlResponse('%PDF-1.7', { contentType: 'application/pdf' });
+    _net.fetch = async () => htmlResponse('%PDF-1.7', { contentType: 'application/pdf' });
     const app = new Hono();
     app.route('/', links);
     const res = await authedReq(app, { url: 'http://93.184.216.34/file.pdf' });
@@ -93,7 +94,7 @@ describe('POST /v1/links/fetch', () => {
   });
 
   it('502s an upstream error response', async () => {
-    globalThis.fetch = async () => htmlResponse('nope', { status: 500 });
+    _net.fetch = async () => htmlResponse('nope', { status: 500 });
     const app = new Hono();
     app.route('/', links);
     const res = await authedReq(app, { url: 'http://93.184.216.34/boom' });

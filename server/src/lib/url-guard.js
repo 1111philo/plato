@@ -2,10 +2,20 @@
 // user-supplied URLs from inside AWS, so an unguarded fetch is a textbook
 // server-side request forgery hole — a learner could point plato at
 // `http://169.254.169.254/...` (the EC2/Lambda instance metadata endpoint) or
-// at internal services. Every fetch (and every redirect hop) must pass through
-// assertSafeUrl + assertSafeHost first.
+// at internal services.
+//
+// Two layers:
+//   1. `assertSafeUrl` + `assertSafeHost` — cheap up-front checks (scheme/port,
+//      and literal-IP / pre-resolution host validation), run before fetching
+//      and on every redirect hop.
+//   2. `safeLookup` — the authoritative guard. Wired into the fetch agent's
+//      `connect.lookup` so the connection uses the *same* address we validate.
+//      This closes the DNS-rebinding TOCTOU gap: a plain "resolve, validate,
+//      then fetch" lets the hostname re-resolve to an internal IP between the
+//      check and the connection; pinning the connection to the validated
+//      address removes that window.
 
-import dns from 'node:dns/promises';
+import dns from 'node:dns';
 import net from 'node:net';
 
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
@@ -60,36 +70,80 @@ function ipv4Blocked(ip) {
   return false;
 }
 
+// Expand any valid IPv6 textual form into its 8 16-bit groups so range checks
+// can't be dodged with an alternate representation (compressed `::`, expanded,
+// hex-form IPv4-mapped `::ffff:7f00:1`, dotted `::ffff:127.0.0.1`, zone ids).
+function expandIpv6(input) {
+  let ip = String(input).toLowerCase().replace(/^\[|\]$/g, '');
+  const zone = ip.indexOf('%');
+  if (zone !== -1) ip = ip.slice(0, zone);
+  if (!net.isIPv6(ip)) return null;
+
+  // Fold a trailing dotted-quad (IPv4-mapped/compatible) into two hex groups.
+  const v4 = ip.match(/^(.*:)(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (v4) {
+    const p = v4[2].split('.').map(Number);
+    if (p.some((n) => n > 255)) return null;
+    ip = v4[1] + (((p[0] << 8) | p[1]).toString(16)) + ':' + (((p[2] << 8) | p[3]).toString(16));
+  }
+
+  const dbl = ip.split('::');
+  if (dbl.length > 2) return null;
+  const head = dbl[0] ? dbl[0].split(':') : [];
+  let groups;
+  if (dbl.length === 2) {
+    const tail = dbl[1] ? dbl[1].split(':') : [];
+    const missing = 8 - head.length - tail.length;
+    if (missing < 0) return null;
+    groups = [...head, ...Array(missing).fill('0'), ...tail];
+  } else {
+    groups = head;
+  }
+  if (groups.length !== 8) return null;
+  return groups.map((h) => parseInt(h || '0', 16) & 0xffff);
+}
+
 /** True if an IP literal points somewhere we must never fetch from. */
 export function isBlockedIp(ip) {
   if (net.isIPv4(ip)) return ipv4Blocked(ip);
   if (net.isIPv6(ip)) {
-    const lower = ip.toLowerCase();
-    if (lower === '::1' || lower === '::') return true; // loopback, unspecified
-    const v4mapped = lower.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (v4mapped) return ipv4Blocked(v4mapped[1]); // IPv4-mapped
-    const head = lower.split(':')[0];
-    if (/^f[cd]/.test(head)) return true; // fc00::/7 unique-local
-    if (/^fe[89ab]/.test(head)) return true; // fe80::/10 link-local
+    const h = expandIpv6(ip);
+    if (!h) return true;
+    if (h.every((x) => x === 0)) return true; // :: unspecified
+    if (h.slice(0, 7).every((x) => x === 0) && h[7] === 1) return true; // ::1 loopback
+    // IPv4-mapped (::ffff:0:0/96) and IPv4-compatible (::/96, deprecated):
+    // judge by the embedded IPv4.
+    if (h.slice(0, 5).every((x) => x === 0) && (h[5] === 0xffff || h[5] === 0)) {
+      return ipv4Blocked(`${h[6] >> 8}.${h[6] & 0xff}.${h[7] >> 8}.${h[7] & 0xff}`);
+    }
+    const firstByte = h[0] >> 8;
+    if (firstByte === 0xfc || firstByte === 0xfd) return true; // fc00::/7 unique-local
+    if ((h[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
     return false;
   }
+  // URL IPv6 hostnames arrive bracketed (e.g. "[::1]") — strip and retry once.
+  const stripped = String(ip).replace(/^\[|\]$/g, '');
+  if (stripped !== String(ip) && net.isIP(stripped)) return isBlockedIp(stripped);
   return true; // not a valid IP — block
 }
 
 /**
  * Resolve a hostname and reject if it (or any of its addresses) points at a
- * private/internal/reserved range. An IP literal is checked directly.
+ * private/internal/reserved range. An IP literal is checked directly. Used as
+ * a fast up-front / per-redirect-hop check; `safeLookup` is the connection-time
+ * authority.
  */
 export async function assertSafeHost(host) {
-  if (net.isIP(host)) {
-    if (isBlockedIp(host)) {
+  const bare = String(host).replace(/^\[|\]$/g, '');
+  if (net.isIP(bare)) {
+    if (isBlockedIp(bare)) {
       throw new LinkError('blocked_host', 'That URL points to a private or internal address.');
     }
     return;
   }
   let addrs;
   try {
-    addrs = await dns.lookup(host, { all: true });
+    addrs = await dns.promises.lookup(bare, { all: true });
   } catch {
     throw new LinkError('dns', "Couldn't resolve that website's address.");
   }
@@ -101,4 +155,27 @@ export async function assertSafeHost(host) {
       throw new LinkError('blocked_host', 'That URL points to a private or internal address.');
     }
   }
+}
+
+/**
+ * A `dns.lookup`-shaped function for an HTTP agent's `connect.lookup`. It
+ * resolves the hostname, rejects if any resolved address is blocked, and
+ * returns the validated address(es) — so the socket connects to exactly what
+ * was validated (no re-resolution, no DNS-rebinding window). Honors the
+ * caller's `all` option (undici requests the array form).
+ */
+export function safeLookup(hostname, options, callback) {
+  const cb = typeof options === 'function' ? options : callback;
+  const opts = typeof options === 'function' ? {} : (options || {});
+  dns.lookup(hostname, { ...opts, all: true }, (err, addresses) => {
+    if (err) return cb(err);
+    const list = Array.isArray(addresses) ? addresses : [{ address: addresses, family: opts.family || 0 }];
+    for (const a of list) {
+      if (isBlockedIp(a.address)) {
+        return cb(new LinkError('blocked_host', 'That URL points to a private or internal address.'));
+      }
+    }
+    if (opts.all) return cb(null, list);
+    cb(null, list[0].address, list[0].family);
+  });
 }
