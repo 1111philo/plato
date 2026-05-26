@@ -30,7 +30,7 @@ What the learner will produce at mastery level. This should be a concrete, obser
 
 - Synthesize from the conversation — the name, exemplar, and objectives were discussed across multiple messages.
 - The exemplar must describe a concrete outcome a learner produces, not what they know.
-- Each objective starts with "Can" and must be assessable by an AI reading a text response or viewing an image.
+- Each objective starts with "Can" and must be assessable by an AI reading a text response, viewing an image, or reading the text of a shared link.
 - Objectives should cover different dimensions of the exemplar and build coherently toward it.
 - Aim for 2-4 objectives. If the conversation discussed more than 4, select the 2-4 most essential ones that directly support the exemplar. Combine overlapping objectives where possible.
 - If the conversation doesn't have enough detail for a section, synthesize the best version you can from what was discussed.

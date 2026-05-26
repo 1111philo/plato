@@ -49,6 +49,7 @@ export default function ComposeBar({
   const inputRef = useRef(null);
   const fileRef = useRef(null);
   const linkInputRef = useRef(null);
+  const linkButtonRef = useRef(null);
   const handleResize = useAutoResize();
   const inputId = useId();
   const statusId = useId();
@@ -170,10 +171,22 @@ export default function ComposeBar({
     setLinkOpen(true);
   };
 
-  const cancelLinkInput = () => {
+  // Close the link input and move focus to a sensible place so keyboard and
+  // screen-reader users aren't dropped on document.body. After a successful
+  // add we send focus to the message textarea (continue composing); on cancel
+  // we return it to the link toggle button (the trigger), falling back to the
+  // textarea if that button is now disabled (e.g. max links reached).
+  const closeLinkInput = (focusTarget = 'button') => {
     setLinkOpen(false);
     setLinkValue('');
     setLinkError('');
+    requestAnimationFrame(() => {
+      if (focusTarget === 'button' && linkButtonRef.current && !linkButtonRef.current.disabled) {
+        linkButtonRef.current.focus();
+      } else {
+        inputRef.current?.focus();
+      }
+    });
   };
 
   const addLink = async () => {
@@ -192,7 +205,7 @@ export default function ComposeBar({
         siteName: result.siteName || null,
         text: result.text || '',
       }].slice(0, MAX_LINKS));
-      cancelLinkInput();
+      closeLinkInput('textarea');
     } catch (e) {
       setLinkError(e.message || "Couldn't load that link.");
     } finally {
@@ -266,7 +279,7 @@ export default function ComposeBar({
           disabled={disabled}
         />
         {allowLinks && linkOpen && (
-          <div className="mx-2 mb-2 flex flex-col gap-1">
+          <div className="mx-2 mb-2 flex flex-col gap-1" role="group" aria-label="Attach a link">
             <div className="flex items-center gap-2">
               <label htmlFor={linkInputId} className="sr-only">Link URL</label>
               <input
@@ -279,20 +292,22 @@ export default function ComposeBar({
                 onChange={(e) => setLinkValue(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); addLink(); }
-                  if (e.key === 'Escape') { e.preventDefault(); cancelLinkInput(); }
+                  if (e.key === 'Escape') { e.preventDefault(); closeLinkInput('button'); }
                 }}
                 disabled={fetchingLink}
+                aria-describedby={linkError ? `${linkInputId}-err` : undefined}
+                aria-invalid={linkError ? true : undefined}
                 className="flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
               />
               <Button variant="default" size="sm" onClick={addLink} disabled={!linkValue.trim() || fetchingLink}>
                 {fetchingLink ? 'Adding…' : 'Add'}
               </Button>
-              <Button variant="ghost" size="sm" onClick={cancelLinkInput} disabled={fetchingLink}>
+              <Button variant="ghost" size="sm" onClick={() => closeLinkInput('button')} disabled={fetchingLink}>
                 Cancel
               </Button>
             </div>
             {linkError && (
-              <p className="text-xs text-destructive" role="alert">{linkError}</p>
+              <p id={`${linkInputId}-err`} className="text-xs text-destructive" role="alert">{linkError}</p>
             )}
           </div>
         )}
@@ -325,9 +340,10 @@ export default function ComposeBar({
           )}
           {allowLinks && (
             <Button
+              ref={linkButtonRef}
               variant="ghost"
               size="icon-sm"
-              onClick={() => (linkOpen ? cancelLinkInput() : openLinkInput())}
+              onClick={() => (linkOpen ? closeLinkInput('button') : openLinkInput())}
               disabled={disabled || links.length >= MAX_LINKS}
               aria-label={links.length >= MAX_LINKS
                 ? `Maximum ${MAX_LINKS} links attached`
