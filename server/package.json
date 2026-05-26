@@ -25,7 +25,7 @@
     "hono": "^4.12.18",
     "jose": "^5.0.0",
     "linkedom": "^0.18.12",
-    "undici": "^8.3.0"
+    "undici": "^7.26.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
