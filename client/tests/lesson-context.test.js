@@ -109,6 +109,47 @@ describe('buildContext', () => {
     assert.equal('course' in context, false, 'no course key should be emitted');
   });
 
+  // Coach directive: author-supplied runtime guidance baked into the lesson
+  // markdown (`## Coach Directive`). buildContext surfaces it verbatim so the
+  // coach can follow it; absent directives produce no key.
+  it('surfaces a coach directive verbatim when the lesson has one', () => {
+    const lesson = sampleLesson();
+    lesson.coachDirective = 'Reference the learner\'s portfolio project throughout. Share code "ABC123" if asked.';
+    const context = JSON.parse(buildContext(
+      lesson,
+      { status: 'active', progress: 2, activitiesCompleted: 3 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.equal(context.coachDirective, lesson.coachDirective);
+  });
+
+  it('surfaces the coach directive even in completed feedback mode', () => {
+    const lesson = sampleLesson();
+    lesson.coachDirective = 'Offer the follow-up resource at https://example.com/next';
+    const context = JSON.parse(buildContext(
+      lesson,
+      { status: 'completed', progress: 10, activitiesCompleted: 12 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.equal(context.coachDirective, lesson.coachDirective);
+    assert.ok(context.postCompletionDirective);
+  });
+
+  it('omits coachDirective entirely when the lesson has none', () => {
+    const context = JSON.parse(buildContext(
+      sampleLesson(),
+      { status: 'active', progress: 2, activitiesCompleted: 3 },
+      'Learner profile summary',
+      'Alex'
+    ));
+
+    assert.equal('coachDirective' in context, false);
+  });
+
   it('omits course when lesson.course exists but has no name (defensive)', () => {
     const lesson = sampleLesson();
     lesson.course = { id: 'course-broken' }; // server returned a malformed inline

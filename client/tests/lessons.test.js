@@ -16,9 +16,15 @@ function parseLessonPrompt(lessonId, markdown) {
   let name = '';
   let description = '';
   let exemplar = '';
+  let coachDirective = '';
   const objectives = [];
   let currentSection = null;
   const sectionBuffer = [];
+
+  const flushSection = () => {
+    if (currentSection === 'exemplar') exemplar = sectionBuffer.join('\n').trim();
+    if (currentSection === 'coach_directive') coachDirective = sectionBuffer.join('\n').trim();
+  };
 
   for (const line of lines) {
     if (line.startsWith('# ') && !name) {
@@ -26,9 +32,7 @@ function parseLessonPrompt(lessonId, markdown) {
       continue;
     }
     if (line.startsWith('## ')) {
-      if (currentSection === 'exemplar') {
-        exemplar = sectionBuffer.join('\n').trim();
-      }
+      flushSection();
       sectionBuffer.length = 0;
       currentSection = line.slice(3).trim().toLowerCase().replace(/\s+/g, '_');
       continue;
@@ -37,7 +41,7 @@ function parseLessonPrompt(lessonId, markdown) {
       description = line.trim();
       continue;
     }
-    if (currentSection === 'exemplar') {
+    if (currentSection === 'exemplar' || currentSection === 'coach_directive') {
       sectionBuffer.push(line);
     }
     if (currentSection === 'learning_objectives') {
@@ -45,11 +49,11 @@ function parseLessonPrompt(lessonId, markdown) {
       if (match) objectives.push(match[1].trim());
     }
   }
-  if (currentSection === 'exemplar') {
-    exemplar = sectionBuffer.join('\n').trim();
-  }
+  flushSection();
 
-  return { lessonId, name, description, exemplar, learningObjectives: objectives };
+  const parsed = { lessonId, name, description, exemplar, learningObjectives: objectives };
+  if (coachDirective) parsed.coachDirective = coachDirective;
+  return parsed;
 }
 
 // Load all lesson prompt files
@@ -97,5 +101,44 @@ describe('lesson prompt files', () => {
     const ids = lessons.map(c => c.lessonId);
     const unique = new Set(ids);
     assert.equal(ids.length, unique.size, `Duplicate lessonIds: ${ids.filter((id, i) => ids.indexOf(id) !== i)}`);
+  });
+});
+
+describe('parseLessonPrompt — Coach Directive', () => {
+  const base = [
+    '# Deploy a WordPress site',
+    '',
+    'Ship a live WordPress site for your portfolio project.',
+    '',
+    '## Exemplar',
+    'A deployed WordPress site the learner can explain the hosting choice for.',
+    '',
+    '## Learning Objectives',
+    '- Can compare managed, self-hosted, and WordPress.com hosting',
+    '- Can register a domain that represents their project',
+  ];
+
+  it('omits coachDirective when the section is absent', () => {
+    const parsed = parseLessonPrompt('custom-1', base.join('\n'));
+    assert.equal('coachDirective' in parsed, false);
+    assert.equal(parsed.exemplar, 'A deployed WordPress site the learner can explain the hosting choice for.');
+    assert.equal(parsed.learningObjectives.length, 2);
+  });
+
+  it('captures a multi-line coach directive verbatim, codes and URLs intact', () => {
+    const directive = [
+      'Reference the learner\'s portfolio project throughout. Do not ask what it is.',
+      '',
+      'If they choose WordPress.com, share code "EduAIMicroCred26": https://wordpress.com/start/business-monthly/?coupon=EduAIMicroCred26',
+    ];
+    const md = [...base, '', '## Coach Directive', ...directive].join('\n');
+    const parsed = parseLessonPrompt('custom-1', md);
+
+    assert.equal(parsed.coachDirective, directive.join('\n'));
+    assert.match(parsed.coachDirective, /EduAIMicroCred26/);
+    assert.match(parsed.coachDirective, /coupon=EduAIMicroCred26/);
+    // The directive must not bleed into the exemplar or objectives.
+    assert.equal(parsed.learningObjectives.length, 2);
+    assert.doesNotMatch(parsed.exemplar, /EduAIMicroCred26/);
   });
 });
