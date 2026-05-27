@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 
 const sync = new Hono();
 
@@ -34,7 +35,17 @@ async function applyActivityEffects(userId, dataKey, oldStatus, data) {
   try {
     if (dataKey.startsWith('lessonKB:')) {
       if (oldStatus !== 'completed' && data?.status === 'completed') {
-        await db.incrementUserCounter(userId, 'lessonsCompleted', 1);
+        // Only published (public) lessons count toward dashboard stats. Look
+        // up the lesson's `_system` record; private/draft lessons and custom
+        // lessons (which have no `_system:lesson:*` record) are excluded. The
+        // admin stats endpoints recompute against the live public set, so a
+        // missed/extra increment here self-heals — this just keeps the
+        // denormalized counter close.
+        const lessonId = dataKey.slice('lessonKB:'.length);
+        const lesson = await db.getSyncData('_system', `lesson:${lessonId}`);
+        if (lesson && isPublicLessonRecord(lesson.data)) {
+          await db.incrementUserCounter(userId, 'lessonsCompleted', 1);
+        }
       }
     }
   } catch { /* swallow — activity counters are best-effort */ }

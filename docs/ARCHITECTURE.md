@@ -297,6 +297,15 @@ canonical example. Do this **responsibly**:
   increment on the first transition (non-completed → completed). Repeat writes
   with the same status MUST NOT double-count. `lessonsCompleted` has a dedicated
   test for this; new counters must too.
+- **Published-only stats.** Every dashboard/per-user KPI counts **only published
+  (public) lessons** — drafts, privates (even when shared to a learner via
+  `sharedWith`), and user-created custom lessons are excluded from both the
+  numerator and the denominator. The rule lives in
+  `server/src/lib/lesson-visibility.js` (`normalizeStatus`, `publicLessonIds`,
+  `isPublicLessonRecord`); a completion counts iff its lesson id maps to a public
+  `_system:lesson:*` record. Custom lessons (stored under the learner's own
+  `lessons:custom-*` sync-data, never in `_system`) fall out for free. The
+  `applyActivityEffects` writer looks up the lesson record before incrementing.
 - **Best-effort writes, never blocking.** The primary sync write succeeds first.
   The counter update is wrapped in try/catch and logged but never thrown. If it
   fails, the user's lesson data is still correct — only the counter is stale, and
@@ -340,23 +349,28 @@ completed lessons. Computed on demand — no precomputation.
 
 The Admin → Users table opt-in `?include=stats` adds `lessonsCompleted`,
 `lessonsAvailable`, and `lastActiveAt` to each row; the Completed column renders
-a compact CompletionRing colored by progress. **Stats reads are O(1) per user**:
-`lessonsCompleted` and `lastActiveAt` are denormalized onto the user record.
+a compact CompletionRing colored by progress.
 
-- `lessonsCompleted` is maintained by the sync-route PUT hook
-  (`applyActivityEffects`) — a first-time `lessonKB:*` transition non-completed →
-  'completed' bumps the counter; repeat writes with the same status do not
-  double-count.
+- `lessonsCompleted` (published-only) is **recomputed per request** from the
+  learner's sync-data against the live public-lesson set, and the denormalized
+  counter is healed (overwritten) when it drifts. The `applyActivityEffects`
+  hook keeps the stored counter close in the meantime, but it can't be trusted
+  on its own for visibility — a lesson can go public→private *after* a learner
+  completes it, and legacy/pre-filter counters may be inflated. Recomputing on
+  read is the deliberate trade (chosen over a one-time migration): it loosens
+  the strict O(1)-per-user goal for a per-user sync-data scan on stats reads,
+  which is cheap at classroom scale and self-corrects prod's existing counters.
 - `lastActiveAt` is **not** updated on `messages:*` writes (write amplification —
   see anti-goals); instead it's updated on `/v1/auth/login` and `/v1/auth/refresh`,
-  giving a natural ~15-min heartbeat (access-token TTL).
-- All activity writes are best-effort (try/catch, swallowed). Stat fields
-  self-heal via lazy backfill on `?include=stats`. The lessonKB pre-read (used to
-  detect the transition) is itself wrapped in try/catch — a failed pre-read just
-  defaults old-status to null, so the worst case is one missed increment, never a
-  failed lesson write.
-- `lessonsAvailable` is computed per-request from the small classroom-wide lesson
-  list (cheap regardless of user count).
+  giving a natural ~15-min heartbeat (access-token TTL). It stays a true
+  denormalized read (lazily backfilled, not recomputed).
+- All activity writes are best-effort (try/catch, swallowed). The lessonKB
+  pre-read (used to detect the transition) and the `_system:lesson:*` visibility
+  lookup are wrapped in try/catch — a failure just defaults to no increment, and
+  the next stats read heals it; the lesson write never fails.
+- `lessonsAvailable` is the count of **public** lessons (`publicLessonIds(...)`),
+  computed per-request from the small classroom-wide lesson list — the same
+  denominator for every learner.
 - Columns are sortable (click header to cycle asc/desc with aria-sort + a polite
   live region); nullish values always sort last regardless of direction so
   invites cluster predictably. Modals/dropdowns that don't need stats call the
@@ -372,9 +386,10 @@ Admin dashboard at `/plato` (lazy-loaded, role-gated) has two KPI sections:
 
 - **Learner Engagement** — `Started lessons %` (target ≥90%) and
   `Completed 50%+ of lessons %` (target >50%). Denominator is non-admin users;
-  "started" = ≥1 `lessonKB:*` record of any status; "completed 50%+" =
-  `lessonsCompleted / lessonsAvailable > 0.5` (strict — exactly 50% does not
-  count). Each widget renders green on target, red below.
+  "started" = ≥1 `lessonKB:*` record for a **public** lesson (any status);
+  "completed 50%+" = `lessonsCompleted / lessonsAvailable > 0.5` (strict — exactly
+  50% does not count), where both sides are published-only. Each widget renders
+  green on target, red below.
 - **Lesson Pacing** — on-target rate, over-target count, extended-lesson count.
 
 Both are powered by `GET /v1/admin/stats/lessons`, which is **stale-while-

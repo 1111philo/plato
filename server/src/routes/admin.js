@@ -11,6 +11,7 @@ import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
+import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
 
 const admin = new Hono();
 
@@ -29,42 +30,22 @@ function validateLessonMarkdown(markdown) {
   return null;
 }
 
-/**
- * Normalize a lesson's visibility status.
- * `draft` is a first-class status for in-progress lessons that have no markdown yet.
- * Legacy records with `status: 'draft'` AND markdown present are treated as `private`
- * to preserve the old auto-normalize semantics (CLAUDE.md: "legacy draft/published
- * statuses are auto-normalized to private/public").
- */
-function normalizeStatus(status, hasMarkdown = true) {
-  if (status === 'published' || status === 'public') return 'public';
-  if (status === 'draft' && !hasMarkdown) return 'draft';
-  return 'private';
-}
-
-// Count non-draft lessons visible to a given user (public + private-shared).
-// Mirrors the visibility logic in `/v1/lessons` (content.js).
-function countLessonsAvailableTo(userId, systemItems) {
-  let count = 0;
-  for (const i of systemItems) {
-    if (!i.dataKey?.startsWith('lesson:')) continue;
-    const status = normalizeStatus(i.data?.status, !!i.data?.markdown);
-    if (status === 'draft') continue;
-    if (status === 'public' || (Array.isArray(i.data?.sharedWith) && i.data.sharedWith.includes(userId))) {
-      count++;
-    }
-  }
-  return count;
-}
+// Dashboard stats count ONLY published (public) lessons — drafts, privates
+// (even when shared to a learner), and user-created custom lessons are excluded
+// from every KPI (numerator AND denominator). `normalizeStatus` /
+// `publicLessonIds` are the single source of that rule (lesson-visibility.js).
 
 admin.use('/v1/admin/*', authenticate, requireAdmin);
 
 // GET /v1/admin/users
 // Pass `?include=stats` to enrich each row with `lessonsCompleted`,
-// `lessonsAvailable`, and `lastActiveAt`. Counters are denormalized onto
-// the user record by sync-route hooks (so reads are O(1) per user, no
-// scans). Legacy users (created before #136) get lazy-backfilled on
-// first read; once backfilled, every subsequent read is fast.
+// `lessonsAvailable`, and `lastActiveAt`. `lessonsCompleted` counts only
+// completed PUBLIC lessons (drafts/privates/custom excluded). The sync-route
+// hook keeps a best-effort denormalized counter, but visibility can't be
+// derived from it alone (a lesson may go public→private after completion), so
+// this endpoint recomputes from sync-data against the current public-lesson
+// set and heals the stored counter when it drifts. `lastActiveAt` is read
+// from the user record (lazily backfilled if never set).
 admin.get('/v1/admin/users', async (c) => {
   const url = new URL(c.req.url);
   const includeStats = (url.searchParams.get('include') || '').split(',').includes('stats');
@@ -83,40 +64,40 @@ admin.get('/v1/admin/users', async (c) => {
     return c.json(users.map(baseRow));
   }
   const systemItems = await db.getAllSyncData('_system');
-  // Lazy-backfill any users whose counters were never initialized. One-time
-  // scan per user; subsequent reads return the stored counters.
+  const publicIds = publicLessonIds(systemItems);
+  const lessonsAvailable = publicIds.size;
   const enriched = await Promise.all(users.map(async (p) => {
-    let lessonsCompleted = p.lessonsCompleted;
-    let lastActiveAt = p.lastActiveAt || null;
-    if (lessonsCompleted == null || lastActiveAt === null) {
-      const items = await db.getAllSyncData(p.userId);
-      let counted = 0;
-      let lastActiveMs = 0;
-      for (const item of items) {
-        if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
-          counted++;
-        } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
-          for (const m of item.data) {
-            const t = typeof m?.timestamp === 'number' ? m.timestamp
-              : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
-              : NaN;
-            if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
-          }
+    // Recompute completed public lessons from sync-data. This also heals the
+    // denormalized counter: legacy values (pre-#136) and any inflated values
+    // (private/draft/custom completions counted before this filter existed)
+    // converge to the correct public-only count on the next admin read.
+    const items = await db.getAllSyncData(p.userId);
+    let counted = 0;
+    let lastActiveMs = 0;
+    for (const item of items) {
+      if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
+        if (publicIds.has(item.dataKey.slice('lessonKB:'.length))) counted++;
+      } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
+        for (const m of item.data) {
+          const t = typeof m?.timestamp === 'number' ? m.timestamp
+            : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
+            : NaN;
+          if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
         }
       }
-      if (lessonsCompleted == null) {
-        lessonsCompleted = counted;
-        await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
-      }
-      if (lastActiveAt === null && lastActiveMs > 0) {
-        lastActiveAt = new Date(lastActiveMs).toISOString();
-        await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
-      }
+    }
+    if (counted !== p.lessonsCompleted) {
+      await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
+    }
+    let lastActiveAt = p.lastActiveAt || null;
+    if (lastActiveAt === null && lastActiveMs > 0) {
+      lastActiveAt = new Date(lastActiveMs).toISOString();
+      await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
     }
     return {
       ...baseRow(p),
-      lessonsCompleted: lessonsCompleted ?? 0,
-      lessonsAvailable: countLessonsAvailableTo(p.userId, systemItems),
+      lessonsCompleted: counted,
+      lessonsAvailable,
       lastActiveAt,
     };
   }));
@@ -940,6 +921,11 @@ export async function computeLessonStats() {
   const extendedThreshold = MAX_EXCHANGES * 2;
   const users = await db.listAllUsers();
   const systemItems = await db.getAllSyncData('_system');
+  // Only published (public) lessons feed any KPI. A learner's completion
+  // counts iff its lesson id maps to a public `_system:lesson:*` record —
+  // drafts, privates (even when shared), and custom lessons are all excluded.
+  const publicIds = publicLessonIds(systemItems);
+  const lessonsAvailable = publicIds.size; // same denominator for every learner
 
   // Pacing aggregates
   let withinTarget = 0;
@@ -963,6 +949,7 @@ export async function computeLessonStats() {
 
     for (const item of syncItems) {
       if (!item.dataKey?.startsWith('lessonKB:')) continue;
+      if (!publicIds.has(item.dataKey.slice('lessonKB:'.length))) continue;
       const kb = item.data;
       if (!kb) continue;
       userHasStarted = true;
@@ -997,8 +984,7 @@ export async function computeLessonStats() {
     if (isLearner) {
       activeLearners++;
       if (userHasStarted) learnersStarted++;
-      const available = countLessonsAvailableTo(user.userId, systemItems);
-      if (available > 0 && userCompleted / available > 0.5) learnersCompletedHalf++;
+      if (lessonsAvailable > 0 && userCompleted / lessonsAvailable > 0.5) learnersCompletedHalf++;
     }
   }
 
@@ -1073,6 +1059,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
 
   // Lesson name lookup
   const systemItems = await db.getAllSyncData('_system');
+  const publicIds = publicLessonIds(systemItems);
   const lessonNames = new Map();
   for (const item of systemItems) {
     if (item.dataKey?.startsWith('lesson:')) {
@@ -1087,10 +1074,11 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
 
   for (const item of syncItems) {
     if (!item.dataKey?.startsWith('lessonKB:')) continue;
+    const lessonId = item.dataKey.slice('lessonKB:'.length);
+    if (!publicIds.has(lessonId)) continue; // only published lessons count
     const kb = item.data;
     if (!kb || kb.status !== 'completed') continue;
     lessonsCompleted++;
-    const lessonId = item.dataKey.slice('lessonKB:'.length);
     const exchanges = kb.activitiesCompleted || 0;
     const minutes = +(exchanges * MINS_PER_EXCHANGE).toFixed(1);
     const completedAtMs = typeof kb.completedAt === 'number' ? kb.completedAt
@@ -1118,7 +1106,7 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
     userId,
     windowDays: days,
     lessonsCompleted,
-    lessonsAvailable: countLessonsAvailableTo(userId, systemItems),
+    lessonsAvailable: publicIds.size,
     lastActiveAt: user.lastActiveAt || null,
     completionMinutesP50: pct(50),
     completionMinutesP90: pct(90),

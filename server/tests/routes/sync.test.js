@@ -312,14 +312,36 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     db.setUserActivityField = async (userId, field, value) => { setCalls.push({ userId, field, value }); };
   });
 
-  it('first transition to status=completed increments lessonsCompleted', async () => {
-    db.getSyncData = async () => ({ data: { status: 'in_progress' }, version: 1 });
+  it('first transition to status=completed on a PUBLIC lesson increments lessonsCompleted', async () => {
+    db.getSyncData = async (uid, key) => {
+      if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'public', markdown: '#' } };
+      return { data: { status: 'in_progress' }, version: 1 }; // lessonKB pre-read
+    };
     const app = new Hono();
     app.route('/', sync);
     const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 1 });
     assert.equal(res.status, 200);
     assert.equal(incCalls.length, 1);
     assert.deepEqual(incCalls[0], { userId: 'usr_test', field: 'lessonsCompleted', delta: 1 });
+  });
+
+  it('completing a private/draft/custom lesson does NOT increment lessonsCompleted', async () => {
+    // Private lesson: present in _system but not public.
+    db.getSyncData = async (uid, key) => {
+      if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'private', markdown: '#' } };
+      return { data: { status: 'in_progress' }, version: 1 };
+    };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 1 });
+    assert.equal(res.status, 200);
+    assert.equal(incCalls.length, 0, 'private lesson completion is not counted');
+
+    // Custom lesson: no _system:lesson record at all.
+    db.getSyncData = async (uid) => (uid === '_system' ? null : { data: { status: 'in_progress' }, version: 1 });
+    const res2 = await authedReq(app, 'PUT', '/v1/sync/lessonKB:custom-abc', { data: { status: 'completed' }, version: 1 });
+    assert.equal(res2.status, 200);
+    assert.equal(incCalls.length, 0, 'custom lesson completion is not counted');
   });
 
   it('repeat write with same status=completed does NOT double-count', async () => {
@@ -351,7 +373,10 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
   });
 
   it('counter write failures do not break the sync write', async () => {
-    db.getSyncData = async () => ({ data: { status: 'in_progress' }, version: 1 });
+    db.getSyncData = async (uid, key) => {
+      if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'public', markdown: '#' } };
+      return { data: { status: 'in_progress' }, version: 1 };
+    };
     db.incrementUserCounter = async () => { throw new Error('db hiccup'); };
     const app = new Hono();
     app.route('/', sync);

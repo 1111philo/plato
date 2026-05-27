@@ -404,7 +404,10 @@ describe('GET /v1/admin/stats/lessons', () => {
       { userId: 'u1', role: 'user' }, { userId: 'u2', role: 'user' }, { userId: 'u3', role: 'user' },
     ];
     db.getAllSyncData = async (userId) => {
-      if (userId === '_system') return [];
+      if (userId === '_system') return [
+        { dataKey: 'lesson:c1', data: { status: 'public', markdown: '# C1' } },
+        { dataKey: 'lesson:c2', data: { status: 'public', markdown: '# C2' } },
+      ];
       if (userId === 'u1') return [
         { dataKey: 'lessonKB:c1', data: { status: 'completed', progress: 10, activitiesCompleted: 6, startedAt: 1000000, completedAt: 1600000 } },
         { dataKey: 'lessonKB:c2', data: { status: 'active', progress: 4, activitiesCompleted: 3 } },
@@ -510,6 +513,34 @@ describe('GET /v1/admin/stats/lessons', () => {
     const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
     const data = await res.json();
     assert.equal(data.learnersCompletedHalf, 1); // u2 only
+  });
+
+  it('counts only published lessons — private, draft, and custom completions are excluded', async () => {
+    db.listAllUsers = async () => [{ userId: 'u1', role: 'user' }];
+    db.getAllSyncData = async (userId) => {
+      if (userId === '_system') return [
+        { dataKey: 'lesson:pub', data: { status: 'public', markdown: '# Public' } },
+        { dataKey: 'lesson:priv', data: { status: 'private', markdown: '# Private', sharedWith: ['u1'] } },
+        { dataKey: 'lesson:draft', data: { status: 'draft', markdown: '' } },
+      ];
+      // u1 completed one of each kind + a self-authored custom lesson (no
+      // `_system:lesson:*` record). Only the public completion should count.
+      return [
+        { dataKey: 'lessonKB:pub', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:priv', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:draft', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:custom-abc', data: { status: 'completed', activitiesCompleted: 5 } },
+        { dataKey: 'lessonKB:pub2', data: { status: 'active', activitiesCompleted: 2 } }, // active but not public → ignored
+      ];
+    };
+    const app = new Hono();
+    app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    const data = await res.json();
+    assert.equal(data.totalCompletions, 1, 'only the public lesson completion counts');
+    assert.equal(data.activeLessons, 0, 'active KB for a non-public lesson is ignored');
+    assert.equal(data.learnersStarted, 1, 'learner started a public lesson');
+    assert.equal(data.learnersCompletedHalf, 1, '1 of 1 public lesson completed > 50%');
   });
 
   it('serves cached value without recomputing when cache is fresh', async () => {
@@ -1142,6 +1173,29 @@ describe('GET /v1/admin/users/:userId/stats', () => {
     assert.deepEqual(titles, ['Active Recall', 'Cognitive Load']);
   });
 
+  it('excludes private/draft/custom completions from the per-learner numerator', async () => {
+    db.getAllSyncData = async (uid) => {
+      if (uid === '_system') return [
+        { dataKey: 'lesson:l1', data: { name: 'Public', status: 'public', markdown: '# L1' } },
+        { dataKey: 'lesson:l2', data: { name: 'Private', status: 'private', markdown: '# L2', sharedWith: ['usr_learner'] } },
+        { dataKey: 'lesson:l3', data: { name: 'Draft', status: 'draft', markdown: '' } },
+      ];
+      return [
+        { dataKey: 'lessonKB:l1', data: { status: 'completed', activitiesCompleted: 5, completedAt: '2026-05-01T12:00:00Z' } },
+        { dataKey: 'lessonKB:l2', data: { status: 'completed', activitiesCompleted: 5, completedAt: '2026-05-02T12:00:00Z' } }, // private
+        { dataKey: 'lessonKB:custom-xyz', data: { status: 'completed', activitiesCompleted: 5 } }, // custom
+      ];
+    };
+    db.listAuditLogsForUser = async () => [];
+    const app = new Hono(); app.route('/', admin);
+    const res = await adminReq(app, 'GET', '/v1/admin/users/usr_learner/stats');
+    const data = await res.json();
+    assert.equal(data.lessonsCompleted, 1, 'only the public completion counts');
+    assert.equal(data.lessonsAvailable, 1, 'only the public lesson is available');
+    assert.equal(data.lessonDurations.length, 1);
+    assert.equal(data.lessonDurations[0].lessonName, 'Public');
+  });
+
   it('returns lastActiveAt from the user record', async () => {
     db.getUserById = async (id) => {
       if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
@@ -1178,29 +1232,35 @@ describe('GET /v1/admin/users?include=stats', () => {
     };
   });
 
-  it('reads denormalized counters directly when present (no per-user scan)', async () => {
+  it('recomputes completed PUBLIC lessons and heals an inflated stored counter', async () => {
     db.listAllUsers = async () => [
+      // Stored counter is stale/inflated (counted a private completion before
+      // the public-only filter existed). lastActiveAt already set.
       { userId: 'u1', email: 'u1@x.com', name: 'U1', role: 'user', createdAt: '2024-01-01',
         lessonsCompleted: 2, lastActiveAt: '2026-05-03T09:15:00.000Z' },
     ];
-    const scanned = [];
     db.getAllSyncData = async (uid) => {
-      scanned.push(uid);
       if (uid === '_system') return [
         { dataKey: 'lesson:l1', data: { status: 'public', markdown: '#' } },
-        { dataKey: 'lesson:l2', data: { status: 'public', markdown: '#' } },
-        { dataKey: 'lesson:l3', data: { status: 'private', markdown: '#', sharedWith: ['u1'] } },
+        { dataKey: 'lesson:l2', data: { status: 'private', markdown: '#', sharedWith: ['u1'] } },
+      ];
+      if (uid === 'u1') return [
+        { dataKey: 'lessonKB:l1', data: { status: 'completed' } },   // public → counts
+        { dataKey: 'lessonKB:l2', data: { status: 'completed' } },   // private → excluded
       ];
       return [];
     };
+    const writes = [];
+    db.setUserActivityField = async (userId, field, value) => { writes.push({ userId, field, value }); };
     const app = new Hono(); app.route('/', admin);
     const res = await adminReq(app, 'GET', '/v1/admin/users?include=stats');
     assert.equal(res.status, 200);
     const data = await res.json();
-    assert.equal(data[0].lessonsCompleted, 2);
-    assert.equal(data[0].lessonsAvailable, 3);
+    assert.equal(data[0].lessonsCompleted, 1, 'only the public completion counts');
+    assert.equal(data[0].lessonsAvailable, 1, 'private-shared lesson excluded from denominator');
     assert.equal(data[0].lastActiveAt, '2026-05-03T09:15:00.000Z');
-    assert.deepEqual(scanned, ['_system'], 'no per-user sync-data scan when counters exist');
+    // Stored counter healed from 2 → 1
+    assert.ok(writes.some((w) => w.field === 'lessonsCompleted' && w.value === 1));
   });
 
   it('lazy-backfills counters for legacy users on first read and persists them', async () => {
