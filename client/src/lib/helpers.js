@@ -5,9 +5,33 @@ export function esc(s) {
   return el.innerHTML;
 }
 
+/**
+ * Protocols safe to drop into an href. Coach/markdown output is untrusted, so
+ * a `javascript:`, `data:`, or `vbscript:` URL would become a clickable XSS
+ * vector (`esc()` neutralizes HTML chars but not the URL scheme). We allowlist
+ * http(s) and mailto and reject everything else. Leading whitespace is trimmed
+ * first so `[x]( javascript:…)` can't sneak past the anchor.
+ */
+export function isSafeUrl(url) {
+  return /^(https?:\/\/|mailto:)/i.test(String(url).trim());
+}
+
 /** Lightweight markdown to HTML. Handles bold, italic, headings, lists, links, and line breaks. */
 export function renderMd(text) {
   let escaped = esc(text);
+  // Markdown links [text](url) — must come before heading/bold/italic replacements
+  // so nested formatting inside link text is handled correctly. Unsafe-protocol
+  // URLs are left as the literal markdown text rather than rendered as anchors.
+  escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+    const href = url.trim();
+    if (!isSafeUrl(href)) return match;
+    // esc() already neutralized & < > across the whole string, but NOT quotes
+    // (textContent→innerHTML leaves " and ' intact). Without encoding them, a
+    // URL like `https://x" onclick="…` breaks out of href="…" and injects
+    // attributes — so percent-encode the quote characters in the href.
+    const safeHref = href.replace(/"/g, '%22').replace(/'/g, '%27');
+    return `<a href="${safeHref}" target="_blank" rel="noopener">${label}</a>`;
+  });
   escaped = escaped.replace(/^### (.+)$/gm, '<strong style="font-size:0.85rem;">$1</strong>');
   escaped = escaped.replace(/^## (.+)$/gm, '<strong style="font-size:0.9rem;">$1</strong>');
   escaped = escaped.replace(/^# (.+)$/gm, '<strong style="font-size:1rem;">$1</strong>');
@@ -49,10 +73,18 @@ export function renderMd(text) {
   return escaped;
 }
 
-/** Detect and linkify URLs in escaped HTML. */
+/** Detect and linkify bare URLs in escaped HTML. */
 export function linkify(escaped) {
-  return escaped.replace(
-    /https?:\/\/[^\s<>"']+/g,
-    (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
-  );
+  // Skip URLs already inside an <a>…</a> — markdown links ([text](url)) are
+  // rendered to anchors earlier in renderMd, and re-matching the URL inside
+  // their href would nest anchors and corrupt the markup. Split on existing
+  // anchors (capturing group keeps them) and only linkify the segments
+  // between them.
+  return escaped
+    .split(/(<a\b[^>]*>.*?<\/a>)/gs)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(
+      /https?:\/\/[^\s<>"']+/g,
+      (url) => `<a href="${url}" target="_blank" rel="noopener">${url}</a>`
+    )))
+    .join('');
 }
