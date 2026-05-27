@@ -474,6 +474,15 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName) {
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // Optional author-supplied coach directive: high-priority runtime guidance
+  // the lesson author baked into the lesson markdown (`## Coach Directive`),
+  // e.g. "reference the learner's portfolio project" or "offer this code".
+  // Surfaced in both active and completed states — it can carry feedback-mode
+  // guidance too. The coach follows it closely but still owns the exemplar and
+  // progress (it never overrides completion semantics).
+  if (lesson.coachDirective) {
+    context.coachDirective = lesson.coachDirective;
+  }
   // Optional course taxonomy: when a lesson belongs to a wider course, the
   // server inlines `lesson.course = { id, name }`. Surface the name so the
   // coach can frame this lesson within the course's arc.

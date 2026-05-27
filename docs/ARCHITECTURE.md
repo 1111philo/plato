@@ -201,6 +201,47 @@ the admin to click "Create/Update Lesson" to save. `buildConversationText`
 (`client/src/lib/lessonCreationEngine.js`) is the shared builder for the
 `lesson-extractor` input, used by both the finalize and preview-refresh paths.
 
+### Coach directive
+
+A lesson can carry **author-supplied runtime instructions for the coach** that
+are neither exemplar nor objective — e.g. "reference the learner's portfolio
+project throughout (don't ask what it is)," "if the learner picks tool X, share
+this discount code + URL with these checkout caveats," or "assume the learner
+already finished the intro lesson." These flow end-to-end through one optional
+`## Coach Directive` markdown section:
+
+1. **Extract** — `lesson-extractor` emits `## Coach Directive` **verbatim**
+   (codes, URLs, caveats intact) only when the conversation contained such
+   instructions; otherwise it omits the heading.
+2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`) reads the
+   section into `lesson.coachDirective` (buffered like the exemplar so multi-line
+   directives survive; absent ⇒ no key).
+3. **Serve** — `buildContext` (`client/src/lib/lessonEngine.js`) surfaces it as
+   `context.coachDirective` in **both** active and completed states.
+4. **Obey** — `coach.md` treats it as a high-priority instruction followed every
+   exchange. It refines *how* the coach runs the lesson; it never overrides the
+   exemplar, assessment, or completion semantics (the coach still owns
+   `progress`). The Lesson Creator (`lesson-creator.md`) is aware of directives
+   and confirms them back to the admin rather than silently dropping them.
+
+Historically this was a gap: the extractor's output format had no slot for
+coach-facing instructions, so anything an admin typed beyond exemplar/objectives
+(the Creator would echo it conversationally) was summarized away and never
+reached the coach. Adding the field at all four layers closed the loop.
+
+**Extraction contract — keep these in lockstep.** What an admin discusses in the
+Lesson Creator conversation only persists if the Lesson Extractor has a field
+for it. The set of persisted fields (name, description, exemplar, 2-4
+objectives, optional coach directive) is the contract, and it's enforced by
+prose in **five** places that must change together when a field is added or
+removed: `lesson-extractor.md` (output format), `parseLessonPrompt`
+(`client/js/lessonOwner.js`), `buildContext` (`client/src/lib/lessonEngine.js`),
+`coach.md` (so the coach reads it), and — critically — `lesson-creator.md`'s
+"What the lesson actually saves" section, so the Creator agent never promises an
+admin something the extractor will silently drop. Adding a persisted lesson
+field without updating the Creator's contract reintroduces exactly the
+scrubbed-directive bug.
+
 ## Pacing & completion philosophy
 
 Microlearning constraints live in `client/src/lib/constants.js`:

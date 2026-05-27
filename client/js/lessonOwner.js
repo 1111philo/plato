@@ -64,9 +64,20 @@ export function parseLessonPrompt(lessonId, markdown) {
   let name = '';
   let description = '';
   let exemplar = '';
+  let coachDirective = '';
   const objectives = [];
   let currentSection = null;
   const sectionBuffer = [];
+
+  // Free-form prose sections are accumulated into sectionBuffer and flushed
+  // when the next `## ` heading (or EOF) is reached. `## Coach Directive` is
+  // optional, author-supplied runtime guidance for the Coach (e.g. "reference
+  // the learner's portfolio project", "offer this code") — it must round-trip
+  // verbatim, so it gets the same buffer treatment as the exemplar.
+  const flushSection = () => {
+    if (currentSection === 'exemplar') exemplar = sectionBuffer.join('\n').trim();
+    if (currentSection === 'coach_directive') coachDirective = sectionBuffer.join('\n').trim();
+  };
 
   for (const line of lines) {
     if (line.startsWith('# ') && !name) {
@@ -75,9 +86,7 @@ export function parseLessonPrompt(lessonId, markdown) {
     }
 
     if (line.startsWith('## ')) {
-      if (currentSection === 'exemplar') {
-        exemplar = sectionBuffer.join('\n').trim();
-      }
+      flushSection();
       sectionBuffer.length = 0;
       currentSection = line.slice(3).trim().toLowerCase().replace(/\s+/g, '_');
       continue;
@@ -88,7 +97,7 @@ export function parseLessonPrompt(lessonId, markdown) {
       continue;
     }
 
-    if (currentSection === 'exemplar') {
+    if (currentSection === 'exemplar' || currentSection === 'coach_directive') {
       sectionBuffer.push(line);
     }
 
@@ -98,9 +107,9 @@ export function parseLessonPrompt(lessonId, markdown) {
     }
   }
 
-  if (currentSection === 'exemplar') {
-    exemplar = sectionBuffer.join('\n').trim();
-  }
+  flushSection();
 
-  return { lessonId, name, description, exemplar, learningObjectives: objectives };
+  const parsed = { lessonId, name, description, exemplar, learningObjectives: objectives };
+  if (coachDirective) parsed.coachDirective = coachDirective;
+  return parsed;
 }
