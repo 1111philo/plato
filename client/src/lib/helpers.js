@@ -22,9 +22,16 @@ export function renderMd(text) {
   // Markdown links [text](url) — must come before heading/bold/italic replacements
   // so nested formatting inside link text is handled correctly. Unsafe-protocol
   // URLs are left as the literal markdown text rather than rendered as anchors.
-  escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) =>
-    isSafeUrl(url) ? `<a href="${url.trim()}" target="_blank" rel="noopener">${label}</a>` : match
-  );
+  escaped = escaped.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, label, url) => {
+    const href = url.trim();
+    if (!isSafeUrl(href)) return match;
+    // esc() already neutralized & < > across the whole string, but NOT quotes
+    // (textContent→innerHTML leaves " and ' intact). Without encoding them, a
+    // URL like `https://x" onclick="…` breaks out of href="…" and injects
+    // attributes — so percent-encode the quote characters in the href.
+    const safeHref = href.replace(/"/g, '%22').replace(/'/g, '%27');
+    return `<a href="${safeHref}" target="_blank" rel="noopener">${label}</a>`;
+  });
   escaped = escaped.replace(/^### (.+)$/gm, '<strong style="font-size:0.85rem;">$1</strong>');
   escaped = escaped.replace(/^## (.+)$/gm, '<strong style="font-size:0.9rem;">$1</strong>');
   escaped = escaped.replace(/^# (.+)$/gm, '<strong style="font-size:1rem;">$1</strong>');

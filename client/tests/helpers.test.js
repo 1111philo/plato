@@ -77,6 +77,19 @@ describe('renderMd markdown links', () => {
     assert.match(html, /<a href="https:\/\/example\.com\/docs" target="_blank" rel="noopener">the docs<\/a>/);
   });
 
+  it('neutralizes attribute-breakout via quotes in an http(s) URL', () => {
+    // Passes isSafeUrl (starts with https://) but tries to break out of the
+    // href attribute to inject an onclick handler. esc() does not escape
+    // quotes, so the link renderer must encode them.
+    const html = renderMd('[click](https://evil.com" onclick="alert(document.cookie))');
+    // No real attribute breakout: a raw quote must not close href and start
+    // an event handler. The quotes are percent-encoded, so any "onclick" text
+    // is inert URL content inside the href value, not an HTML attribute.
+    assert.doesNotMatch(html, /"\s*onclick\s*=/i);
+    assert.doesNotMatch(html, /href="https:\/\/evil\.com"/); // not closed early
+    assert.match(html, /%22/); // quote was percent-encoded
+  });
+
   it('still auto-linkifies a bare URL alongside a markdown link', () => {
     const html = renderMd('[docs](https://a.com) and bare https://b.com here');
     assert.equal(html.match(/<a /g).length, 2);
