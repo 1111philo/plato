@@ -358,8 +358,13 @@ a compact CompletionRing colored by progress.
   on its own for visibility — a lesson can go public→private *after* a learner
   completes it, and legacy/pre-filter counters may be inflated. Recomputing on
   read is the deliberate trade (chosen over a one-time migration): it loosens
-  the strict O(1)-per-user goal for a per-user sync-data scan on stats reads,
-  which is cheap at classroom scale and self-corrects prod's existing counters.
+  the strict O(1)-per-user goal for a small per-user read, which self-corrects
+  prod's existing counters. To keep that cheap at hundreds of users, the read
+  uses `db.getSyncDataByPrefix(userId, 'lessonKB:')` — a **sort-key prefix
+  query** that returns only the `lessonKB:*` records (tens of tiny items),
+  never the large `screenshot:*`/`messages:*` payloads. `getAllSyncData`
+  (full-partition, unprojected) must NOT be used in per-user loops over the
+  whole classroom for this reason.
 - `lastActiveAt` is **not** updated on `messages:*` writes (write amplification —
   see anti-goals); instead it's updated on `/v1/auth/login` and `/v1/auth/refresh`,
   giving a natural ~15-min heartbeat (access-token TTL). It stays a true
@@ -398,8 +403,9 @@ revalidate cached** in `_system:stats:lessons` sync-data (see
 (10 min–24 h): cached payload served and an async Lambda self-invoke kicks off a
 refresh (`InvocationType: 'Event'`, see the wrapped handler in
 `server/src/index.js`). Expired (>24 h) or missing: recompute synchronously. The
-recompute is the only place that walks every user × every sync-data item, so it
-should never be on the hot path of an admin page load. `lambda:InvokeFunction`
+recompute walks every user's `lessonKB:*` + `messages:*` records (via
+`getSyncDataByPrefix`, skipping the large `screenshot:*` payloads), so it should
+never be on the hot path of an admin page load. `lambda:InvokeFunction`
 scoped to `${StackName}-*` is granted to `PlatoApiFunction` in `template.yaml`.
 In local dev / tests, `AWS_LAMBDA_FUNCTION_NAME` is unset and the kickoff is a
 no-op.

@@ -24,6 +24,14 @@ async function userReq(app, method, path, body) {
   });
 }
 
+// Admin stats endpoints read `lessonKB:*` / `messages:*` via a sort-key prefix
+// query (skips the large screenshot:* records). Back it with whatever
+// getAllSyncData the test set up, so fixtures stay declarative.
+beforeEach(() => {
+  db.getSyncDataByPrefix = async (userId, prefix) =>
+    (await db.getAllSyncData(userId)).filter((i) => i.dataKey?.startsWith(prefix));
+});
+
 describe('GET /v1/admin/users', () => {
   beforeEach(() => {
     db.getUserById = async (id) => {

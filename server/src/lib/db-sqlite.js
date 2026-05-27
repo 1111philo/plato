@@ -305,6 +305,16 @@ const db = {
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
 
+  // Mirror of the DynamoDB sort-key prefix query: fetch only sync-data records
+  // whose dataKey begins with `prefix` (e.g. 'lessonKB:'), so admin stats skip
+  // the large screenshot:*/messages:* records.
+  async getSyncDataByPrefix(userId, prefix) {
+    const rows = sqlite.prepare(
+      'SELECT * FROM sync_data WHERE userId = ? AND dataKey LIKE ? ESCAPE ?'
+    ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+    return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
+  },
+
   async putSyncData(userId, dataKey, data, expectedVersion) {
     const now = new Date().toISOString();
     const newVersion = (expectedVersion || 0) + 1;

@@ -191,6 +191,17 @@ describe('db-sqlite', () => {
       assert.ok(all.some(i => i.dataKey === 'preferences'));
     });
 
+    it('gets only records matching a dataKey prefix', async () => {
+      await db.putSyncData(userId, 'lessonKB:l1', { status: 'completed' }, 0);
+      await db.putSyncData(userId, 'lessonKB:l2', { status: 'active' }, 0);
+      await db.putSyncData(userId, 'screenshot:s1', { blob: 'big' }, 0);
+      const kb = await db.getSyncDataByPrefix(userId, 'lessonKB:');
+      assert.equal(kb.length, 2);
+      assert.ok(kb.every(i => i.dataKey.startsWith('lessonKB:')));
+      assert.ok(!kb.some(i => i.dataKey.startsWith('screenshot:')));
+      assert.deepEqual(kb.find(i => i.dataKey === 'lessonKB:l1').data, { status: 'completed' });
+    });
+
     it('deletes sync data', async () => {
       await db.deleteSyncData(userId, 'preferences');
       assert.equal(await db.getSyncData(userId, 'preferences'), null);

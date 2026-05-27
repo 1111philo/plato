@@ -302,6 +302,27 @@ const db = {
     return items;
   },
 
+  // Fetch only the sync-data records whose dataKey begins with `prefix`
+  // (a sort-key condition, so DynamoDB reads only the matching items — RCU
+  // and payload scale with the matched set, NOT the whole partition). Used by
+  // admin stats to read `lessonKB:*` without dragging the large `screenshot:*`
+  // / `messages:*` records.
+  async getSyncDataByPrefix(userId, prefix) {
+    const items = [];
+    let lastKey;
+    do {
+      const result = await doc.send(new QueryCommand({
+        TableName: SYNC_DATA_TABLE,
+        KeyConditionExpression: 'userId = :uid AND begins_with(dataKey, :p)',
+        ExpressionAttributeValues: { ':uid': userId, ':p': prefix },
+        ExclusiveStartKey: lastKey,
+      }));
+      items.push(...result.Items);
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+    return items;
+  },
+
   async putSyncData(userId, dataKey, data, expectedVersion) {
     const now = new Date().toISOString();
     const newVersion = (expectedVersion || 0) + 1;

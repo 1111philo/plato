@@ -70,14 +70,26 @@ admin.get('/v1/admin/users', async (c) => {
     // Recompute completed public lessons from sync-data. This also heals the
     // denormalized counter: legacy values (pre-#136) and any inflated values
     // (private/draft/custom completions counted before this filter existed)
-    // converge to the correct public-only count on the next admin read.
-    const items = await db.getAllSyncData(p.userId);
+    // converge to the correct public-only count on the next admin read. Read
+    // ONLY the `lessonKB:*` records (sort-key prefix query) — never the large
+    // screenshot:*/messages:* payloads — so this stays cheap across hundreds
+    // of users.
+    const kbItems = await db.getSyncDataByPrefix(p.userId, 'lessonKB:');
     let counted = 0;
-    let lastActiveMs = 0;
-    for (const item of items) {
-      if (item.dataKey?.startsWith('lessonKB:') && item.data?.status === 'completed') {
-        if (publicIds.has(item.dataKey.slice('lessonKB:'.length))) counted++;
-      } else if (item.dataKey?.startsWith('messages:') && Array.isArray(item.data)) {
+    for (const item of kbItems) {
+      if (item.data?.status === 'completed' && publicIds.has(item.dataKey.slice('lessonKB:'.length))) counted++;
+    }
+    if (counted !== p.lessonsCompleted) {
+      await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
+    }
+    // lastActiveAt is normally maintained on login/refresh; only legacy users
+    // (never set) need a backfill, and only then do we pay to read messages.
+    let lastActiveAt = p.lastActiveAt || null;
+    if (lastActiveAt === null) {
+      let lastActiveMs = 0;
+      const msgItems = await db.getSyncDataByPrefix(p.userId, 'messages:');
+      for (const item of msgItems) {
+        if (!Array.isArray(item.data)) continue;
         for (const m of item.data) {
           const t = typeof m?.timestamp === 'number' ? m.timestamp
             : typeof m?.timestamp === 'string' ? Date.parse(m.timestamp)
@@ -85,14 +97,10 @@ admin.get('/v1/admin/users', async (c) => {
           if (Number.isFinite(t) && t > lastActiveMs) lastActiveMs = t;
         }
       }
-    }
-    if (counted !== p.lessonsCompleted) {
-      await db.setUserActivityField(p.userId, 'lessonsCompleted', counted).catch(() => {});
-    }
-    let lastActiveAt = p.lastActiveAt || null;
-    if (lastActiveAt === null && lastActiveMs > 0) {
-      lastActiveAt = new Date(lastActiveMs).toISOString();
-      await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
+      if (lastActiveMs > 0) {
+        lastActiveAt = new Date(lastActiveMs).toISOString();
+        await db.setUserActivityField(p.userId, 'lastActiveAt', lastActiveAt).catch(() => {});
+      }
     }
     return {
       ...baseRow(p),
@@ -943,12 +951,16 @@ export async function computeLessonStats() {
 
   for (const user of users) {
     const isLearner = user.role !== 'admin';
-    const syncItems = await db.getAllSyncData(user.userId);
+    // Only `lessonKB:*` (counts/pacing) and `messages:*` (duration fallback for
+    // legacy KBs without startedAt/completedAt) are needed — skip the large
+    // screenshot:* records entirely.
+    const kbItems = await db.getSyncDataByPrefix(user.userId, 'lessonKB:');
+    const msgItems = await db.getSyncDataByPrefix(user.userId, 'messages:');
+    const syncItems = kbItems.concat(msgItems);
     let userHasStarted = false;
     let userCompleted = 0;
 
-    for (const item of syncItems) {
-      if (!item.dataKey?.startsWith('lessonKB:')) continue;
+    for (const item of kbItems) {
       if (!publicIds.has(item.dataKey.slice('lessonKB:'.length))) continue;
       const kb = item.data;
       if (!kb) continue;
@@ -1068,12 +1080,11 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
     }
   }
 
-  const syncItems = await db.getAllSyncData(userId);
+  const syncItems = await db.getSyncDataByPrefix(userId, 'lessonKB:');
   let lessonsCompleted = 0;
   const lessonDurations = []; // { lessonId, lessonName, exchanges, minutes, completedAt }
 
   for (const item of syncItems) {
-    if (!item.dataKey?.startsWith('lessonKB:')) continue;
     const lessonId = item.dataKey.slice('lessonKB:'.length);
     if (!publicIds.has(lessonId)) continue; // only published lessons count
     const kb = item.data;
