@@ -94,6 +94,18 @@ function rejectWriteIfImpersonating(c) {
   return null;
 }
 
+/**
+ * Estimate the size of a sync-data item as it will be stored in DynamoDB.
+ * DynamoDB caps items at 400 KB; screenshots can exceed this if the client-side
+ * compression fails or is bypassed. Returns the approximate byte size.
+ */
+function estimateSyncDataSize(userId, dataKey, data) {
+  const item = { userId, dataKey, data, updatedAt: new Date().toISOString(), version: 1 };
+  return JSON.stringify(item).length;
+}
+
+const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB limit for safety
+
 // GET /v1/sync — get all synced data. Two record families are filtered out:
 //   - `userMeta:<pluginId>` — plugin-owned, admin-only by default; the
 //     plugin's own routes are responsible for any learner exposure.
@@ -156,6 +168,19 @@ sync.put('/v1/sync/batch', async (c) => {
     if (!validateDataKey(item.dataKey) || item.data === undefined) {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
+    // Size guard for screenshots (same defense-in-depth as single PUT)
+    if (item.dataKey.startsWith('screenshot:')) {
+      const size = estimateSyncDataSize(userId, item.dataKey, item.data);
+      if (size > MAX_ITEM_SIZE) {
+        return {
+          dataKey: item.dataKey,
+          status: 'error',
+          error: 'Screenshot too large',
+          size,
+          limit: MAX_ITEM_SIZE,
+        };
+      }
+    }
     try {
       const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
@@ -191,6 +216,22 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   const { data, version } = await c.req.json();
   if (data === undefined) {
     return c.json({ error: 'data is required' }, 400);
+  }
+
+  // Defense-in-depth size check: reject items that will exceed DynamoDB's
+  // 400 KB limit. Screenshots should be compressed client-side, but if
+  // compression fails or is bypassed, reject here rather than letting the
+  // write silently fail with an unhandled DynamoDB error.
+  if (dataKey.startsWith('screenshot:')) {
+    const size = estimateSyncDataSize(userId, dataKey, data);
+    if (size > MAX_ITEM_SIZE) {
+      return c.json({
+        error: 'Screenshot is too large',
+        details: 'Images must be compressed to under 380 KB. Please use a smaller image or reduce quality.',
+        size,
+        limit: MAX_ITEM_SIZE,
+      }, 413);
+    }
   }
 
   try {

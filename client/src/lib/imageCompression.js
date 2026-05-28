@@ -63,18 +63,20 @@ export async function compressImageDataUrl(dataUrl, { maxBytes = DEFAULT_MAX_BYT
     let quality = 0.82;
     let out = encodeJpeg(img, edge, quality);
 
-    for (let attempt = 0; attempt < 6 && estimateDataUrlBytes(out) > maxBytes; attempt++) {
-      if (quality > 0.5) {
+    for (let attempt = 0; attempt < 8 && estimateDataUrlBytes(out) > maxBytes; attempt++) {
+      if (quality > 0.4) {
         quality -= 0.15;
       } else {
-        edge = Math.round(edge * 0.8);
-        quality = 0.7;
+        edge = Math.round(edge * 0.75);
+        quality = 0.6;
       }
       out = encodeJpeg(img, edge, quality);
     }
 
-    // Never hand back something larger than what we started with.
-    return estimateDataUrlBytes(out) < estimateDataUrlBytes(dataUrl) ? out : dataUrl;
+    // If compression succeeded, return the result. If it's still too large after
+    // all attempts, return null so the caller can surface an error to the user
+    // instead of silently writing data that will hit DynamoDB's 400 KB item limit.
+    return estimateDataUrlBytes(out) <= maxBytes ? out : null;
   } catch {
     return dataUrl;
   }

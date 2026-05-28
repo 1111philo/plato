@@ -129,7 +129,12 @@ export default function ComposeBar({
         ...img,
         dataUrl: await compressImageDataUrl(img.dataUrl),
       })));
-      setImages([...images, ...compressed].slice(0, MAX_IMAGES));
+      // Filter out images that couldn't be compressed enough (null dataUrl)
+      const valid = compressed.filter(img => img.dataUrl !== null);
+      if (valid.length < compressed.length) {
+        alert(`${compressed.length - valid.length} image(s) were too large and could not be compressed enough. Please use smaller images.`);
+      }
+      setImages([...images, ...valid].slice(0, MAX_IMAGES));
     } catch {
       alert('Failed to read image. Please try again.');
     } finally {

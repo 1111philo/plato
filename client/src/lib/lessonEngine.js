@@ -370,7 +370,9 @@ export async function migrateLegacyImages(lessonId, messages) {
     for (let ii = 0; ii < legacy.length; ii++) {
       const key = `${lessonId}-legacy-${mi}-${ii}`;
       const compressed = await compressImageDataUrl(legacy[ii]);
-      if (await saveScreenshot(key, compressed)) {
+      // If compression failed (returned null), skip this image rather than
+      // attempting to save oversized data that will hit the 400 KB limit.
+      if (compressed && await saveScreenshot(key, compressed)) {
         keys.push(key);
       } else {
         allSaved = false;
