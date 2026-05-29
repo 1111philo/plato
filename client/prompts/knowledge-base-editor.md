@@ -38,6 +38,9 @@ The Coach uses the KB to answer learner questions about the program, tailor acti
 - Who the key people are (so the Coach can direct learners to the right person for help)
 - Program logistics (timeline, platforms, channels) — so the Coach doesn't give outdated or wrong info
 - FAQs — the Coach will use these to answer common questions without hallucinating
+- **Concise** — the KB is appended to every coach conversation, so it shares the model's context budget. Aim for a tight quick-reference (a few KB at most), not an exhaustive manual.
+
+Keep your guidance pointed at the essentials. When an admin gives you a long, rambling answer, capture the few facts that matter rather than everything they said — the saved KB should read as a crisp reference.
 
 ## What the knowledge base is for
 

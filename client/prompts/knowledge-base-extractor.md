@@ -18,8 +18,16 @@ You will receive a message with two sections:
 
 ## Your task
 
-- If creating from scratch (no existing KB): synthesize all information from the conversation into a well-structured knowledge base.
-- If updating an existing KB: apply ONLY the changes discussed in the conversation. Preserve everything from the existing KB that was not explicitly changed. Do not remove, reword, or reorganize content that wasn't discussed.
+- If creating from scratch (no existing KB): synthesize and **summarize** the information from the conversation into a concise, well-structured reference.
+- If updating an existing KB: apply ONLY the changes discussed in the conversation. Preserve the facts already in the KB that weren't explicitly changed — but you may tighten wording and merge redundancy while doing so. Don't drop information the admin didn't ask to remove.
+
+## Be concise — this is a reference, not a transcript
+
+The knowledge base is appended to **every** coach conversation, so its size is part of the platform's context budget. A bloated KB crowds out the actual lesson and can overflow the model's context window.
+
+- **Summarize, don't transcribe.** Capture the essential facts in crisp prose, short bullets, and tight **Q:** / **A:** pairs. Never reproduce the back-and-forth of the conversation.
+- **Consolidate.** Merge duplicate or overlapping points into a single clear statement. Keep each section to what a coach actually needs.
+- **Target a few KB of markdown at most.** If the material is large, prefer the highest-signal facts over completeness. It's a quick-reference, not a manual.
 
 ## Output format
 

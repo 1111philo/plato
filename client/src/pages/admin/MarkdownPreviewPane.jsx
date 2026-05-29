@@ -3,22 +3,29 @@ import { Button } from '@/components/ui/button';
 import { renderMd } from '../../lib/helpers.js';
 
 /**
- * Read-only markdown preview pane for the lesson editor (NewLessonView).
- * Presentational only — all state is owned by NewLessonView. The preview is
- * refreshed manually (onRefresh runs the lesson-extractor agent); it is never
- * persisted until the admin clicks "Create/Update Lesson".
+ * Read-only markdown preview pane for the conversational admin editors (lesson
+ * creator + knowledge base editor). Presentational only — all state is owned by
+ * the parent view. The preview is refreshed manually (onRefresh runs the
+ * relevant extractor agent); it is never persisted until the admin clicks the
+ * parent's save button.
+ *
+ * Copy is parametrized so the same pane serves both editors; the defaults
+ * preserve the original lesson-editor behavior.
  */
-export default function LessonPreviewPane({
+export default function MarkdownPreviewPane({
   markdown,
   loading,
   error,
   stale,
-  isCreate,
-  refreshDisabled,
+  saveLabel = 'Create Lesson',
   onRefresh,
+  refreshDisabled,
+  title = 'Lesson preview',
+  ariaLabel = 'Lesson markdown preview',
+  noun = 'lesson',
+  emptyHint = 'No preview yet. Keep chatting with the editor, then click “Generate preview” to see the generated lesson markdown.',
 }) {
   const hasContent = !!markdown?.trim();
-  const saveLabel = isCreate ? 'Create Lesson' : 'Update Lesson';
   // Before the first extraction there is nothing to refresh — it's a generate.
   const refreshLabel = loading
     ? (hasContent ? 'Refreshing…' : 'Generating…')
@@ -32,27 +39,27 @@ export default function LessonPreviewPane({
   const wasLoading = useRef(loading);
   useEffect(() => {
     if (loading && !wasLoading.current) {
-      setAnnouncement(hasContent ? 'Refreshing lesson preview' : 'Generating lesson preview');
+      setAnnouncement(hasContent ? `Refreshing ${noun} preview` : `Generating ${noun} preview`);
     } else if (!loading && wasLoading.current) {
-      setAnnouncement(error ? '' : 'Lesson preview updated');
+      setAnnouncement(error ? '' : `${title} updated`);
     }
     wasLoading.current = loading;
-  }, [loading, error, hasContent]);
+  }, [loading, error, hasContent, noun, title]);
 
   return (
     <aside
-      aria-label="Lesson markdown preview"
+      aria-label={ariaLabel}
       className="flex flex-col rounded-2xl bg-muted/40 border border-border p-4"
     >
       <div className="flex items-center justify-between gap-2 mb-2">
-        <h2 className="text-sm font-semibold">Lesson preview</h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
         <Button
           variant="outline"
           size="sm"
           className="shrink-0"
           onClick={onRefresh}
           disabled={refreshDisabled}
-          aria-describedby={showStaleHint ? 'lesson-preview-stale-hint' : undefined}
+          aria-describedby={showStaleHint ? 'md-preview-stale-hint' : undefined}
         >
           {refreshLabel}
         </Button>
@@ -62,12 +69,12 @@ export default function LessonPreviewPane({
           Linked to the refresh button via aria-describedby so a screen-reader
           user hears why a refresh is worthwhile when the button is focused. */}
       {showStaleHint && (
-        <p id="lesson-preview-stale-hint" className="text-xs text-muted-foreground mb-2">
+        <p id="md-preview-stale-hint" className="text-xs text-muted-foreground mb-2">
           Preview may be outdated — refresh to update.
         </p>
       )}
 
-      {/* Persistent reminder: the preview is not the saved lesson. */}
+      {/* Persistent reminder: the preview is not saved. */}
       <p
         role="note"
         className="text-xs rounded-md bg-amber-50 text-amber-800 border border-amber-200 px-3 py-2 mb-3"
@@ -97,8 +104,7 @@ export default function LessonPreviewPane({
           />
         ) : (
           <div className="text-sm text-muted-foreground py-12 text-center">
-            No preview yet. Keep chatting with the editor, then click
-            &ldquo;Generate preview&rdquo; to see the generated lesson markdown.
+            {emptyHint}
           </div>
         )}
       </div>

@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 import { renderMd } from '../../lib/helpers.js';
 import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
-import { parseResponse, cleanStream } from '../../lib/lessonCreationEngine.js';
+import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
@@ -19,6 +19,7 @@ import ComposeBar from '../../components/chat/ComposeBar.jsx';
 import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
+import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 
 export default function AdminCustomizer() {
   const location = useLocation();
@@ -292,6 +293,17 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const notifyTitle = useTitleNotification('Customizer — Admin');
 
+  // Markdown preview pane. Refreshed manually via the knowledge-base-extractor
+  // agent; never persisted until the admin clicks Save. Mirrors the lesson
+  // editor (NewLessonView). When editing, the saved content seeds the preview
+  // already in sync with the resumed conversation.
+  const [previewMarkdown, setPreviewMarkdown] = useState(initialContent || '');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
+  const [previewSyncedAt, setPreviewSyncedAt] = useState(
+    initialContent ? (initialConversation?.length || 0) : 0
+  );
+
   // Auto-save KB conversation after each exchange
   const readinessRef = useRef(readiness);
   useEffect(() => { readinessRef.current = readiness; }, [readiness]);
@@ -389,13 +401,15 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     setError('');
     setBusy('creating');
     try {
-      const conversationText = chatMessages.map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.content}`).join('\n\n');
-      const md = await extractKBMarkdown(conversationText, initialContent);
+      const md = await extractKBMarkdown(buildConversationText(chatMessages), initialContent);
       if (!md || md.length < 50) {
         setError('Could not generate a knowledge base from the conversation. Keep adding information.');
         setBusy('');
         return;
       }
+      // Keep the preview in sync with what we're about to save.
+      setPreviewMarkdown(md);
+      setPreviewSyncedAt(chatMessages.length);
       const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
       await onSave(md, conversation, readiness);
     } catch (e) {
@@ -405,6 +419,27 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
   }
 
   const isBusy = !!busy;
+  const previewStale = !!previewMarkdown && chatMessages.length > previewSyncedAt;
+
+  // Refresh the markdown preview by re-running the knowledge-base-extractor.
+  // Runs independently of the chat — never sets `busy`.
+  async function handleRefreshPreview() {
+    if (chatMessages.length === 0) {
+      setPreviewError('Start the conversation first, then refresh.');
+      return;
+    }
+    setPreviewError('');
+    setPreviewLoading(true);
+    try {
+      const md = await extractKBMarkdown(buildConversationText(chatMessages), initialContent);
+      setPreviewMarkdown(md);
+      setPreviewSyncedAt(chatMessages.length);
+    } catch (e) {
+      setPreviewError(e.message || 'Failed to generate preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
 
   const renderMessage = (msg, idx) => {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
@@ -460,24 +495,45 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
         </div>
       )}
 
-      <div className="rounded-2xl bg-muted/40 border border-border p-4">
-        <div className="mb-3">
-          <ChatArea announcement={srAnnouncement}>
-            {chatMessages.map(renderMessage)}
-            {displayText != null && displayText.length > 0 && (
-              <AssistantMessage content={displayText} streaming />
-            )}
-            {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
-            {busy === 'creating' && <ThinkingSpinner text="Generating knowledge base..." />}
-            {busy === 'qa' && !displayText && <ThinkingSpinner />}
-          </ChatArea>
+      {/* Chat (left) + markdown preview (right). Stacks vertically below `lg`. */}
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="lg:w-3/5 min-w-0">
+          <div className="rounded-2xl bg-muted/40 border border-border p-4">
+            <div className="mb-3">
+              <ChatArea announcement={srAnnouncement}>
+                {chatMessages.map(renderMessage)}
+                {displayText != null && displayText.length > 0 && (
+                  <AssistantMessage content={displayText} streaming />
+                )}
+                {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+                {busy === 'creating' && <ThinkingSpinner text="Generating knowledge base..." />}
+                {busy === 'qa' && !displayText && <ThinkingSpinner />}
+              </ChatArea>
+            </div>
+
+            <ComposeBar
+              placeholder="Tell me about your program..."
+              onSend={handleSend}
+              disabled={isBusy}
+            />
+          </div>
         </div>
 
-        <ComposeBar
-          placeholder="Tell me about your program..."
-          onSend={handleSend}
-          disabled={isBusy}
-        />
+        <div className="lg:w-2/5 min-w-0">
+          <MarkdownPreviewPane
+            markdown={previewMarkdown}
+            loading={previewLoading}
+            error={previewError}
+            stale={previewStale}
+            saveLabel={isEditing ? 'Update Knowledge Base' : 'Save Knowledge Base'}
+            refreshDisabled={previewLoading || isBusy}
+            onRefresh={handleRefreshPreview}
+            title="Knowledge base preview"
+            ariaLabel="Knowledge base markdown preview"
+            noun="knowledge base"
+            emptyHint="No preview yet. Keep chatting with the editor, then click “Generate preview” to see the generated knowledge base."
+          />
+        </div>
       </div>
     </div>
   );

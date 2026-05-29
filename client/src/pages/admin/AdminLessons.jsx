@@ -12,7 +12,7 @@ import {
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
 import CoursesModal from './CoursesModal.jsx';
-import LessonPreviewPane from './LessonPreviewPane.jsx';
+import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
@@ -729,12 +729,12 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
         </div>
 
         <div className="lg:w-2/5 min-w-0">
-          <LessonPreviewPane
+          <MarkdownPreviewPane
             markdown={previewMarkdown}
             loading={previewLoading}
             error={previewError}
             stale={previewStale}
-            isCreate={isCreate}
+            saveLabel={isCreate ? 'Create Lesson' : 'Update Lesson'}
             refreshDisabled={previewLoading || isBusy}
             onRefresh={handleRefreshPreview}
           />

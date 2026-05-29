@@ -34,7 +34,7 @@ it, and its purpose:
 - **lesson-owner** — Reads: lesson prompt, learner profile. Initializes per-lesson KB.
 - **lesson-extractor** — Reads: conversation text only. Extracts lesson markdown from creation chat.
 - **knowledge-base-editor** — Reads: program KB. Helps admins create/edit the KB via conversation.
-- **knowledge-base-extractor** — Reads: existing KB + conversation. Merges changes into updated KB markdown.
+- **knowledge-base-extractor** — Reads: existing KB + conversation. Merges changes into updated KB markdown. **Summarizes, doesn't transcribe** — it produces a concise reference (a few KB), because the full KB is re-appended to every coach turn and an unbounded KB overflows the context window (and silently truncates against the extractor's own `maxTokens`). The editor (`AdminCustomizer`/`AdminKBSetup`) windows live turns to the last 15, like the lesson creator.
 - **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion.
 - **learner-profile-update** — Reads: learner profile, activity context. Incremental profile updates during lessons.
 
@@ -189,17 +189,19 @@ redirects to `/plato/lessons`, but a 404 on a freshly-minted draft id (within
 bouncing. `AdminLessons` keys `NewLessonView` on `lessonId` so switching lessons
 remounts cleanly.
 
-**Markdown preview pane** (`client/src/pages/admin/LessonPreviewPane.jsx`):
-chat left, rendered lesson markdown right, stacking below `lg`. The preview is
+**Markdown preview pane** (`client/src/pages/admin/MarkdownPreviewPane.jsx`):
+chat left, rendered markdown right, stacking below `lg`. The preview is
 **manually refreshed** via a "Generate preview" / "Refresh preview" button that
-re-runs the `lesson-extractor` agent (`extractLessonMarkdown`) — it does NOT
-auto-update per message and runs no AI call on editor open. On open the pane
-shows the lesson's already-saved markdown (edit) or a quiet empty-state (new
-draft). Once the conversation advances past the last refresh a "Preview may be
-outdated" hint appears. The preview is **not persisted** — a standing note tells
-the admin to click "Create/Update Lesson" to save. `buildConversationText`
-(`client/src/lib/lessonCreationEngine.js`) is the shared builder for the
-`lesson-extractor` input, used by both the finalize and preview-refresh paths.
+re-runs the relevant extractor agent — it does NOT auto-update per message and
+runs no AI call on editor open. On open the pane shows the already-saved markdown
+(edit) or a quiet empty-state (new). Once the conversation advances past the last
+refresh a "Preview may be outdated" hint appears. The preview is **not
+persisted** — a standing note tells the admin to click the save button.
+`buildConversationText` (`client/src/lib/lessonCreationEngine.js`) is the shared
+builder for the extractor input, used by both the finalize and preview-refresh
+paths. The same pane (copy parametrized via props) backs both the lesson editor
+(`extractLessonMarkdown`) and the **knowledge base editor**
+(`AdminCustomizer` + `AdminKBSetup`, `extractKBMarkdown`).
 
 ### Coach directive
 
