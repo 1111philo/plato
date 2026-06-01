@@ -110,6 +110,13 @@ label-less issues older than an hour and re-dispatches `issue-intake.yml` on eac
 via its `workflow_dispatch` input; self-healing, since a successful re-run adds
 the label and drops the issue from the next sweep.
 
+The sweep's re-dispatch runs as the `github-actions[bot]` actor, so
+`issue-intake.yml` must keep `github-actions` in `allowed_bots` — otherwise
+`claude-code-action` rejects every retry as a "non-human actor" and the backstop
+becomes a silent no-op (this is also the only path that triages issues from
+reporters without repo write access, whose on-open run `claude-code-action`
+blocks by design).
+
 ## Auto code review (`code-review.yml`)
 
 Runs on every PR (opened + synchronize) and posts a review as `claude[bot]`.

@@ -68,7 +68,11 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         with:
           use_bedrock: "true"
-          allowed_bots: "claude"
+          # `claude` for in-pipeline bot chatter; `github-actions` so the
+          # issue-intake-sweep backstop's workflow_dispatch retries (which run
+          # as the github-actions[bot] actor) aren't rejected as a non-human
+          # actor — otherwise the self-healing sweep is a silent no-op.
+          allowed_bots: "claude,github-actions"
           show_full_output: true
           # Haiku is plenty for classification: read issue, decide A/B/C, label, comment.
           # Sonnet's reasoning headroom is wasted here — saves ~3x on per-run cost.
