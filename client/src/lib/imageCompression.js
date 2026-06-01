@@ -47,9 +47,10 @@ function encodeJpeg(img, maxEdge, quality) {
 /**
  * Downscale + re-encode an image data URL so it fits inside one sync-data
  * record. Iteratively drops quality, then dimensions, until the result is
- * under `maxBytes`. Always resolves: on any failure (non-image input, no
- * DOM, decode error) it returns the original data URL so the send path
- * still works — a too-large image is a degraded case, never a thrown error.
+ * under `maxBytes`. Always resolves, never throws. Returns `null` when the
+ * image can't be brought under `maxBytes` (or a decode failure leaves an
+ * oversized original) so the caller can warn the user upfront instead of
+ * letting the server reject the write with a 413.
  */
 export async function compressImageDataUrl(dataUrl, { maxBytes = DEFAULT_MAX_BYTES } = {}) {
   try {
@@ -63,19 +64,25 @@ export async function compressImageDataUrl(dataUrl, { maxBytes = DEFAULT_MAX_BYT
     let quality = 0.82;
     let out = encodeJpeg(img, edge, quality);
 
-    for (let attempt = 0; attempt < 6 && estimateDataUrlBytes(out) > maxBytes; attempt++) {
-      if (quality > 0.5) {
+    for (let attempt = 0; attempt < 8 && estimateDataUrlBytes(out) > maxBytes; attempt++) {
+      if (quality > 0.4) {
         quality -= 0.15;
       } else {
-        edge = Math.round(edge * 0.8);
-        quality = 0.7;
+        edge = Math.round(edge * 0.75);
+        quality = 0.6;
       }
       out = encodeJpeg(img, edge, quality);
     }
 
-    // Never hand back something larger than what we started with.
-    return estimateDataUrlBytes(out) < estimateDataUrlBytes(dataUrl) ? out : dataUrl;
+    // If compression succeeded, return the result. If it's still too large after
+    // all attempts, return null so the caller can surface an error to the user
+    // instead of silently writing data that will hit DynamoDB's 400 KB item limit.
+    return estimateDataUrlBytes(out) <= maxBytes ? out : null;
   } catch {
-    return dataUrl;
+    // Decode failed (corrupt file, unsupported format). Fall back to the
+    // original — but only if it already fits. An oversized original must
+    // return null too, so the caller surfaces the "too large" warning
+    // upfront instead of letting the server reject it with a 413.
+    return estimateDataUrlBytes(dataUrl) <= maxBytes ? dataUrl : null;
   }
 }

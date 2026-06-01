@@ -47,4 +47,26 @@ describe('compressImageDataUrl (fallback paths)', () => {
   it('never throws', async () => {
     await assert.doesNotReject(() => compressImageDataUrl('data:image/jpeg;base64,zzz'));
   });
+
+  it('returns null for an oversized image that fails to decode', async () => {
+    // Force the catch path by stubbing a DOM whose Image always errors, then
+    // hand it an oversized "image" data URL. The original is too large to keep,
+    // so the result must be null — not the oversized original — so ComposeBar
+    // warns the user upfront rather than letting the server reject with a 413.
+    const savedDocument = globalThis.document;
+    const savedImage = globalThis.Image;
+    globalThis.document = { createElement: () => ({ getContext: () => ({}) }) };
+    globalThis.Image = class {
+      set src(_v) {
+        Promise.resolve().then(() => this.onerror?.(new Error('decode failed')));
+      }
+    };
+    try {
+      const oversized = `data:image/jpeg;base64,${'A'.repeat(2 * 1024 * 1024)}`;
+      assert.equal(await compressImageDataUrl(oversized), null);
+    } finally {
+      globalThis.document = savedDocument;
+      globalThis.Image = savedImage;
+    }
+  });
 });
