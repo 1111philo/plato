@@ -121,7 +121,26 @@ export default function ComposeBar({
     setLoadingImages(true);
     setLoadingCount(valid.length);
     try {
-      const loaded = await Promise.all(valid.map(readImageAsDataUrl));
+      // Read each file independently (allSettled, not all): a single
+      // unreadable file must not discard the others. FileReader rejects with
+      // a DOMException whose `.name` is the actionable signal — e.g.
+      // NotReadableError (file locked by antivirus / in use) or NotFoundError
+      // (a OneDrive "files on-demand" entry not yet downloaded locally). We
+      // surface that name so a screenshot of the alert is self-diagnosing
+      // (issue #228 — "Failed to read image" with no other clue).
+      const settled = await Promise.allSettled(valid.map(readImageAsDataUrl));
+      const loaded = [];
+      const readErrors = [];
+      for (const r of settled) {
+        if (r.status === 'fulfilled') loaded.push(r.value);
+        else { readErrors.push(r.reason); console.error('[plato] failed to read image', r.reason); }
+      }
+      if (readErrors.length > 0) {
+        const reason = readErrors[0]?.name || readErrors[0]?.message || 'unknown error';
+        const n = readErrors.length;
+        alert(`Couldn't read ${n} image${n === 1 ? '' : 's'} (${reason}). Please try again or pick a different file.`);
+      }
+      if (loaded.length === 0) return;
       // Compress before the image enters the compose state: it's persisted
       // one-per-record as `screenshot:*` sync data, which DynamoDB caps at
       // 400 KB. A raw screenshot can blow that limit (issues #191, #193).
@@ -130,13 +149,14 @@ export default function ComposeBar({
         dataUrl: await compressImageDataUrl(img.dataUrl),
       })));
       // Filter out images that couldn't be compressed enough (null dataUrl)
-      const valid = compressed.filter(img => img.dataUrl !== null);
-      if (valid.length < compressed.length) {
-        alert(`${compressed.length - valid.length} image(s) were too large and could not be compressed enough. Please use smaller images.`);
+      const usable = compressed.filter(img => img.dataUrl !== null);
+      if (usable.length < compressed.length) {
+        alert(`${compressed.length - usable.length} image(s) were too large and could not be compressed enough. Please use smaller images.`);
       }
-      setImages([...images, ...valid].slice(0, MAX_IMAGES));
-    } catch {
-      alert('Failed to read image. Please try again.');
+      setImages([...images, ...usable].slice(0, MAX_IMAGES));
+    } catch (err) {
+      console.error('[plato] image processing failed', err);
+      alert(`Failed to read image (${err?.name || err?.message || 'unknown error'}). Please try again.`);
     } finally {
       setLoadingImages(false);
       setLoadingCount(0);

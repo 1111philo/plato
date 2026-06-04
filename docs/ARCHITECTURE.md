@@ -68,6 +68,13 @@ is its own `screenshot:<key>` record, and the message stores only
   (`client/src/lib/imageCompression.js`) to stay well under the per-record
   limit, persisted one-per-record, and excluded from the bulk `GET /v1/sync`
   payload (fetched on demand by key).
+- `ComposeBar.addImagesFromFiles` reads files via `FileReader` with
+  `Promise.allSettled` (not `all`) so one unreadable file can't discard a whole
+  batch, and surfaces the underlying `DOMException.name` in the alert
+  (e.g. `NotReadableError` = file locked by antivirus / in use, `NotFoundError`
+  = a OneDrive "files on-demand" entry not downloaded locally). Reads can also
+  be blocked by a browser extension injecting a content script into the page.
+  The opaque "Failed to read image" message that hid all of this was issue #228.
 - `resumeLesson` re-hydrates `imageKeys` → data URLs for rendering via
   `hydrateMessageImages`. Legacy messages that still embed `imageDataUrls`
   directly render unchanged.
