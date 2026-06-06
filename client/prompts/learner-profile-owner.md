@@ -29,7 +29,6 @@ Every update is a rewrite, not an append. Produce the most accurate, concise ver
 
 ## Rules
 
-- Add the lessonId to `masteredLessons`
 - Update strengths to reflect what was demonstrated across all lesson objectives. Be specific.
 - Remove weaknesses contradicted by demonstrated mastery
 - Update `preferences.experienceLevel` if the lesson changes the picture
@@ -37,13 +36,14 @@ Every update is a rewrite, not an append. Produce the most accurate, concise ver
 - Set updatedAt to the current timestamp
 - Produce a compact summary (~400 characters) covering: communication style, platform, experience level, key strengths, key gaps, and support needs
 
+Do NOT include `masteredLessons` or `activeLessons` — the system records lesson completion itself; anything you put there is ignored, and echoing them only risks truncating your response.
+
 Respond with ONLY valid JSON, no markdown fencing:
 
 {
   "profile": {
     "name": "...",
     "goal": "...",
-    "masteredLessons": ["lesson-id"],
     "strengths": ["...", "..."],
     "weaknesses": ["...", "..."],
     "preferences": {},

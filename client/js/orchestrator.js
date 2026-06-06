@@ -176,11 +176,25 @@ export async function initializeLessonKB(lesson, profileSummary) {
   return callWithValidation(callAgent, validateLessonKB);
 }
 
+// The profile-update agents only revise the "soft" fields (name, goal,
+// strengths, weaknesses, preferences, summary). `masteredLessons`/
+// `activeLessons` are system-managed bookkeeping arrays that grow without
+// bound as a learner progresses; `mergeProfile` always reunions them from the
+// stored profile, so the agent's copy is discarded anyway. Round-tripping them
+// through the model wasted input tokens and — worse — inflated the agent's JSON
+// output until it overran `max_tokens` and came back truncated/unparseable
+// (issue #228 console: "max_tokens reached" → "Failed to parse agent JSON").
+// Strip them before the call so the agent's output stays small and bounded.
+function profileForAgent(profile) {
+  const { masteredLessons: _m, activeLessons: _a, ...rest } = profile || {};
+  return rest;
+}
+
 // -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
 
 export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
   const systemPrompt = await loadPrompt('learner-profile-owner');
-  const userContent = JSON.stringify({ currentProfile: fullProfile, lessonKB, activitiesCompleted, lessonName, lessonId });
+  const userContent = JSON.stringify({ currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
     model: MODEL_LIGHT, systemPrompt,
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
@@ -203,7 +217,7 @@ export function incrementalProfileUpdate(profile, lessonId) {
 export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext) {
   const systemPrompt = await loadPrompt('learner-profile-update');
   const userContent = JSON.stringify({
-    currentProfile: fullProfile, learnerFeedback: feedbackText,
+    currentProfile: profileForAgent(fullProfile), learnerFeedback: feedbackText,
     context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
   });
   const { content } = await callApi({

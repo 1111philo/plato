@@ -36,14 +36,14 @@ Update the old value — don't keep both. The latest evidence wins.
 - Set updatedAt to the current timestamp provided.
 - Produce a compact summary (~400 characters) covering: communication style, platform, experience level, key strengths, key gaps. Be specific and concise.
 
+Do NOT include `masteredLessons` or `activeLessons` — the system manages those; anything you put there is ignored, and echoing them only risks truncating your response.
+
 Respond with ONLY valid JSON, no markdown fencing:
 
 {
   "profile": {
     "name": "...",
     "goal": "...",
-    "masteredLessons": [],
-    "activeLessons": [],
     "strengths": ["...", "..."],
     "weaknesses": ["...", "..."],
     "preferences": {

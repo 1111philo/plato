@@ -88,6 +88,12 @@ export function updateProfileOnCompletionInBackground(lessonKB, lesson) {
     const result = await orchestrator.updateProfileOnCompletion(
       profile, lessonKB, lesson.name, lesson.lessonId, lessonKB.activitiesCompleted
     );
+    // masteredLessons is system-managed (no longer echoed by the agent —
+    // see orchestrator.profileForAgent). Record the completion in code so
+    // mergeProfile unions it into the stored profile.
+    if (result?.profile) {
+      result.profile.masteredLessons = [...new Set([...(result.profile.masteredLessons || []), lesson.lessonId])];
+    }
     await saveProfileResult(profile, result);
   });
 }

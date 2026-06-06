@@ -35,8 +35,8 @@ it, and its purpose:
 - **lesson-extractor** — Reads: conversation text only. Extracts lesson markdown from creation chat.
 - **knowledge-base-editor** — Reads: program KB. Helps admins create/edit the KB via conversation.
 - **knowledge-base-extractor** — Reads: existing KB + conversation. Merges changes into updated KB markdown. **Summarizes, doesn't transcribe** — it produces a concise reference (a few KB), because the full KB is re-appended to every coach turn and an unbounded KB overflows the context window (and silently truncates against the extractor's own `maxTokens`). The editor (`AdminCustomizer`/`AdminKBSetup`) windows live turns to the last 15, like the lesson creator.
-- **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion.
-- **learner-profile-update** — Reads: learner profile, activity context. Incremental profile updates during lessons.
+- **learner-profile-owner** — Reads: learner profile, lesson KB. Full profile update on lesson completion. Only revises the "soft" fields (name, goal, strengths, weaknesses, preferences, summary); `masteredLessons`/`activeLessons` are **stripped from its input and not requested in its output** — they are system-managed bookkeeping arrays that grow without bound, and `mergeProfile` reunions them from the stored profile. The completion path records the just-mastered `lessonId` in code (`profileQueue.js`). Echoing those arrays used to inflate the agent's JSON past `maxTokens`, truncating it into an unparseable response (#228).
+- **learner-profile-update** — Reads: learner profile (minus the bookkeeping arrays), activity context. Incremental profile updates during lessons; same soft-fields-only contract as `learner-profile-owner`.
 - **course-progress-update** — Reads: prior course summary, just-completed lesson KB, course lesson list. Maintains the per-learner `courseProgress:<courseId>` note injected into the coach as `course.progress`.
 
 Context appended at runtime (`client/js/orchestrator.js`):
