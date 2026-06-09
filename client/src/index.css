@@ -66,7 +66,8 @@
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
     --border: oklch(0.905 0 0);
-    --input: oklch(0.905 0 0);
+    /* Form-field border: ~3.3:1 against white so low-vision users can see field edges (WCAG 1.4.11) */
+    --input: oklch(0.65 0 0);
     --ring: oklch(0.336 0.182 285);
     --chart-1: oklch(0.336 0.182 285);
     --chart-2: oklch(0.556 0.15 285);
@@ -101,7 +102,8 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    /* Form-field border: bumped to ~3:1 against the dark background (WCAG 1.4.11) */
+    --input: oklch(1 0 0 / 40%);
     --ring: oklch(0.556 0.2 285);
     --chart-1: oklch(0.556 0.2 285);
     --chart-2: oklch(0.7 0.15 285);
