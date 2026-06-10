@@ -20,7 +20,6 @@ import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
-import EnrichmentArtifact from '../components/chat/EnrichmentArtifact.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
 import {
@@ -433,13 +432,6 @@ export default function LessonChat() {
         <LessonLoadingView step={loadingStep} enrichments={loadingEnrichments} />
       ) : (
         <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
-          {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
-            <div>
-              {lessonKB.enrichments.map((enrichment, idx) => (
-                <EnrichmentArtifact key={idx} enrichment={enrichment} />
-              ))}
-            </div>
-          )}
           {messages.map(renderMessage)}
           {displayText != null && displayText.length > 0 && (
             <AssistantMessage content={displayText} streaming />
@@ -508,6 +500,45 @@ export default function LessonChat() {
               ))}
             </ul>
           </div>
+          {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Additional Context</h3>
+              {lessonKB.enrichments.map((enrichment, idx) => (
+                <div key={idx} className="border border-blue-200 bg-blue-50 rounded p-3 space-y-2">
+                  <div className="text-sm font-medium text-blue-900">
+                    {enrichment.label || enrichment.pluginId}
+                  </div>
+                  {enrichment.reasoning && (
+                    <p className="text-xs text-blue-700">{enrichment.reasoning}</p>
+                  )}
+                  {enrichment.context && (
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {enrichment.context}
+                    </p>
+                  )}
+                  {enrichment.sources && enrichment.sources.length > 0 && (
+                    <div>
+                      <div className="text-xs font-medium text-blue-800 mb-1">Sources:</div>
+                      <ul className="text-xs space-y-1">
+                        {enrichment.sources.map((source, sidx) => (
+                          <li key={sidx}>
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-700 hover:underline"
+                            >
+                              {source.title || source.url}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
           </DialogFooter>
