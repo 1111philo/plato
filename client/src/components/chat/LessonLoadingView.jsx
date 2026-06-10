@@ -62,7 +62,8 @@ function BuildStep({ label, status, detail, enrichments }) {
 
 export default function LessonLoadingView({ step, enrichments = [] }) {
   const hasEnrichments = enrichments && enrichments.length > 0;
-  const showEnrichmentStep = step === STEPS.ENRICHING || hasEnrichments;
+  // Show enrichment step once we've reached it (and keep showing it after)
+  const showEnrichmentStep = step === STEPS.ENRICHING || step === STEPS.STARTING;
 
   // Compute step statuses based on current step
   const steps = [
