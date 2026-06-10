@@ -29,8 +29,9 @@ Three-agent pipeline triggered by the `lessonStarted` hook:
 
 The final enrichment data (`{ context, sources, reasoning, pluginId, label }`)
 is returned from the `lessonStarted` hook handler, stored on `lessonKB.enrichments`,
-and injected into the coach's system context. The learner sees it as a collapsible
-artifact panel above the first coach message.
+and injected into the coach's system context. The learner sees it in the "Additional
+Context" section of the lesson overview dialog (alongside exemplar and objectives),
+accessible throughout the lesson.
 
 ## Local invariants
 
@@ -69,8 +70,8 @@ artifact panel above the first coach message.
   count (planner output) and source count reasonable to avoid overwhelming the
   APIs or ballooning latency.
 - Test locally: `node dev-sqlite.js`, enable the plugin at `/plato/plugins`, then
-  start a lesson with "WordPress" in the objectives. Check the browser console
-  for enrichment logs and the artifact panel above the coach message.
+  start a lesson with "WordPress" in the objectives. Check the enrichment loading
+  step in the startup UI, then click "Lesson Overview" to see the context and sources.
 
 ## Anti-goals
 
