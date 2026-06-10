@@ -324,6 +324,11 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     return c.json({ error: 'lessonId, lesson, and lessonKB are required' }, 400);
   }
 
+  // Cap lesson.markdown size to prevent DoS (plugins inject it into AI prompts)
+  if (lesson.markdown && lesson.markdown.length > 100_000) {
+    return c.json({ error: 'lesson.markdown exceeds 100k character limit' }, 413);
+  }
+
   // Collect startup steps from enabled plugins that declare lessonStartupSteps
   const startupSteps = [];
   for (const entry of pluginRegistry.list()) {

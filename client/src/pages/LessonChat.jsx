@@ -520,9 +520,12 @@ export default function LessonChat() {
                     {enrichment.label || enrichment.pluginId}
                   </h4>
                   {enrichment.reasoning && (
-                    <p className="text-xs text-blue-700" aria-label="Why this context matters">
-                      {enrichment.reasoning}
-                    </p>
+                    <div role="note">
+                      <p className="sr-only">Why this context matters:</p>
+                      <p className="text-xs text-blue-700">
+                        {enrichment.reasoning}
+                      </p>
+                    </div>
                   )}
                   {enrichment.context && (
                     <div>

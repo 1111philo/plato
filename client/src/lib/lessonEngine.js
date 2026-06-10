@@ -185,14 +185,18 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     if (res.ok) {
       const data = await res.json();
       enrichments = data.enrichments || [];
-      if (enrichments.length > 0) {
-        lessonKB.enrichments = enrichments;
-        await saveLessonKB(lessonId, lessonKB);
-      }
     }
   } catch (err) {
     // Fail open — enrichment errors must never block lesson start
     console.warn('[startLesson] Failed to collect enrichments:', err);
+  }
+
+  // Save enrichments (if any) BEFORE starting coach to avoid race condition
+  // where coach's progress update could overwrite enrichments
+  if (enrichments.length > 0) {
+    lessonKB.enrichments = enrichments;
+    await saveLessonKB(lessonId, lessonKB);
+    syncInBackground(`lessonKB:${lessonId}`);
   }
 
   // Coach opens the conversation

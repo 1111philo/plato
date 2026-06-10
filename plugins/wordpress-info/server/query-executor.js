@@ -16,6 +16,21 @@ const TIMEOUT_MS = 8000;
 const MAX_RESULTS_PER_SOURCE = 5;
 
 /**
+ * Strip HTML tags from text (multiple passes to handle nested/malformed tags).
+ * Used to sanitize excerpts from external APIs before displaying to learners.
+ */
+function stripHtml(text) {
+  if (!text) return '';
+  let result = text;
+  let prev = '';
+  while (result !== prev && /<[^>]*>/.test(result)) {
+    prev = result;
+    result = result.replace(/<[^>]*>/g, '');
+  }
+  return result.trim();
+}
+
+/**
  * Validate that a URL's host is in the allowlist. Throws if not.
  */
 function validateHost(url) {
@@ -60,8 +75,8 @@ async function queryWporgDocs(source, query) {
 
     return data.map(item => ({
       url: item.url || '',
-      title: item.title || '',
-      excerpt: item._embedded?.self?.[0]?.excerpt || '',
+      title: stripHtml(item.title || ''),
+      excerpt: stripHtml(item._embedded?.self?.[0]?.excerpt || ''),
     })).filter(r => r.url && r.title);
   } catch {
     return []; // fail open
@@ -85,20 +100,11 @@ async function queryMakeBlogs(source, query) {
     const data = await res.json();
     if (!Array.isArray(data)) return [];
 
-    return data.map(item => {
-      // Strip HTML tags in multiple passes to handle nested/malformed tags
-      let excerpt = item.excerpt?.rendered || '';
-      let prev = '';
-      while (excerpt !== prev && /<[^>]*>/.test(excerpt)) {
-        prev = excerpt;
-        excerpt = excerpt.replace(/<[^>]*>/g, '');
-      }
-      return {
-        url: item.link || '',
-        title: item.title?.rendered || '',
-        excerpt: excerpt.trim(),
-      };
-    }).filter(r => r.url && r.title);
+    return data.map(item => ({
+      url: item.link || '',
+      title: stripHtml(item.title?.rendered || ''),
+      excerpt: stripHtml(item.excerpt?.rendered || ''),
+    })).filter(r => r.url && r.title);
   } catch {
     return []; // fail open
   }
@@ -129,8 +135,8 @@ async function queryGitHubCode(source, query) {
 
     return data.items.map(item => ({
       url: item.html_url || '',
-      title: `${item.name} (${item.path})` || '',
-      excerpt: `Repository: ${item.repository?.full_name || 'N/A'}`,
+      title: stripHtml(`${item.name} (${item.path})` || ''),
+      excerpt: stripHtml(`Repository: ${item.repository?.full_name || 'N/A'}`),
     })).filter(r => r.url && r.title);
   } catch {
     return []; // fail open
