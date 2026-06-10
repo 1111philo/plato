@@ -19,7 +19,14 @@ describe('POST /v1/sync/lesson-started', () => {
 
   before(async () => {
     // Create test user
-    await db.createUser(userId, 'test@example.com', 'user', 'hashed-password');
+    await db.createUser({
+      userId,
+      email: 'test@example.com',
+      username: 'testuser',
+      passwordHash: 'hashed-password',
+      name: 'Test User',
+      role: 'user',
+    });
     token = signAccessToken(userId, 'user');
 
     // Mount route
