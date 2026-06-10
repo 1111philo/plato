@@ -483,11 +483,12 @@ export default function LessonChat() {
 
       {/* Objectives dialog */}
       <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
             {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
           </DialogHeader>
+          <div className="overflow-y-auto flex-1 space-y-4 pr-2">
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Exemplar</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
@@ -539,6 +540,7 @@ export default function LessonChat() {
               ))}
             </div>
           )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
           </DialogFooter>
