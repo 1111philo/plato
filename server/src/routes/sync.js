@@ -304,12 +304,12 @@ sync.post('/v1/sync/lesson-started', async (c) => {
 
   // Collect startup steps from enabled plugins that declare lessonStartupSteps
   const startupSteps = [];
-  for (const [pluginId, entry] of pluginRegistry.list()) {
+  for (const entry of pluginRegistry.list()) {
     if (entry.enabled && entry.manifest?.extensionPoints?.lessonStartupSteps) {
       const steps = entry.manifest.extensionPoints.lessonStartupSteps;
       for (const step of steps) {
         startupSteps.push({
-          pluginId,
+          pluginId: entry.manifest.id,
           pluginLabel: entry.manifest.name,
           id: step.id,
           label: step.label,
