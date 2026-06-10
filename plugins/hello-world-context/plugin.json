@@ -1,0 +1,18 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "hello-world-context",
+  "name": "Hello World Context",
+  "version": "1.0.0",
+  "apiVersion": "^1.3.0",
+  "description": "Simple example plugin that adds 'Hello World' context to every lesson. Demonstrates the lessonEnrichment pattern.",
+  "author": "plato core",
+  "license": "MIT",
+  "defaultEnabled": false,
+  "capabilities": [
+    "hook.lessonStarted",
+    "lessonEnrichment"
+  ],
+  "extensionPoints": {
+    "hooks": ["lessonStarted"]
+  }
+}
