@@ -6,6 +6,9 @@ import { on, _reset as resetHooks } from '../../src/lib/plugins/hooks.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
+// Ensure AWS_REGION is set for DynamoDB client (CI needs this)
+if (!process.env.AWS_REGION) process.env.AWS_REGION = 'us-east-1';
+
 // Silence console
 const origErr = console.error;
 const origWarn = console.warn;
