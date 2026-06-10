@@ -132,6 +132,144 @@ server-side is where the SSRF defense must live.
   is persisted — so no 400 KB risk, no new sync record, no hydration; chips
   render straight from that metadata on resume.
 
+## Lesson enrichment (plugin capability)
+
+Plugins can enrich lessons at start time by providing additional reference
+material — e.g., WordPress docs, React API updates, internal knowledge bases.
+Enrichment is computed **once** when the learner starts the lesson (after Lesson
+Owner KB init, before Coach opens), cached on `lessonKB.enrichments`, and
+injected into the coach's system context. The learner sees enrichments as
+collapsible artifact panels above the first coach message.
+
+### Lifecycle
+
+1. **Lesson start** — `client/src/lib/lessonEngine.js#startLesson()` calls
+   `POST /v1/sync/lesson-started` (server route in `sync.js`)
+2. **Hook emit** — server emits `lessonStarted` with `{ userId, lessonId, lesson: { name, markdown, exemplar, learningObjectives }, lessonKB }`
+3. **Plugin handlers** — each plugin with `hook.lessonStarted` + `lessonEnrichment`
+   capability runs; non-null return values are collected
+4. **Return to client** — `{ enrichments: [...] }` returned to `startLesson()`
+5. **Storage** — if enrichments exist, stored on `lessonKB.enrichments` and synced
+6. **Coach context** — `buildContext()` injects enrichments into coach system prompt
+   as `enrichmentContext: [{ source, context, reasoning }]`
+7. **UI display** — `LessonChat` renders `<EnrichmentArtifact>` components above
+   first coach message (collapsed by default)
+8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
+
+### Enrichment data contract
+
+A plugin's `lessonStarted` hook handler returns:
+
+```js
+{
+  pluginId: 'wordpress-info',       // Required: plugin id
+  label: 'WordPress.org',            // Required: display name
+  context: 'When building...',       // Required: ~300 word summary
+  reasoning: 'This lesson focuses...', // Required: why this matters
+  sources: [                         // Optional: citation links
+    { url: 'https://...', title: '...', excerpt: '...' }
+  ]
+}
+```
+
+Return `null` (or omit return) when the plugin doesn't enrich this lesson. The
+host filters out nulls — only non-null returns are stored.
+
+### UI components
+
+- **LessonLoadingView** (`client/src/components/chat/LessonLoadingView.jsx`) —
+  stepped progress UI showing: (1) Initializing lesson (Lesson Owner), (2) Enriching
+  lesson (plugins — only shown when active), (3) Starting conversation (Coach).
+  The enrichment step expands to show per-plugin progress when multiple plugins
+  are active.
+- **EnrichmentArtifact** (`client/src/components/chat/EnrichmentArtifact.jsx`) —
+  collapsible panel displaying plugin label, reasoning, context summary, and
+  clickable source links. Styled as an info panel (blue border/background) distinct
+  from coach messages. Collapsed by default to avoid disrupting the lesson start
+  flow; learners can expand to see details.
+
+### WordPress Info plugin (reference implementation)
+
+Three-agent pipeline (`plugins/wordpress-info/`):
+
+1. **Planner** (`prompts/wordpress-info-planner.md`) — detects WordPress keywords
+   in lesson objectives, outputs `{ shouldEnrich: bool, queries: [{ text, sources }] }`
+2. **Query executor** (`server/query-executor.js`) — fetches from wordpress.org
+   REST API, Make WordPress blogs, GitHub code search in parallel (8s timeout per
+   source, fail-open on errors)
+3. **Synthesizer** (`prompts/wordpress-info-synthesizer.md`) — distills query
+   results into lesson-specific ~300 word summary: relevant APIs, best practices,
+   common pitfalls
+
+Hook handler (`server/index.js`) orchestrates the pipeline, returns enrichment
+data or `null`. SSRF defense: all fetched URLs validated against `ALLOWED_HOSTS`
+(`developer.wordpress.org`, `make.wordpress.org`, `api.github.com`).
+
+### Design invariants
+
+- **Fail-open, always.** Enrichment errors (planner fails, executor times out,
+  synthesizer throws) must never block lesson start. Plugin handlers return `null`,
+  the lesson proceeds normally.
+- **Coach-owned completion.** Enrichment provides reference material the coach can
+  draw on, but MUST NOT override completion semantics. `applyCoachResponseToKB`
+  remains the single owner of `progress` and the exemplar. The enrichment context
+  is framed as informational background, never as requirements.
+- **One-shot computation.** Enrichment runs once at start, cached on `lessonKB`.
+  Never re-runs on resume (learner sees same artifacts every time), never re-runs
+  per chat turn (that would be the chat-context contributor pattern, not enrichment).
+- **Timing budget.** Enrichment should complete in ~3-5 seconds to keep lesson
+  start snappy. Plugins with slow sources should use timeouts, caching, or
+  background jobs. The UI progress indicator keeps the learner informed.
+- **Synthesis, not inlining.** Don't inline full documentation pages into the coach
+  context — the synthesizer should distill to ~300 words of lesson-specific info.
+  Sources are cited via links in the artifact panel.
+
+### Why at start, not per-turn?
+
+Enrichment is a **lesson-level** concern: "what background does the coach need
+for *this lesson*?" Chat-context contributors (link attachments, image analysis)
+are **turn-level**: "what context does the coach need for *this message*?"
+
+Start-time enrichment:
+- **Pro:** computed once, cached; no per-turn latency; learner sees what the coach
+  has in mind from the beginning
+- **Con:** can't adapt to learner questions mid-lesson (but the coach can still
+  reference enrichment context when relevant)
+
+Per-turn enrichment would:
+- Add 1-3s latency to every coach reply (unacceptable for microlearning pacing)
+- Bloat every turn's context with retrieval results (coach context is already dense)
+- Force learners to wait through "Searching docs…" spinners repeatedly
+
+The trade-off: enrichment is less dynamic but preserves the lesson's 20-minute
+pacing target. If a learner asks a question the enrichment doesn't cover, the
+coach still has the full lesson context + link attachments to draw on.
+
+### Extension point for other plugins
+
+Any plugin with `lessonEnrichment` capability + `lessonStarted` hook can provide
+enrichment. Examples:
+- **React Docs** — detect React keywords, fetch from react.dev
+- **Internal KB** — query Confluence/Notion when lesson mentions company concepts
+- **Recent updates** — pull latest bug reports, release notes, deprecations
+- **Security policies** — inject org-specific code standards, compliance notes
+
+The pattern is the same: detect relevance → fetch sources → synthesize summary →
+return enrichment object or `null`.
+
+### Known gaps & future work
+
+- **Phase 1 agent calling** — plugins currently import `orchestrator.js` and call
+  `converseStream` directly; Phase 3's `agent` capability will formalize prompt
+  upsertion to sync-data and agent invocation via SDK
+- **Structured output** — agents are instructed to return JSON, parsing happens in
+  the hook handler; native structured-output tool would be cleaner
+- **Hook return-value collection** — the hook system was extended to collect
+  non-null returns; this pattern could extend to other hooks (e.g., `lessonCompleted`
+  for summary generation)
+- **Multi-lesson caching** — WordPress Info queries the same sources for every
+  WordPress lesson; a shared cache (Redis or sync-data) could dedupe across lessons
+
 ## Lessons: visibility, drafts, courses, classroom
 
 ### Visibility

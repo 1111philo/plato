@@ -145,3 +145,108 @@ The Phase 2 SDK will add `db.putUserMeta` / `db.getUserMeta` and the `userCreate
 | `defaultEnabled: false` for non-core plugins | hello-world (scaffolder) |
 | `defaultEnabled: true` for plugins this repo ships on by default | Slack |
 | Auto-rendered form when no custom panel needed | hello-world (alternate path) |
+
+## wordpress-info (lesson enrichment reference implementation)
+
+Located at `plugins/wordpress-info/`. Demonstrates:
+
+- **Lesson enrichment pattern** — `lessonStarted` hook + `lessonEnrichment` capability
+- **Multi-agent pipeline** — planner → query executor → synthesizer
+- **External API integration** — wordpress.org REST API, Make WordPress blogs, GitHub code search
+- **SSRF defense** — all fetched URLs validated against `ALLOWED_HOSTS`
+- **Fail-open architecture** — errors never block lesson start
+- **Structured agent output** — JSON schema validation for planner/synthesizer responses
+- **No settings UI** — keywords and sources are hardcoded best-practice defaults
+
+### Architecture
+
+**Three-agent pipeline:**
+
+1. **Planner** (`prompts/wordpress-info-planner.md`)
+   - Input: lesson exemplar + objectives + keyword list
+   - Output: `{ shouldEnrich: bool, queries: [{ text, sources }] }`
+   - Decides if lesson is WordPress-related and what to query
+
+2. **Query executor** (`server/query-executor.js`)
+   - Input: queries from planner
+   - Fetches from wordpress.org docs, Make blogs, GitHub (parallel)
+   - Output: `[{ query, results: [{ url, title, excerpt }] }]`
+   - Timeouts and errors return empty results (fail-open)
+
+3. **Synthesizer** (`prompts/wordpress-info-synthesizer.md`)
+   - Input: lesson context + query results
+   - Output: `{ context: string (~300 words), reasoning: string }`
+   - Distills results into lesson-specific summary
+
+**Hook handler** (`server/index.js`)
+- Orchestrates the 3-agent pipeline
+- Returns enrichment object or `null`
+- Host stores on `lessonKB.enrichments`, injects into coach context
+- Learner sees artifact panel above first coach message
+
+### Key patterns to copy
+
+```js
+// Hook handler with enrichment return value
+export default {
+  hooks: {
+    lessonStarted: async ({ userId, lessonId, lesson, lessonKB }) => {
+      try {
+        // Decide whether to enrich
+        const plan = await callPlannerAgent(lesson);
+        if (!plan.shouldEnrich) return null;
+
+        // Fetch external docs
+        const results = await queryExternalAPIs(plan.queries);
+        if (!results.length) return null;
+
+        // Synthesize lesson-specific context
+        const synthesis = await callSynthesizerAgent(lesson, results);
+
+        // Return enrichment data
+        return {
+          pluginId: 'my-plugin',
+          label: 'External Docs',
+          context: synthesis.context,
+          reasoning: synthesis.reasoning,
+          sources: results.map(r => ({ url: r.url, title: r.title })),
+        };
+      } catch (err) {
+        // Fail open — log and return null
+        console.error('[my-plugin] Enrichment failed:', err);
+        return null;
+      }
+    },
+  },
+};
+```
+
+### Testing
+
+`plugins/wordpress-info/server/query-executor.test.js` demonstrates:
+- SSRF defense validation (every source URL → ALLOWED_HOSTS)
+- Source schema validation
+- Keyword consistency checks
+
+### Files
+
+```
+plugins/wordpress-info/
+  plugin.json                    # Manifest: lessonEnrichment + agent capabilities
+  server/index.js                # Hook handler (3-agent orchestrator)
+  server/sources.js              # KEYWORDS, SOURCES, ALLOWED_HOSTS
+  server/query-executor.js       # Parallel API fetching with timeout
+  server/query-executor.test.js  # SSRF + schema validation tests
+  prompts/wordpress-info-planner.md      # Agent 1: detect + plan queries
+  prompts/wordpress-info-synthesizer.md  # Agent 3: distill into summary
+  CLAUDE.md                      # Architecture, invariants, anti-goals
+```
+
+### Gotchas
+
+- **Agent prompts** — Phase 1 loads via `fs.readFile`; Phase 3's `agent` capability will formalize prompt upsertion to sync-data
+- **Structured output** — Agents are instructed to return JSON; parsing happens in the hook handler (no native structured-output tool yet)
+- **Timing** — Enrichment runs after Lesson Owner KB init but before Coach starts; total lesson-start latency must stay reasonable (~3-5s)
+- **Resume** — Enrichment is cached on `lessonKB.enrichments`; never re-runs on resume (learner sees same artifacts every time)
+
+See `plugins/wordpress-info/CLAUDE.md` for the full deep-dive.

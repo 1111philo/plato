@@ -58,6 +58,50 @@ describe('hooks pub-sub', () => {
     assert.equal(handlerCount('lessonStarted'), 2);
     assert.equal(handlerCount('nope'), 0);
   });
+
+  it('emit collects non-null return values from handlers', async () => {
+    on('lessonStarted', () => ({ pluginId: 'a', context: 'Context A' }));
+    on('lessonStarted', () => null); // Null returns are filtered out
+    on('lessonStarted', () => ({ pluginId: 'b', context: 'Context B' }));
+    on('lessonStarted', () => undefined); // Undefined returns are filtered out
+
+    const results = await emit('lessonStarted', { lessonId: 'l1' });
+
+    assert.equal(results.length, 2);
+    assert.deepEqual(results[0], { pluginId: 'a', context: 'Context A' });
+    assert.deepEqual(results[1], { pluginId: 'b', context: 'Context B' });
+  });
+
+  it('emit returns empty array when no handlers registered', async () => {
+    const results = await emit('noHandlers', {});
+    assert.deepEqual(results, []);
+  });
+
+  it('emit collects async handler return values', async () => {
+    on('lessonStarted', async () => {
+      await new Promise(r => setTimeout(r, 5));
+      return { pluginId: 'async', context: 'Async context' };
+    });
+    on('lessonStarted', () => ({ pluginId: 'sync', context: 'Sync context' }));
+
+    const results = await emit('lessonStarted', {});
+
+    assert.equal(results.length, 2);
+    assert.equal(results[0].pluginId, 'async');
+    assert.equal(results[1].pluginId, 'sync');
+  });
+
+  it('handler errors do not prevent other return values from being collected', async () => {
+    on('lessonStarted', () => ({ pluginId: 'good1', context: 'Good' }));
+    on('lessonStarted', () => { throw new Error('boom'); });
+    on('lessonStarted', () => ({ pluginId: 'good2', context: 'Also good' }));
+
+    const results = await emit('lessonStarted', {});
+
+    assert.equal(results.length, 2);
+    assert.equal(results[0].pluginId, 'good1');
+    assert.equal(results[1].pluginId, 'good2');
+  });
 });
 
 // Restore console after suite (node:test runs in series, so this is fine).
