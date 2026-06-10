@@ -288,9 +288,31 @@ sync.delete('/v1/sync/:dataKey', async (c) => {
  * POST /v1/sync/lesson-started — emit the lessonStarted hook and collect
  * enrichment responses from plugins. Called by the client when a learner
  * starts a lesson (after the lessonKB is initialized but before the coach
- * opens the conversation). Plugins with hook.lessonStarted can enrich the
- * lesson with additional context (e.g., fetch WordPress docs, pull from a
- * knowledge base). Returns the collected enrichments array.
+ * opens the conversation).
+ *
+ * Request body:
+ *   - lessonId: string (required)
+ *   - lesson: { name, markdown, exemplar, learningObjectives } (required)
+ *   - lessonKB: object (required)
+ *
+ * Response:
+ *   - enrichments: array of enrichment objects from plugins
+ *   - startupSteps: array of startup step definitions (future use)
+ *
+ * Enrichment object shape:
+ *   - pluginId: string
+ *   - label: string (display name)
+ *   - context: string (reference material for coach)
+ *   - reasoning: string (why this context matters)
+ *   - sources: array of { url, title, excerpt }
+ *
+ * Plugins with hook.lessonStarted + lessonEnrichment capability can return
+ * enrichment data. The host stores enrichments on lessonKB.enrichments,
+ * injects them into the coach system context, and displays them in the
+ * lesson overview "Additional Context" section.
+ *
+ * Fail-open: plugin errors are caught and logged; enrichment failures never
+ * block lesson start.
  */
 sync.post('/v1/sync/lesson-started', async (c) => {
   const reject = rejectWriteIfImpersonating(c);

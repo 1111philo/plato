@@ -138,8 +138,9 @@ Plugins can enrich lessons at start time by providing additional reference
 material — e.g., WordPress docs, React API updates, internal knowledge bases.
 Enrichment is computed **once** when the learner starts the lesson (after Lesson
 Owner KB init, before Coach opens), cached on `lessonKB.enrichments`, and
-injected into the coach's system context. The learner sees enrichments as
-collapsible artifact panels above the first coach message.
+injected into the coach's system context. The learner sees enrichments in the
+"Additional Context" section of the lesson overview dialog (alongside exemplar
+and objectives), where they can reference it throughout the lesson.
 
 ### Lifecycle
 
@@ -152,8 +153,8 @@ collapsible artifact panels above the first coach message.
 5. **Storage** — if enrichments exist, stored on `lessonKB.enrichments` and synced
 6. **Coach context** — `buildContext()` injects enrichments into coach system prompt
    as `enrichmentContext: [{ source, context, reasoning }]`
-7. **UI display** — `LessonChat` renders `<EnrichmentArtifact>` components above
-   first coach message (collapsed by default)
+7. **UI display** — `LessonChat` displays enrichments in the "Additional Context"
+   section of the lesson overview dialog (opened via "Lesson Overview" button)
 8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
 
 ### Enrichment data contract
@@ -181,12 +182,14 @@ host filters out nulls — only non-null returns are stored.
   stepped progress UI showing: (1) Initializing lesson (Lesson Owner), (2) Enriching
   lesson (plugins — only shown when active), (3) Starting conversation (Coach).
   The enrichment step expands to show per-plugin progress when multiple plugins
-  are active.
-- **EnrichmentArtifact** (`client/src/components/chat/EnrichmentArtifact.jsx`) —
-  collapsible panel displaying plugin label, reasoning, context summary, and
-  clickable source links. Styled as an info panel (blue border/background) distinct
-  from coach messages. Collapsed by default to avoid disrupting the lesson start
-  flow; learners can expand to see details.
+  are active. Includes `role="status"` and `aria-live="polite"` for screen reader
+  announcements.
+- **Lesson Overview Dialog** (`client/src/pages/LessonChat.jsx`) — modal dialog
+  displaying lesson name, description, exemplar, learning objectives, and an
+  "Additional Context" section showing enrichment data from plugins. Each enrichment
+  is a semantic `<section>` with heading (`<h4>`), reasoning text, context paragraph,
+  and source links in a `<nav>` with proper aria-labels and focus styles. The dialog
+  content is scrollable (`max-h-[85vh]`) to handle long enrichments.
 
 ### WordPress Info plugin (reference implementation)
 

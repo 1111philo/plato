@@ -504,21 +504,36 @@ export default function LessonChat() {
           {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-medium">Additional Context</h3>
+              <p className="text-xs text-muted-foreground">
+                Reference material gathered for this lesson from enabled plugins
+              </p>
               {lessonKB.enrichments.map((enrichment, idx) => (
-                <div key={idx} className="border border-blue-200 bg-blue-50 rounded p-3 space-y-2">
-                  <div className="text-sm font-medium text-blue-900">
+                <section
+                  key={idx}
+                  className="border border-blue-200 bg-blue-50 rounded p-3 space-y-2"
+                  aria-labelledby={`enrichment-${idx}-label`}
+                >
+                  <h4
+                    id={`enrichment-${idx}-label`}
+                    className="text-sm font-medium text-blue-900"
+                  >
                     {enrichment.label || enrichment.pluginId}
-                  </div>
+                  </h4>
                   {enrichment.reasoning && (
-                    <p className="text-xs text-blue-700">{enrichment.reasoning}</p>
-                  )}
-                  {enrichment.context && (
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                      {enrichment.context}
+                    <p className="text-xs text-blue-700" aria-label="Why this context matters">
+                      {enrichment.reasoning}
                     </p>
                   )}
-                  {enrichment.sources && enrichment.sources.length > 0 && (
+                  {enrichment.context && (
                     <div>
+                      <p className="sr-only">Context:</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {enrichment.context}
+                      </p>
+                    </div>
+                  )}
+                  {enrichment.sources && enrichment.sources.length > 0 && (
+                    <nav aria-label={`Sources from ${enrichment.label || enrichment.pluginId}`}>
                       <div className="text-xs font-medium text-blue-800 mb-1">Sources:</div>
                       <ul className="text-xs space-y-1">
                         {enrichment.sources.map((source, sidx) => (
@@ -527,16 +542,17 @@ export default function LessonChat() {
                               href={source.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline"
+                              className="text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 rounded"
+                              aria-label={`${source.title || source.url} (opens in new tab)`}
                             >
                               {source.title || source.url}
                             </a>
                           </li>
                         ))}
                       </ul>
-                    </div>
+                    </nav>
                   )}
-                </div>
+                </section>
               ))}
             </div>
           )}

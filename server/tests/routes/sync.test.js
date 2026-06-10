@@ -413,3 +413,49 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     assert.equal(res.status, 200, 'lesson write must not fail because the pre-read failed');
   });
 });
+
+describe('POST /v1/sync/lesson-started', () => {
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+  });
+
+  it('returns empty enrichments when no plugins are enabled', async () => {
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'POST', '/v1/sync/lesson-started', {
+      lessonId: 'test-lesson',
+      lesson: { name: 'Test', markdown: '# Test', exemplar: 'Learn WordPress', learningObjectives: ['Understand hooks'] },
+      lessonKB: { status: 'active' },
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.enrichments), 'enrichments must be an array');
+    assert.ok(Array.isArray(data.startupSteps), 'startupSteps must be an array');
+  });
+
+  it('requires lessonId, lesson, and lessonKB', async () => {
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'POST', '/v1/sync/lesson-started', {});
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error, 'must return error when required fields missing');
+  });
+
+  it('rejects writes when viewing as another user', async () => {
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin' });
+    const app = new Hono();
+    app.route('/', sync);
+    const token = await signAccessToken('usr_admin', 'admin');
+    const res = await app.request('/v1/sync/lesson-started?asUserId=usr_other', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        lessonId: 'test',
+        lesson: { name: 'T', markdown: '# T', exemplar: 'E', learningObjectives: [] },
+        lessonKB: {},
+      }),
+    });
+    assert.equal(res.status, 403, 'must reject write when asUserId is present');
+  });
+});
