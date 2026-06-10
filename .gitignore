@@ -3,6 +3,8 @@ node_modules/
 .env
 dist/
 data/*.db*
+client/data/*.db*
+server/data/*.db*
 *.zip
 server/samconfig.toml
 server/client-dist/
