@@ -2,7 +2,6 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import sync from '../../src/routes/sync.js';
-import { authenticate } from '../../src/middleware/authenticate.js';
 import { on, _reset as resetHooks } from '../../src/lib/plugins/hooks.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';

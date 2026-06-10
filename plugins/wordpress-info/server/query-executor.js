@@ -85,11 +85,20 @@ async function queryMakeBlogs(source, query) {
     const data = await res.json();
     if (!Array.isArray(data)) return [];
 
-    return data.map(item => ({
-      url: item.link || '',
-      title: item.title?.rendered || '',
-      excerpt: item.excerpt?.rendered?.replace(/<[^>]*>/g, '').trim() || '',
-    })).filter(r => r.url && r.title);
+    return data.map(item => {
+      // Strip HTML tags in multiple passes to handle nested/malformed tags
+      let excerpt = item.excerpt?.rendered || '';
+      let prev = '';
+      while (excerpt !== prev && /<[^>]*>/.test(excerpt)) {
+        prev = excerpt;
+        excerpt = excerpt.replace(/<[^>]*>/g, '');
+      }
+      return {
+        url: item.link || '',
+        title: item.title?.rendered || '',
+        excerpt: excerpt.trim(),
+      };
+    }).filter(r => r.url && r.title);
   } catch {
     return []; // fail open
   }
