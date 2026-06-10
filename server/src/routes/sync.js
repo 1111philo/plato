@@ -3,6 +3,7 @@ import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
+import { pluginRegistry } from '../lib/plugins/registry.js';
 
 const sync = new Hono();
 
@@ -301,6 +302,24 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     return c.json({ error: 'lessonId, lesson, and lessonKB are required' }, 400);
   }
 
+  // Collect startup steps from enabled plugins that declare lessonStartupSteps
+  const startupSteps = [];
+  for (const [pluginId, entry] of pluginRegistry.list()) {
+    if (entry.enabled && entry.manifest?.extensionPoints?.lessonStartupSteps) {
+      const steps = entry.manifest.extensionPoints.lessonStartupSteps;
+      for (const step of steps) {
+        startupSteps.push({
+          pluginId,
+          pluginLabel: entry.manifest.name,
+          id: step.id,
+          label: step.label,
+          description: step.description,
+          status: 'pending', // Plugins will report status via progress callback
+        });
+      }
+    }
+  }
+
   // Emit the hook. Plugins with hook.lessonStarted + lessonEnrichment capability
   // can return enrichment data: { context, sources, reasoning, pluginId, label }.
   // The emit function collects non-null return values from all handlers.
@@ -316,7 +335,10 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     lessonKB
   });
 
-  return c.json({ enrichments: enrichments || [] });
+  return c.json({
+    enrichments: enrichments || [],
+    startupSteps,
+  });
 });
 
 export default sync;

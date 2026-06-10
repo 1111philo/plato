@@ -62,6 +62,7 @@ function BuildStep({ label, status, detail, enrichments }) {
 
 export default function LessonLoadingView({ step, enrichments = [] }) {
   const hasEnrichments = enrichments && enrichments.length > 0;
+  const showEnrichmentStep = step === STEPS.ENRICHING || hasEnrichments;
 
   // Compute step statuses based on current step
   const steps = [
@@ -75,12 +76,12 @@ export default function LessonLoadingView({ step, enrichments = [] }) {
     },
   ];
 
-  // Only show enrichment step if plugins are active
-  if (hasEnrichments) {
+  // Show enrichment step when we're actively enriching OR when enrichments were found
+  if (showEnrichmentStep) {
     steps.push({
       key: STEPS.ENRICHING,
       label: 'Enriching lesson',
-      detail: 'Gathering relevant resources and context for this lesson',
+      detail: 'Gathering additional context and resources for this lesson',
       status: step === STEPS.ENRICHING
         ? 'in_progress'
         : (step === STEPS.STARTING ? 'completed' : 'pending'),

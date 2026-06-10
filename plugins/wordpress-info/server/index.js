@@ -12,8 +12,8 @@
 
 import { KEYWORDS, SOURCES } from './sources.js';
 import { executeQueries } from './query-executor.js';
-// Import orchestrator from client — plugins are bundled with full repo access
-import * as orchestrator from '../../../client/js/orchestrator.js';
+// Import server-side AI provider
+import ai from '../../../server/src/lib/ai-provider.js';
 
 const PLANNER_SCHEMA = {
   type: 'object',
@@ -69,20 +69,30 @@ async function callAgentWithSchema(promptName, context, schema) {
   const prompt = await loadPrompt(promptName);
   const fullPrompt = `${prompt}\n\n${context}`;
 
-  // Use converseStream but collect the full response
-  // TODO: orchestrator needs a non-streaming variant for plugin use
-  let response = '';
-  await orchestrator.converseStream(
-    'coach', // Use coach for now; Phase 3 will have plugin-specific agent names
-    [{ role: 'user', content: fullPrompt }],
-    (chunk) => { response = chunk; },
-    2048
-  );
+  // Call AI provider directly (server-side)
+  const response = await ai.invoke('claude-sonnet-4-20250514', {
+    max_tokens: 2048,
+    messages: [{ role: 'user', content: fullPrompt }],
+  });
 
-  // Extract JSON from response (the agent should call StructuredOutput tool)
-  // For now, parse the response as JSON directly
+  // Extract text from response
+  let text = response.content?.find(c => c.type === 'text')?.text || '';
+
+  // Extract JSON from <StructuredOutput> tags or find JSON object in text
+  const structuredMatch = text.match(/<StructuredOutput>\s*({[\s\S]*?})\s*<\/StructuredOutput>/);
+  if (structuredMatch) {
+    text = structuredMatch[1];
+  } else {
+    // Try to find JSON object in the text (between { and })
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      text = jsonMatch[0];
+    }
+  }
+
+  // Parse JSON from response
   try {
-    const parsed = JSON.parse(response);
+    const parsed = JSON.parse(text);
     // Validate against schema (basic check)
     if (schema.required) {
       for (const field of schema.required) {
@@ -93,17 +103,23 @@ async function callAgentWithSchema(promptName, context, schema) {
     }
     return parsed;
   } catch (err) {
-    console.warn('[wordpress-info] Failed to parse agent response:', err);
+    console.warn('[wordpress-info] Failed to parse agent response:', err, 'Text:', text.slice(0, 200));
     return null;
   }
 }
 
 /**
  * lessonStarted hook handler.
+ * The payload includes an optional onProgress callback for reporting step status.
  */
-async function onLessonStarted({ userId, lessonId, lesson, lessonKB }) {
+async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress }) {
+  const reportProgress = (stepId, status) => {
+    if (onProgress) onProgress('wordpress-info', stepId, status);
+  };
+
   try {
-    // Step 1: Call planner agent
+    // Step 1: Scan for WordPress keywords
+    reportProgress('scan-keywords', 'in_progress');
     const plannerContext = `
 **Exemplar:** ${lesson.exemplar || 'N/A'}
 
@@ -116,21 +132,35 @@ Analyze this lesson and decide whether to enrich it with WordPress documentation
 `;
 
     const plan = await callAgentWithSchema('wordpress-info-planner', plannerContext, PLANNER_SCHEMA);
+
     if (!plan || !plan.shouldEnrich || !plan.queries || !plan.queries.length) {
-      // Not WordPress-related or planner failed — no enrichment
+      // Not WordPress-related — mark scan complete, skip remaining steps
+      reportProgress('scan-keywords', 'completed');
+      reportProgress('build-queries', 'skipped');
+      reportProgress('execute-queries', 'skipped');
+      reportProgress('synthesize-context', 'skipped');
       return null;
     }
 
-    // Step 2: Execute queries
+    // Step 2: Build queries (planner succeeded)
+    reportProgress('scan-keywords', 'completed');
+    reportProgress('build-queries', 'completed');
+
+    // Step 3: Execute queries
+    reportProgress('execute-queries', 'in_progress');
     const queryResults = await executeQueries(plan.queries, SOURCES);
 
     // If no results, don't synthesize
     const totalResults = queryResults.reduce((sum, q) => sum + q.results.length, 0);
     if (totalResults === 0) {
+      reportProgress('execute-queries', 'failed');
+      reportProgress('synthesize-context', 'skipped');
       return null;
     }
+    reportProgress('execute-queries', 'completed');
 
-    // Step 3: Call synthesizer agent
+    // Step 4: Synthesize context
+    reportProgress('synthesize-context', 'in_progress');
     const resultsText = queryResults.map(qr => {
       const resultsStr = qr.results.map(r =>
         `**${r.title}**\n${r.excerpt}\nURL: ${r.url}`
@@ -153,10 +183,12 @@ Synthesize a concise, lesson-specific context note (~300 words).
 
     const synthesis = await callAgentWithSchema('wordpress-info-synthesizer', synthesizerContext, SYNTHESIZER_SCHEMA);
     if (!synthesis || !synthesis.context) {
+      reportProgress('synthesize-context', 'failed');
       return null;
     }
+    reportProgress('synthesize-context', 'completed');
 
-    // Step 4: Collect sources for citation
+    // Collect sources for citation
     const allSources = [];
     const seen = new Set();
     for (const qr of queryResults) {
@@ -182,6 +214,7 @@ Synthesize a concise, lesson-specific context note (~300 words).
     };
   } catch (err) {
     // Fail open — never block lesson start
+    // Mark current step as failed
     console.error('[wordpress-info] Enrichment failed:', err);
     return null;
   }

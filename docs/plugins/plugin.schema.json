@@ -59,6 +59,31 @@
         "syncDataNamespace": {
           "type": "string",
           "pattern": "^plugin:[a-z0-9-]+:[a-z0-9*-]+$"
+        },
+        "lessonStartupSteps": {
+          "type": "array",
+          "description": "Steps shown in the lesson loading UI when this plugin enriches a lesson",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "description"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "description": "Unique identifier for this step within the plugin"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 60,
+                "description": "Short label shown to the learner"
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 120,
+                "description": "Detail text explaining what this step does"
+              }
+            }
+          }
         }
       }
     },

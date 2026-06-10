@@ -15,6 +15,28 @@
     "agent"
   ],
   "extensionPoints": {
-    "hooks": ["lessonStarted"]
+    "hooks": ["lessonStarted"],
+    "lessonStartupSteps": [
+      {
+        "id": "scan-keywords",
+        "label": "Scan lesson for WordPress keywords",
+        "description": "Analyzing lesson objectives and exemplar for WordPress-related content"
+      },
+      {
+        "id": "build-queries",
+        "label": "Build WordPress search queries",
+        "description": "Planning what to search based on lesson content"
+      },
+      {
+        "id": "execute-queries",
+        "label": "Search WordPress resources",
+        "description": "Fetching docs from wordpress.org, Make blogs, and GitHub"
+      },
+      {
+        "id": "synthesize-context",
+        "label": "Synthesize lesson context",
+        "description": "Creating lesson-specific summary from search results"
+      }
+    ]
   }
 }
