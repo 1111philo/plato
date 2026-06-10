@@ -19,6 +19,8 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
+import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
+import EnrichmentArtifact from '../components/chat/EnrichmentArtifact.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
 import {
@@ -51,6 +53,8 @@ export default function LessonChat() {
   const [messages, setMessages] = useState([]);
   const [lessonKB, setLessonKB] = useState(null);
   const [loading, setLoading] = useState('');
+  const [loadingStep, setLoadingStep] = useState('initializing');
+  const [loadingEnrichments, setLoadingEnrichments] = useState([]);
   const [error, setError] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
@@ -179,11 +183,20 @@ export default function LessonChat() {
         setPhase(LESSON_PHASES.LEARNING);
       } else {
         setLoading('starting');
+        setLoadingStep('initializing');
+        setLoadingEnrichments([]);
         setStreamingText('');
         try {
           const result = await engine.startLesson(
-            lessonGroupId, lesson,
-            (partial) => { if (!cancelled) setStreamingText(partial); }
+            lessonGroupId,
+            lesson,
+            (partial) => { if (!cancelled) setStreamingText(partial); },
+            (step, data) => {
+              if (!cancelled) {
+                setLoadingStep(step);
+                if (data?.enrichments) setLoadingEnrichments(data.enrichments);
+              }
+            }
           );
           if (cancelled) return;
           setLessonKB(result.lessonKB);
@@ -416,15 +429,25 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
-        {messages.map(renderMessage)}
-        {displayText != null && displayText.length > 0 && (
-          <AssistantMessage content={displayText} streaming />
-        )}
-        {loading === 'starting' && !displayText && <ThinkingSpinner text="Setting up your lesson..." />}
-        {loading === 'qa' && !displayText && <ThinkingSpinner />}
-        {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
-      </ChatArea>
+      {loading === 'starting' && !displayText ? (
+        <LessonLoadingView step={loadingStep} enrichments={loadingEnrichments} />
+      ) : (
+        <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
+          {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
+            <div>
+              {lessonKB.enrichments.map((enrichment, idx) => (
+                <EnrichmentArtifact key={idx} enrichment={enrichment} />
+              ))}
+            </div>
+          )}
+          {messages.map(renderMessage)}
+          {displayText != null && displayText.length > 0 && (
+            <AssistantMessage content={displayText} streaming />
+          )}
+          {loading === 'qa' && !displayText && <ThinkingSpinner />}
+          {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
+        </ChatArea>
+      )}
       </div>
 
       {/* Inline compose — always in document flow for layout; invisible when pinned */}

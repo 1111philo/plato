@@ -14,6 +14,7 @@ import {
   saveLessonMessages, getLessonMessages, replaceLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
+import { authenticatedFetch } from '../../js/auth.js';
 import { compressImageDataUrl } from './imageCompression.js';
 import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
@@ -141,13 +142,20 @@ export function cleanStream(onStream) {
 
 /**
  * Start a new lesson: Lesson Owner generates KB, Coach opens conversation.
+ *
+ * @param {string} lessonId
+ * @param {object} lesson
+ * @param {function} onStream - Stream callback for coach message
+ * @param {function} onProgress - Progress callback for build steps: (step, data) => void
+ *   Steps: 'initializing', 'enriching', 'starting'
  */
-export async function startLesson(lessonId, lesson, onStream) {
+export async function startLesson(lessonId, lesson, onStream, onProgress) {
   assertNotImpersonating('start a lesson');
   await ensureProfileExists();
   const profileSummary = await getLearnerProfileSummary();
 
   // Lesson Owner generates the KB
+  if (onProgress) onProgress('initializing');
   const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary);
   lessonKB.lessonId = lessonId;
   lessonKB.name = lesson.name;
@@ -156,7 +164,39 @@ export async function startLesson(lessonId, lesson, onStream) {
   await saveLessonKB(lessonId, lessonKB);
   syncInBackground(`lessonKB:${lessonId}`);
 
+  // Emit lessonStarted hook and collect enrichments from plugins
+  let enrichments = [];
+  try {
+    if (onProgress) onProgress('enriching', { enrichments: [] });
+    const res = await authenticatedFetch('/v1/sync/lesson-started', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lessonId,
+        lesson: {
+          name: lesson.name,
+          markdown: lesson.markdown,
+          exemplar: lesson.exemplar,
+          learningObjectives: lesson.learningObjectives,
+        },
+        lessonKB,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      enrichments = data.enrichments || [];
+      if (enrichments.length > 0) {
+        lessonKB.enrichments = enrichments;
+        await saveLessonKB(lessonId, lessonKB);
+      }
+    }
+  } catch (err) {
+    // Fail open — enrichment errors must never block lesson start
+    console.warn('[startLesson] Failed to collect enrichments:', err);
+  }
+
   // Coach opens the conversation
+  if (onProgress) onProgress('starting');
   const prefs = await getPreferences();
   const courseProgress = await loadCourseProgressSummary(lesson);
   const context = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
@@ -517,6 +557,20 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
   if (lesson.course && lesson.course.name) {
     context.course = { name: lesson.course.name };
     if (courseProgress) context.course.progress = courseProgress;
+  }
+  // Optional enrichment context: plugins can enrich lessons at start time by
+  // providing additional reference material (e.g., WordPress docs, React API
+  // updates, internal knowledge bases). Stored on `lessonKB.enrichments` after
+  // the lessonStarted hook runs. Each enrichment has `{ pluginId, label, context,
+  // reasoning, sources }`. The coach can draw on this background context when
+  // relevant but it MUST NOT override completion semantics — the coach still owns
+  // progress and the exemplar.
+  if (lessonKB?.enrichments && Array.isArray(lessonKB.enrichments) && lessonKB.enrichments.length > 0) {
+    context.enrichmentContext = lessonKB.enrichments.map(e => ({
+      source: e.label || e.pluginId,
+      context: e.context || '',
+      reasoning: e.reasoning || '',
+    }));
   }
   if (lessonStatus === 'completed') {
     // Completed threads are feedback-only. Skip pacing nudges — they'd

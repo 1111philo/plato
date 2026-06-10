@@ -23,6 +23,7 @@ export const STATIC_CAPABILITIES = Object.freeze([
   'kpi',
   'agent',
   'syncData.namespace',
+  'lessonEnrichment',
 ]);
 
 /** Pattern capabilities — `ui.slot.<slotName>` and `hook.<hookName>`. */

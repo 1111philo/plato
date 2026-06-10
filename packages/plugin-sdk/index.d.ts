@@ -74,7 +74,8 @@ export type Capability =
   | 'user.metadata.write'
   | 'kpi'
   | 'agent'
-  | 'syncData.namespace';
+  | 'syncData.namespace'
+  | 'lessonEnrichment';
 
 // ---------- Slots ----------
 

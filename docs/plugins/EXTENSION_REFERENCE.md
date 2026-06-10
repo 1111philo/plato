@@ -144,9 +144,10 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `lessonStarted`
 
 - **Capability:** `hook.lessonStarted`
-- **Payload:** `{ userId: string, lessonId: string, lessonKB: object }`
-- **Emit point:** `server/src/routes/sync.js` on first PUT of `lessonKB:<id>` (no prior version)
-- **Phase:** 2
+- **Payload:** `{ userId: string, lessonId: string, lesson: { name, markdown, exemplar, learningObjectives }, lessonKB: object }`
+- **Emit point:** `server/src/routes/sync.js` POST `/v1/sync/lesson-started` — called by `client/src/lib/lessonEngine.js#startLesson()` after the Lesson Owner agent initializes the KB but before the Coach opens the conversation
+- **Phase:** 1 (wired)
+- **Gotchas:** Plugins can use this to enrich the lesson at start time (e.g., fetch external docs, add context from a knowledge base). The lesson markdown and objectives are included so plugins can decide whether to act. Enrichment responses (if the plugin returns data) are collected by the endpoint and stored on `lessonKB.enrichments`. Plugins MUST fail open — errors must never block lesson start.
 
 ### `lessonCompleted`
 

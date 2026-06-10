@@ -29,14 +29,18 @@ export function on(event, fn, meta = {}) {
 /**
  * Fire an event. Each handler runs to completion (errors logged but do not
  * stop other handlers). Awaitable; resolves once every handler has finished.
+ * Returns an array of non-null return values from handlers (for enrichment
+ * collection). Most hooks ignore return values; lessonStarted collects them.
  */
 export async function emit(event, payload) {
   const list = handlers.get(event);
-  if (!list || list.length === 0) return;
+  if (!list || list.length === 0) return [];
+  const results = [];
   // Snapshot in case a handler unsubscribes during iteration.
   for (const entry of [...list]) {
     try {
-      await entry.fn(payload);
+      const result = await entry.fn(payload);
+      if (result != null) results.push(result);
     } catch (err) {
       logger.error('plugin_hook_failed', {
         event,
@@ -46,6 +50,7 @@ export async function emit(event, payload) {
       });
     }
   }
+  return results;
 }
 
 /** Test-only: clear all handlers. */

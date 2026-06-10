@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
+import { emit as emitHook } from '../lib/plugins/hooks.js';
 
 const sync = new Hono();
 
@@ -280,6 +281,42 @@ sync.delete('/v1/sync/:dataKey', async (c) => {
 
   await db.deleteSyncData(userId, dataKey);
   return c.json({ ok: true });
+});
+
+/**
+ * POST /v1/sync/lesson-started — emit the lessonStarted hook and collect
+ * enrichment responses from plugins. Called by the client when a learner
+ * starts a lesson (after the lessonKB is initialized but before the coach
+ * opens the conversation). Plugins with hook.lessonStarted can enrich the
+ * lesson with additional context (e.g., fetch WordPress docs, pull from a
+ * knowledge base). Returns the collected enrichments array.
+ */
+sync.post('/v1/sync/lesson-started', async (c) => {
+  const reject = rejectWriteIfImpersonating(c);
+  if (reject) return reject;
+  const userId = c.get('userId');
+  const { lessonId, lesson, lessonKB } = await c.req.json();
+
+  if (!lessonId || !lesson || !lessonKB) {
+    return c.json({ error: 'lessonId, lesson, and lessonKB are required' }, 400);
+  }
+
+  // Emit the hook. Plugins with hook.lessonStarted + lessonEnrichment capability
+  // can return enrichment data: { context, sources, reasoning, pluginId, label }.
+  // The emit function collects non-null return values from all handlers.
+  const enrichments = await emitHook('lessonStarted', {
+    userId,
+    lessonId,
+    lesson: {
+      name: lesson.name,
+      markdown: lesson.markdown,
+      exemplar: lesson.exemplar,
+      learningObjectives: lesson.learningObjectives,
+    },
+    lessonKB
+  });
+
+  return c.json({ enrichments: enrichments || [] });
 });
 
 export default sync;

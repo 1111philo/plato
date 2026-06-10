@@ -76,6 +76,16 @@ Allows writing arbitrary `plugin:<id>:*` keys to per-user sync-data. The whiteli
 
 Phase 3.
 
+### `lessonEnrichment`
+
+Allows a plugin to enrich lessons at start time by providing additional context, sources, and reasoning. Plugins with this capability can register a `lessonStarted` hook handler that returns enrichment data: `{ context: string, sources: [{ url, title, excerpt }], reasoning: string, pluginId, label }`. The enrichment is stored on `lessonKB.enrichments`, injected into the coach's system context, and displayed to the learner as a collapsible artifact panel above the first coach message.
+
+**Use cases:** fetching relevant documentation (WordPress, React, etc.), querying internal knowledge bases, pulling recent bug reports or release notes, adding company-specific context.
+
+**Contract:** Enrichments are informational only — they provide reference material the coach can draw on but MUST NOT override completion semantics. The coach (`applyCoachResponseToKB`) remains the single owner of progress and completion.
+
+Phase 1 (available).
+
 ## Pattern capabilities
 
 ### `ui.slot.<SlotName>`

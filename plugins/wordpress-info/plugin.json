@@ -1,0 +1,20 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "wordpress-info",
+  "name": "WordPress Info",
+  "version": "1.0.0",
+  "apiVersion": "^1.3.0",
+  "description": "Enriches WordPress-related lessons with up-to-date context from wordpress.org docs, Make WordPress blogs, and GitHub core repo search. Automatically detects WordPress keywords in lesson objectives and fetches relevant reference material at lesson start.",
+  "author": "plato core",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/1111philo/plato",
+  "defaultEnabled": false,
+  "capabilities": [
+    "hook.lessonStarted",
+    "lessonEnrichment",
+    "agent"
+  ],
+  "extensionPoints": {
+    "hooks": ["lessonStarted"]
+  }
+}
