@@ -382,10 +382,12 @@ export default function LessonChat() {
             </Button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
+                <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowObjectives(true)}
+                  aria-expanded={showObjectives}
+                  aria-controls="lesson-objectives-dialog"
                 >
                   Lesson Overview ({lesson.learningObjectives.length} Objectives)
                 </button>
@@ -419,11 +421,13 @@ export default function LessonChat() {
           </Button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold truncate">{lesson.name}</h2>
+              <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowObjectives(true)}
                 aria-label={`View ${lesson.learningObjectives.length} objectives`}
+                aria-expanded={showObjectives}
+                aria-controls="lesson-objectives-dialog"
               >
                 Lesson Overview ({lesson.learningObjectives.length} Objectives)
               </button>
@@ -527,7 +531,7 @@ export default function LessonChat() {
 
       {/* Objectives dialog */}
       <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
-        <DialogContent className="max-h-[85vh] flex flex-col">
+        <DialogContent id="lesson-objectives-dialog" className="max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
             {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}

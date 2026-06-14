@@ -109,10 +109,10 @@ export default function AppShell({ children }) {
         }}
         role="banner"
       >
-        <div className="mx-auto max-w-5xl flex items-center gap-2">
-          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0">
+        <nav className="mx-auto max-w-5xl flex items-center gap-2" aria-label="Main navigation">
+          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0" aria-label="Go to lessons list">
             {classroomLogo ? (
-              <img src={classroomLogo} alt={classroomName} className="h-8 w-auto" />
+              <img src={classroomLogo} alt="" className="h-8 w-auto" />
             ) : (
               <span className="text-sm font-semibold">{classroomName}</span>
             )}
@@ -153,7 +153,7 @@ export default function AppShell({ children }) {
               </DropdownMenuRadix.Content>
             </DropdownMenuRadix.Portal>
           </DropdownMenuRadix.Root>
-        </div>
+        </nav>
       </header>
 
       <main id="main-content" className={`flex-1 overflow-y-auto bg-stone-100 dark:bg-stone-900 ${animClass}`} tabIndex={-1}>

@@ -134,6 +134,12 @@
   html {
     @apply font-sans;
   }
+
+  /* WCAG 2.4.7: Visible focus indicator for keyboard navigation */
+  *:focus-visible {
+    outline: 3px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 /* Confetti animation */

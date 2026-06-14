@@ -54,6 +54,7 @@ export default function ComposeBar({
   const inputId = useId();
   const statusId = useId();
   const linkInputId = useId();
+  const linkGroupId = useId();
   const [loadingCount, setLoadingCount] = useState(0);
 
   // Link-attach UI state.
@@ -317,7 +318,7 @@ export default function ComposeBar({
           disabled={disabled}
         />
         {allowLinks && linkOpen && (
-          <div className="mx-2 mb-2 flex flex-col gap-1" role="group" aria-label="Attach a link">
+          <div id={linkGroupId} className="mx-2 mb-2 flex flex-col gap-1" role="group" aria-label="Attach a link">
             <div className="flex items-center gap-2">
               <label htmlFor={linkInputId} className="sr-only">Link URL</label>
               <input
@@ -387,6 +388,7 @@ export default function ComposeBar({
                 ? `Maximum ${MAX_LINKS} links attached`
                 : 'Attach a link'}
               aria-expanded={linkOpen}
+              aria-controls={linkGroupId}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>

@@ -209,7 +209,7 @@ export default function LessonsList() {
   return (
     <div className="mx-auto max-w-5xl p-4">
       <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold">Lessons</h2>
+        <h1 className="text-xl font-semibold">Lessons</h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {hasCourseFilter && (
             <div className="flex items-center gap-2">
@@ -379,16 +379,17 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
         onClick={onOpen}
         // Status is folded into the button's accessible name — the visual
         // indicator is aria-hidden, so without this the icon's meaning
-        // would be invisible to SR users.
+        // would be invisible to SR users. We use aria-label instead of
+        // wrapping an h3 inside the button (invalid HTML per WCAG 2.4.6).
         aria-label={`Open lesson ${lesson.name}. ${statusText}.`}
         aria-describedby={parts.length > 0 ? metaId : undefined}
         className="flex-1 text-left px-4 pt-4 pb-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <h3 className="text-base font-semibold leading-snug transition-colors group-hover:text-primary">
+            <span className="text-base font-semibold leading-snug transition-colors group-hover:text-primary block">
               {lesson.name}
-            </h3>
+            </span>
             {lesson.description && (
               <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
                 {lesson.description}
