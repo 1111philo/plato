@@ -251,6 +251,26 @@ export default function LessonChat() {
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
+  // Find the next lesson in the same course (or any next lesson if no course)
+  const nextLesson = (() => {
+    if (!lesson || !lessons.length) return null;
+
+    // Get lessons in the same course, sorted by name
+    const sameCourse = lessons
+      .filter(l => l.course?.id === lesson.course?.id)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+    // Find current lesson index in the sorted list
+    const currentIndex = sameCourse.findIndex(l => l.lessonId === lessonGroupId);
+
+    // Return next lesson in the course (if any)
+    if (currentIndex >= 0 && currentIndex < sameCourse.length - 1) {
+      return sameCourse[currentIndex + 1];
+    }
+
+    return null;
+  })();
+
   const handleExport = useCallback(async () => {
     const markdown = await getUserLessonMarkdown(lessonGroupId);
     if (!markdown) return;
@@ -438,6 +458,29 @@ export default function LessonChat() {
           )}
           {loading === 'qa' && !displayText && <ThinkingSpinner />}
           {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
+          {phase === LESSON_PHASES.COMPLETED && (
+            <div className="flex flex-col items-center gap-3 mt-8 mb-4 px-4">
+              {nextLesson ? (
+                <Button
+                  size="lg"
+                  onClick={() => navigate(`/lesson/${nextLesson.lessonId}`)}
+                  className="min-w-[200px]"
+                  aria-label={`Continue to next lesson: ${nextLesson.name}`}
+                >
+                  Continue to Next Lesson
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  onClick={() => navigate('/lessons')}
+                  className="min-w-[200px]"
+                  aria-label="Back to lesson list"
+                >
+                  Back to Lesson List
+                </Button>
+              )}
+            </div>
+          )}
         </ChatArea>
       )}
       </div>
