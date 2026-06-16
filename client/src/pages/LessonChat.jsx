@@ -251,9 +251,10 @@ export default function LessonChat() {
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
-  // Find the next lesson in the same course (or any next lesson if no course)
+  // Find the next lesson in the same course
   const nextLesson = (() => {
     if (!lesson || !lessons.length) return null;
+    if (!lesson.course?.id) return null; // No next lesson for uncategorized lessons
 
     // Get lessons in the same course, sorted by name
     const sameCourse = lessons
