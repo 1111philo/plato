@@ -22,7 +22,7 @@
     "@slack/web-api": "^7.15.0",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.8.0",
-    "hono": "^4.12.23",
+    "hono": "^4.12.25",
     "jose": "^5.0.0",
     "linkedom": "^0.18.12",
     "undici": "^7.26.0"
