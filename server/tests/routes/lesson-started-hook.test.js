@@ -1,13 +1,10 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import sync from '../../src/routes/sync.js';
 import { on, _reset as resetHooks } from '../../src/lib/plugins/hooks.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
-
-// Ensure AWS_REGION is set for DynamoDB client (CI needs this)
-if (!process.env.AWS_REGION) process.env.AWS_REGION = 'us-east-1';
 
 // Silence console
 const origErr = console.error;
@@ -20,30 +17,24 @@ describe('POST /v1/sync/lesson-started', () => {
   let token;
   const userId = 'test-user-lesson-started';
 
-  before(async () => {
-    // Create test user
-    await db.createUser({
-      userId,
-      email: 'test@example.com',
-      username: 'testuser',
-      passwordHash: 'hashed-password',
-      name: 'Test User',
-      role: 'user',
-    });
-    token = signAccessToken(userId, 'user');
+  beforeEach(async () => {
+    resetHooks();
+    // Mock db methods for authentication
+    db.getUserById = async (id) => {
+      if (id === userId) {
+        return { userId, email: 'test@example.com', username: 'testuser', name: 'Test User', role: 'user' };
+      }
+      return null;
+    };
 
-    // Mount route
+    token = await signAccessToken(userId, 'user');
+
+    // Mount route (sync includes authenticate middleware)
     app = new Hono();
-    app.use('*', async (c, next) => {
-      c.set('userId', userId);
-      c.set('role', 'user');
-      await next();
-    });
     app.route('/', sync);
   });
 
-  after(async () => {
-    await db.deleteUser(userId);
+  after(() => {
     resetHooks();
   });
 
