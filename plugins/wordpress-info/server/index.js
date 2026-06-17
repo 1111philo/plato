@@ -12,7 +12,6 @@
 
 import { KEYWORDS, SOURCES } from './sources.js';
 import { executeQueries } from './query-executor.js';
-import ai, { LLM } from '../../../server/src/lib/ai-provider.js';
 
 const PLANNER_SCHEMA = {
   type: 'object',
@@ -64,11 +63,10 @@ async function loadPrompt(name) {
 /**
  * Call an agent with structured output. Returns the parsed JSON object.
  */
-async function callAgentWithSchema(promptName, context, schema, model) {
+async function callAgentWithSchema(promptName, context, schema, ai, model) {
   const prompt = await loadPrompt(promptName);
   const fullPrompt = `${prompt}\n\n${context}`;
 
-  // Call AI provider directly (server-side)
   const response = await ai.invoke(model, {
     max_tokens: 2048,
     messages: [{ role: 'user', content: fullPrompt }],
@@ -111,7 +109,8 @@ async function callAgentWithSchema(promptName, context, schema, model) {
  * lessonStarted hook handler.
  * The payload includes an optional onProgress callback for reporting step status.
  */
-async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress }) {
+async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress }, ctx) {
+  const { ai, LLM } = ctx;
   const reportProgress = (stepId, status) => {
     if (onProgress) onProgress('wordpress-info', stepId, status);
   };
@@ -131,7 +130,7 @@ ${lesson.coachDirective ? `**Coach Directive:**\n${lesson.coachDirective}\n` : '
 Analyze this lesson and decide whether to enrich it with WordPress documentation.
 `;
 
-    const plan = await callAgentWithSchema('wordpress-info-planner', plannerContext, PLANNER_SCHEMA, LLM);
+    const plan = await callAgentWithSchema('wordpress-info-planner', plannerContext, PLANNER_SCHEMA, ai, LLM);
 
     if (!plan || !plan.shouldEnrich || !plan.queries || !plan.queries.length) {
       // Not WordPress-related — mark scan complete, skip remaining steps
@@ -182,7 +181,7 @@ ${resultsText}
 Synthesize a concise, lesson-specific context note (~300 words).
 `;
 
-    const synthesis = await callAgentWithSchema('wordpress-info-synthesizer', synthesizerContext, SYNTHESIZER_SCHEMA, LLM);
+    const synthesis = await callAgentWithSchema('wordpress-info-synthesizer', synthesizerContext, SYNTHESIZER_SCHEMA, ai, LLM);
     if (!synthesis || !synthesis.context) {
       reportProgress('synthesize-context', 'failed');
       return null;

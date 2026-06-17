@@ -20,6 +20,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import db from '../db.js';
 import { logger } from '../logger.js';
+import ai, { LLM } from '../ai-provider.js';
 import { validateManifest } from './manifest.js';
 import { satisfies, PLUGIN_API_VERSION } from './version.js';
 import { on as hookOn, emit as hookEmit } from './hooks.js';
@@ -96,8 +97,8 @@ function loadManifest(manifestPath, expectedId) {
   return validateManifest(raw, { expectedId });
 }
 
-/** Build a context object for hooks/lifecycle invocations. */
-function buildContext(id, settings) {
+/** Build a context object for hooks/lifecycle invocations. Exported for tests. */
+export function buildContext(id, settings) {
   return {
     pluginId: id,
     logger: createPluginLogger(id),
@@ -107,6 +108,8 @@ function buildContext(id, settings) {
       await pluginRegistry.updateSettings(id, next);
     },
     emit: (event, payload) => hookEmit(event, payload),
+    ai,
+    LLM,
   };
 }
 

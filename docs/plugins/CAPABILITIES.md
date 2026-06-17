@@ -84,18 +84,17 @@ Allows a plugin to enrich lessons at start time by providing additional context,
 
 **Contract:** Enrichments are informational only — they provide reference material the coach can draw on but MUST NOT override completion semantics. The coach (`applyCoachResponseToKB`) remains the single owner of progress and completion.
 
-**Calling the AI from a lessonEnrichment plugin:** Import `ai` and `LLM` from the host's `ai-provider.js`. Never hardcode model strings:
+**Calling the AI from a lessonEnrichment plugin:** Use `ctx.ai` and `ctx.LLM` injected by the host — do NOT import `ai-provider.js` directly. The host injects the already-initialized provider instance so plugins share the same Bedrock client. Importing it directly via a relative path can resolve to a different module instance in Lambda (due to symlink path differences), causing the Bedrock client to hang:
 
 ```js
-import ai, { LLM } from '../../../server/src/lib/ai-provider.js';
-
-const result = await ai.invoke(LLM, {
-  max_tokens: 1024,
-  messages: [{ role: 'user', content: prompt }],
-});
+async function onLessonStarted(payload, ctx) {
+  const { ai, LLM } = ctx;
+  const result = await ai.invoke(LLM, {
+    max_tokens: 1024,
+    messages: [{ role: 'user', content: prompt }],
+  });
+}
 ```
-
-This works with both Bedrock (production) and the Anthropic API (local dev) — the host selects the provider based on environment variables.
 
 Phase 1 (available).
 
