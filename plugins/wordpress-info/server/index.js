@@ -15,6 +15,12 @@ import { executeQueries } from './query-executor.js';
 // Import server-side AI provider
 import ai from '../../../server/src/lib/ai-provider.js';
 
+// Model for plugin agents. Use Sonnet 4.6 for planning and synthesis —
+// these are single-turn analytical tasks that benefit from the stronger model.
+// Maps to us.anthropic.claude-sonnet-4-6 in Bedrock (prod) and works
+// directly via Anthropic API (dev).
+const PLUGIN_MODEL = 'claude-sonnet-4-6';
+
 const PLANNER_SCHEMA = {
   type: 'object',
   properties: {
@@ -70,7 +76,7 @@ async function callAgentWithSchema(promptName, context, schema) {
   const fullPrompt = `${prompt}\n\n${context}`;
 
   // Call AI provider directly (server-side)
-  const response = await ai.invoke('claude-sonnet-4-20250514', {
+  const response = await ai.invoke(PLUGIN_MODEL, {
     max_tokens: 2048,
     messages: [{ role: 'user', content: fullPrompt }],
   });
@@ -117,6 +123,14 @@ async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress 
     if (onProgress) onProgress('wordpress-info', stepId, status);
   };
 
+  console.log('[wordpress-info] Hook fired for lesson:', {
+    lessonId,
+    name: lesson.name,
+    hasCoachDirective: !!lesson.coachDirective,
+    coachDirectiveLength: lesson.coachDirective?.length || 0,
+    objectivesCount: lesson.learningObjectives?.length || 0,
+  });
+
   try {
     // Step 1: Scan for WordPress keywords
     reportProgress('scan-keywords', 'in_progress');
@@ -132,7 +146,9 @@ ${lesson.coachDirective ? `**Coach Directive:**\n${lesson.coachDirective}\n` : '
 Analyze this lesson and decide whether to enrich it with WordPress documentation.
 `;
 
+    console.log('[wordpress-info] Calling planner with context length:', plannerContext.length);
     const plan = await callAgentWithSchema('wordpress-info-planner', plannerContext, PLANNER_SCHEMA);
+    console.log('[wordpress-info] Planner result:', { shouldEnrich: plan?.shouldEnrich, queryCount: plan?.queries?.length });
 
     if (!plan || !plan.shouldEnrich || !plan.queries || !plan.queries.length) {
       // Not WordPress-related — mark scan complete, skip remaining steps

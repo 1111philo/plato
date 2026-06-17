@@ -168,24 +168,38 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
   let enrichments = [];
   try {
     if (onProgress) onProgress('enriching', { enrichments: [] });
+
+    const payload = {
+      lessonId,
+      lesson: {
+        name: lesson.name,
+        markdown: lesson.markdown,
+        exemplar: lesson.exemplar,
+        learningObjectives: lesson.learningObjectives,
+        coachDirective: lesson.coachDirective,
+      },
+      lessonKB,
+    };
+
+    console.log('[startLesson] Calling /v1/sync/lesson-started:', {
+      lessonId,
+      name: lesson.name,
+      hasCoachDirective: !!lesson.coachDirective,
+      coachDirectivePreview: lesson.coachDirective?.slice(0, 100),
+      objectivesCount: lesson.learningObjectives?.length || 0,
+    });
+
     const res = await authenticatedFetch('/v1/sync/lesson-started', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lessonId,
-        lesson: {
-          name: lesson.name,
-          markdown: lesson.markdown,
-          exemplar: lesson.exemplar,
-          learningObjectives: lesson.learningObjectives,
-          coachDirective: lesson.coachDirective,
-        },
-        lessonKB,
-      }),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       const data = await res.json();
       enrichments = data.enrichments || [];
+      console.log('[startLesson] Enrichments received:', enrichments.length, enrichments);
+    } else {
+      console.warn('[startLesson] lesson-started failed:', res.status, await res.text());
     }
   } catch (err) {
     // Fail open — enrichment errors must never block lesson start
