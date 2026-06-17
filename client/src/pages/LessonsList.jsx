@@ -81,6 +81,23 @@ export default function LessonsList() {
     })();
   }, [lessons]);
 
+  // Listen for lesson completion events to immediately update the checkmark
+  useEffect(() => {
+    const handleCompletion = async (e) => {
+      const { lessonId } = e.detail;
+      const kb = await getLessonKB(lessonId);
+      setLessonData(prev => ({
+        ...prev,
+        [lessonId]: {
+          status: kb?.status || null,
+          progress: kb?.progress ?? null,
+        },
+      }));
+    };
+    window.addEventListener('plato:lesson-completed', handleCompletion);
+    return () => window.removeEventListener('plato:lesson-completed', handleCompletion);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {

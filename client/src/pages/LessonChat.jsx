@@ -134,7 +134,13 @@ export default function LessonChat() {
         }
       }
       if (p) setPhase(p);
-      if (confetti) launchConfetti();
+      if (confetti) {
+        launchConfetti();
+        // Signal lesson list to refresh completion state
+        window.dispatchEvent(new CustomEvent('plato:lesson-completed', {
+          detail: { lessonId: lessonGroupId }
+        }));
+      }
       setLoading('');
     }
   }, [displayText]);
