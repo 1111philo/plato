@@ -185,7 +185,6 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
       lessonId,
       name: lesson.name,
       hasCoachDirective: !!lesson.coachDirective,
-      coachDirectivePreview: lesson.coachDirective?.slice(0, 100),
       objectivesCount: lesson.learningObjectives?.length || 0,
     });
 
@@ -197,9 +196,9 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     if (res.ok) {
       const data = await res.json();
       enrichments = data.enrichments || [];
-      console.log('[startLesson] Enrichments received:', enrichments.length, enrichments);
+      console.log('[startLesson] Enrichments received:', enrichments.length);
     } else {
-      console.warn('[startLesson] lesson-started failed:', res.status, await res.text());
+      console.log('[startLesson] lesson-started failed:', res.status);
     }
   } catch (err) {
     // Fail open — enrichment errors must never block lesson start

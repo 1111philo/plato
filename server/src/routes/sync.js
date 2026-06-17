@@ -356,7 +356,7 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     lessonId,
     name: lesson.name,
     hasCoachDirective: !!lesson.coachDirective,
-    coachDirectivePreview: lesson.coachDirective?.slice(0, 100),
+    coachDirectiveLength: lesson.coachDirective?.length || 0,
     objectivesCount: lesson.learningObjectives?.length || 0,
   });
 
