@@ -97,8 +97,8 @@ function loadManifest(manifestPath, expectedId) {
   return validateManifest(raw, { expectedId });
 }
 
-/** Build a context object for hooks/lifecycle invocations. */
-function buildContext(id, settings) {
+/** Build a context object for hooks/lifecycle invocations. Exported for tests. */
+export function buildContext(id, settings) {
   return {
     pluginId: id,
     logger: createPluginLogger(id),
