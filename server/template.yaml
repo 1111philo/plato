@@ -16,7 +16,7 @@ Conditions:
 
 Globals:
   Function:
-    Timeout: 60
+    Timeout: 120
     Runtime: nodejs20.x
     MemorySize: 1024
     Tags:

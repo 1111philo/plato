@@ -12,8 +12,8 @@ const provider = process.env.AI_PROVIDER
   || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'bedrock');
 
 // Timeout for Bedrock requests — set just under the Lambda function timeout
-// (60 s) so errors propagate cleanly rather than causing a hard Lambda kill.
-const BEDROCK_TIMEOUT_MS = 55_000;
+// (120 s) so errors propagate cleanly rather than causing a hard Lambda kill.
+const BEDROCK_TIMEOUT_MS = 115_000;
 
 let ai;
 
