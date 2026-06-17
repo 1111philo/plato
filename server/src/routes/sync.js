@@ -350,16 +350,6 @@ sync.post('/v1/sync/lesson-started', async (c) => {
   // Emit the hook. Plugins with hook.lessonStarted + lessonEnrichment capability
   // can return enrichment data: { context, sources, reasoning, pluginId, label }.
   // The emit function collects non-null return values from all handlers.
-
-  // Debug: log what we're sending to plugins
-  console.log('[lesson-started] Calling plugins for lesson:', {
-    lessonId,
-    name: lesson.name,
-    hasCoachDirective: !!lesson.coachDirective,
-    coachDirectiveLength: lesson.coachDirective?.length || 0,
-    objectivesCount: lesson.learningObjectives?.length || 0,
-  });
-
   const enrichments = await emitHook('lessonStarted', {
     userId,
     lessonId,
@@ -372,8 +362,6 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     },
     lessonKB
   });
-
-  console.log('[lesson-started] Enrichments returned:', enrichments.length);
 
   return c.json({
     enrichments: enrichments || [],

@@ -123,14 +123,6 @@ async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress 
     if (onProgress) onProgress('wordpress-info', stepId, status);
   };
 
-  console.log('[wordpress-info] Hook fired for lesson:', {
-    lessonId,
-    name: lesson.name,
-    hasCoachDirective: !!lesson.coachDirective,
-    coachDirectiveLength: lesson.coachDirective?.length || 0,
-    objectivesCount: lesson.learningObjectives?.length || 0,
-  });
-
   try {
     // Step 1: Scan for WordPress keywords
     reportProgress('scan-keywords', 'in_progress');
@@ -146,9 +138,7 @@ ${lesson.coachDirective ? `**Coach Directive:**\n${lesson.coachDirective}\n` : '
 Analyze this lesson and decide whether to enrich it with WordPress documentation.
 `;
 
-    console.log('[wordpress-info] Calling planner with context length:', plannerContext.length);
     const plan = await callAgentWithSchema('wordpress-info-planner', plannerContext, PLANNER_SCHEMA);
-    console.log('[wordpress-info] Planner result:', { shouldEnrich: plan?.shouldEnrich, queryCount: plan?.queries?.length });
 
     if (!plan || !plan.shouldEnrich || !plan.queries || !plan.queries.length) {
       // Not WordPress-related — mark scan complete, skip remaining steps
