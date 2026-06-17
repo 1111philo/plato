@@ -59,7 +59,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 
 - Prod (`plato` stack) auto-deploys on push to `main`; playground (`plato-playground`) on push to `playground` — both via `repository_dispatch` to the private fork. Merges to `main` auto-deploy to prod with live users.
 - CloudFront → Lambda Function URL: the Origin Request Policy **must** be `AllViewerExceptHostHeader` (Function URLs reject mismatched Host headers).
-- The SAM build does not bundle the client — the `cp` steps for `client-dist` (SPA) and `client-content` (prompt/lesson seed files) are required; see `docs/DEPLOY.md`.
+- The SAM build does not bundle the client — the `cp` steps for `client-dist` (SPA) and `client-content` (prompt seed files) are required; see `docs/DEPLOY.md`.
 
 ## Conventions
 

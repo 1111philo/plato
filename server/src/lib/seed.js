@@ -1,6 +1,6 @@
 /**
- * Seed default content (prompts, lessons, knowledge base) into the database.
- * Reads MD files from client/ at runtime. Called during first-time setup.
+ * Seed system prompts and default theme colors.
+ * Called on first request to bootstrap a new deployment.
  */
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
@@ -73,37 +73,8 @@ export async function seedDefaultContent() {
     }
   }
 
-  // Seed lessons
-  const lessonsDir = join(clientDir, 'data/lessons');
-  if (existsSync(lessonsDir)) {
-    const lessonFiles = readdirSync(lessonsDir).filter(f => f.endsWith('.md'));
-    for (const file of lessonFiles) {
-      const lessonId = file.replace(/\.md$/, '');
-      const markdown = readFileSync(join(lessonsDir, file), 'utf-8');
-      // Extract lesson name from H1 in markdown (first line starting with "# ")
-      const h1Match = markdown.match(/^#\s+(.+)$/m);
-      const name = h1Match ? h1Match[1].trim() : lessonId;
-      const existing = await db.getSyncData('_system', `lesson:${lessonId}`);
-      if (!existing) {
-        await db.putSyncData('_system', `lesson:${lessonId}`, {
-          markdown, name, isBuiltIn: true, updatedBy: 'setup',
-          createdAt: new Date().toISOString(),
-        }, 0);
-        seeded++;
-      } else if (existing.data.name !== name || existing.data.markdown !== markdown) {
-        // Update existing lessons if name or markdown changed
-        await db.putSyncData('_system', `lesson:${lessonId}`, {
-          ...existing.data,
-          markdown,
-          name,
-          updatedBy: 'setup',
-        }, existing.version);
-        seeded++;
-      }
-    }
-  }
-
-  // Knowledge base is NOT seeded — admins create their own via the KB Editor agent
+  // Lessons are NOT seeded — admins create their own for their deployment context via the lesson creation tools.
+  // Knowledge base is NOT seeded — admins create their own via the KB Editor agent.
 
   // Seed default theme colors (no logo — admins set classroom name + optional logo in setup/customizer)
   const existing = await db.getSyncData('_system', 'settings');

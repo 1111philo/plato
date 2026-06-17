@@ -48,10 +48,10 @@ cd server && sam build
 cp -r ../client/dist .aws-sam/build/PlatoStreamFunction/client-dist
 cp -r ../client/dist .aws-sam/build/PlatoApiFunction/client-dist
 
-# Bundle content source files (prompts, lessons) for seeding
+# Bundle prompt source files for seeding
 mkdir -p .aws-sam/build/PlatoApiFunction/client-content .aws-sam/build/PlatoStreamFunction/client-content
-cp -r ../client/prompts ../client/data .aws-sam/build/PlatoApiFunction/client-content/
-cp -r ../client/prompts ../client/data .aws-sam/build/PlatoStreamFunction/client-content/
+cp -r ../client/prompts .aws-sam/build/PlatoApiFunction/client-content/
+cp -r ../client/prompts .aws-sam/build/PlatoStreamFunction/client-content/
 
 # Generate version.json from the latest Beta-RC-* tag
 VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')
@@ -172,8 +172,8 @@ jobs:
           cp -r client/dist server/.aws-sam/build/PlatoStreamFunction/client-dist
       - run: |
           mkdir -p server/.aws-sam/build/PlatoApiFunction/client-content server/.aws-sam/build/PlatoStreamFunction/client-content
-          cp -r client/prompts client/data server/.aws-sam/build/PlatoApiFunction/client-content/
-          cp -r client/prompts client/data server/.aws-sam/build/PlatoStreamFunction/client-content/
+          cp -r client/prompts server/.aws-sam/build/PlatoApiFunction/client-content/
+          cp -r client/prompts server/.aws-sam/build/PlatoStreamFunction/client-content/
       - name: Generate version.json from latest tag
         run: |
           VERSION=$(git describe --tags --abbrev=0 --match='Beta-RC-*' 2>/dev/null || echo 'Beta-RC-0')

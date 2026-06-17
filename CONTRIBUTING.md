@@ -140,7 +140,7 @@ plato/
 
 ### Content management
 
-Prompts are bundled in `client/prompts/` and upserted to the database on every server startup — admins cannot edit them directly. Lessons in `client/data/lessons/` are seeded on first setup. The knowledge base is created by admins through the conversational KB Editor agent in the Customizer.
+Prompts are bundled in `client/prompts/` and upserted to the database on every server startup — admins cannot edit them directly. Lessons and the knowledge base are created by admins through the lesson creation tools and KB Editor agent in the Customizer.
 
 ## Activity constraints
 
@@ -179,7 +179,7 @@ Limits are defined in `client/src/lib/constants.js` (`MAX_EXCHANGES`, `MIN_OBJEC
    - Can second objective
    - Can third objective
    ```
-2. Add it via the admin dashboard at `/plato/lessons`, or place it in `client/data/lessons/` and re-run the seed script.
+2. Add it via the admin dashboard at `/plato/lessons` (the conversational lesson creation tool).
 
 ## Guidelines
 
