@@ -41,7 +41,7 @@ export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
   const subject = `Welcome to ${classroom.name} — Your AI-Powered Learning Journey`;
   const html = emailWrapper(classroom, `
     <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-      ${invitedByName ? `${invitedByName} has invited` : 'You\'ve been invited'} you to join <strong>${classroom.name}</strong>, an AI-powered microlearning platform where you'll work through focused lessons in conversation with an AI coach.
+      ${invitedByName ? `${invitedByName} has invited you` : 'You\'ve been invited'} to join <strong>${classroom.name}</strong>, an AI-powered microlearning platform where you'll work through focused lessons in conversation with an AI coach.
     </p>
     <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
       <strong>What to expect:</strong>
