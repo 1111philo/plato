@@ -38,10 +38,21 @@ export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
   }
 
   const classroom = await getClassroom();
-  const subject = `You're invited to ${classroom.name}`;
+  const subject = `Welcome to ${classroom.name} — Your AI-Powered Learning Journey`;
   const html = emailWrapper(classroom, `
     <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-      ${invitedByName ? `${invitedByName} has` : 'You\'ve been'} invited you to join <strong>${classroom.name}</strong>.
+      ${invitedByName ? `${invitedByName} has invited` : 'You\'ve been invited'} you to join <strong>${classroom.name}</strong>, an AI-powered microlearning platform where you'll work through focused lessons in conversation with an AI coach.
+    </p>
+    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
+      <strong>What to expect:</strong>
+    </p>
+    <ul style="color: #1a1a1a; line-height: 1.6; margin: 0 0 16px; padding-left: 24px;">
+      <li>Chat with an AI coach who guides you through each lesson</li>
+      <li>Upload screenshots and create artifacts as you learn</li>
+      <li>Work through courses organized into focused lessons, each designed for ~20 minutes</li>
+    </ul>
+    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 20px;">
+      Ready to get started? Create your account and begin your first lesson.
     </p>
     <a href="${signupUrl}" style="display: inline-block; background: ${classroom.primary}; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
       Create your account
