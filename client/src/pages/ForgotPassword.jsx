@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import usePublicBranding from '../hooks/usePublicBranding.js';
+import AnnouncementBanner from '../components/AnnouncementBanner.jsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -40,8 +41,10 @@ export default function ForgotPassword() {
   if (!branding) return null;
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
-      {branding.logo ? (<img src={branding.logo} alt={branding.classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />) : (<h1 className="text-2xl font-bold text-white mb-6">{branding.classroomName}</h1>)}
+    <>
+      <AnnouncementBanner />
+      <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: branding.primary }}>
+        {branding.logo ? (<img src={branding.logo} alt={branding.classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />) : (<h1 className="text-2xl font-bold text-white mb-6">{branding.classroomName}</h1>)}
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Reset password</CardTitle>
@@ -80,9 +83,10 @@ export default function ForgotPassword() {
           </Button>
         </CardFooter>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
-      </p>
-    </main>
+        <p className="mt-4 text-xs text-white/60">
+          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+        </p>
+      </main>
+    </>
   );
 }

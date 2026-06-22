@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
+import AnnouncementBanner from '../components/AnnouncementBanner.jsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,12 +43,14 @@ export default function Login() {
   const { primary: headerBg, logo, classroomName } = branding;
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
-      {logo ? (
-        <img src={logo} alt={classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />
-      ) : (
-        <h1 className="text-2xl font-bold text-white mb-6">{classroomName}</h1>
-      )}
+    <>
+      <AnnouncementBanner />
+      <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
+        {logo ? (
+          <img src={logo} alt={classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />
+        ) : (
+          <h1 className="text-2xl font-bold text-white mb-6">{classroomName}</h1>
+        )}
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Sign in</CardTitle>
@@ -78,9 +81,10 @@ export default function Login() {
           <Button variant="link" onClick={() => navigate('/forgot-password')}>Forgot password?</Button>
         </CardFooter>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
-      </p>
-    </main>
+        <p className="mt-4 text-xs text-white/60">
+          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+        </p>
+      </main>
+    </>
   );
 }
