@@ -448,19 +448,17 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
             </Fragment>
           ))}
         </p>
-        {/* Icon-only "?" button so it doesn't compete with the primary
-            "Open lesson" affordance. Sighted users get a familiar
-            help-style glyph; SR users get the full "View N objectives for
-            {name}" label. */}
+        {/* "View outline" button makes objectives discoverable without
+            hunting for an icon. Small, secondary styling so it doesn't
+            compete with the primary "Open lesson" affordance. */}
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="ml-auto h-7 w-7 p-0 text-muted-foreground hover:text-primary shrink-0"
+          className="ml-auto h-7 px-2 text-xs shrink-0"
           onClick={onShowOverview}
-          aria-label={`View ${lesson.learningObjectives.length} objectives for ${lesson.name}`}
         >
-          <HelpCircle className="h-4 w-4" aria-hidden="true" />
+          View outline
         </Button>
       </div>
     </Card>
