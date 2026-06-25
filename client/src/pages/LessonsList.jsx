@@ -383,7 +383,7 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
       // learners" override — that footnote, repeated on every Tab
       // through the grid, adds up fast. Sighted hover still surfaces
       // the empirical detail.
-      title: `Based on the middle 60% of ${timeStats.sampleSize} ${completionWord}`,
+      title: `Active coaching time based on the middle 60% of ${timeStats.sampleSize} ${completionWord}. Does not include time for research, screenshots, or off-platform work.`,
     });
   }
 
@@ -591,7 +591,7 @@ function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange })
             <div>
               <h3 className="text-sm font-medium mb-1">Expected time</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Most learners finish in {range}, based on {timeStats.sampleSize} learner completion{timeStats.sampleSize === 1 ? '' : 's'}.
+                Most learners finish in {range} of active coaching, based on {timeStats.sampleSize} learner completion{timeStats.sampleSize === 1 ? '' : 's'}. This does not include time for research, screenshots, or off-platform work.
               </p>
             </div>
           )}
