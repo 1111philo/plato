@@ -160,6 +160,8 @@ export default function Signup() {
         </CardFooter>
       </Card>
       <p className="mt-4 text-xs text-white/60">
+        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white/80">Privacy</a>
+        {' · '}
         Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
       </p>
     </main>

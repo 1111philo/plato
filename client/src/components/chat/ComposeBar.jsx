@@ -402,6 +402,11 @@ export default function ComposeBar({
               {loadingImages ? `Loading ${loadingCount} image${loadingCount === 1 ? '' : 's'}…` : (fetchingLink ? 'Fetching link…' : '')}
             </span>
           )}
+          {allowImages && !loadingImages && images.length === 0 && (
+            <span className="text-xs text-muted-foreground">
+              Images are stored and may be reviewed. See <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">privacy policy</a>.
+            </span>
+          )}
           <div className="flex-1" />
           <Button
             variant="default"
