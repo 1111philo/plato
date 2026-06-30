@@ -95,9 +95,7 @@ export default function Signup() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="signup-email">
-              Email <span className="text-muted-foreground text-xs">(optional for email invites)</span>
-            </Label>
+            <Label htmlFor="signup-email">Email</Label>
             <Input
               id="signup-email"
               type="email"
