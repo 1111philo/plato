@@ -142,7 +142,37 @@ server-side is where the SSRF defense must live.
   work-in-progress portfolio site for reference and the coach infers completion
   from content that doesn't exist or isn't finished yet.
 
-## Lesson enrichment (plugin capability)
+## Invite system
+
+Admins invite users via email or shareable link. Invites expire after 7 days (TTL enforced in DynamoDB/SQLite). All invite operations are audit-logged.
+
+### Email invites
+
+- **Creation:** `POST /v1/admin/invites` (single) or `/v1/admin/invites/bulk` (up to 200). Bulk supports CSV upload.
+- **Delivery:** SES email (`server/src/lib/email.js`) with signup URL: `{APP_URL}/signup?token={inviteToken}`.
+- **Validation:** Invite token must exist, status `pending`, TTL not expired, and **email must match** the invite.
+- **One-time:** Marked `used` on signup; cannot be reused.
+
+### Link invites (shareable, reusable)
+
+Added to enable bulk onboarding without collecting emails upfront (e.g., sharing in company Slack channels).
+
+- **Creation:** `POST /v1/admin/invites/link` creates a single organization-wide link. If one exists, it's deleted first (regenerate = delete old + create new).
+- **Retrieval:** `GET /v1/admin/invites/link` returns the active link or `null`.
+- **Deletion:** `DELETE /v1/admin/invites/link` revokes the link immediately.
+- **Schema:** Same `invites` table, but `email: null` and `isLink: true`. Added fields: `usageCount` (incremented on each signup), `maxUsages` (optional limit, currently `null` = unlimited).
+- **Validation:** Any email accepted (vs. email invites that must match). TTL and status still checked.
+- **Usage tracking:** `incrementLinkUsage()` atomically increments `usageCount` on signup. Link is marked `used` only if `maxUsages` reached (rare; currently unlimited).
+- **Security:** 7-day TTL, audit-logged, clear UI warnings about sharing risks, email still required at signup (no anonymous accounts).
+- **UI:** Admin → Users → Invite Users → "Link" tab. Shows URL with copy button, usage stats, expiry date, and security warning. Regenerate/delete actions have confirmations.
+
+### Signup flow
+
+`POST /v1/auth/signup` accepts `inviteToken`, `email`, `name`, `password`, `username` (optional), `userGroup` (optional).
+
+- **Email invites:** `email` must match `invite.email`.
+- **Link invites:** `email` can be any valid address (required field).
+- Both check TTL expiration, duplicate user, and username availability. On success, user is auto-logged in and invite is marked used (or usage count incremented for link invites).
 
 Plugins can enrich lessons at start time by providing additional reference
 material — e.g., WordPress docs, React API updates, internal knowledge bases.
