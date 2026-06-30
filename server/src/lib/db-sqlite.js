@@ -151,8 +151,41 @@ if (hasMaxUsages.count === 0) {
   sqlite.exec('ALTER TABLE invites ADD COLUMN maxUsages INTEGER');
 }
 // Make email nullable for link invites
-// SQLite doesn't support ALTER COLUMN, but newly created rows can have NULL email
-// Existing rows will keep their NOT NULL constraint from the initial schema
+// SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+// Check if email is still NOT NULL
+const emailNotNull = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'email' AND \"notnull\" = 1"
+).get();
+
+if (emailNotNull.count > 0) {
+  // Need to migrate: recreate table with nullable email
+  sqlite.exec(`
+    -- Create new table with nullable email
+    CREATE TABLE invites_new (
+      inviteToken TEXT PRIMARY KEY,
+      email TEXT COLLATE NOCASE,
+      invitedBy TEXT,
+      slackUserId TEXT,
+      status TEXT DEFAULT 'pending',
+      createdAt TEXT NOT NULL,
+      usedAt TEXT,
+      ttl INTEGER,
+      isLink INTEGER DEFAULT 0,
+      usageCount INTEGER DEFAULT 0,
+      maxUsages INTEGER
+    );
+
+    -- Copy existing data
+    INSERT INTO invites_new (inviteToken, email, invitedBy, slackUserId, status, createdAt, usedAt, ttl, isLink, usageCount, maxUsages)
+    SELECT inviteToken, email, invitedBy, slackUserId, status, createdAt, usedAt, ttl,
+           COALESCE(isLink, 0), COALESCE(usageCount, 0), maxUsages
+    FROM invites;
+
+    -- Drop old table and rename new one
+    DROP TABLE invites;
+    ALTER TABLE invites_new RENAME TO invites;
+  `);
+}
 
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
