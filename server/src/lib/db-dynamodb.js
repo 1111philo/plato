@@ -159,14 +159,21 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
-      inviteToken, email: email.toLowerCase(), invitedBy,
-      status: 'pending', createdAt: now.toISOString(), ttl,
+      inviteToken,
+      invitedBy,
+      status: 'pending',
+      createdAt: now.toISOString(),
+      ttl,
+      isLink,
+      usageCount,
     };
+    if (email) item.email = email.toLowerCase();
     if (slackUserId) item.slackUserId = slackUserId;
+    if (maxUsages !== null) item.maxUsages = maxUsages;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
@@ -222,6 +229,26 @@ const db = {
       lastKey = result.LastEvaluatedKey;
     } while (lastKey);
     return items;
+  },
+
+  async getInviteLinkToken() {
+    const result = await doc.send(new ScanCommand({
+      TableName: INVITES_TABLE,
+      FilterExpression: 'isLink = :true AND #s = :pending',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: { ':true': true, ':pending': 'pending' },
+      Limit: 1,
+    }));
+    return (result.Items && result.Items[0]) || null;
+  },
+
+  async incrementLinkUsage(inviteToken) {
+    await doc.send(new UpdateCommand({
+      TableName: INVITES_TABLE,
+      Key: { inviteToken },
+      UpdateExpression: 'SET usageCount = if_not_exists(usageCount, :zero) + :one',
+      ExpressionAttributeValues: { ':zero': 0, ':one': 1 },
+    }));
   },
 
   // ── Refresh Tokens ──

@@ -131,6 +131,29 @@ if (hasSlackInvite.count === 0) {
   sqlite.exec('ALTER TABLE invites ADD COLUMN slackUserId TEXT');
 }
 
+// Add link invite columns if missing
+const hasIsLink = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'isLink'"
+).get();
+if (hasIsLink.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN isLink INTEGER DEFAULT 0');
+}
+const hasUsageCount = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'usageCount'"
+).get();
+if (hasUsageCount.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN usageCount INTEGER DEFAULT 0');
+}
+const hasMaxUsages = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'maxUsages'"
+).get();
+if (hasMaxUsages.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN maxUsages INTEGER');
+}
+// Make email nullable for link invites
+// SQLite doesn't support ALTER COLUMN, but newly created rows can have NULL email
+// Existing rows will keep their NOT NULL constraint from the initial schema
+
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
 function cleanupExpired() {
@@ -218,13 +241,23 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`
-    ).run(inviteToken, email.toLowerCase(), invitedBy, slackUserId || null, now.toISOString(), ttl);
+      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
+    ).run(
+      inviteToken,
+      email ? email.toLowerCase() : null,
+      invitedBy,
+      slackUserId || null,
+      now.toISOString(),
+      ttl,
+      isLink ? 1 : 0,
+      usageCount,
+      maxUsages
+    );
   },
 
   async getInviteByEmail(email) {
@@ -249,6 +282,19 @@ const db = {
 
   async listInvites() {
     return sqlite.prepare('SELECT * FROM invites').all();
+  },
+
+  async getInviteLinkToken() {
+    const row = sqlite.prepare(
+      "SELECT * FROM invites WHERE isLink = 1 AND status = 'pending' LIMIT 1"
+    ).get();
+    return row || null;
+  },
+
+  async incrementLinkUsage(inviteToken) {
+    sqlite.prepare(
+      'UPDATE invites SET usageCount = usageCount + 1 WHERE inviteToken = ?'
+    ).run(inviteToken);
   },
 
   // ── Refresh Tokens ──

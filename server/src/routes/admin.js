@@ -311,6 +311,82 @@ admin.delete('/v1/admin/invites/:token', async (c) => {
   return c.json({ ok: true });
 });
 
+// GET /v1/admin/invites/link — get current invite link
+admin.get('/v1/admin/invites/link', async (c) => {
+  const linkInvite = await db.getInviteLinkToken();
+  if (!linkInvite) {
+    return c.json(null);
+  }
+  return c.json({
+    inviteToken: linkInvite.inviteToken,
+    createdAt: linkInvite.createdAt,
+    usageCount: linkInvite.usageCount || 0,
+    maxUsages: linkInvite.maxUsages || null,
+    createdBy: linkInvite.invitedBy,
+    ttl: linkInvite.ttl,
+  });
+});
+
+// POST /v1/admin/invites/link — create or regenerate invite link
+admin.post('/v1/admin/invites/link', async (c) => {
+  const adminUser = c.get('user');
+
+  // Delete any existing link invite
+  const existingLink = await db.getInviteLinkToken();
+  if (existingLink) {
+    await db.deleteInvite(existingLink.inviteToken);
+    await db.createAuditLog({
+      action: 'invite_link_regenerated',
+      userId: null,
+      performedBy: adminUser.userId,
+      details: JSON.stringify({ oldToken: existingLink.inviteToken }),
+    });
+  } else {
+    await db.createAuditLog({
+      action: 'invite_link_created',
+      userId: null,
+      performedBy: adminUser.userId,
+    });
+  }
+
+  // Create new link invite
+  const inviteToken = generateInviteToken();
+  await db.createInvite({
+    inviteToken,
+    email: null,
+    invitedBy: adminUser.userId,
+    isLink: true,
+    usageCount: 0,
+    maxUsages: null,
+  });
+
+  const newLink = await db.getInvite(inviteToken);
+  return c.json({
+    inviteToken: newLink.inviteToken,
+    createdAt: newLink.createdAt,
+    usageCount: 0,
+    maxUsages: null,
+    ttl: newLink.ttl,
+  }, 201);
+});
+
+// DELETE /v1/admin/invites/link — delete current invite link
+admin.delete('/v1/admin/invites/link', async (c) => {
+  const adminUser = c.get('user');
+  const linkInvite = await db.getInviteLinkToken();
+  if (!linkInvite) {
+    return c.json({ error: 'No invite link found' }, 404);
+  }
+  await db.deleteInvite(linkInvite.inviteToken);
+  await db.createAuditLog({
+    action: 'invite_link_deleted',
+    userId: null,
+    performedBy: adminUser.userId,
+    details: JSON.stringify({ token: linkInvite.inviteToken }),
+  });
+  return c.json({ ok: true });
+});
+
 // PATCH /v1/admin/users/:userId — update user fields
 admin.patch('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');

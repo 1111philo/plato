@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/card';
 
 export default function Signup() {
+  const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [group, setGroup] = useState('');
@@ -34,8 +35,8 @@ export default function Signup() {
   }, []);
 
   async function handleSignup() {
-    if (!name.trim() || !password) {
-      setError('Name and password are required.');
+    if (!email.trim() || !name.trim() || !password) {
+      setError('Email, name and password are required.');
       return;
     }
     if (password.length < 8) {
@@ -54,6 +55,7 @@ export default function Signup() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inviteToken: token,
+          email: email.trim(),
           name: name.trim(),
           username: username.trim() || undefined,
           password,
@@ -63,7 +65,7 @@ export default function Signup() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed');
       // Log in with the returned credentials
-      await login(data.user?.email || '', password);
+      await login(data.user?.email || email.trim(), password);
       navigate('/lessons', { replace: true });
     } catch (e) {
       setError(e.message || 'Signup failed');
@@ -80,7 +82,7 @@ export default function Signup() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
-          <CardDescription>You&apos;ve been invited to join {branding.classroomName}.</CardDescription>
+          <CardDescription>Join {branding.classroomName}.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -88,6 +90,17 @@ export default function Signup() {
               {error}
             </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="signup-email">Email</Label>
+            <Input
+              id="signup-email"
+              type="email"
+              placeholder="your.email@example.com"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="signup-name">Name</Label>
             <Input

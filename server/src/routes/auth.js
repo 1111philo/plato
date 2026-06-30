@@ -99,7 +99,7 @@ auth.post('/v1/auth/setup', async (c) => {
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, username: rawUsername, userGroup } = await c.req.json();
+  const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail } = await c.req.json();
 
   if (!inviteToken || !name || !password) {
     return c.json({ error: 'inviteToken, name, and password are required' }, 400);
@@ -118,7 +118,26 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 
-  const existing = await db.getUserByEmail(invite.email);
+  // Determine the email based on invite type
+  let userEmail;
+  if (invite.email) {
+    // Email-specific invite: must match exactly
+    userEmail = invite.email;
+  } else if (invite.isLink) {
+    // Link invite: any email allowed, but email is required
+    if (!providedEmail) {
+      return c.json({ error: 'Email is required' }, 400);
+    }
+    userEmail = providedEmail.toLowerCase();
+    // Check usage limit
+    if (invite.maxUsages && (invite.usageCount || 0) >= invite.maxUsages) {
+      return c.json({ error: 'This invite link has reached its usage limit' }, 400);
+    }
+  } else {
+    return c.json({ error: 'Invalid invite type' }, 400);
+  }
+
+  const existing = await db.getUserByEmail(userEmail);
   if (existing) {
     return c.json({ error: 'Account already exists for this email' }, 409);
   }
@@ -136,7 +155,7 @@ auth.post('/v1/auth/signup', async (c) => {
 
   await db.createUser({
     userId,
-    email: invite.email,
+    email: userEmail,
     username,
     passwordHash,
     name,
@@ -145,9 +164,20 @@ auth.post('/v1/auth/signup', async (c) => {
     slackUserId: invite.slackUserId || null,
   });
 
-  await emitHook('userCreated', { userId, email: invite.email, role: 'user' });
+  await emitHook('userCreated', { userId, email: userEmail, role: 'user' });
 
-  await db.markInviteUsed(inviteToken);
+  // Handle invite status update based on type
+  if (invite.isLink) {
+    // Increment usage count for link invites
+    await db.incrementLinkUsage(inviteToken);
+    // Only mark as used if usage limit reached
+    if (invite.maxUsages && (invite.usageCount || 0) + 1 >= invite.maxUsages) {
+      await db.markInviteUsed(inviteToken);
+    }
+  } else {
+    // Email-specific invites are marked as used immediately
+    await db.markInviteUsed(inviteToken);
+  }
 
   const accessToken = await signAccessToken(userId, 'user');
   const refreshToken = generateRefreshToken();
@@ -156,7 +186,7 @@ auth.post('/v1/auth/signup', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: invite.email, username, name, role: 'user' },
+    user: { userId, email: userEmail, username, name, role: 'user' },
   }, 201);
 });
 
