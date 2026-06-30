@@ -190,4 +190,30 @@ describe('Link invite signup', () => {
     assert.equal(res2.status, 201);
   });
 
+  it('backwards compat: email-specific invite works without email field (in-flight invites)', async () => {
+    db.getInvite = async () => ({
+      inviteToken: 'inv_test',
+      email: 'invited@example.com',
+      isLink: false,
+      status: 'pending',
+      ttl: Math.floor(Date.now() / 1000) + 86400,
+    });
+    db.markInviteUsed = async () => {};
+
+    // Old invite URL (before email field was added) - email omitted from request
+    const res = await app.request('/v1/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inviteToken: 'inv_test',
+        // email field omitted (simulates in-flight invite URL from before deployment)
+        name: 'In-Flight User',
+        password: 'password123',
+      }),
+    });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.user.email, 'invited@example.com'); // Uses invite.email
+  });
+
 });

@@ -35,8 +35,12 @@ export default function Signup() {
   }, []);
 
   async function handleSignup() {
-    if (!email.trim() || !name.trim() || !password) {
-      setError('Email, name and password are required.');
+    // Email is optional in frontend validation for backwards compatibility:
+    // - Email-specific invites: backend uses invite.email if not provided
+    // - Link invites: backend will reject with "Email is required" error
+    // This prevents breaking in-flight email invite URLs sent before deployment.
+    if (!name.trim() || !password) {
+      setError('Name and password are required.');
       return;
     }
     if (password.length < 8) {
@@ -55,7 +59,7 @@ export default function Signup() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inviteToken: token,
-          email: email.trim(),
+          email: email.trim() || undefined, // Send undefined if empty (backend handles it)
           name: name.trim(),
           username: username.trim() || undefined,
           password,
@@ -91,7 +95,9 @@ export default function Signup() {
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="signup-email">Email</Label>
+            <Label htmlFor="signup-email">
+              Email <span className="text-muted-foreground text-xs">(optional for email invites)</span>
+            </Label>
             <Input
               id="signup-email"
               type="email"
