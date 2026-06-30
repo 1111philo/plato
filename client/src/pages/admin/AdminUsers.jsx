@@ -845,9 +845,9 @@ export default function AdminUsers() {
 
           <Tabs defaultValue="email" value={inviteTab} onValueChange={(v) => { setInviteTab(v); setInviteNotice(null); if (v === 'slack' && slackChannels.length === 0) loadSlackChannels(); }}>
             <TabsList className="mb-4" aria-label="Invite method">
-              <TabsTrigger value="email">Email</TabsTrigger>
-              {slackConnected && <TabsTrigger value="slack">Slack</TabsTrigger>}
-              <TabsTrigger value="link">Link</TabsTrigger>
+              <TabsTrigger value="email" aria-label="Invite via email">Email</TabsTrigger>
+              {slackConnected && <TabsTrigger value="slack" aria-label="Invite via Slack">Slack</TabsTrigger>}
+              <TabsTrigger value="link" aria-label="Invite via shareable link">Link</TabsTrigger>
             </TabsList>
 
           {/* Email tab */}

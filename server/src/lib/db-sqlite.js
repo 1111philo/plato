@@ -325,9 +325,23 @@ const db = {
   },
 
   async incrementLinkUsage(inviteToken) {
-    sqlite.prepare(
-      'UPDATE invites SET usageCount = usageCount + 1 WHERE inviteToken = ?'
+    // Atomic increment with usage limit check to prevent race condition.
+    // If maxUsages is set and would be exceeded, the update affects 0 rows.
+    const result = sqlite.prepare(
+      `UPDATE invites SET usageCount = usageCount + 1
+       WHERE inviteToken = ?
+       AND (maxUsages IS NULL OR usageCount < maxUsages)`
     ).run(inviteToken);
+
+    if (result.changes === 0) {
+      // Either token doesn't exist or maxUsages limit reached
+      const invite = sqlite.prepare('SELECT * FROM invites WHERE inviteToken = ?').get(inviteToken);
+      if (invite && invite.maxUsages && invite.usageCount >= invite.maxUsages) {
+        const err = new Error('Usage limit reached');
+        err.name = 'ConditionalCheckFailedException';
+        throw err;
+      }
+    }
   },
 
   // ── Refresh Tokens ──

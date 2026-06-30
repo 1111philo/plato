@@ -162,7 +162,7 @@ Added to enable bulk onboarding without collecting emails upfront (e.g., sharing
 - **Deletion:** `DELETE /v1/admin/invites/link` revokes the link immediately.
 - **Schema:** Same `invites` table, but `email: null` and `isLink: true`. Added fields: `usageCount` (incremented on each signup), `maxUsages` (optional limit, currently `null` = unlimited).
 - **Validation:** Any email accepted (vs. email invites that must match). TTL and status still checked.
-- **Usage tracking:** `incrementLinkUsage()` atomically increments `usageCount` on signup. Link is marked `used` only if `maxUsages` reached (rare; currently unlimited).
+- **Usage tracking:** `incrementLinkUsage()` atomically increments `usageCount` on signup with a conditional update that enforces `maxUsages` if set. This prevents race conditions where concurrent signups could exceed the limit. The check-then-increment at the route level would be racy; the database operation is the authoritative gate. Link is marked `used` only if `maxUsages` reached (rare; currently unlimited).
 - **Security:** 7-day TTL, audit-logged, clear UI warnings about sharing risks, email still required at signup (no anonymous accounts).
 - **UI:** Admin → Users → Invite Users → "Link" tab. Shows URL with copy button, usage stats, expiry date, and security warning. Regenerate/delete actions have confirmations.
 

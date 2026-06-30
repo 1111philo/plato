@@ -121,7 +121,10 @@ auth.post('/v1/auth/signup', async (c) => {
   // Determine the email based on invite type
   let userEmail;
   if (invite.email) {
-    // Email-specific invite: must match exactly
+    // Email-specific invite: email must match if provided (for backwards compat, providedEmail is optional)
+    if (providedEmail && providedEmail.toLowerCase() !== invite.email.toLowerCase()) {
+      return c.json({ error: 'This invite is for a different email address' }, 400);
+    }
     userEmail = invite.email;
   } else if (invite.isLink) {
     // Link invite: any email allowed, but email is required
@@ -129,10 +132,8 @@ auth.post('/v1/auth/signup', async (c) => {
       return c.json({ error: 'Email is required' }, 400);
     }
     userEmail = providedEmail.toLowerCase();
-    // Check usage limit
-    if (invite.maxUsages && (invite.usageCount || 0) >= invite.maxUsages) {
-      return c.json({ error: 'This invite link has reached its usage limit' }, 400);
-    }
+    // NOTE: Usage limit check is done atomically in incrementLinkUsage() to prevent race conditions.
+    // The check-then-increment here would allow concurrent signups to exceed the limit.
   } else {
     return c.json({ error: 'Invalid invite type' }, 400);
   }
@@ -168,10 +169,19 @@ auth.post('/v1/auth/signup', async (c) => {
 
   // Handle invite status update based on type
   if (invite.isLink) {
-    // Increment usage count for link invites
-    await db.incrementLinkUsage(inviteToken);
-    // Only mark as used if usage limit reached
-    if (invite.maxUsages && (invite.usageCount || 0) + 1 >= invite.maxUsages) {
+    // Increment usage count for link invites (atomic operation with limit check)
+    try {
+      await db.incrementLinkUsage(inviteToken);
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') {
+        // Usage limit reached - this is the authoritative check (atomic, race-free)
+        return c.json({ error: 'This invite link has reached its usage limit' }, 400);
+      }
+      throw err;
+    }
+    // Check if we should mark the invite as used (after successful increment)
+    const updated = await db.getInvite(inviteToken);
+    if (updated.maxUsages && updated.usageCount >= updated.maxUsages) {
       await db.markInviteUsed(inviteToken);
     }
   } else {

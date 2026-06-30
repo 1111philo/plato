@@ -243,10 +243,13 @@ const db = {
   },
 
   async incrementLinkUsage(inviteToken) {
+    // Atomic increment with usage limit check to prevent race condition.
+    // If maxUsages is set and would be exceeded, the conditional update fails.
     await doc.send(new UpdateCommand({
       TableName: INVITES_TABLE,
       Key: { inviteToken },
       UpdateExpression: 'SET usageCount = if_not_exists(usageCount, :zero) + :one',
+      ConditionExpression: 'attribute_not_exists(maxUsages) OR maxUsages > usageCount',
       ExpressionAttributeValues: { ':zero': 0, ':one': 1 },
     }));
   },
