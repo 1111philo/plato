@@ -11,7 +11,7 @@ The local environment is already running:
 ### 1. Login as Admin
 
 Navigate to http://localhost:5173 and login with admin credentials:
-- Email: `admin@example.com`
+- Email: `admin@plato.dev`
 - Password: `admin123`
 
 ### 2. Access Invite Users Modal
