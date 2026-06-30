@@ -336,11 +336,22 @@ const db = {
     if (result.changes === 0) {
       // Either token doesn't exist or maxUsages limit reached
       const invite = sqlite.prepare('SELECT * FROM invites WHERE inviteToken = ?').get(inviteToken);
-      if (invite && invite.maxUsages && invite.usageCount >= invite.maxUsages) {
+      if (!invite) {
+        // Token doesn't exist - match DynamoDB behavior (would throw on non-existent key)
+        const err = new Error('Invite not found');
+        err.name = 'ConditionalCheckFailedException';
+        throw err;
+      }
+      if (invite.maxUsages && invite.usageCount >= invite.maxUsages) {
         const err = new Error('Usage limit reached');
         err.name = 'ConditionalCheckFailedException';
         throw err;
       }
+      // If we get here, the WHERE clause failed for some other reason (not pending, etc.)
+      // This is unreachable in normal flow (validated earlier in auth.js), so throw anyway
+      const err = new Error('Could not increment usage count');
+      err.name = 'ConditionalCheckFailedException';
+      throw err;
     }
   },
 

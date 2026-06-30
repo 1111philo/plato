@@ -189,4 +189,5 @@ describe('Link invite signup', () => {
     });
     assert.equal(res2.status, 201);
   });
+
 });

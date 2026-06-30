@@ -151,6 +151,21 @@ auth.post('/v1/auth/signup', async (c) => {
     if (existingUsername) return c.json({ error: 'Username already taken' }, 409);
   }
 
+  // For link invites, increment usage count BEFORE creating the user.
+  // The atomic operation must gate account creation to prevent orphaned accounts
+  // when the usage limit is reached during concurrent signups.
+  if (invite.isLink) {
+    try {
+      await db.incrementLinkUsage(inviteToken);
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') {
+        // Usage limit reached - this is the authoritative check (atomic, race-free)
+        return c.json({ error: 'This invite link has reached its usage limit' }, 400);
+      }
+      throw err;
+    }
+  }
+
   const userId = generateUserId();
   const passwordHash = await hashPassword(password);
 
@@ -167,19 +182,9 @@ auth.post('/v1/auth/signup', async (c) => {
 
   await emitHook('userCreated', { userId, email: userEmail, role: 'user' });
 
-  // Handle invite status update based on type
+  // Mark invite as used after successful user creation
   if (invite.isLink) {
-    // Increment usage count for link invites (atomic operation with limit check)
-    try {
-      await db.incrementLinkUsage(inviteToken);
-    } catch (err) {
-      if (err.name === 'ConditionalCheckFailedException') {
-        // Usage limit reached - this is the authoritative check (atomic, race-free)
-        return c.json({ error: 'This invite link has reached its usage limit' }, 400);
-      }
-      throw err;
-    }
-    // Check if we should mark the invite as used (after successful increment)
+    // Check if we should mark the invite as used (maxUsages reached)
     const updated = await db.getInvite(inviteToken);
     if (updated.maxUsages && updated.usageCount >= updated.maxUsages) {
       await db.markInviteUsed(inviteToken);
