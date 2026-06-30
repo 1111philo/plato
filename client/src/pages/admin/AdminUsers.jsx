@@ -171,7 +171,9 @@ export default function AdminUsers() {
   const existingEmails = useMemo(() => {
     const set = new Set();
     for (const u of users) set.add(u.email.toLowerCase());
-    for (const inv of pendingInvites) set.add(inv.email.toLowerCase());
+    for (const inv of pendingInvites) {
+      if (inv.email) set.add(inv.email.toLowerCase()); // Skip link invites (email is null)
+    }
     return set;
   }, [users, pendingInvites]);
 
@@ -498,9 +500,12 @@ export default function AdminUsers() {
 
   const combinedList = useMemo(() => {
     // Build unified list: invites first, then users
+    // Filter out link invites (shown in the Link tab, not the user list)
     const items = [];
     for (const inv of pendingInvites) {
-      items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, createdAt: inv.createdAt, _invite: inv });
+      if (!inv.isLink) {
+        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, createdAt: inv.createdAt, _invite: inv });
+      }
     }
     for (const u of users) {
       items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, createdAt: u.createdAt, _user: u });
