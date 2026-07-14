@@ -295,8 +295,10 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   }
 
   // Build conversation tail — filter out messages with empty content (e.g. image-only)
+  // Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32 msgs).
+  // Set to 40 to cover outliers up to 22 exchanges without being unlimited.
   const allMsgs = await getLessonMessages(lessonId);
-  const tail = allMsgs.slice(-15)
+  const tail = allMsgs.slice(-40)
     .map(m => ({ role: m.role, content: m.content }))
     .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : m.content.length));
 
