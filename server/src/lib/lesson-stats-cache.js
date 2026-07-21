@@ -58,7 +58,7 @@ export async function kickoffAsyncRefresh() {
       InvocationType: 'Event',
       Payload: Buffer.from(JSON.stringify({ __platoInternal: SELF_INVOKE_MARKER })),
     }));
-    logger.event('stats_async_refresh_invoked', { function: fnName });
+    logger.warn('stats_async_refresh_invoked', { function: fnName });
   } catch (err) {
     logger.error('stats_async_refresh_invoke_failed', { error: err?.message || String(err) });
   }
