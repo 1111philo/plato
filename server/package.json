@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
-    "@hono/node-server": "^1.19.13",
+    "@hono/node-server": "^2.0.10",
     "eslint": "^9.39.4",
     "globals": "^17.5.0"
   },
