@@ -110,7 +110,7 @@ export const handler = async (event, context) => {
   if (isSelfInvokeEvent(event)) {
     try {
       await recomputeAndCacheLessonStats();
-      logger.event('stats_async_refresh_completed');
+      logger.warn('stats_async_refresh_completed');
       return { ok: true };
     } catch (err) {
       logger.error('stats_async_refresh_failed', { error: err?.message || String(err) });
