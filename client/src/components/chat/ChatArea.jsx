@@ -1,9 +1,10 @@
-import { useRef, useEffect, useCallback, forwardRef } from 'react';
+import { useRef, useEffect, useCallback, forwardRef, useState } from 'react';
 import { useChatKeyboardNav } from '../../hooks/useChatKeyboardNav.js';
 
 const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announcement }, ref) {
   const logRef = useRef(null);
   const bottomRef = useRef(null);
+  const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
 
   // Merge the forwarded ref with our internal logRef
   const setRefs = useCallback((node) => {
@@ -14,9 +15,27 @@ const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announc
 
   useChatKeyboardNav(logRef);
 
+  // Track user scroll to detect when they've manually scrolled away from bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [scrollTrigger]);
+    const container = logRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // Consider "at bottom" if within 50px of the bottom
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+      setUserHasScrolledUp(!isAtBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    // Only auto-scroll if user hasn't manually scrolled up
+    if (!userHasScrolledUp) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [scrollTrigger, userHasScrolledUp]);
 
   return (
     <>
