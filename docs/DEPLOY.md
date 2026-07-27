@@ -233,6 +233,22 @@ keep both hostnames on one distribution rather than cutting over:
 
 Reverse steps 3–4 to roll back; no stack update is involved.
 
+**CAA gotcha:** don't include a hostname that `CNAME`s to a third-party host
+(GitHub Pages, Netlify, …) in the cert request. CAA lookup follows the `CNAME`,
+and those hosts publish CAA records authorizing only their own CAs — so ACM
+can't issue and the *whole cert* lands in `FAILED`, even if the other domains
+validated. Point the hostname at CloudFront first, or leave it off the cert. An
+apex using a flattened `ALIAS` is unaffected (no `CNAME` chain to follow).
+
+### Marketing redirects
+
+The prod app answers on `plato.courses`, whose marketing content lives on the
+separate `ai-leaders.org` site. Paths that belong to marketing rather than the
+app are redirected in `server/src/routes/app.js` (`MARKETING_REDIRECTS`) —
+registered *before* the SPA catch-all, which would otherwise render the app
+shell for them. They're 302s, not 301s: a permanent redirect gets cached in
+learners' browsers and is effectively irreversible.
+
 ## Backups
 
 Production DynamoDB tables are protected by two backup layers:
