@@ -135,7 +135,7 @@ prevent duplicate reviews.
 
 ## Deploy dispatch & environments
 
-Deploy workflows live only in the private fork (UIC-OSF/learn.ai-leaders.org),
+Deploy workflows live only in the private fork (UIC-OSF/plato-deploy),
 not in the public repo. Deploys are automated via `repository_dispatch`: pushing
 to `main` triggers `.github/workflows/trigger-deploy.yml`, which fires a
 `deploy-prod` dispatch to the private fork; pushing to `playground` fires
@@ -150,8 +150,9 @@ here via `workflow_dispatch` with a `target` input (`prod` / `playground` /
 private fork's Actions tab with an optional `ref` input.
 
 - **prod** (`plato` stack) — plato.courses, auto-deploys on push to `main`.
-  The legacy `learn.ai-leaders.org` hostname stays on the same CloudFront
-  distribution as an additional alias so in-flight learner sessions don't break.
+  The retired `learn.ai-leaders.org` hostname now 301s to plato.courses via
+  Porkbun URL forwarding (path + query preserved), so old links and invite
+  emails still land in the right place.
 - **playground** (`plato-playground` stack) — playground.ai-leaders.org,
   auto-deploys on push to `playground`.
 

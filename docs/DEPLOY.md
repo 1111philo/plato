@@ -229,9 +229,29 @@ keep both hostnames on one distribution rather than cutting over:
    non-Route53 registrar, use an `ALIAS`/`CNAME`-flattening record — a bare
    `CNAME` at the apex is invalid
 4. Update SSM `app-url` and redeploy so emails carry the new links
-5. Leave the old alias in place until traffic drains, then remove it
+5. Leave the old alias in place until traffic drains, then retire it (below)
 
 Reverse steps 3–4 to roll back; no stack update is involved.
+
+### Retiring the old hostname
+
+Once traffic has drained, redirect the old hostname instead of letting it go
+dark — old bookmarks and already-sent invite emails still point at it.
+
+1. Drop the old alias from the distribution and swap in a cert covering only the
+   current hostname. **Do this first:** CloudFront won't release the alias while
+   it's attached, and a cert with a SAN whose DNS no longer exists will
+   eventually fail renewal
+2. Delete the old hostname's `CNAME` *and* its now-orphaned ACM validation record
+3. Add registrar-level URL forwarding for the old hostname — on Porkbun, a
+   `permanent` (301) forward with `includePath: yes` and `wildcard: yes`, which
+   preserves path *and* query string so `/signup?token=…` links still work
+
+Registrar forwarding is the right tool here rather than a CloudFront Function:
+the origin request policy is `AllViewerExceptHostHeader`, so the app never sees
+which hostname a request arrived on and *cannot* redirect by host itself. A
+viewer-request function could, but it would run on every request to the
+distribution — including the SSE streaming path — to serve a dead hostname.
 
 **CAA gotcha:** don't include a hostname that `CNAME`s to a third-party host
 (GitHub Pages, Netlify, …) in the cert request. CAA lookup follows the `CNAME`,
