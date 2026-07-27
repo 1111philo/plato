@@ -216,7 +216,7 @@ jobs:
 
             Then read CLAUDE.md and REVIEW.md (if present) for project conventions.
 
-            **plato is live.** learn.ai-leaders.org has active users, many mid-lesson
+            **plato is live.** plato.courses has active users, many mid-lesson
             as you review. Every merge to `main` auto-deploys to prod. Your review is
             the last human-free checkpoint before real sessions see this code.
 

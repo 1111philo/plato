@@ -69,7 +69,7 @@ jobs:
             **SKIP is a valid and valued outcome.** A skipped day is better than a duplicate or misaligned PR.
 
             ## plato is live — real learners are using it right now
-            plato runs at learn.ai-leaders.org with active users, many of whom are
+            plato runs at plato.courses with active users, many of whom are
             **currently in the middle of a lesson** as you work. Every PR that merges
             to `main` auto-deploys to prod. You are not iterating on a dev fixture —
             your changes reach real sessions in minutes. Weight every decision through

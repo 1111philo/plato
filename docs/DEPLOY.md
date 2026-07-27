@@ -209,6 +209,52 @@ To serve the app from a custom domain:
 3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
 4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
 5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+6. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+   email links are built from it, so a stale value sends learners to the old host
+
+The CloudFront distribution and ACM certificate are **not** managed by
+`template.yaml`; they're provisioned once by hand and outlive stack updates. SAM
+only owns the Lambda Function URL that CloudFront points at.
+
+### Renaming a live domain
+
+To move an already-live deployment to a new hostname without breaking sessions,
+keep both hostnames on one distribution rather than cutting over:
+
+1. Request an ACM cert in **us-east-1** covering the new domain *and* the old one
+   (`--subject-alternative-names`), then add the DNS validation CNAMEs
+2. Add the new hostname to the existing distribution's aliases (keep the old
+   one) and swap in the new cert
+3. Point the new hostname's DNS at the distribution. For an apex domain on a
+   non-Route53 registrar, use an `ALIAS`/`CNAME`-flattening record — a bare
+   `CNAME` at the apex is invalid
+4. Update SSM `app-url` and redeploy so emails carry the new links
+5. Leave the old alias in place until traffic drains, then remove it
+
+Reverse steps 3–4 to roll back; no stack update is involved.
+
+**CAA gotcha:** don't include a hostname that `CNAME`s to a third-party host
+(GitHub Pages, Netlify, …) in the cert request. CAA lookup follows the `CNAME`,
+and those hosts publish CAA records authorizing only their own CAs — so ACM
+can't issue and the *whole cert* lands in `FAILED`, even if the other domains
+validated. Point the hostname at CloudFront first, or leave it off the cert. An
+apex using a flattened `ALIAS` is unaffected (no `CNAME` chain to follow).
+
+### Marketing redirects
+
+The prod app answers on `plato.courses`, whose marketing content lives on the
+separate `ai-leaders.org` site. Paths that belong to marketing rather than the
+app are redirected in `server/src/routes/app.js` (`MARKETING_REDIRECTS`) —
+registered *before* the SPA catch-all, which would otherwise render the app
+shell for them. They're 302s, not 301s: a permanent redirect gets cached in
+learners' browsers and is effectively irreversible.
+
+They live in the app rather than in a CloudFront Function on purpose. A
+viewer-request function runs on **every** request to the distribution — whose
+origin is the SSE streaming Lambda — so it would add an edge hop to every
+learner's chat stream to serve two marketing URLs. Keeping them in the app also
+means they're version-controlled, unit-tested, and behave the same locally and
+on playground, instead of being console-only config that exists in prod alone.
 
 ## Backups
 

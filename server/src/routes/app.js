@@ -71,6 +71,20 @@ app.get('/v1/invite-example.csv', (c) => {
   return c.body(csv);
 });
 
+// ── Marketing redirects ──
+// These paths belong to the ai-leaders.org marketing site, not the app. They're
+// registered before the SPA fallback below, which would otherwise swallow them
+// and render the app shell. 302 (not 301) so the mapping stays changeable —
+// a cached 301 would be near-impossible to walk back in learners' browsers.
+const MARKETING_REDIRECTS = {
+  '/employers': 'https://ai-leaders.org/employers',
+  '/edu-partners': 'https://ai-leaders.org/edu-partners',
+};
+
+for (const [path, target] of Object.entries(MARKETING_REDIRECTS)) {
+  app.get(path, (c) => c.redirect(target, 302));
+}
+
 // SPA fallback — serve index.html for all non-API routes
 app.get('*', (c) => {
   // Don't intercept API routes

@@ -14,7 +14,7 @@
  * for 8 days before anyone noticed (#195). This is the missing alarm.
  *
  * Required env:
- *   PLATO_API_URL          — e.g. https://learn.ai-leaders.org
+ *   PLATO_API_URL          — e.g. https://plato.courses
  *   PLATO_ADMIN_EMAIL      — admin email for API login
  *   PLATO_ADMIN_PASSWORD   — admin password for API login
  *   GH_TOKEN               — for the `gh` CLI (set by the workflow)
