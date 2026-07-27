@@ -209,6 +209,29 @@ To serve the app from a custom domain:
 3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
 4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
 5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+6. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+   email links are built from it, so a stale value sends learners to the old host
+
+The CloudFront distribution and ACM certificate are **not** managed by
+`template.yaml`; they're provisioned once by hand and outlive stack updates. SAM
+only owns the Lambda Function URL that CloudFront points at.
+
+### Renaming a live domain
+
+To move an already-live deployment to a new hostname without breaking sessions,
+keep both hostnames on one distribution rather than cutting over:
+
+1. Request an ACM cert in **us-east-1** covering the new domain *and* the old one
+   (`--subject-alternative-names`), then add the DNS validation CNAMEs
+2. Add the new hostname to the existing distribution's aliases (keep the old
+   one) and swap in the new cert
+3. Point the new hostname's DNS at the distribution. For an apex domain on a
+   non-Route53 registrar, use an `ALIAS`/`CNAME`-flattening record — a bare
+   `CNAME` at the apex is invalid
+4. Update SSM `app-url` and redeploy so emails carry the new links
+5. Leave the old alias in place until traffic drains, then remove it
+
+Reverse steps 3–4 to roll back; no stack update is involved.
 
 ## Backups
 

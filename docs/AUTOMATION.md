@@ -149,7 +149,9 @@ here via `workflow_dispatch` with a `target` input (`prod` / `playground` /
 `both`), or run `Deploy to AWS` / `Deploy to Playground` directly from the
 private fork's Actions tab with an optional `ref` input.
 
-- **prod** (`plato` stack) — learn.ai-leaders.org, auto-deploys on push to `main`.
+- **prod** (`plato` stack) — plato.courses, auto-deploys on push to `main`.
+  The legacy `learn.ai-leaders.org` hostname stays on the same CloudFront
+  distribution as an additional alias so in-flight learner sessions don't break.
 - **playground** (`plato-playground` stack) — playground.ai-leaders.org,
   auto-deploys on push to `playground`.
 

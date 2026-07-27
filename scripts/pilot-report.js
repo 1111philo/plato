@@ -6,7 +6,7 @@
  * pilot workflow.
  *
  * Required env vars:
- *   PLATO_API_URL          — e.g. https://learn.ai-leaders.org
+ *   PLATO_API_URL          — e.g. https://plato.courses
  *   PLATO_ADMIN_EMAIL      — admin email for API login
  *   PLATO_ADMIN_PASSWORD   — admin password for API login
  *
