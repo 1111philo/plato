@@ -249,6 +249,13 @@ registered *before* the SPA catch-all, which would otherwise render the app
 shell for them. They're 302s, not 301s: a permanent redirect gets cached in
 learners' browsers and is effectively irreversible.
 
+They live in the app rather than in a CloudFront Function on purpose. A
+viewer-request function runs on **every** request to the distribution — whose
+origin is the SSE streaming Lambda — so it would add an edge hop to every
+learner's chat stream to serve two marketing URLs. Keeping them in the app also
+means they're version-controlled, unit-tested, and behave the same locally and
+on playground, instead of being console-only config that exists in prod alone.
+
 ## Backups
 
 Production DynamoDB tables are protected by two backup layers:
