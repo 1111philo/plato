@@ -1,7 +1,7 @@
 name: Trigger Deploy
 
 # Fires a repository_dispatch event to the private deploy fork
-# (UIC-OSF/learn.ai-leaders.org), which hosts the actual deploy workflows
+# (UIC-OSF/plato-deploy), which hosts the actual deploy workflows
 # and AWS credentials. This lets us keep deploy internals out of the public
 # repo without the old "merge-and-push-to-deploy-fork" dance.
 #
@@ -14,7 +14,7 @@ name: Trigger Deploy
 #   - target=both        → fires both events simultaneously
 #
 # Requires secret DEPLOY_DISPATCH_TOKEN — a fine-grained PAT with
-# contents:write on UIC-OSF/learn.ai-leaders.org (or a classic PAT with
+# contents:write on UIC-OSF/plato-deploy (or a classic PAT with
 # the repo scope).
 
 on:
@@ -46,7 +46,7 @@ jobs:
         run: |
           if [ -z "$TOKEN" ]; then
             echo "::error::DEPLOY_DISPATCH_TOKEN secret is not set — cannot trigger deploy."
-            echo "Add a fine-grained PAT with contents:write on UIC-OSF/learn.ai-leaders.org"
+            echo "Add a fine-grained PAT with contents:write on UIC-OSF/plato-deploy"
             echo "as a repository secret named DEPLOY_DISPATCH_TOKEN."
             exit 1
           fi
@@ -84,7 +84,7 @@ jobs:
               -H "Authorization: Bearer $TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              https://api.github.com/repos/UIC-OSF/learn.ai-leaders.org/dispatches \
+              https://api.github.com/repos/UIC-OSF/plato-deploy/dispatches \
               -d "{\"event_type\":\"$EVENT_TYPE\",\"client_payload\":{\"sha\":\"$SHA\",\"ref\":\"$REF_NAME\"}}")
             echo "  HTTP $HTTP_STATUS"
             cat /tmp/dispatch-response
