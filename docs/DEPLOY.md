@@ -9,7 +9,7 @@ For a quick local development setup, see the [main README](../README.md#quick-st
 - AWS SAM CLI
 - An AWS account with permissions for Lambda, DynamoDB, API Gateway, IAM, S3, and SES
 - A verified SES sender email/domain
-- An Anthropic API key or Amazon Bedrock access
+- Amazon Bedrock access, with model access enabled for `qwen.qwen3-vl-235b-a22b`
 
 ## 1. SSM parameters
 

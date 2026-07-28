@@ -79,10 +79,10 @@ If a plugin you're building genuinely cannot use existing extension points, **do
    ```bash
    cd client && npm run build
    ```
-4. Set up your API key:
+4. Set up your environment:
    ```bash
    cd server && cp .env.example .env
-   # Edit .env and add your Anthropic API key
+   # Edit .env — see the "AI provider" section of the README for AWS/Bedrock setup
    ```
 5. Start the dev server:
    ```bash
@@ -90,7 +90,7 @@ If a plugin you're building genuinely cannot use existing extension points, **do
    ```
 6. Open [http://localhost:3000](http://localhost:3000). On first visit you'll create an admin account. Content is seeded automatically.
 
-No Docker, AWS credentials, or external services needed for local development. AI features require an Anthropic API key (or a Bedrock connection if you set `AI_PROVIDER=bedrock`) — without one, the app is fully navigable but you can't start lesson conversations.
+No Docker or external services needed for local development — data lives in SQLite. AI features do need AWS credentials with Bedrock access (plato runs one open-weight model, Qwen3-VL 235B; see the README's [AI provider](README.md#ai-provider) section). Without them the app is fully navigable, but you can't start lesson conversations.
 
 The client uses **Tailwind CSS v4** and **shadcn/ui** for styling. UI components are in `src/components/ui/`.
 

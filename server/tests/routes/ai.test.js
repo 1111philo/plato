@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import ai from '../../src/routes/ai.js';
 import aiProvider from '../../src/lib/ai-provider.js';
+import { fromConverseResponse, fromConverseStreamEvent } from '../../src/lib/converse.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
@@ -30,7 +31,7 @@ describe('POST /v1/ai/messages', () => {
 
   it('proxies valid request and returns response', async () => {
     aiProvider.invoke = async (model, body) => {
-      assert.equal(model, 'claude-haiku-4-5-20251001');
+      assert.equal(model, 'qwen3-vl-235b');
       assert.equal(body.max_tokens, 512);
       assert.equal(body.system, 'You are helpful.');
       assert.equal(body.messages.length, 1);
@@ -42,7 +43,7 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     const res = await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
       max_tokens: 512,
       system: 'You are helpful.',
       messages: [{ role: 'user', content: 'Hi' }],
@@ -82,7 +83,7 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     const res = await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
     });
     assert.equal(res.status, 400);
     assert.equal((await res.json()).error, 'messages array is required');
@@ -92,7 +93,7 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     const res = await unauthReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
       messages: [{ role: 'user', content: 'Hi' }],
     });
     assert.equal(res.status, 401);
@@ -102,7 +103,7 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     const res = await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
       messages: [{ role: 'user', content: '' }],
     });
     assert.equal(res.status, 400);
@@ -113,7 +114,7 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     const res = await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
       messages: [{ role: 'user', content: [] }],
     });
     assert.equal(res.status, 400);
@@ -129,9 +130,73 @@ describe('POST /v1/ai/messages', () => {
     const app = new Hono();
     app.route('/', ai);
     await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'claude-haiku-4-5-20251001',
+      model: 'qwen3-vl-235b',
       messages: [{ role: 'user', content: 'Hi' }],
     });
     assert.equal(receivedBody.system, undefined);
+  });
+
+  // The route is provider-agnostic: it hands the Anthropic-shaped body to
+  // `ai-provider.js`, which routes open-weight models through Converse. These
+  // two cases pin the round trip end to end using the real Converse
+  // translation, so a translation regression fails here and not only in
+  // converse.test.js.
+  it('streams Converse-translated events as Anthropic SSE', async () => {
+    aiProvider.invokeStream = async function* (model, body) {
+      assert.equal(model, 'qwen3-vl-235b');
+      assert.equal(body.system, 'You are a coach.');
+      for (const event of [
+        { messageStart: { role: 'assistant' } },
+        { contentBlockDelta: { delta: { text: 'Nice ' }, contentBlockIndex: 0 } },
+        { contentBlockDelta: { delta: { text: 'work. [PROGRESS: 10]' }, contentBlockIndex: 0 } },
+        { messageStop: { stopReason: 'end_turn' } },
+        { metadata: { usage: { inputTokens: 10, outputTokens: 5 } } },
+      ]) {
+        const translated = fromConverseStreamEvent(event);
+        if (translated) yield translated;
+      }
+    };
+    const app = new Hono();
+    app.route('/', ai);
+    const res = await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'qwen3-vl-235b',
+      system: 'You are a coach.',
+      messages: [{ role: 'user', content: 'Hi' }],
+      stream: true,
+    });
+
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /text\/event-stream/);
+
+    const raw = await res.text();
+    // Reassemble the way client/js/api.js parseSSEStream does.
+    const text = raw.split('\n')
+      .filter((l) => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
+      .map((l) => JSON.parse(l.slice(6)))
+      .filter((e) => e.type === 'content_block_delta' && e.delta?.type === 'text_delta')
+      .map((e) => e.delta.text)
+      .join('');
+
+    assert.equal(text, 'Nice work. [PROGRESS: 10]');
+    assert.ok(raw.includes('data: [DONE]'));
+  });
+
+  it('returns a Converse-translated non-streaming response in Anthropic shape', async () => {
+    aiProvider.invoke = async () => fromConverseResponse({
+      output: { message: { role: 'assistant', content: [{ text: 'Done. [PROGRESS: 8]' }] } },
+      stopReason: 'end_turn',
+      usage: { inputTokens: 3700, outputTokens: 195 },
+    });
+    const app = new Hono();
+    app.route('/', ai);
+    const res = await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'qwen3-vl-235b',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+
+    const data = await res.json();
+    assert.equal(data.content[0].type, 'text');
+    assert.equal(data.content[0].text, 'Done. [PROGRESS: 8]');
+    assert.equal(data.usage.input_tokens, 3700);
   });
 });

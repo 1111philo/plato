@@ -25,7 +25,8 @@ Detailed design notes and incident history for plato's load-bearing subsystems.
 
 ## AI agents
 
-9 AI agents via Bedrock or Anthropic API (prompt files in `client/prompts/`).
+9 AI agents, all sharing one open-weight model on Bedrock (prompt files in
+`client/prompts/`; see [AI provider & model choice](#ai-provider--model-choice)).
 Each prompt file has an HTML comment header documenting what it reads, who calls
 it, and its purpose:
 
@@ -47,6 +48,102 @@ Context appended at runtime (`client/js/orchestrator.js`):
   knowledge-base-editor).
 - Knowledge base is created/edited by admins via the KB Editor agent in the
   Customizer (not directly editable).
+
+## AI provider & model choice
+
+plato runs **one model for all nine agents** — no per-agent routing. It is
+declared once as `LLM` in `server/src/lib/ai-provider.js`, mirrored in
+`client/js/api.js`, and injected into plugins as `ctx.LLM`. Bedrock is the only
+backend, in production and in local dev; the direct Anthropic API provider was
+removed when plato moved to open weights.
+
+Current model: **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
+
+### Why this model
+
+Selected empirically against the open-weight models available on Bedrock in
+us-east-2, in the following order:
+
+1. **Image input is a hard filter.** Learners paste screenshots into the coach
+   (`metadata.imageKeys`), so a text-only model can't serve plato at all. Only
+   three open-weight Bedrock models accept `IMAGE`: `qwen.qwen3-vl-235b-a22b`,
+   `mistral.mistral-large-3-675b-instruct`, and `moonshotai.kimi-k2.5`. That
+   rules out GLM, DeepSeek, gpt-oss, Nemotron, MiniMax, plain Qwen3-235B, and
+   `kimi-k2-thinking` regardless of how they score.
+2. **Reasoning models are disqualified.** plato's contract is *literal tags in
+   visible text* — `[PROGRESS: n]`, `[KB_UPDATE: {…}]`, `[PROFILE_UPDATE: {…}]`,
+   parsed by regex plus a brace-walk in `lessonEngine.js`. Models that emit
+   `reasoningContent` spend output budget on traces that never reach the parser.
+3. **Tag compliance decides the rest.** Against the real `coach.md` prompt,
+   Qwen3-VL emitted all three tags on 3/3 trials. Kimi K2.5 managed
+   `[PROFILE_UPDATE]` on only 1/3 — it was the initial pick and was reversed on
+   repeat trials. Mistral Large 3 failed the vision check outright, calling a
+   solid red image "black".
+
+**Known limitation, not model-specific:** no model tested — including Haiku 4.5 —
+reliably detects learner *regression* (0–1 of 3 trials each). That's a `coach.md`
+prompt weakness, independent of which model runs behind it.
+
+Any replacement model must clear all three bars above. Anthropic model IDs stay
+in `MODEL_MAP`, so falling back to Claude is a one-line `LLM` change.
+
+### Why the Converse API
+
+Non-Anthropic Bedrock models are only reachable through **Converse /
+ConverseStream**. This matters because the legacy `InvokeModel` path does **not**
+reject them: called with `qwen.*` or `openai.*`, it returns **HTTP 200** with an
+OpenAI-shaped body (`choices[0].message.content`), so callers reading
+`content[0].text` silently get `undefined`. A wrong-API mistake here fails
+quietly, not loudly.
+
+Rather than teach every caller a second dialect, plato keeps the **Anthropic
+Messages shape as its internal wire format** and translates only at the Bedrock
+boundary, in `server/src/lib/converse.js`:
+
+- Request: `{ max_tokens, system, messages }` → `{ inferenceConfig.maxTokens,
+  system: [{text}], messages: [{role, content: [{text} | {image}]}] }`. Base64
+  image blocks are decoded to bytes and their media type mapped to a Converse
+  `format`.
+- Response: `output.message.content[]` → `{ content: [{type:'text', text}],
+  usage: {input_tokens, output_tokens}, stop_reason }`. Multiple text blocks are
+  **concatenated** so a tag split across blocks still parses; `reasoningContent`
+  blocks are dropped.
+- Stream: `contentBlockDelta` → `content_block_delta` / `text_delta`, which is
+  the only event shape `parseSSEStream` in `client/js/api.js` matches on.
+
+Converse event order was verified identical for Anthropic and open-weight
+models (`messageStart → contentBlockDelta* → contentBlockStop → messageStop →
+metadata`), so no per-provider chunk handling is needed. Because the translation
+is pure functions with no AWS SDK dependency, it's unit-tested without network
+access (`server/tests/lib/converse.test.js`).
+
+Converse authorizes under the same `bedrock:InvokeModel` /
+`bedrock:InvokeModelWithResponseStream` IAM actions, so `template.yaml` needed no
+change.
+
+### No prompt caching
+
+Prompt caching is **Claude-exclusive on Bedrock**. Verified: Haiku 4.5 accepts
+`cachePoint`, while Qwen3, Kimi K2.5, DeepSeek v3.2, GLM 5, and gpt-oss-120b all
+hard-error with `AccessDeniedException: You invoked an unsupported model or your
+request did not allow prompt caching`. Do not add cache-point plumbing while
+plato runs an open-weight model — it cannot work. (For the record, Claude's
+minimum cacheable prefix is 4096 tokens, and `coach.md` alone is ~3,685 — below
+the floor, where Bedrock silently no-ops rather than erroring.)
+
+### Cost
+
+Qwen3-VL is **~2.2× cheaper** than Haiku 4.5: $0.53/$2.66 per 1M input/output
+tokens versus $1.00/$5.00. At measured token counts that's ~$0.040 per
+16-exchange lesson versus ~$0.088. Note that Haiku 4.5 is absent from the AWS
+Pricing API, so its rate is the Anthropic first-party price used as a proxy,
+while Qwen3-VL's is real us-east-2 on-demand.
+
+**Latency is the trade, not cost.** Measured on the real `coach.md` payload,
+Qwen3-VL's time-to-first-token is roughly 2–6 s against Haiku's ~1.3–3.8 s, and
+it is less consistent — one observed outlier hit 47 s TTFT. Streaming hides some
+of this, and `BEDROCK_TIMEOUT_MS` (115 s) still bounds the worst case, but the
+tail is real and worth watching in the log-watch alarm.
 
 ## Image & conversation persistence (#191, #193)
 
