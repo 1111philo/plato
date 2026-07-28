@@ -109,11 +109,16 @@ const ai = {
 };
 
 /**
- * The single model behind every plato agent. Qwen3-VL 235B A22B (Apache-2.0)
- * is the open-weight choice: it accepts images — a hard requirement, since
- * learners paste screenshots into the coach — and it was the most reliable
- * emitter of plato's literal `[PROGRESS: n]` / `[KB_UPDATE: {…}]` tags among the
- * open-weight models available on Bedrock in us-east-2.
+ * The single model behind every plato agent. Qwen3-VL 235B A22B (Apache-2.0) is
+ * the open-weight choice: it accepts images — a hard requirement, since learners
+ * paste screenshots into the coach — and it reliably emits plato's literal
+ * `[PROGRESS: n]` / `[KB_UPDATE: {…}]` tags and awards `10` on completion.
+ *
+ * Runner-up is `us.meta.llama4-maverick-17b-instruct-v1:0`: measurably faster
+ * with no latency tail, but a more restrictive license. Swapping is a one-line
+ * change here (plus the mirror in client/js/api.js).
+ *
+ * → docs/MODEL_SELECTION.md for the full evaluation.
  */
 export const LLM = 'qwen3-vl-235b';
 

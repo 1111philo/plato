@@ -104,8 +104,8 @@ start.
 To run a different model, change the single `LLM` constant in
 `server/src/lib/ai-provider.js` (and the matching one in `client/js/api.js`).
 Anthropic model IDs are still wired up, so falling back to Claude is a one-line
-change. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#ai-provider--model-choice)
-for why this model, and what a replacement has to satisfy.
+change. See [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) for why this model —
+the constraints, the benchmarks, and what a replacement has to satisfy.
 
 Then log in and navigate to `/plato` to see the admin dashboard, or `/lessons` to start learning.
 

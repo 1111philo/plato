@@ -64,28 +64,53 @@ Current model: **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
 Selected empirically against the open-weight models available on Bedrock in
 us-east-2, in the following order:
 
-1. **Image input is a hard filter.** Learners paste screenshots into the coach
-   (`metadata.imageKeys`), so a text-only model can't serve plato at all. Only
-   three open-weight Bedrock models accept `IMAGE`: `qwen.qwen3-vl-235b-a22b`,
-   `mistral.mistral-large-3-675b-instruct`, and `moonshotai.kimi-k2.5`. That
-   rules out GLM, DeepSeek, gpt-oss, Nemotron, MiniMax, plain Qwen3-235B, and
-   `kimi-k2-thinking` regardless of how they score.
-2. **Reasoning models are disqualified.** plato's contract is *literal tags in
+1. **Bedrock-only is an institutional requirement** (UIC). Published weights are
+   irrelevant if AWS doesn't host the SKU in our region — the Bedrock catalog,
+   not the open-weight ecosystem, defines the candidate pool. It also means
+   third-party latency benchmarks don't transfer; latency is a property of the
+   host.
+2. **Image input is a hard filter.** Learners paste screenshots into the coach
+   (`metadata.imageKeys`), so a text-only model can't serve plato at all. Of the
+   43 open-weight model IDs in us-east-2, only 12 accept `IMAGE`, and most of
+   those are small (Ministral 3B–14B, Nemotron Nano, Palmyra Vision 7B, Gemma 3
+   4B/12B). That rules out GLM 5, DeepSeek V3.2, gpt-oss, Nemotron Super,
+   MiniMax, plain Qwen3-235B, Llama 3.3, and `kimi-k2-thinking` regardless of
+   how they score.
+3. **Reasoning models are disqualified.** plato's contract is *literal tags in
    visible text* — `[PROGRESS: n]`, `[KB_UPDATE: {…}]`, `[PROFILE_UPDATE: {…}]`,
    parsed by regex plus a brace-walk in `lessonEngine.js`. Models that emit
    `reasoningContent` spend output budget on traces that never reach the parser.
-3. **Tag compliance decides the rest.** Against the real `coach.md` prompt,
-   Qwen3-VL emitted all three tags on 3/3 trials. Kimi K2.5 managed
-   `[PROFILE_UPDATE]` on only 1/3 — it was the initial pick and was reversed on
-   repeat trials. Mistral Large 3 failed the vision check outright, calling a
-   solid red image "black".
+4. **Tag compliance and completion decide the rest.** Measured against the real
+   `coach.md` across five scenarios: Qwen3-VL hit 3/3 on the required
+   `[PROGRESS]`+`[KB_UPDATE]` pair and awarded `10` on 5/5 exemplar-achieved
+   trials (plato completes a lesson only at `progress >= 10`). Gemma 3 27B
+   dropped a `[PROGRESS]` tag (2/3). Mistral Large 3 and Pixtral Large failed
+   outright — Mistral called a solid red image "black".
+
+Note when scoring tag compliance: `[PROGRESS]` and `[KB_UPDATE]` are required
+every response, but `[PROFILE_UPDATE]` is **conditional** on the learner
+revealing something. Scoring all three as mandatory produces false failures.
+
+**Runner-up: `us.meta.llama4-maverick-17b-instruct-v1:0`** — faster (p50 526 ms
+vs 1033 ms TTFT), cheaper, no observed latency tail, and equal on every
+correctness measure. Qwen3-VL was preferred for its Apache-2.0 license (vs the
+Llama Community License), greater capability headroom, and purpose-built vision.
+Llama 4 is the tested fallback if Qwen's tail becomes a production problem.
+
+**Latency caveat:** Qwen3-VL's p50 TTFT is ~1 s, but two ad-hoc runs saw **47 s**
+and **36 s** on the same payload. Neither reproduced across 30 controlled
+samples, so the frequency is unmeasured. Watch for >5 s TTFT in the log-watch
+alarm.
 
 **Known limitation, not model-specific:** no model tested — including Haiku 4.5 —
-reliably detects learner *regression* (0–1 of 3 trials each). That's a `coach.md`
-prompt weakness, independent of which model runs behind it.
+reliably detects learner *regression*. Given a retraction from `progress: 8`,
+Gemma scored 4/2/2 (appropriate), Haiku 5/6/4, Qwen3-VL 7/5/5, Llama 4 7/7/7.
+That's a `coach.md` prompt weakness, independent of which model runs behind it.
 
-Any replacement model must clear all three bars above. Anthropic model IDs stay
-in `MODEL_MAP`, so falling back to Claude is a one-line `LLM` change.
+Any replacement model must clear all four bars above. Anthropic model IDs stay
+in `MODEL_MAP`, so falling back to Claude is a one-line `LLM` change. Full
+evaluation, tables, and rejected candidates:
+[`docs/MODEL_SELECTION.md`](MODEL_SELECTION.md).
 
 ### Why the Converse API
 
