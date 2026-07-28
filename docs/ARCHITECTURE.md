@@ -25,7 +25,7 @@ Detailed design notes and incident history for plato's load-bearing subsystems.
 
 ## AI agents
 
-9 AI agents, all sharing one open-weight model on Bedrock (prompt files in
+9 AI agents, all sharing one open source model on Bedrock (prompt files in
 `client/prompts/`; see [AI provider & model choice](#ai-provider--model-choice)).
 Each prompt file has an HTML comment header documenting what it reads, who calls
 it, and its purpose:
@@ -61,8 +61,8 @@ Current model: **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
 
 ### Why this model
 
-Selected empirically against the open-weight models available on Bedrock in
-us-east-2, in the following order:
+Selected against the models available on Bedrock in us-east-2 by applying four
+constraints in the following order — the fourth is what ultimately decides it:
 
 1. **Bedrock-only is an institutional requirement** (UIC). Published weights are
    irrelevant if AWS doesn't host the SKU in our region — the Bedrock catalog,
@@ -80,22 +80,38 @@ us-east-2, in the following order:
    visible text* — `[PROGRESS: n]`, `[KB_UPDATE: {…}]`, `[PROFILE_UPDATE: {…}]`,
    parsed by regex plus a brace-walk in `lessonEngine.js`. Models that emit
    `reasoningContent` spend output budget on traces that never reach the parser.
-4. **Tag compliance and completion decide the rest.** Measured against the real
+4. **Tag compliance and completion filter the rest.** Measured against the real
    `coach.md` across five scenarios: Qwen3-VL hit 3/3 on the required
    `[PROGRESS]`+`[KB_UPDATE]` pair and awarded `10` on 5/5 exemplar-achieved
    trials (plato completes a lesson only at `progress >= 10`). Gemma 3 27B
    dropped a `[PROGRESS]` tag (2/3). Mistral Large 3 and Pixtral Large failed
    outright — Mistral called a solid red image "black".
+5. **The license must be OSI-approved — and this decides it.** plato is
+   **AGPL-3.0**; the goal was an *open source* model, not merely an open-weight
+   one. "Open weight" only means the parameters download. The **Llama 4 Community
+   License** (700M-MAU threshold, acceptable-use policy, "Built with Llama"
+   naming) and the **Gemma Terms of Use** both fail the Open Source Definition on
+   field-of-use and non-discrimination grounds and are not OSI-approved.
+   **Qwen3-VL's Apache-2.0 is the only OSI-approved license in the eligible set**,
+   which leaves the set with exactly one member.
+
+   Don't re-derive this as a liability question. Because plato calls Bedrock and
+   never redistributes weights, the Llama clauses are close to inert *as legal
+   exposure* — that reasoning nearly selected Llama 4 on an earlier draft. The bar
+   is definitional (is the model open source?), not a risk assessment.
 
 Note when scoring tag compliance: `[PROGRESS]` and `[KB_UPDATE]` are required
 every response, but `[PROFILE_UPDATE]` is **conditional** on the learner
 revealing something. Scoring all three as mandatory produces false failures.
 
-**Runner-up: `us.meta.llama4-maverick-17b-instruct-v1:0`** — faster (p50 526 ms
-vs 1033 ms TTFT), cheaper, no observed latency tail, and equal on every
-correctness measure. Qwen3-VL was preferred for its Apache-2.0 license (vs the
-Llama Community License), greater capability headroom, and purpose-built vision.
-Llama 4 is the tested fallback if Qwen's tail becomes a production problem.
+**The trade this makes:** `us.meta.llama4-maverick-17b-instruct-v1:0` measured
+faster (p50 526 ms vs ~1.1 s TTFT), cheaper, with no observed latency tail, and
+equal on every correctness measure — but it is **license-ineligible**. It is the
+tested one-line fallback if Qwen's tail becomes a production problem; taking it
+means **knowingly dropping below the open source bar**, so treat that as a
+conscious, documented trade rather than a config tweak. Against the incumbent
+Haiku the eligible choice costs only ~100 ms of p50 latency and saves 1.9× on
+cost, so open source did not mean a worse product.
 
 **Latency caveat:** Qwen3-VL's p50 TTFT is ~1 s, but two ad-hoc runs saw **47 s**
 and **36 s** on the same payload. Neither reproduced across 30 controlled
@@ -107,9 +123,10 @@ reliably detects learner *regression*. Given a retraction from `progress: 8`,
 Gemma scored 4/2/2 (appropriate), Haiku 5/6/4, Qwen3-VL 7/5/5, Llama 4 7/7/7.
 That's a `coach.md` prompt weakness, independent of which model runs behind it.
 
-Any replacement model must clear all four bars above. Anthropic model IDs stay
-in `MODEL_MAP`, so falling back to Claude is a one-line `LLM` change. Full
-evaluation, tables, and rejected candidates:
+Any replacement model must clear all five bars above — including the license one.
+Anthropic model IDs stay in `MODEL_MAP`, so falling back to Claude is a one-line
+`LLM` change, with the same open-source caveat as Llama 4 (more so — Haiku is
+proprietary). Full evaluation, tables, and rejected candidates:
 [`docs/MODEL_SELECTION.md`](MODEL_SELECTION.md).
 
 ### Why the Converse API
@@ -152,7 +169,7 @@ Prompt caching is **Claude-exclusive on Bedrock**. Verified: Haiku 4.5 accepts
 `cachePoint`, while Qwen3, Kimi K2.5, DeepSeek v3.2, GLM 5, and gpt-oss-120b all
 hard-error with `AccessDeniedException: You invoked an unsupported model or your
 request did not allow prompt caching`. Do not add cache-point plumbing while
-plato runs an open-weight model — it cannot work. (For the record, Claude's
+plato runs a non-Anthropic model — it cannot work. (For the record, Claude's
 minimum cacheable prefix is 4096 tokens, and `coach.md` alone is ~3,685 — below
 the floor, where Bedrock silently no-ops rather than erroring.)
 

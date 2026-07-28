@@ -1,15 +1,28 @@
-# Model selection: choosing an open-weight model for plato
+# Model selection: choosing an open source model for plato
 
-**Status:** decided — `qwen.qwen3-vl-235b-a22b`, with a documented runner-up
+**Status:** decided — `qwen.qwen3-vl-235b-a22b`, the only candidate satisfying all four constraints
 **Date:** 2026-07-28
 **Supersedes:** Claude Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`)
 **Implementation:** [PR #332](https://github.com/1111philo/plato/pull/332)
 
 ## The goal
 
-Run plato on an **open-weight model** — one whose weights are publicly
-downloadable under a license permitting self-hosting. This was the stated
-objective, not a cost-reduction exercise. Everything below follows from it.
+Run plato on an **open source model** — weights publicly downloadable *under an
+OSI-approved license*. This was the stated objective, not a cost-reduction
+exercise. Everything below follows from it.
+
+The distinction between *open weight* and *open source* is the crux of this
+decision, and getting it wrong is easy. "Open weight" only means you can download
+the parameters. Several widely-described-as-open models ship under bespoke
+community licenses that are **not** open source: the Llama 4 Community License
+imposes a 700M-MAU threshold, an acceptable-use policy, and a "Built with Llama"
+naming requirement; Gemma's Terms of Use carry their own use restrictions. Those
+fail the Open Source Definition on field-of-use and
+non-discrimination grounds (OSD #5, #6) and are not OSI-approved.
+
+plato itself is **AGPL-3.0**. Running an AGPL project on a model that isn't open
+source is an inconsistency, not a technicality — so the license bar is a
+constraint, not a tiebreaker. See [constraint 4](#4-must-carry-an-osi-approved-license).
 
 The corollary matters as much as the goal: **a proprietary API model was not an
 acceptable outcome, even if it benchmarked better.** Haiku 4.5 appears in the
@@ -62,8 +75,8 @@ otherwise-strong open-weight models outright:
 | Llama 3.3 70B | yes | yes | **no** | ✗ |
 | Kimi K2 Thinking (`moonshotai.kimi-k2-thinking`) | yes | yes | **no** | ✗ |
 | **Qwen3-VL 235B A22B** | yes | yes | yes | ✓ |
-| **Llama 4 Maverick 17B** | yes | yes (inference profile) | yes | ✓ |
-| **Gemma 3 27B IT** | yes | yes | yes | ✓ |
+| Llama 4 Maverick 17B | yes | yes (inference profile) | yes | ✗ (license, constraint 4) |
+| Gemma 3 27B IT | yes | yes | yes | ✗ (license, constraint 4) |
 | Mistral Large 3 675B | yes | yes | yes | ✓ (failed later) |
 | Kimi K2.5 (`moonshotai.kimi-k2.5`) | yes | yes | yes | ✓ (failed later) |
 | Pixtral Large | yes | yes (inference profile) | yes | ✓ (failed later) |
@@ -95,6 +108,33 @@ A consequence: **reasoning models are structurally disadvantaged.** Their
 parser only reads visible text. Verified concretely: `gpt-oss-120b` at
 `maxTokens=16` returned *zero* visible characters (all reasoning), and spent 50
 output tokens to say "OK" where Haiku spent 4.
+
+### 4. Must carry an OSI-approved license
+
+This is a constraint, not a preference, and it is what ultimately decides the
+choice. plato ships under **AGPL-3.0**; the point of this migration is that the
+stack is open source. A model under a bespoke community license doesn't satisfy
+that, however freely its weights download.
+
+| License | OSI-approved | Why / why not |
+|---|---|---|
+| **Apache-2.0** (Qwen3-VL) | **yes** | No field-of-use restriction, no user threshold, no naming requirement |
+| Llama 4 Community License | no | 700M-MAU threshold discriminates against a class of user (OSD #5/#6); bundled acceptable-use policy restricts fields of endeavor; "Built with Llama" attribution required |
+| Gemma Terms of Use | no | Use restrictions via a prohibited-use policy; not a recognized open source license |
+| Proprietary (Haiku 4.5) | no | Weights not available at all |
+
+A tempting counter-argument, worth rejecting explicitly: plato reaches the model
+over Bedrock and never redistributes weights, so *as a matter of legal exposure*
+the Llama clauses are close to inert — the MAU threshold and naming requirement
+don't bind an API consumer. That reasoning is what nearly selected Llama 4 on
+earlier drafts of this document. It answers the wrong question. The bar here is
+definitional (**is this model open source?**), not a liability assessment, and
+Llama 4 and Gemma both fail it.
+
+The consequence is that **the eligible set has exactly one member**: Qwen3-VL 235B
+A22B is the only OSI-licensed model on Bedrock `us-east-2` that also accepts
+images. Everything measured below is therefore verification that the one eligible
+candidate is *good enough to ship* — not a competition it won.
 
 ## Method
 
@@ -131,13 +171,19 @@ were tested.**
 
 ## Results
 
+Read these tables as **verification plus reference points**, not a leaderboard.
+Qwen3-VL is the only candidate that clears all four constraints; Llama 4 Maverick,
+Gemma 3 27B, and Haiku 4.5 are measured alongside it to establish whether the
+eligible model is good enough to ship, and at what cost in speed and money. They
+are marked *(license-ineligible)* or *(baseline)* accordingly.
+
 ### Required tag compliance (`[PROGRESS]` + `[KB_UPDATE]`), n=3
 
 | Model | gaming | struggling | regression | Verdict |
 |---|---|---|---|---|
-| Qwen3-VL 235B | 3/3 | 3/3 | 3/3 | pass |
-| Llama 4 Maverick | 3/3 | 3/3 | 3/3 | pass |
-| Gemma 3 27B | 3/3 | **2/3** | 3/3 | one response had no progress tag |
+| **Qwen3-VL 235B** | 3/3 | 3/3 | 3/3 | **pass — selected** |
+| Llama 4 Maverick *(license-ineligible)* | 3/3 | 3/3 | 3/3 | pass |
+| Gemma 3 27B *(license-ineligible)* | 3/3 | **2/3** | 3/3 | one response had no progress tag |
 | Haiku 4.5 *(baseline)* | 3/3 | 3/3 | 3/3 | pass |
 
 ### Completion — does it award 10 when the exemplar is met? (n=5)
@@ -148,39 +194,48 @@ would leave every learner unable to finish.
 
 | Model | Scores | Awards 10 |
 |---|---|---|
-| Qwen3-VL 235B | 10, 10, 10, 10, 10 | 5/5 |
-| Llama 4 Maverick | 10, 10, 10, 10, 10 | 5/5 |
-| Gemma 3 27B | 10, 10, 10, 10, 10 | 5/5 |
+| **Qwen3-VL 235B** | 10, 10, 10, 10, 10 | **5/5** |
+| Llama 4 Maverick *(license-ineligible)* | 10, 10, 10, 10, 10 | 5/5 |
+| Gemma 3 27B *(license-ineligible)* | 10, 10, 10, 10, 10 | 5/5 |
 | Haiku 4.5 *(baseline)* | 10, 10, 10, 10, 10 | 5/5 |
 
-All four pass on an unambiguous prompt. Note this contradicts a weaker
-mid-lesson signal where Llama 4 capped at 9 — with explicit "I'm done, both
+All four pass on an unambiguous prompt — the result that matters is that
+**Qwen3-VL matches the incumbent on plato's make-or-break behavior**. Note a
+weaker mid-lesson signal where Llama 4 capped at 9; with explicit "I'm done, both
 objectives feel complete" framing it awards 10 reliably. Worth re-testing if
 `coach.md` changes.
 
 ### Time-to-first-token, real coach payload (n=15 per model, two rounds)
 
+This is the one axis where the license constraint costs something real.
+
 | Model | min | p50 | p90 | max | >5 s |
 |---|---|---|---|---|---|
-| Llama 4 Maverick | 433 ms | **526 ms** | 642 ms | 816 ms | 0/15 |
+| Llama 4 Maverick *(license-ineligible)* | 433 ms | **526 ms** | 642 ms | 816 ms | 0/15 |
 | Haiku 4.5 *(baseline)* | 751 ms | 976 ms | 1404 ms | 2134 ms | 0/15 |
-| Qwen3-VL 235B (round 1) | 688 ms | 1033 ms | 1899 ms | 2261 ms | 0/15 |
-| Qwen3-VL 235B (round 2) | 705 ms | 1103 ms | 3475 ms | 3634 ms | 0/15 |
+| **Qwen3-VL 235B (round 1)** | 688 ms | 1033 ms | 1899 ms | 2261 ms | 0/15 |
+| **Qwen3-VL 235B (round 2)** | 705 ms | 1103 ms | 3475 ms | 3634 ms | 0/15 |
+
+Against the incumbent the difference is small: Qwen3-VL's p50 is ~1.1 s vs Haiku's
+0.98 s — roughly 100 ms slower on a streaming interface where first token lands
+in about a second either way. That is the comparison that matters, since Haiku is
+what learners experience today.
 
 **Qwen3-VL has a latency tail that these 30 samples understate.** Two outliers
 appeared in earlier ad-hoc runs: **47 s** and **36 s** time-to-first-token, on
 the same payload that otherwise returns in ~1 s. Neither reproduced in the
 controlled 15-sample rounds, so the frequency is unmeasured — call it low
 single-digit percent, on unknown cause (likely capacity, not the request).
-Llama 4 Maverick showed nothing comparable across every run.
+Llama 4 Maverick showed nothing comparable across every run; this is the known
+cost of the license-eligible choice, and the reason for the fallback plan below.
 
 ### Vision check — a solid red JPEG, "what color is this?"
 
 | Model | Answer | Verdict |
 |---|---|---|
-| Qwen3-VL 235B | "Red" | ✓ |
-| Llama 4 Maverick | "Red." | ✓ |
-| Gemma 3 27B | "Red." | ✓ |
+| **Qwen3-VL 235B** | "Red" | ✓ |
+| Llama 4 Maverick *(license-ineligible)* | "Red." | ✓ |
+| Gemma 3 27B *(license-ineligible)* | "Red." | ✓ |
 | **Mistral Large 3 675B** | **"black"** | ✗ **disqualified** |
 
 Mistral Large 3 advertises image input and failed the most trivial possible
@@ -195,83 +250,106 @@ Measured token counts: ~3,800 in / ~250 out per turn, 16 exchanges per lesson
 | Model | in $/M | out $/M | $/lesson | $/1,000 lessons | vs. Haiku |
 |---|---|---|---|---|---|
 | Haiku 4.5 *(baseline)* | 1.00 | 5.00 | $0.0808 | $80.80 | 1.0× |
-| Qwen3-VL 235B | 0.53 | 2.66 | $0.0429 | $42.86 | 1.9× cheaper |
-| Llama 4 Maverick 17B | 0.24 | 0.97 | $0.0185 | $18.47 | 4.4× cheaper |
-| Gemma 3 27B IT | 0.23 | 0.38 | $0.0155 | $15.50 | 5.2× cheaper |
+| **Qwen3-VL 235B** | 0.53 | 2.66 | $0.0429 | $42.86 | **1.9× cheaper** |
+| Llama 4 Maverick 17B *(license-ineligible)* | 0.24 | 0.97 | $0.0185 | $18.47 | 4.4× cheaper |
+| Gemma 3 27B IT *(license-ineligible)* | 0.23 | 0.38 | $0.0155 | $15.50 | 5.2× cheaper |
 
 Rates are real `us-east-2` on-demand from the AWS Pricing API, **except Haiku
 4.5**, which is absent from the API — its $1/$5 is the Anthropic first-party rate
 used as a proxy.
 
-### Licenses
+### Licenses — the deciding table
 
-| Model | License | Self-hostable |
-|---|---|---|
-| Qwen3-VL 235B A22B | Apache-2.0 | yes, unrestricted |
-| Gemma 3 27B IT | Gemma Terms of Use | yes, with use restrictions |
-| Llama 4 Maverick | Llama 4 Community License | yes, with conditions (700M MAU clause, naming/attribution) |
-| Haiku 4.5 | proprietary | **no** |
+| Model | License | OSI-approved | Eligible |
+|---|---|---|---|
+| **Qwen3-VL 235B A22B** | **Apache-2.0** | **yes** | **✓** |
+| Gemma 3 27B IT | Gemma Terms of Use | no — use restrictions | ✗ |
+| Llama 4 Maverick | Llama 4 Community License | no — 700M MAU threshold, AUP, naming requirement | ✗ |
+| Haiku 4.5 | proprietary | no — weights unavailable | ✗ |
 
-Apache-2.0 is the cleanest outcome available: no acceptable-use rider, no user
-threshold, no naming requirement. For an open-source project this is a real
-advantage over the Gemma and Llama licenses, both of which are permissive in
-practice but not OSI-open.
+Apache-2.0 is the only OSI-approved license in the set: no acceptable-use rider,
+no user threshold, no naming requirement. Gemma and Llama are permissive *in
+practice* for plato's usage but are not open source, and plato is an AGPL-3.0
+project — see [constraint 4](#4-must-carry-an-osi-approved-license).
 
 ## Decision
 
 **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
 
-It passes every hard constraint, matches Haiku on required tag compliance and
-completion behavior, is 1.9× cheaper, and carries the only fully permissive
-license in the eligible set.
+**It is the only candidate that satisfies all four constraints.** Bedrock-hosted
+in `us-east-2`, accepts images, reliably emits plato's literal tags, and carries
+an OSI-approved license. Every other model failed on at least one: Llama 4 and
+Gemma on license, Haiku on license (proprietary), the rest on image support or
+tag compliance.
 
-**The honest tension:** on the numbers alone, **Llama 4 Maverick is arguably the
-better engineering choice** — 2× faster at p50, no observed latency tail, 2.3×
-cheaper still, and equal on every correctness measure. It is the runner-up, and a
-defensible reversal if the Qwen tail proves to be a real problem in production.
+Having only one eligible candidate means the real question was **is it good
+enough to ship?** — and it is. Against the incumbent it matches on required tag
+compliance (3/3), matches on completion behavior (awards `10` on 5/5), reads
+images correctly, comes in ~100 ms slower at p50 TTFT, and costs 1.9× less.
+Choosing an open source model did not require accepting a worse product.
 
-Qwen3-VL was chosen over it on three grounds:
+### The trade being made, stated plainly
 
-1. **License.** Apache-2.0 versus the Llama 4 Community License. For an
-   open-source project whose whole reason for this migration is openness, an
-   unencumbered license is worth real weight.
-2. **Capability headroom.** 235B total / 22B active parameters versus Maverick's
-   17B active. Coaching is open-ended dialogue; the scenario suite is a floor
-   check, not proof of equivalent depth on messy real conversations.
-3. **Purpose-built vision.** Qwen3-VL is a vision-language model by design, where
-   Maverick's image support is one capability among many. Screenshot reading is a
-   first-class coach feature.
+Llama 4 Maverick measured better on speed and price — p50 526 ms vs ~1.1 s, no
+latency tail, 2.3× cheaper — and equal on every correctness measure. **That does
+not make it the better choice here; it makes it the cost of the license
+constraint.** An earlier draft of this document had it as the runner-up "arguably
+the better engineering choice," reasoning that plato only calls the model over an
+API and never redistributes weights, so the Llama clauses don't bind us. That's
+true as far as legal exposure goes and beside the point: the goal was an open
+source model, and Llama 4's license is not one.
 
-Switching is a **one-line change** to `LLM` in `server/src/lib/ai-provider.js`
-(plus the mirror in `client/js/api.js`). `MODEL_MAP` retains the Anthropic IDs,
-so even reverting to Claude is a one-liner. That cheapness of reversal is a
-deliberate property of the implementation, and it's what makes shipping the
-license-preferred option over the latency-preferred one a low-risk call.
+So the honest framing is not "we picked the slower model on softer grounds." It is:
+**the open source requirement cost us roughly 500 ms of p50 latency and some
+savings we weren't seeking, and bought a stack that is open source end to end.**
+
+### Fallback, and what it costs
+
+If the Qwen3-VL latency tail proves to be a real production problem, **Llama 4
+Maverick (`us.meta.llama4-maverick-17b-instruct-v1:0`) is the tested fallback** —
+it passed every functional check, so the switch is a **one-line change** to `LLM`
+in `server/src/lib/ai-provider.js` plus the mirror in `client/js/api.js`.
+
+Flipping to it means **knowingly dropping below the open source bar** that
+motivated this whole migration. That is a deliberate trade to make consciously and
+document, not a silent config change: plato would then be an AGPL project running
+on a non-OSI-licensed model. Prefer fixing or waiting out the tail first.
+
+`MODEL_MAP` also retains the Anthropic IDs, so reverting to Claude is likewise a
+one-liner — with the same caveat, more so.
 
 ## What we deliberately did not optimize for
 
 ### Cost
 
 **Not a factor in the decision.** It was explicitly out of scope — the goal was
-the best open-weight model, not the cheapest. Cost is reported above for
-completeness and because the answer turned out to be favorable in every case, but
-it broke no ties. Notably, the cheapest eligible model (Gemma 3 27B) was *not*
-chosen, and the runner-up is cheaper than the winner.
+an open source model, not the cheapest one. Cost is reported above for
+completeness and because the answer turned out to be favorable, but it broke no
+ties and couldn't have: only one candidate was eligible. The cheapest model tested
+(Gemma 3 27B) was *not* chosen, and the license-ineligible Llama 4 is 2.3× cheaper
+than the model we shipped.
 
 Worth stating plainly since it inverts a common assumption: **this migration
-reduces spend.** The open-weight move was not a cost trade-off that had to be
-justified.
+reduces spend.** Moving to an open source model was not a cost trade-off that had
+to be justified — it pays for itself against the proprietary incumbent.
 
 ### Self-hosting
 
-Never on the table, despite being what "open weight" technically enables. UIC
-requires Bedrock; standing up vLLM on EC2 or SageMaker would mean GPU capacity
-planning, our own scaling and patching, and a second production surface — against
-plato's whole architecture, which is serverless precisely so nobody babysits it.
+Never on the table as a near-term plan, despite being what open weights
+technically enable. UIC requires Bedrock; standing up vLLM on EC2 or SageMaker
+would mean GPU capacity planning, our own scaling and patching, and a second
+production surface — against plato's whole architecture, which is serverless
+precisely so nobody babysits it.
 
-The practical value of open weights here is **portability, not self-hosting**: no
-proprietary lock-in, and the option to move hosts later without changing the
-model.
+Worth being careful here, because this is where the license reasoning goes wrong
+if you're not: "we'll never self-host, so the license clauses don't bind us"
+is a tempting inference and a bad one. It treats the license as a liability
+question when the requirement is definitional, and it also assumes the
+never-self-host status quo is permanent. **Apache-2.0 keeps that door open
+unconditionally; the Llama and Gemma licenses attach conditions to walking
+through it.** The practical value of an OSI license here is **optionality and
+consistency with plato's own AGPL-3.0 terms**, not an active self-hosting
+roadmap.
 
 ### Local / on-device inference
 
@@ -306,7 +384,7 @@ not allow prompt caching`.
 
 A caching implementation existed on a branch and was **discarded** once this
 became clear (PR #330, closed unmerged). Do not reintroduce it while plato runs
-an open-weight model.
+a non-Anthropic model.
 
 For the record, it wouldn't have helped much anyway: Claude's minimum cacheable
 prefix is 4,096 tokens and `coach.md` alone is ~3,685 — below the floor, where
@@ -321,9 +399,10 @@ Bedrock silently no-ops rather than erroring.
 | **Mistral Large 3 675B** | Failed the vision test: called a solid red image "black". |
 | **Pixtral Large** | 0/3 on required tags. |
 | **gpt-oss-120b / -20b** | Text-only, and reasoning models: no visible text at low token budgets, 50 output tokens to say "OK". |
-| **Gemma 3 27B IT** | Eligible and cheapest, but 2/3 on required tags (one response omitted `[PROGRESS]`) — disqualifying for a tag-driven pipeline. Also weakest capability tier of the finalists. |
+| **Llama 4 Maverick 17B** | **License not OSI-approved** (700M MAU threshold, acceptable-use policy, "Built with Llama" naming) — fails constraint 4. Passed every functional check and measured fastest and cheaper, so it is the documented fallback if Qwen's latency tail bites; taking it means consciously dropping below the open source bar. |
+| **Gemma 3 27B IT** | **License not OSI-approved** (Gemma Terms of Use). Independently also 2/3 on required tags (one response omitted `[PROGRESS]`) — disqualifying for a tag-driven pipeline even setting license aside, and the weakest capability tier tested. |
 | **GLM 5, DeepSeek V3.2, MiniMax M2.5, Qwen3 235B, Nemotron, Llama 3.3** | Text-only on Bedrock. |
-| **Haiku 4.5** | Proprietary — fails the stated goal. Retained in `MODEL_MAP` as a one-line fallback. |
+| **Haiku 4.5** | Proprietary — fails the stated goal. Retained in `MODEL_MAP` as a one-line fallback, with the same license caveat as Llama 4, more so. |
 
 ## Known limitation, not attributable to this choice
 
@@ -370,10 +449,17 @@ translation details.
 Reopen this decision if:
 
 - **The Qwen3-VL latency tail shows up in production.** Watch for >5 s TTFT in
-  the log-watch alarm. Llama 4 Maverick is the tested fallback, one line away.
+  the log-watch alarm. Llama 4 Maverick is the tested fallback, one line away —
+  at the cost of the open source bar.
 - Learners report progress that doesn't advance, or lessons that won't complete —
   the tag-compliance signature.
-- Bedrock `us-east-2` adds a stronger Apache-2.0 vision model.
+- **Bedrock `us-east-2` adds another OSI-licensed vision model.** This is the
+  change that would most improve the decision: today the eligible set has exactly
+  one member, so there is no margin. A second Apache-2.0 (or MIT) vision model
+  would turn this from a forced choice into an actual comparison.
+- **Meta or Google relicenses under OSI-approved terms.** Would make Llama 4
+  Maverick or Gemma genuinely eligible, and on the measured numbers Maverick would
+  then be the favorite.
 - `coach.md` changes materially — the scenario suite would need re-running, since
   every result here is prompt-specific.
 - Prompt caching becomes available for non-Anthropic Bedrock models, which would

@@ -87,9 +87,14 @@ On first visit you'll name your classroom and create an admin account. Prompts a
 
 ### AI provider
 
-plato runs a single **open-weight** model on Amazon Bedrock — [Qwen3-VL 235B
-A22B](https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct) (Apache-2.0). All
-nine agents share it; there is no per-agent routing.
+plato runs a single **open source** model on Amazon Bedrock — [Qwen3-VL 235B
+A22B](https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct), under the
+OSI-approved **Apache-2.0** license. All nine agents share it; there is no
+per-agent routing.
+
+The license is a requirement, not a preference: plato is AGPL-3.0, so the model
+has to be open source, not merely open weight. That rules out models under
+bespoke community licenses (Llama 4, Gemma) even where they benchmark well.
 
 Bedrock is the only backend, in production and in local dev. Provide AWS
 credentials with `bedrock:InvokeModel` / `bedrock:InvokeModelWithResponseStream`
@@ -104,8 +109,10 @@ start.
 To run a different model, change the single `LLM` constant in
 `server/src/lib/ai-provider.js` (and the matching one in `client/js/api.js`).
 Anthropic model IDs are still wired up, so falling back to Claude is a one-line
-change. See [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) for why this model —
-the constraints, the benchmarks, and what a replacement has to satisfy.
+change — though anything other than an OSI-licensed model gives up the open
+source property above. See [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md)
+for why this model — the four constraints, the benchmarks, and what a replacement
+has to satisfy.
 
 Then log in and navigate to `/plato` to see the admin dashboard, or `/lessons` to start learning.
 

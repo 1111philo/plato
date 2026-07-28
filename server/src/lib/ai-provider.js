@@ -1,7 +1,7 @@
 /**
  * AI provider abstraction — Amazon Bedrock.
  *
- * plato runs a single open-weight model everywhere (see `LLM` below). All nine
+ * plato runs a single open source model everywhere (see `LLM` below). All nine
  * agents share it; there is no per-agent routing.
  *
  * Non-Anthropic models on Bedrock are only reachable through the Converse API.
@@ -109,14 +109,22 @@ const ai = {
 };
 
 /**
- * The single model behind every plato agent. Qwen3-VL 235B A22B (Apache-2.0) is
- * the open-weight choice: it accepts images — a hard requirement, since learners
- * paste screenshots into the coach — and it reliably emits plato's literal
- * `[PROGRESS: n]` / `[KB_UPDATE: {…}]` tags and awards `10` on completion.
+ * The single model behind every plato agent. Qwen3-VL 235B A22B is the only
+ * model on Bedrock us-east-2 that satisfies all four constraints: image input
+ * (learners paste screenshots into the coach), reliable emission of plato's
+ * literal `[PROGRESS: n]` / `[KB_UPDATE: {…}]` tags, awarding `10` on
+ * completion, and — decisively — an **OSI-approved license** (Apache-2.0).
  *
- * Runner-up is `us.meta.llama4-maverick-17b-instruct-v1:0`: measurably faster
- * with no latency tail, but a more restrictive license. Swapping is a one-line
- * change here (plus the mirror in client/js/api.js).
+ * That last one is a constraint, not a preference: plato is AGPL-3.0, and the
+ * goal was an *open source* model, not merely an open-weight one. Llama 4
+ * Maverick and Gemma 3 ship under bespoke community licenses that are not
+ * OSI-approved, which is why neither is here despite passing every functional
+ * check (Maverick measured faster and cheaper).
+ *
+ * `us.meta.llama4-maverick-17b-instruct-v1:0` is the tested fallback if Qwen's
+ * latency tail becomes a production problem — a one-line change here plus the
+ * mirror in client/js/api.js. Switching means knowingly dropping below the open
+ * source bar; make that trade deliberately, not as a config tweak.
  *
  * → docs/MODEL_SELECTION.md for the full evaluation.
  */
