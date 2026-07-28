@@ -142,6 +142,34 @@ server-side is where the SSRF defense must live.
   work-in-progress portfolio site for reference and the coach infers completion
   from content that doesn't exist or isn't finished yet.
 
+## Chat auto-scroll (#319, #321)
+
+`useStickToBottom` (consumed by `ChatArea`) follows streamed output while the
+learner is at the bottom, holds still when they've scrolled up, and always jumps
+on send. Three traps here each produced a shipped-but-broken fix:
+
+1. **The chat log is not the scroll container** — it has no `overflow`, so it
+   never emits `scroll`. #321 listened there, so its handler never fired and
+   auto-scroll re-fired on every streamed character. Hence the **capturing**
+   `window` listener: `scroll` doesn't bubble but does capture, so it sees
+   whichever element scrolls without naming it.
+2. **There is no single scrollport to resolve.** `<main>` declares
+   `overflow-y-auto`, but whether it or the document scrolls depends on the whole
+   flex chain (`h-full` on html/body/#root, `flex-1` with no `min-h-0`,
+   `min-h-[calc(...)]` on `LessonChat`'s root). Setting `scrollTop` on a
+   non-scrolling element is a **silent no-op**, indistinguishable from an unwired
+   feature — so the pin writes to every scrollable ancestor plus `window`.
+3. **The compose bar sits inside the scroll container**, after the log, so
+   `scrollIntoView` on a sentinel stops short of the true bottom and hides the
+   newest message behind the fixed overlay. Request `scrollTop = scrollHeight`
+   and let the browser clamp. **Don't restructure the compose layout to work
+   around scrolling** — the inline+fixed pair is deliberate (inline reserves
+   space in flow).
+
+Verify changes by hand with the compose bar in *both* states (fixed mid-lesson,
+inline at the end of a short one); `client/tests/stickToBottom.test.js` covers
+only the decision layer.
+
 ## Invite system
 
 Admins invite users via email or shareable link. Invites expire after 7 days (TTL enforced in DynamoDB/SQLite). All invite operations are audit-logged.

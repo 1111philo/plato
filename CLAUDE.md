@@ -63,7 +63,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 
 ## Conventions
 
-- **Accessibility is required**: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.). Chat log uses `role="log"` `aria-live="off"`; new-message announcements go through a separate auto-clearing `role="status"` region; a streaming `AssistantMessage` is `aria-hidden` AND drops its `data-chat-message`/`tabIndex` so focus and Alt+Arrow nav can't land on an aria-hidden node; persisted messages carry sr-only speaker prefixes + `data-chat-message` for Alt+Arrow nav (`useChatKeyboardNav`). The inline `ComposeBar` (when pinned) is `inert`, not `aria-hidden`, so a focused control inside it is blurred rather than hidden-with-focus. `ComposeBar` sends on Cmd/Ctrl+Enter; plain Enter inserts a newline. `ComposeBar` sends on Cmd/Ctrl+Enter; plain Enter inserts a newline.
+- **Accessibility is required**: every interactive element must be keyboard-operable and have an accessible name (aria-label, aria-pressed, role, etc.). Chat log uses `role="log"` `aria-live="off"`; new-message announcements go through a separate auto-clearing `role="status"` region; a streaming `AssistantMessage` is `aria-hidden` AND drops its `data-chat-message`/`tabIndex` so focus and Alt+Arrow nav can't land on an aria-hidden node; persisted messages carry sr-only speaker prefixes + `data-chat-message` for Alt+Arrow nav (`useChatKeyboardNav`). The inline `ComposeBar` (when pinned) is `inert`, not `aria-hidden`, so a focused control inside it is blurred rather than hidden-with-focus. `ComposeBar` sends on Cmd/Ctrl+Enter; plain Enter inserts a newline.
 - **Always commit and push after changes.**
 - **PR workflow for collaborative iteration**: open PRs as **Draft** (`gh pr create --draft`) while iterating interactively; mark Ready (`gh pr ready <n>`) only when the user says it's ready. If a Ready PR gets more iteration, convert it back (`gh pr ready <n> --undo`). Every push to a Ready PR triggers the full CI suite (Bedrock auto-review, CodeQL, lint ×2) — micro-commits there are noise and waste budget. Does NOT apply to plato-pilot PRs (opened Ready by design) or one-line bugfixes already approved up front.
 - **Docs & tests**: update both alongside every code change (open-source project).
@@ -91,6 +91,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 - `client/src/lib/imageCompression.js` — downscales pasted screenshots under the 400 KB item limit
 - `client/src/lib/constants.js` — microlearning limits + shared constants
 - `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow chat navigation
+- `client/src/hooks/useStickToBottom.js` — chat auto-scroll (follow while at bottom; jump on send). Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#chat-auto-scroll-319-321) before touching it — three non-obvious traps live here
 - `client/src/hooks/useTitleNotification.js` — document title flash for new-message notifications
 - `client/src/pages/admin/UserStatsPanel.jsx` — per-user activity widget (Admin → Users)
 - `client/src/pages/admin/CompletionRing.jsx` — SVG completion donut, color-coded
