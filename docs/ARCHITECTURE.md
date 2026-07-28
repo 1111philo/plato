@@ -48,6 +48,37 @@ Context appended at runtime (`client/js/orchestrator.js`):
 - Knowledge base is created/edited by admins via the KB Editor agent in the
   Customizer (not directly editable).
 
+### Prompt caching
+
+Because the Program KB and Lesson Catalog are re-appended to the system prompt on
+**every** turn, each agent call ships an identical multi-thousand-token prefix.
+`server/src/lib/prompt-cache.js` marks that prefix `cache_control: ephemeral`
+(5-minute TTL) so repeat turns bill it as cache reads (~0.1x input) instead of
+full-price input.
+
+Two constraints are load-bearing:
+
+- **There is a minimum cacheable prefix — 4096 tokens on Haiku 4.5.** Below it
+  Bedrock *silently* ignores `cache_control`: no error, and `usage` reports zero
+  cache tokens. `coach.md` alone measures ~3,685 tokens, i.e. **under** the
+  minimum — caching only engages once the runtime KB/catalog appends push it
+  over. So `withCachedSystem` skips short prompts rather than paying the 1.25x
+  cache-write premium for a prefix that will never produce a read.
+- **`cache_control` is an Anthropic Messages API field.** Non-Anthropic Bedrock
+  models (served via Converse) reject or ignore it, so it is applied only to
+  Claude model ids. Any future per-agent routing to an open-weight model must
+  keep that guard.
+
+Measured against Bedrock `us-east-2` with a realistic 5,066-token coach prompt
+over 5 turns: full-price input dropped from 25,330 tokens to 55, with one 5,055
+write and four 5,055 reads — a **67% reduction in input cost**. The saving grows
+with lesson length; plato's observed average is 15.9 exchanges.
+
+**Cache placement depends on prefix stability.** The cached block must be the
+*first* content and byte-identical across turns. Anything that varies per turn
+(learner context JSON, conversation tail) belongs in `messages`, after the cached
+system block — which is where `orchestrator.js` already puts it.
+
 ## Image & conversation persistence (#191, #193)
 
 A learner's chat history for a lesson lives in one `messages:<lessonId>`

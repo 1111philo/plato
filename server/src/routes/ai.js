@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { authenticate } from '../middleware/authenticate.js';
 import ai from '../lib/ai-provider.js';
+import { withCachedSystem } from '../lib/prompt-cache.js';
 
 const aiRoute = new Hono();
 
@@ -23,7 +24,7 @@ aiRoute.post('/v1/ai/messages', async (c) => {
 
   const aiBody = {
     max_tokens: max_tokens || 1024,
-    ...(system ? { system } : {}),
+    ...(system ? { system: withCachedSystem(system, model) } : {}),
     messages,
   };
 

@@ -52,6 +52,44 @@ describe('POST /v1/ai/messages', () => {
     assert.equal(data.content[0].text, 'Hello!');
   });
 
+  it('marks a long system prompt as cacheable', async () => {
+    // Agent prompts arrive with the Program KB + Lesson Catalog appended, well
+    // over the 4096-token minimum cacheable prefix.
+    const longSystem = 'x'.repeat(20000);
+    let seenSystem;
+    aiProvider.invoke = async (model, body) => {
+      seenSystem = body.system;
+      return { content: [{ type: 'text', text: 'ok' }], usage: {} };
+    };
+    const app = new Hono();
+    app.route('/', ai);
+    const res = await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'claude-haiku-4-5-20251001',
+      system: longSystem,
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(seenSystem));
+    assert.deepEqual(seenSystem[0].cache_control, { type: 'ephemeral' });
+    assert.equal(seenSystem[0].text, longSystem);
+  });
+
+  it('leaves a short system prompt uncached', async () => {
+    let seenSystem;
+    aiProvider.invoke = async (model, body) => {
+      seenSystem = body.system;
+      return { content: [{ type: 'text', text: 'ok' }], usage: {} };
+    };
+    const app = new Hono();
+    app.route('/', ai);
+    await authedReq(app, 'POST', '/v1/ai/messages', {
+      model: 'claude-haiku-4-5-20251001',
+      system: 'You are helpful.',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+    assert.equal(seenSystem, 'You are helpful.');
+  });
+
   it('passes model ID through to provider', async () => {
     let receivedModel;
     aiProvider.invoke = async (model) => {
