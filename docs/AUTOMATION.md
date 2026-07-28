@@ -156,6 +156,32 @@ private fork's Actions tab with an optional `ref` input.
 - **playground** (`plato-playground` stack) — playground.ai-leaders.org,
   auto-deploys on push to `playground`.
 
+### Renaming the deploy fork breaks OIDC
+
+The deploy job assumes `arn:aws:iam::380610849750:role/plato-deploy` via OIDC,
+and that role's trust policy matches on the token's `sub` claim. **Renaming the
+fork silently breaks every deploy** with `Not authorized to perform
+sts:AssumeRoleWithWebIdentity` — the `test` job still passes, so only the deploy
+step fails. Update the role's `StringLike` condition on
+`token.actions.githubusercontent.com:sub` to match.
+
+Two traps when fixing it:
+
+- **The `sub` may carry immutable numeric IDs, not the repo name** — e.g.
+  `repo:UIC-OSF@250423191/plato-deploy@1198593358:ref:refs/heads/main`, not
+  `repo:UIC-OSF/plato-deploy:...`. A pattern built from the new *name* won't
+  match. Read the actual claim from CloudTrail rather than guessing:
+  ```bash
+  aws cloudtrail lookup-events --region us-east-2 \
+    --lookup-attributes AttributeKey=EventName,AttributeValue=AssumeRoleWithWebIdentity \
+    --max-results 5 --output json \
+    | python3 -c "import sys,json;[print(json.loads(e['CloudTrailEvent']).get('errorCode','SUCCESS'), (json.loads(e['CloudTrailEvent']).get('requestParameters') or {}).get('subjectFromWebIdentityToken')) for e in json.load(sys.stdin)['Events']]"
+  ```
+  `GET /repos/{owner}/{repo}/actions/oidc/customization/sub` also reports the
+  prefix in use, but CloudTrail shows what the token actually presented.
+- **Re-running the failed job doesn't help.** A re-run replays the *original*
+  OIDC token, minted before the fix. Fire a fresh `repository_dispatch` instead.
+
 For the full deploy procedure, SSM parameters, and backup layers, see
 [`DEPLOY.md`](DEPLOY.md).
 
