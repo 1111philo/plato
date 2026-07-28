@@ -525,9 +525,26 @@ Once `lessonKB.status === 'completed'`, the thread is feedback-only.
 - `pacingDirective` is suppressed and `postCompletionDirective` replaces it,
   telling the coach never to coach, assess, or award progress for a *different*
   lesson inside the same thread.
+- **`progress` freezes too.** The directive above is prose inside a 167-line
+  prompt, and compliance is model-dependent: evaluating open-weight Bedrock
+  models for per-agent routing, Kimi K2.5 emitted `[PROGRESS: 10]` on every
+  post-completion turn (when asked to start a *different* lesson in the thread)
+  where Haiku 4.5 correctly emitted no progress tag at all. `achieved` was
+  already safe via `!wasCompleted`, but the assignment to `next.progress` was
+  not, so a completed lesson's score could be rewritten by any turn of feedback
+  chatter. Completion semantics must not depend on a model choosing to obey an
+  instruction — the freeze is now in code.
 - `achieved` is one-shot — only true on the transition turn — so completion side
   effects (confetti, completion profile update) don't re-fire on subsequent
   feedback messages.
+- KB updates (`insights`, `learnerPosition`) are **not** frozen — capturing
+  feedback is the entire point of the post-completion thread.
+
+Scores are also range-clamped to 0–10 via `clampProgress`, which returns `null`
+(meaning "no score reported") for absent or unparseable values rather than
+coercing them. `Number(null)` is `0` and `Number('ten')` is `NaN`, so a naive
+coercion would silently reset a lesson's progress to zero when the coach omits
+or malforms the tag — both caught by tests during implementation.
 
 The pure helper `applyCoachResponseToKB` in `lessonEngine.js` is the **single
 owner** of this invariant.

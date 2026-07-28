@@ -472,12 +472,31 @@ export async function resumeLesson(lessonId) {
 
 // -- Helpers ------------------------------------------------------------------
 
+/** Progress is a 0–10 signal; a lesson completes at MAX_PROGRESS. */
+const MAX_PROGRESS = 10;
+
+/**
+ * Coerce a coach-reported progress score into the 0–10 range.
+ * Returns null for anything non-numeric so callers can treat it as "no score".
+ */
+function clampProgress(progress) {
+  // Guard null/undefined/'' explicitly — Number() coerces all three to 0, which
+  // would silently reset a lesson's progress when the coach reports no score.
+  if (progress == null || progress === '') return null;
+  const n = Number(progress);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(MAX_PROGRESS, Math.max(0, Math.round(n)));
+}
+
 /**
  * Apply a parsed coach response to a lesson KB. Pure — returns a new KB
  * without mutating the input. Centralizes the "feedback mode" invariant:
- * once a lesson is completed the exchange counter freezes and `achieved`
- * can't re-fire, so one-shot side effects (confetti, completion profile
- * update) stay one-shot across the feedback conversation that follows.
+ * once a lesson is completed, progress and the exchange counter both freeze
+ * and `achieved` can't re-fire, so one-shot side effects (confetti, completion
+ * profile update) stay one-shot across the feedback conversation that follows.
+ *
+ * This function is the single owner of completion semantics — it must not
+ * delegate any part of that to the model's willingness to follow the prompt.
  */
 export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) {
   const wasCompleted = prevKB?.status === 'completed';
@@ -496,8 +515,18 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
       next.learnerPosition = parsed.kbUpdate.learnerPosition;
     }
   }
-  if (parsed.progress != null) {
-    next.progress = parsed.progress;
+  // Progress is frozen once the lesson is complete. The coach prompt says not to
+  // assess or award progress in a completed thread, but that's prose in a long
+  // prompt — compliance varies by model (open-weight candidates evaluated for
+  // per-agent routing emit [PROGRESS: 10] on post-completion turns where Haiku
+  // correctly emits no tag). Completion semantics must not depend on a model
+  // following an instruction, so the freeze lives here.
+  //
+  // A null clamp means the score was absent or unparseable — leave the stored
+  // value alone rather than overwriting it with nothing.
+  const reportedProgress = clampProgress(parsed.progress);
+  if (reportedProgress != null && !wasCompleted) {
+    next.progress = reportedProgress;
   }
   if (!wasCompleted) {
     next.activitiesCompleted = (next.activitiesCompleted || 0) + 1;
@@ -506,7 +535,9 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   // `achieved` means "just achieved on this turn" — one-shot. Without this
   // guard it would re-fire on every post-completion message, triggering
   // confetti + completion-profile updates repeatedly in the feedback thread.
-  const achieved = parsed.progress >= 10 && !wasCompleted;
+  // Compare the clamped value so a malformed out-of-range score can't complete
+  // a lesson that the stored progress doesn't reflect.
+  const achieved = reportedProgress >= MAX_PROGRESS && !wasCompleted;
   if (achieved) {
     next.status = 'completed';
     next.completedAt = now();
