@@ -275,6 +275,82 @@ describe('applyCoachResponseToKB', () => {
     assert.equal(result.phase, LESSON_PHASES.COMPLETED);
   });
 
+  it('freezes progress once the lesson is complete', () => {
+    // A completed thread is feedback-only. The coach prompt says not to award
+    // progress there, but compliance varies by model, so the freeze is in code.
+    const prev = completedKB();
+    for (const progress of [9, 10, 3, 0]) {
+      const result = applyCoachResponseToKB(
+        prev,
+        { progress, kbUpdate: null, profileUpdate: null },
+        { now: () => 1_700_000_000_000 }
+      );
+      assert.equal(result.lessonKB.progress, prev.progress);
+      assert.equal(result.achieved, false);
+      assert.equal(result.phase, LESSON_PHASES.COMPLETED);
+    }
+  });
+
+  it('still records KB updates in the post-completion feedback thread', () => {
+    // Freezing progress must not freeze insight capture — post-completion
+    // feedback is the point of that thread.
+    const result = applyCoachResponseToKB(
+      completedKB(),
+      {
+        progress: 10,
+        kbUpdate: { insights: ['found the pacing slow'], learnerPosition: 'Gave feedback' },
+        profileUpdate: null,
+      },
+      { now: () => 1_700_000_000_000 }
+    );
+
+    assert.deepEqual(result.lessonKB.insights, ['found the pacing slow']);
+    assert.equal(result.lessonKB.learnerPosition, 'Gave feedback');
+  });
+
+  it('clamps an out-of-range progress score', () => {
+    const over = applyCoachResponseToKB(
+      activeKB(),
+      { progress: 47, kbUpdate: null, profileUpdate: null },
+      { now: () => 1_700_000_000_000 }
+    );
+    assert.equal(over.lessonKB.progress, 10);
+    assert.equal(over.achieved, true);
+
+    const under = applyCoachResponseToKB(
+      activeKB(),
+      { progress: -5, kbUpdate: null, profileUpdate: null },
+      { now: () => 1_700_000_000_000 }
+    );
+    assert.equal(under.lessonKB.progress, 0);
+    assert.equal(under.achieved, false);
+  });
+
+  it('ignores a non-numeric progress score without completing the lesson', () => {
+    const prev = activeKB();
+    const result = applyCoachResponseToKB(
+      prev,
+      { progress: 'ten', kbUpdate: null, profileUpdate: null },
+      { now: () => 1_700_000_000_000 }
+    );
+
+    assert.equal(result.lessonKB.progress, prev.progress);
+    assert.equal(result.achieved, false);
+    assert.equal(result.phase, LESSON_PHASES.LEARNING);
+  });
+
+  it('leaves progress untouched when no score is reported', () => {
+    const prev = activeKB();
+    const result = applyCoachResponseToKB(
+      prev,
+      { progress: null, kbUpdate: null, profileUpdate: null },
+      { now: () => 1_700_000_000_000 }
+    );
+
+    assert.equal(result.lessonKB.progress, prev.progress);
+    assert.equal(result.achieved, false);
+  });
+
   it('returns LEARNING phase for active lessons below progress 10', () => {
     const result = applyCoachResponseToKB(
       activeKB(),
