@@ -462,7 +462,7 @@ export default function LessonChat() {
       {loading === 'starting' && !displayText ? (
         <LessonLoadingView step={loadingStep} enrichments={loadingEnrichments} />
       ) : (
-        <ChatArea ref={chatAreaRef} scrollTrigger={`${messages.length}-${displayText?.length ?? ''}`} announcement={srAnnouncement}>
+        <ChatArea ref={chatAreaRef} announcement={srAnnouncement}>
           {messages.map(renderMessage)}
           {displayText != null && displayText.length > 0 && (
             <AssistantMessage content={displayText} streaming />

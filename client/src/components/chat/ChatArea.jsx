@@ -1,10 +1,9 @@
-import { useRef, useEffect, useCallback, forwardRef, useState } from 'react';
+import { useRef, useCallback, forwardRef } from 'react';
 import { useChatKeyboardNav } from '../../hooks/useChatKeyboardNav.js';
+import { useStickToBottom } from '../../hooks/useStickToBottom.js';
 
-const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announcement }, ref) {
+const ChatArea = forwardRef(function ChatArea({ children, announcement }, ref) {
   const logRef = useRef(null);
-  const bottomRef = useRef(null);
-  const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
 
   // Merge the forwarded ref with our internal logRef
   const setRefs = useCallback((node) => {
@@ -15,27 +14,9 @@ const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announc
 
   useChatKeyboardNav(logRef);
 
-  // Track user scroll to detect when they've manually scrolled away from bottom
-  useEffect(() => {
-    const container = logRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      // Consider "at bottom" if within 50px of the bottom
-      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-      setUserHasScrolledUp(!isAtBottom);
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    // Only auto-scroll if user hasn't manually scrolled up
-    if (!userHasScrolledUp) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [scrollTrigger, userHasScrolledUp]);
+  // Stay pinned to the bottom as content streams in — unless the reader has
+  // scrolled up. See the hook for why this watches the DOM, not React state.
+  useStickToBottom(logRef);
 
   return (
     <>
@@ -51,7 +32,6 @@ const ChatArea = forwardRef(function ChatArea({ children, scrollTrigger, announc
         <div className="mx-auto max-w-3xl space-y-3">
           {children}
         </div>
-        <div ref={bottomRef} aria-hidden="true" />
       </div>
       {/* Separate live region for screen reader announcements — kept outside the
           log so VoiceOver doesn't re-read chat history on every update */}
