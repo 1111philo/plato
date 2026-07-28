@@ -4,7 +4,6 @@ import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import Check from 'lucide-react/dist/esm/icons/check';
-import HelpCircle from 'lucide-react/dist/esm/icons/help-circle';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {

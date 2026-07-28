@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -56,8 +56,12 @@ function parseLessonPrompt(lessonId, markdown) {
   return parsed;
 }
 
-// Load all lesson prompt files
-const lessonFiles = readdirSync(lessonsDir).filter(f => f.endsWith('.md'));
+// Load all lesson prompt files. The directory is optional — lesson seeding was
+// removed in #288, so a clean checkout has no data/lessons at all. Reading it at
+// import time would throw ENOENT and fail the whole file before any test runs.
+const lessonFiles = existsSync(lessonsDir)
+  ? readdirSync(lessonsDir).filter(f => f.endsWith('.md'))
+  : [];
 const lessons = lessonFiles.map(f => {
   const lessonId = f.replace('.md', '');
   const content = readFileSync(resolve(lessonsDir, f), 'utf8');
