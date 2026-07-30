@@ -10,6 +10,7 @@ import Signup from './pages/Signup.jsx';
 import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
+import Privacy from './pages/Privacy.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
 import { BrandingProvider } from './contexts/BrandingContext.jsx';
 
@@ -94,6 +95,7 @@ export default function App() {
         <Route path="/signup" element={<RequireGuest><Signup /></RequireGuest>} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
+        <Route path="/privacy" element={<Privacy />} />
 
         <Route path="/plato/*" element={
           <RequireAuth>
