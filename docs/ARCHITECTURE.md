@@ -25,7 +25,8 @@ Detailed design notes and incident history for plato's load-bearing subsystems.
 
 ## AI agents
 
-9 AI agents via Bedrock or Anthropic API (prompt files in `client/prompts/`).
+9 AI agents, all sharing one open source model on Bedrock (prompt files in
+`client/prompts/`; see [AI provider & model choice](#ai-provider--model-choice)).
 Each prompt file has an HTML comment header documenting what it reads, who calls
 it, and its purpose:
 
@@ -47,6 +48,144 @@ Context appended at runtime (`client/js/orchestrator.js`):
   knowledge-base-editor).
 - Knowledge base is created/edited by admins via the KB Editor agent in the
   Customizer (not directly editable).
+
+## AI provider & model choice
+
+plato runs **one model for all nine agents** — no per-agent routing. It is
+declared once as `LLM` in `server/src/lib/ai-provider.js`, mirrored in
+`client/js/api.js`, and injected into plugins as `ctx.LLM`. Bedrock is the only
+backend, in production and in local dev; the direct Anthropic API provider was
+removed when plato moved to open weights.
+
+Current model: **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
+
+### Why this model
+
+Selected against the models available on Bedrock in us-east-2 by applying four
+constraints in the following order — the fourth is what ultimately decides it:
+
+1. **Bedrock-only is an institutional requirement** (UIC). Published weights are
+   irrelevant if AWS doesn't host the SKU in our region — the Bedrock catalog,
+   not the open-weight ecosystem, defines the candidate pool. It also means
+   third-party latency benchmarks don't transfer; latency is a property of the
+   host.
+2. **Image input is a hard filter.** Learners paste screenshots into the coach
+   (`metadata.imageKeys`), so a text-only model can't serve plato at all. Of the
+   43 open-weight model IDs in us-east-2, only 12 accept `IMAGE`, and most of
+   those are small (Ministral 3B–14B, Nemotron Nano, Palmyra Vision 7B, Gemma 3
+   4B/12B). That rules out GLM 5, DeepSeek V3.2, gpt-oss, Nemotron Super,
+   MiniMax, plain Qwen3-235B, Llama 3.3, and `kimi-k2-thinking` regardless of
+   how they score.
+3. **Reasoning models are disqualified.** plato's contract is *literal tags in
+   visible text* — `[PROGRESS: n]`, `[KB_UPDATE: {…}]`, `[PROFILE_UPDATE: {…}]`,
+   parsed by regex plus a brace-walk in `lessonEngine.js`. Models that emit
+   `reasoningContent` spend output budget on traces that never reach the parser.
+4. **Tag compliance and completion filter the rest.** Measured against the real
+   `coach.md` across five scenarios: Qwen3-VL hit 3/3 on the required
+   `[PROGRESS]`+`[KB_UPDATE]` pair and awarded `10` on 5/5 exemplar-achieved
+   trials (plato completes a lesson only at `progress >= 10`). Gemma 3 27B
+   dropped a `[PROGRESS]` tag (2/3). Mistral Large 3 and Pixtral Large failed
+   outright — Mistral called a solid red image "black".
+5. **The license must be OSI-approved — and this decides it.** plato is
+   **AGPL-3.0**; the goal was an *open source* model, not merely an open-weight
+   one. "Open weight" only means the parameters download. The **Llama 4 Community
+   License** (700M-MAU threshold, acceptable-use policy, "Built with Llama"
+   naming) and the **Gemma Terms of Use** both fail the Open Source Definition on
+   field-of-use and non-discrimination grounds and are not OSI-approved.
+   **Qwen3-VL's Apache-2.0 is the only OSI-approved license in the eligible set**,
+   which leaves the set with exactly one member.
+
+   Don't re-derive this as a liability question. Because plato calls Bedrock and
+   never redistributes weights, the Llama clauses are close to inert *as legal
+   exposure* — that reasoning nearly selected Llama 4 on an earlier draft. The bar
+   is definitional (is the model open source?), not a risk assessment.
+
+Note when scoring tag compliance: `[PROGRESS]` and `[KB_UPDATE]` are required
+every response, but `[PROFILE_UPDATE]` is **conditional** on the learner
+revealing something. Scoring all three as mandatory produces false failures.
+
+**The trade this makes:** `us.meta.llama4-maverick-17b-instruct-v1:0` measured
+faster (p50 526 ms vs ~1.1 s TTFT), cheaper, with no observed latency tail, and
+equal on every correctness measure — but it is **license-ineligible**. It is the
+tested one-line fallback if Qwen's tail becomes a production problem; taking it
+means **knowingly dropping below the open source bar**, so treat that as a
+conscious, documented trade rather than a config tweak. Against the incumbent
+Haiku the eligible choice costs only ~100 ms of p50 latency and saves 1.9× on
+cost, so open source did not mean a worse product.
+
+**Latency caveat:** Qwen3-VL's p50 TTFT is ~1 s, but two ad-hoc runs saw **47 s**
+and **36 s** on the same payload. Neither reproduced across 30 controlled
+samples, so the frequency is unmeasured. Watch for >5 s TTFT in the log-watch
+alarm.
+
+**Known limitation, not model-specific:** no model tested — including Haiku 4.5 —
+reliably detects learner *regression*. Given a retraction from `progress: 8`,
+Gemma scored 4/2/2 (appropriate), Haiku 5/6/4, Qwen3-VL 7/5/5, Llama 4 7/7/7.
+That's a `coach.md` prompt weakness, independent of which model runs behind it.
+
+Any replacement model must clear all five bars above — including the license one.
+Anthropic model IDs stay in `MODEL_MAP`, so falling back to Claude is a one-line
+`LLM` change, with the same open-source caveat as Llama 4 (more so — Haiku is
+proprietary). Full evaluation, tables, and rejected candidates:
+[`docs/MODEL_SELECTION.md`](MODEL_SELECTION.md).
+
+### Why the Converse API
+
+Non-Anthropic Bedrock models are only reachable through **Converse /
+ConverseStream**. This matters because the legacy `InvokeModel` path does **not**
+reject them: called with `qwen.*` or `openai.*`, it returns **HTTP 200** with an
+OpenAI-shaped body (`choices[0].message.content`), so callers reading
+`content[0].text` silently get `undefined`. A wrong-API mistake here fails
+quietly, not loudly.
+
+Rather than teach every caller a second dialect, plato keeps the **Anthropic
+Messages shape as its internal wire format** and translates only at the Bedrock
+boundary, in `server/src/lib/converse.js`:
+
+- Request: `{ max_tokens, system, messages }` → `{ inferenceConfig.maxTokens,
+  system: [{text}], messages: [{role, content: [{text} | {image}]}] }`. Base64
+  image blocks are decoded to bytes and their media type mapped to a Converse
+  `format`.
+- Response: `output.message.content[]` → `{ content: [{type:'text', text}],
+  usage: {input_tokens, output_tokens}, stop_reason }`. Multiple text blocks are
+  **concatenated** so a tag split across blocks still parses; `reasoningContent`
+  blocks are dropped.
+- Stream: `contentBlockDelta` → `content_block_delta` / `text_delta`, which is
+  the only event shape `parseSSEStream` in `client/js/api.js` matches on.
+
+Converse event order was verified identical for Anthropic and open-weight
+models (`messageStart → contentBlockDelta* → contentBlockStop → messageStop →
+metadata`), so no per-provider chunk handling is needed. Because the translation
+is pure functions with no AWS SDK dependency, it's unit-tested without network
+access (`server/tests/lib/converse.test.js`).
+
+Converse authorizes under the same `bedrock:InvokeModel` /
+`bedrock:InvokeModelWithResponseStream` IAM actions, so `template.yaml` needed no
+change.
+
+### No prompt caching
+
+Prompt caching is **Claude-exclusive on Bedrock**. Verified: Haiku 4.5 accepts
+`cachePoint`, while Qwen3, Kimi K2.5, DeepSeek v3.2, GLM 5, and gpt-oss-120b all
+hard-error with `AccessDeniedException: You invoked an unsupported model or your
+request did not allow prompt caching`. Do not add cache-point plumbing while
+plato runs a non-Anthropic model — it cannot work. (For the record, Claude's
+minimum cacheable prefix is 4096 tokens, and `coach.md` alone is ~3,685 — below
+the floor, where Bedrock silently no-ops rather than erroring.)
+
+### Cost
+
+Qwen3-VL is **~2.2× cheaper** than Haiku 4.5: $0.53/$2.66 per 1M input/output
+tokens versus $1.00/$5.00. At measured token counts that's ~$0.040 per
+16-exchange lesson versus ~$0.088. Note that Haiku 4.5 is absent from the AWS
+Pricing API, so its rate is the Anthropic first-party price used as a proxy,
+while Qwen3-VL's is real us-east-2 on-demand.
+
+**Latency is the trade, not cost.** Measured on the real `coach.md` payload,
+Qwen3-VL's time-to-first-token is roughly 2–6 s against Haiku's ~1.3–3.8 s, and
+it is less consistent — one observed outlier hit 47 s TTFT. Streaming hides some
+of this, and `BEDROCK_TIMEOUT_MS` (115 s) still bounds the worst case, but the
+tail is real and worth watching in the log-watch alarm.
 
 ## Image & conversation persistence (#191, #193)
 

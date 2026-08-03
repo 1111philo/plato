@@ -3,7 +3,9 @@
  * All API calls go through the server proxy (authenticatedFetch).
  */
 
-export const LLM = 'claude-haiku-4-5-20251001';
+// The single model behind every agent. Must match `LLM` in
+// server/src/lib/ai-provider.js, which resolves it to a Bedrock model ID.
+export const LLM = 'qwen3-vl-235b';
 
 export class ApiError extends Error {
   constructor(type, message, status) {
