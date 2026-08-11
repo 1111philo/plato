@@ -402,6 +402,12 @@ export default function ComposeBar({
               {loadingImages ? `Loading ${loadingCount} image${loadingCount === 1 ? '' : 's'}…` : (fetchingLink ? 'Fetching link…' : '')}
             </span>
           )}
+          {/* Privacy notice: shown when image upload is available and no images attached yet */}
+          {allowImages && images.length === 0 && !loadingImages && (
+            <span className="text-xs text-muted-foreground">
+              Images are stored and may be reviewed. <a href="/privacy" className="underline hover:text-foreground">Privacy policy</a>
+            </span>
+          )}
           <div className="flex-1" />
           <Button
             variant="default"
