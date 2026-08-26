@@ -474,7 +474,7 @@ export default function LessonChat() {
               {nextLesson ? (
                 <Button
                   size="lg"
-                  onClick={() => navigate(`/lesson/${nextLesson.lessonId}`)}
+                  onClick={() => navigate(`/lessons/${nextLesson.lessonId}`)}
                   className="min-w-[200px]"
                   aria-label={`Continue to next lesson: ${nextLesson.name}`}
                 >
