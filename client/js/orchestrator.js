@@ -9,6 +9,7 @@ import { validateLessonKB } from './validators.js';
 
 const promptCache = {};
 let knowledgeBase = null;
+let classroomSettings = null;
 
 async function loadPrompt(name) {
   if (promptCache[name]) return promptCache[name];
@@ -30,6 +31,19 @@ async function loadKnowledgeBase() {
     knowledgeBase = '';
   }
   return knowledgeBase;
+}
+
+async function loadClassroomSettings() {
+  if (classroomSettings) return classroomSettings;
+  try {
+    const resp = await authenticatedFetch('/v1/admin/theme');
+    if (!resp.ok) throw new Error();
+    const data = await resp.json();
+    classroomSettings = { language: data.language || 'en' };
+  } catch {
+    classroomSettings = { language: 'en' };
+  }
+  return classroomSettings;
 }
 
 const KB_AGENTS = ['coach', 'lesson-creator', 'knowledge-base-editor'];
@@ -127,6 +141,21 @@ export async function isReady() {
 
 export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
   let systemPrompt = await loadPrompt(promptName);
+
+  // Language directive for coach
+  if (promptName === 'coach') {
+    const settings = await loadClassroomSettings();
+    const languageMap = {
+      en: 'English', es: 'Spanish', fr: 'French', de: 'German',
+      pt: 'Portuguese', zh: 'Chinese', ja: 'Japanese', ko: 'Korean',
+      ar: 'Arabic', hi: 'Hindi'
+    };
+    const languageName = languageMap[settings.language] || 'English';
+    if (settings.language !== 'en') {
+      systemPrompt = `IMPORTANT: Respond in ${languageName}. All your responses must be in ${languageName}.\n\n${systemPrompt}`;
+    }
+  }
+
   if (KB_AGENTS.includes(promptName)) {
     const kb = await loadKnowledgeBase();
     if (kb) systemPrompt = `${systemPrompt}\n\n---\n\n## Program Knowledge Base\n\n${kb}`;

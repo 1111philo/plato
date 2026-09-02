@@ -36,6 +36,7 @@ export default function AdminCustomizer() {
   const [accent, setAccent] = useState('#dc2626');
   const [logoBase64, setLogoBase64] = useState(null);
   const [classroomName, setClassroomName] = useState('');
+  const [language, setLanguage] = useState('en');
   const [logoError, setLogoError] = useState('');
   const [saving, setSaving] = useState(false);
   const [styleMessage, setStyleMessage] = useState(null);
@@ -65,6 +66,7 @@ export default function AdminCustomizer() {
       setAccent(t.accent || '#dc2626');
       setLogoBase64(themeData.logoBase64 || null);
       setClassroomName(themeData.classroomName || '');
+      setLanguage(themeData.language || 'en');
       setKbContent(kbData.content || '');
       setKbConversation(kbData.conversation || null);
       setKbReadiness(kbData.readiness ?? null);
@@ -78,7 +80,7 @@ export default function AdminCustomizer() {
     setSaving(true);
     setStyleMessage(null);
     try {
-      await adminApi('PUT', '/v1/admin/theme', { theme: { primary, accent }, logoBase64, classroomName });
+      await adminApi('PUT', '/v1/admin/theme', { theme: { primary, accent }, logoBase64, classroomName, language });
       setStyleMessage({ text: 'Saved! Click "Visit Classroom" to see changes.', type: 'success' });
     } catch (e) { setStyleMessage({ text: e.message, type: 'error' }); }
     finally { setSaving(false); }
@@ -179,6 +181,27 @@ export default function AdminCustomizer() {
                 <Label htmlFor="classroom-name">Classroom Name</Label>
                 <Input id="classroom-name" type="text" value={classroomName} placeholder="e.g. AI Leaders Academy" onChange={e => setClassroomName(e.target.value)} />
                 <p className="text-xs text-muted-foreground">Appears in the header, login pages, and browser tab. Used as the logo text when no image is uploaded.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="language">Classroom Language</Label>
+                <select
+                  id="language"
+                  value={language}
+                  onChange={e => setLanguage(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <option value="en">English</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
+                  <option value="pt">Português</option>
+                  <option value="zh">中文</option>
+                  <option value="ja">日本語</option>
+                  <option value="ko">한국어</option>
+                  <option value="ar">العربية</option>
+                  <option value="hi">हिन्दी</option>
+                </select>
+                <p className="text-xs text-muted-foreground">Language for AI coach responses and generated content.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="logo-file">Logo image (optional)</Label>
