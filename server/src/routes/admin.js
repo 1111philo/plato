@@ -12,6 +12,9 @@ import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
+import {
+  getFieldDefinitions, validateFieldDefinition, mergeFieldValues, visibleFieldValues, MAX_FIELDS,
+} from '../lib/user-fields.js';
 
 const admin = new Hono();
 
@@ -50,6 +53,7 @@ admin.get('/v1/admin/users', async (c) => {
   const url = new URL(c.req.url);
   const includeStats = (url.searchParams.get('include') || '').split(',').includes('stats');
   const users = await db.listAllUsers();
+  const fieldDefs = getFieldDefinitions((await db.getSyncData('_system', 'settings'))?.data);
   const baseRow = (p) => ({
     userId: p.userId,
     email: p.email,
@@ -58,6 +62,7 @@ admin.get('/v1/admin/users', async (c) => {
     userGroup: p.userGroup,
     role: p.role,
     slackUserId: p.slackUserId || null,
+    customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
   });
   if (!includeStats) {
@@ -118,12 +123,14 @@ admin.get('/v1/admin/users/:userId', async (c) => {
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
   }
+  const settings = await db.getSyncData('_system', 'settings');
   return c.json({
     userId: user.userId,
     email: user.email,
     name: user.name,
     userGroup: user.userGroup,
     role: user.role,
+    customFields: visibleFieldValues(getFieldDefinitions(settings?.data), user.customFields),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   });
@@ -406,6 +413,15 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
     updates.username = body.username.toLowerCase();
   }
   if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
+  if (body.customFields !== undefined) {
+    // Same rule as learner self-edits: the result must have every required
+    // field filled. (Users who simply haven't been edited yet are prompted by
+    // ProfileCompletionGate on their next classroom visit.)
+    const settings = await db.getSyncData('_system', 'settings');
+    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), user.customFields, body.customFields, { enforceRequired: true });
+    if (merged.error) return c.json({ error: merged.error }, 400);
+    updates.customFields = merged.values;
+  }
   if (Object.keys(updates).length === 0) return c.json({ error: 'No valid fields' }, 400);
   await db.updateUser(userId, updates);
   return c.json({ ok: true });
@@ -515,6 +531,99 @@ admin.delete('/v1/admin/groups/:name', async (c) => {
   );
 
   return c.json({ userGroups: groups });
+});
+
+// ── Custom user fields (#364) ──
+// Definitions are an ordered array in `_system:settings.userFields`; values
+// live on each user record's `customFields`. Validation lives in
+// lib/user-fields.js. Responses use `{ userFields: [...] }` (mirrors
+// `{ userGroups }`).
+
+async function readUserFieldSettings() {
+  const current = await db.getSyncData('_system', 'settings');
+  const settings = current?.data || {};
+  return { current, settings, fields: getFieldDefinitions(settings) };
+}
+
+async function writeUserFields(current, settings, fields) {
+  settings.userFields = fields;
+  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
+}
+
+// GET /v1/admin/user-fields
+admin.get('/v1/admin/user-fields', async (c) => {
+  const { fields } = await readUserFieldSettings();
+  return c.json({ userFields: fields });
+});
+
+// POST /v1/admin/user-fields — add a field (appended to the end)
+admin.post('/v1/admin/user-fields', async (c) => {
+  const body = await c.req.json();
+  const { current, settings, fields } = await readUserFieldSettings();
+  if (fields.length >= MAX_FIELDS) return c.json({ error: `At most ${MAX_FIELDS} custom fields` }, 400);
+  const { field, error } = validateFieldDefinition(body);
+  if (error) return c.json({ error }, 400);
+  if (fields.some((f) => f.label.toLowerCase() === field.label.toLowerCase())) {
+    return c.json({ error: 'A field with that label already exists' }, 409);
+  }
+  fields.push(field);
+  await writeUserFields(current, settings, fields);
+  return c.json({ userFields: fields }, 201);
+});
+
+// PUT /v1/admin/user-fields/order — reorder; body `{ ids: [...] }` must be a
+// permutation of the existing ids.
+admin.put('/v1/admin/user-fields/order', async (c) => {
+  const { ids } = await c.req.json();
+  const { current, settings, fields } = await readUserFieldSettings();
+  if (!Array.isArray(ids) || ids.length !== fields.length || new Set(ids).size !== ids.length
+    || !ids.every((id) => fields.some((f) => f.id === id))) {
+    return c.json({ error: 'ids must list every field exactly once' }, 400);
+  }
+  const reordered = ids.map((id) => fields.find((f) => f.id === id));
+  await writeUserFields(current, settings, reordered);
+  return c.json({ userFields: reordered });
+});
+
+// PUT /v1/admin/user-fields/:id — edit a field. The type is fixed once
+// created (stored values were validated against it); label, required, and
+// dropdown options are editable.
+admin.put('/v1/admin/user-fields/:id', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const { current, settings, fields } = await readUserFieldSettings();
+  const idx = fields.findIndex((f) => f.id === id);
+  if (idx === -1) return c.json({ error: 'Field not found' }, 404);
+  if (body.type !== undefined && body.type !== fields[idx].type) {
+    return c.json({ error: 'A field\'s type cannot be changed — delete it and add a new one' }, 400);
+  }
+  const { field, error } = validateFieldDefinition({ ...body, type: fields[idx].type }, fields[idx]);
+  if (error) return c.json({ error }, 400);
+  if (fields.some((f, i) => i !== idx && f.label.toLowerCase() === field.label.toLowerCase())) {
+    return c.json({ error: 'A field with that label already exists' }, 409);
+  }
+  fields[idx] = field;
+  await writeUserFields(current, settings, fields);
+  return c.json({ userFields: fields });
+});
+
+// DELETE /v1/admin/user-fields/:id — remove a field and erase its values
+// from every user (same cascade as deleting a user group).
+admin.delete('/v1/admin/user-fields/:id', async (c) => {
+  const id = c.req.param('id');
+  const { current, settings, fields } = await readUserFieldSettings();
+  const idx = fields.findIndex((f) => f.id === id);
+  if (idx === -1) return c.json({ error: 'Field not found' }, 404);
+  fields.splice(idx, 1);
+  await writeUserFields(current, settings, fields);
+
+  const users = await db.listAllUsers();
+  await Promise.all(
+    users.filter((u) => u.customFields && Object.hasOwn(u.customFields, id))
+      .map((u) => db.removeUserCustomField(u.userId, id))
+  );
+
+  return c.json({ userFields: fields });
 });
 
 // DELETE /v1/admin/users/:userId

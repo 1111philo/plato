@@ -97,6 +97,60 @@ describe('POST /v1/auth/signup', () => {
   });
 });
 
+describe('POST /v1/auth/signup — custom user fields (#364)', () => {
+  const FIELDS = [
+    { id: 'fld_org', label: 'Organization', type: 'text', required: true },
+    { id: 'fld_site', label: 'Website', type: 'link', required: false },
+  ];
+  let created;
+
+  beforeEach(() => {
+    created = null;
+    db.getInvite = async () => ({
+      inviteToken: 'inv_test', email: 'test@example.com', status: 'pending',
+      ttl: Math.floor(Date.now() / 1000) + 86400,
+    });
+    db.getUserByEmail = async () => null;
+    db.getUserByUsername = async () => null;
+    db.createUser = async (u) => { created = u; };
+    db.markInviteUsed = async () => {};
+    db.storeRefreshToken = async () => {};
+    db.getSyncData = async () => ({ data: { userFields: FIELDS } });
+  });
+
+  it('stores validated custom field values on the new user', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', name: 'Test', password: 'password123',
+      customFields: { fld_org: 'UIC', fld_unknown: 'dropped' },
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(created.customFields, { fld_org: 'UIC' });
+  });
+
+  it('does not enforce required fields at signup (the gate collects them)', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', name: 'Test', password: 'password123',
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(created.customFields, {});
+  });
+
+  it('rejects malformed values', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', name: 'Test', password: 'password123',
+      customFields: { fld_site: 'ftp://nope' },
+    });
+    assert.equal(res.status, 400);
+    assert.equal(created, null);
+  });
+});
+
 describe('POST /v1/auth/login', () => {
   beforeEach(() => {
     db.storeRefreshToken = async () => {};

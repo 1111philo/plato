@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
+import CustomFieldInput from '../components/CustomFieldInput.jsx';
+import { missingRequired } from '../lib/userFields.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +22,8 @@ export default function Signup() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [groups, setGroups] = useState([]);
+  const [userFields, setUserFields] = useState([]);
+  const [fieldValues, setFieldValues] = useState({});
   const { login } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -31,6 +35,10 @@ export default function Signup() {
     fetch('/v1/groups')
       .then(r => r.json())
       .then(d => setGroups(d.userGroups || []))
+      .catch(() => {});
+    fetch('/v1/user-fields')
+      .then(r => r.json())
+      .then(d => setUserFields(d.userFields || []))
       .catch(() => {});
   }, []);
 
@@ -51,6 +59,12 @@ export default function Signup() {
       setError('Passwords do not match.');
       return;
     }
+    const missing = missingRequired(userFields, fieldValues);
+    if (missing.length) {
+      const labels = userFields.filter(f => missing.includes(f.id)).map(f => f.label);
+      setError(`Please fill in: ${labels.join(', ')}.`);
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
@@ -64,6 +78,7 @@ export default function Signup() {
           username: username.trim() || undefined,
           password,
           userGroup: group || undefined,
+          customFields: userFields.length ? fieldValues : undefined,
         }),
       });
       const data = await res.json();
@@ -145,6 +160,15 @@ export default function Signup() {
               </select>
             </div>
           )}
+          {userFields.map(f => (
+            <CustomFieldInput
+              key={f.id}
+              field={f}
+              idPrefix="signup-field"
+              value={fieldValues[f.id]}
+              onChange={(v) => setFieldValues(prev => ({ ...prev, [f.id]: v }))}
+            />
+          ))}
           <div className="space-y-2">
             <Label htmlFor="signup-password">Password</Label>
             <PasswordField

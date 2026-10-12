@@ -14,6 +14,13 @@ async function authedReq(app, method, path, body, role = 'user') {
   });
 }
 
+// Routes read custom user field definitions from `_system:settings` (#364).
+// Default to "no settings" so tests that don't care never fall through to the
+// real DynamoDB client; tests that need fields override this.
+beforeEach(() => {
+  db.getSyncData = async () => null;
+});
+
 describe('GET /v1/me', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
@@ -186,3 +193,74 @@ describe('DELETE /v1/me', () => {
   });
 });
 
+
+describe('custom user fields (#364)', () => {
+  const FIELDS = [
+    { id: 'fld_org', label: 'Organization', type: 'text', required: true },
+    { id: 'fld_role', label: 'Role', type: 'dropdown', required: false, options: ['Teacher', 'Student'] },
+  ];
+  let stored;
+  let lastUpdate;
+
+  beforeEach(() => {
+    stored = { fld_role: 'Teacher', fld_deleted: 'stale' };
+    lastUpdate = null;
+    db.getUserById = async () => ({
+      userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Test',
+      userGroup: null, role: 'user', customFields: stored,
+    });
+    db.getSyncData = async (userId, key) =>
+      userId === '_system' && key === 'settings' ? { data: { userFields: FIELDS }, version: 1 } : null;
+    db.updateUser = async (_id, updates) => {
+      lastUpdate = updates;
+      if (updates.customFields) stored = updates.customFields;
+    };
+  });
+
+  function makeApp() {
+    const app = new Hono();
+    app.route('/', me);
+    return app;
+  }
+
+  it('GET /v1/me/fields returns definitions, visible values, and missing required ids', async () => {
+    const res = await authedReq(makeApp(), 'GET', '/v1/me/fields');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.userFields, FIELDS);
+    assert.deepEqual(data.values, { fld_role: 'Teacher' }); // deleted-field value hidden
+    assert.deepEqual(data.missing, ['fld_org']);
+  });
+
+  it('GET /v1/me includes customFields', async () => {
+    const data = await (await authedReq(makeApp(), 'GET', '/v1/me')).json();
+    assert.deepEqual(data.customFields, { fld_role: 'Teacher' });
+  });
+
+  it('PATCH /v1/me merges customFields and returns them', async () => {
+    const res = await authedReq(makeApp(), 'PATCH', '/v1/me', { customFields: { fld_org: ' UIC ' } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(lastUpdate.customFields, { fld_role: 'Teacher', fld_org: 'UIC' });
+    const data = await res.json();
+    assert.deepEqual(data.customFields, { fld_role: 'Teacher', fld_org: 'UIC' });
+  });
+
+  it('PATCH /v1/me rejects clearing a required field', async () => {
+    stored = { fld_org: 'UIC' };
+    const res = await authedReq(makeApp(), 'PATCH', '/v1/me', { customFields: { fld_org: '' } });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /Organization is required/);
+    assert.equal(lastUpdate, null);
+  });
+
+  it('PATCH /v1/me rejects an invalid dropdown value', async () => {
+    const res = await authedReq(makeApp(), 'PATCH', '/v1/me', { customFields: { fld_role: 'Janitor' } });
+    assert.equal(res.status, 400);
+  });
+
+  it('GET /v1/me/export includes labelled custom field values', async () => {
+    db.getAllSyncData = async () => [];
+    const data = await (await authedReq(makeApp(), 'GET', '/v1/me/export')).json();
+    assert.deepEqual(data.profile.customFields, [{ id: 'fld_role', label: 'Role', value: 'Teacher' }]);
+  });
+});

@@ -123,6 +123,16 @@ if (hasLastActiveAt.count === 0) {
   sqlite.exec('ALTER TABLE users ADD COLUMN lastActiveAt TEXT');
 }
 
+// Admin-defined custom user field values (#364). Stored as a JSON object
+// keyed by field id; (de)serialized at the db boundary so callers see the
+// same plain object DynamoDB returns.
+const hasCustomFields = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'customFields'"
+).get();
+if (hasCustomFields.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN customFields TEXT');
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
@@ -207,37 +217,48 @@ function conditionalCheckFailed(message) {
   return err;
 }
 
+// -- Helper: user row (de)serialization ---------------------------------------
+
+function rowToUser(row) {
+  if (!row) return null;
+  if (typeof row.customFields === 'string') {
+    try { row.customFields = JSON.parse(row.customFields); } catch { row.customFields = null; }
+  }
+  return row;
+}
+
 // -- Database operations (same API as db-dynamodb.js) -------------------------
 
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
+    const customJson = customFields && Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, slackUserId, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, slackUserId || null, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, slackUserId || null, customJson, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
   async getUserById(userId) {
-    return sqlite.prepare('SELECT * FROM users WHERE userId = ?').get(userId) || null;
+    return rowToUser(sqlite.prepare('SELECT * FROM users WHERE userId = ?').get(userId));
   },
 
   async getUserByEmail(email) {
-    return sqlite.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase()) || null;
+    return rowToUser(sqlite.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase()));
   },
 
   async getUserByUsername(username) {
-    return sqlite.prepare('SELECT * FROM users WHERE username = ?').get(username.toLowerCase()) || null;
+    return rowToUser(sqlite.prepare('SELECT * FROM users WHERE username = ?').get(username.toLowerCase()));
   },
 
   async updateUser(userId, fields) {
     const keys = Object.keys(fields);
     if (keys.length === 0) return;
     const sets = keys.map(k => `${k} = ?`).join(', ');
-    const values = keys.map(k => fields[k]);
+    const values = keys.map(k => (k === 'customFields' && fields[k] != null ? JSON.stringify(fields[k]) : fields[k]));
     values.push(new Date().toISOString(), userId);
     sqlite.prepare(`UPDATE users SET ${sets}, updatedAt = ? WHERE userId = ?`).run(...values);
   },
@@ -259,12 +280,20 @@ const db = {
     sqlite.prepare(`UPDATE users SET ${field} = ? WHERE userId = ?`).run(value, userId);
   },
 
+  // Remove one custom user field value (#364) in place (json_remove), so a
+  // concurrent profile save to a different field can't be clobbered.
+  async removeUserCustomField(userId, fieldId) {
+    sqlite.prepare(
+      'UPDATE users SET customFields = json_remove(customFields, ?) WHERE userId = ? AND customFields IS NOT NULL'
+    ).run(`$."${fieldId}"`, userId);
+  },
+
   async listUsers() {
-    return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all();
+    return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all().map(rowToUser);
   },
 
   async listAllUsers() {
-    return sqlite.prepare('SELECT * FROM users').all();
+    return sqlite.prepare('SELECT * FROM users').all().map(rowToUser);
   },
 
   async countUsers() {

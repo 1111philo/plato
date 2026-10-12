@@ -17,6 +17,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
+import UserFieldsDialog from './UserFieldsDialog.jsx';
+import CustomFieldInput from '../../components/CustomFieldInput.jsx';
+import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
 
 const PAGE_SIZE = 20;
 
@@ -103,8 +106,10 @@ export default function AdminUsers() {
   // Modal states
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [userFields, setUserFields] = useState([]);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '' });
+  const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
 
   // Invite modal state
   const [inviteInput, setInviteInput] = useState('');
@@ -116,6 +121,8 @@ export default function AdminUsers() {
   // Search, filter, pagination
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  // Custom-field filter (#364): { fieldId, value } — value is '__set', '__empty', or a dropdown option.
+  const [fieldFilter, setFieldFilter] = useState({ fieldId: '', value: '' });
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
   const [sortAnnouncement, setSortAnnouncement] = useState('');
@@ -152,6 +159,7 @@ export default function AdminUsers() {
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setPendingInvites(Array.isArray(invitesRes) ? invitesRes.filter(x => x.status === 'pending') : []);
       setGroups(settingsRes.userGroups || []);
+      setUserFields(Array.isArray(settingsRes.userFields) ? settingsRes.userFields : []);
       setLinkInvite(linkRes);
       // Slack connection status comes from the plugin's settings, not legacy _system:settings.slack.
       // The Slack tab is hidden when the plugin is disabled OR not connected.
@@ -475,17 +483,25 @@ export default function AdminUsers() {
       return;
     }
     setEditUser(u);
-    setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user' });
+    setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
   }, [paramUserId, users, navigate]);
 
   async function saveEditUser() {
     if (!editUser) return;
+    const missing = missingRequired(userFields, editForm.customFields);
+    if (missing.length) {
+      const labels = userFields.filter(f => missing.includes(f.id)).map(f => f.label);
+      setMessage({ text: `Fill in required ${labels.length === 1 ? 'field' : 'fields'}: ${labels.join(', ')}.`, type: 'error' });
+      return;
+    }
     try {
       await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
         name: editForm.name,
         email: editForm.email,
         username: editForm.username,
         userGroup: editForm.userGroup || null,
+        // Send every defined field so cleared inputs clear the stored value.
+        customFields: Object.fromEntries(userFields.map((f) => [f.id, editForm.customFields[f.id] ?? ''])),
       });
       if (editForm.role !== editUser.role) {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
@@ -504,11 +520,11 @@ export default function AdminUsers() {
     const items = [];
     for (const inv of pendingInvites) {
       if (!inv.isLink) {
-        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, createdAt: inv.createdAt, _invite: inv });
+        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
       }
     }
     for (const u of users) {
-      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, createdAt: u.createdAt, _user: u });
+      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
     }
     return items;
   }, [users, pendingInvites]);
@@ -528,18 +544,27 @@ export default function AdminUsers() {
     else if (filter === 'admins') list = list.filter(i => i._type === 'user' && i.role === 'admin');
     else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
 
-    // Apply search
+    // Apply custom-field filter (invites have no field values, so they drop out)
+    const filterDef = userFields.find(f => f.id === fieldFilter.fieldId);
+    if (filterDef && fieldFilter.value) {
+      list = list.filter(i => i._type === 'user' && matchesFieldFilter(i.customFields, filterDef, fieldFilter.value));
+    }
+
+    // Apply search (custom field values are searchable too)
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(i =>
         (i.email && i.email.toLowerCase().includes(q)) ||
         (i.name && i.name.toLowerCase().includes(q)) ||
-        (i.username && i.username.toLowerCase().includes(q))
+        (i.username && i.username.toLowerCase().includes(q)) ||
+        customFieldsMatch(i.customFields, q)
       );
     }
 
     return list;
-  }, [combinedList, filter, search]);
+  }, [combinedList, filter, search, userFields, fieldFilter]);
+
+  const filterField = userFields.find(f => f.id === fieldFilter.fieldId) || null;
 
   // Sort comparators live at module level (SORT_KEY_FNS) so their references
   // are stable; nullish values always sort last regardless of direction so
@@ -581,7 +606,7 @@ export default function AdminUsers() {
 
 
   // Reset page when filter/search/sort changes
-  useEffect(() => { setPage(1); }, [filter, search, sortBy]);
+  useEffect(() => { setPage(1); }, [filter, search, sortBy, fieldFilter]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -622,6 +647,15 @@ export default function AdminUsers() {
                 {groups.map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
+            {userFields.map(f => (
+              <CustomFieldInput
+                key={f.id}
+                field={f}
+                idPrefix="edit-field"
+                value={editForm.customFields[f.id]}
+                onChange={(v) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [f.id]: v } }))}
+              />
+            ))}
             {!isSelf && (
               <div className="space-y-2">
                 <Label htmlFor="edit-role">Role</Label>
@@ -677,6 +711,10 @@ export default function AdminUsers() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             User Groups
           </Button>
+          <Button variant="outline" onClick={() => setFieldsOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            User Fields
+          </Button>
         </div>
       </div>
 
@@ -693,7 +731,7 @@ export default function AdminUsers() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-4">
         <Input
           type="text"
-          placeholder="Search by email, username, or name..."
+          placeholder={userFields.length ? 'Search by email, username, name, or field...' : 'Search by email, username, or name...'}
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="max-w-xs"
@@ -712,6 +750,31 @@ export default function AdminUsers() {
             </Button>
           ))}
         </div>
+        {userFields.length > 0 && (
+          <div className="flex gap-2" role="group" aria-label="Filter by custom field">
+            <select
+              aria-label="Custom field"
+              value={fieldFilter.fieldId}
+              onChange={e => setFieldFilter({ fieldId: e.target.value, value: e.target.value ? '__set' : '' })}
+              className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
+            >
+              <option value="">Any field</option>
+              {userFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </select>
+            {filterField && (
+              <select
+                aria-label={`${filterField.label} value`}
+                value={fieldFilter.value}
+                onChange={e => setFieldFilter(prev => ({ ...prev, value: e.target.value }))}
+                className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
+              >
+                <option value="__set">Has a value</option>
+                <option value="__empty">Empty</option>
+                {filterField.type === 'dropdown' && (filterField.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Polite live region announces sort changes for screen-reader users
@@ -732,6 +795,7 @@ export default function AdminUsers() {
                   <SortHeader sortKey="completed" sortBy={sortBy} onSort={handleSort} align="center">Completed</SortHeader>
                   <SortHeader sortKey="lastActive" sortBy={sortBy} onSort={handleSort}>Last active</SortHeader>
                   <SortHeader sortKey="date" sortBy={sortBy} onSort={handleSort}>Date added</SortHeader>
+                  {filterField && <TableHead>{filterField.label}</TableHead>}
                   {slackConnected && <TableHead>Slack</TableHead>}
                   <TableHead><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
@@ -747,6 +811,7 @@ export default function AdminUsers() {
                     <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+                    {filterField && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
@@ -785,6 +850,11 @@ export default function AdminUsers() {
                         : <span className="text-muted-foreground">&mdash;</span>}
                     </TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+                    {filterField && (
+                      <TableCell className="max-w-48 truncate">
+                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
+                      </TableCell>
+                    )}
                     {slackConnected && (
                       <TableCell>
                         {item._user.slackUserId ? (
@@ -1054,6 +1124,19 @@ export default function AdminUsers() {
       </Dialog>
 
       {/* User Groups Modal */}
+      <UserFieldsDialog
+        open={fieldsOpen}
+        onOpenChange={setFieldsOpen}
+        fields={userFields}
+        onChange={(next) => {
+          setUserFields(next);
+          // Reset a filter pointing at a deleted field.
+          if (fieldFilter.fieldId && !next.some(f => f.id === fieldFilter.fieldId)) setFieldFilter({ fieldId: '', value: '' });
+          // Values for deleted fields were erased server-side; refresh rows.
+          if (next.length < userFields.length) loadData();
+        }}
+      />
+
       <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
         <DialogContent>
           <DialogHeader>

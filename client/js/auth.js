@@ -223,6 +223,20 @@ export async function updateProfile(updates) {
 }
 
 /**
+ * Admin-defined custom user fields (#364): definitions, the caller's values,
+ * and the ids of required fields still missing. Always fetched fresh — the
+ * cached auth user can't know an admin just added a required field.
+ */
+export async function getMyFields() {
+  const res = await authenticatedFetch('/v1/me/fields');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to load profile fields');
+  }
+  return res.json();
+}
+
+/**
  * Fetch the API key assigned by the admin (if any).
  * Returns the key string or null.
  */
