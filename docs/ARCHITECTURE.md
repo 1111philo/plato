@@ -335,7 +335,7 @@ Added to enable bulk onboarding without collecting emails upfront (e.g., sharing
 
 ### Signup flow
 
-`POST /v1/auth/signup` accepts `inviteToken`, `email`, `name`, `password`, `username` (optional), `userGroup` (optional).
+`POST /v1/auth/signup` accepts `inviteToken`, `email`, `name`, `password`, `username` (optional), `userGroup` (optional), `customFields` (optional — see [Custom user fields](#custom-user-fields-364); format-validated, required-ness not enforced at signup).
 
 - **Email invites:** `email` must match `invite.email`.
 - **Link invites:** `email` can be any valid address (required field).
@@ -820,6 +820,69 @@ never be on the hot path of an admin page load. `lambda:InvokeFunction`
 scoped to `${StackName}-*` is granted to `PlatoApiFunction` in `template.yaml`.
 In local dev / tests, `AWS_LAMBDA_FUNCTION_NAME` is unset and the kickoff is a
 no-op.
+
+## Custom user fields (#364)
+
+Admins define extra profile fields (Admin → Users → **User Fields**) that every
+user fills in — e.g. organization, role, website, phone. Built for the waitlist
+(#363), whose registration form collects the same fields, and so admins can
+search/filter users by them instead of keeping side spreadsheets. It's core,
+not a plugin: it touches signup, the classroom gate, `/settings`, and the
+Users list, none of which have plugin slots, and #363 depends on it.
+
+**Storage.**
+- Definitions: ordered array at `_system:settings.userFields`, alongside
+  `userGroups`. Shape: `{ id: 'fld_…', label, type, required, options? }`.
+  Types: `text`, `textarea`, `dropdown` (with `options`), `link` (http/https
+  only), `phone` (7–15 digits).
+- Values: on the **user record** as `customFields: { [fieldId]: string }` —
+  not sync-data, so the Users list can search/filter every user without N
+  extra reads. SQLite stores it as a JSON `TEXT` column, (de)serialized at the
+  db boundary (`rowToUser`); DynamoDB stores a native map.
+- `server/src/lib/user-fields.js` is the single validator
+  (`validateFieldDefinition`, `mergeFieldValues`, `missingRequiredFields`,
+  `visibleFieldValues`). Values are keyed by stable id, so relabeling a field
+  never orphans answers. A field's **type is fixed** once created (stored
+  values were validated against it) — delete and re-add to change it.
+  Deleting a field erases its values from every user (same cascade as deleting
+  a user group). Values for ids with no current definition are never returned.
+
+**API.**
+
+| Endpoint | Who | Purpose |
+| --- | --- | --- |
+| `GET /v1/user-fields` | public | Definitions only (for the signup form) |
+| `GET /v1/me/fields` | user | `{ userFields, values, missing }` |
+| `PATCH /v1/me` `{ customFields }` | user | Partial merge; clearing a required field → 400 |
+| `GET/POST /v1/admin/user-fields` | admin | List / add (`{ userFields }` response) |
+| `PUT /v1/admin/user-fields/:id` | admin | Edit label / required / options |
+| `PUT /v1/admin/user-fields/order` | admin | Reorder (`{ ids }`, must be a permutation) |
+| `DELETE /v1/admin/user-fields/:id` | admin | Remove + erase values |
+| `PATCH /v1/admin/users/:id` `{ customFields }` | admin | Edit values; required **not** enforced |
+
+`GET /v1/admin/users[/:id]` and `GET /v1/me` include `customFields`;
+`GET /v1/me/export` includes them with labels.
+
+**Required fields & the gate.** `ProfileCompletionGate` wraps the classroom
+routes (not `/plato/*`) and fetches `GET /v1/me/fields` on every classroom load
+— the cached auth user in localStorage can't know an admin just made a field
+required. If anything required is missing, the learner sees "Complete your
+profile" with just those fields and can't reach lessons until they're saved. A
+dropdown value that's no longer one of the options counts as missing, so
+learners re-pick after an admin edits the list. Deliberate choices:
+- **Fails open** — if the status request errors, the classroom renders; a
+  profile prompt must never lock learners out of lessons.
+- **Client-side gate only** — the API doesn't refuse lesson calls for
+  incomplete profiles. It's a data-collection prompt, not an access control.
+- **Signup doesn't enforce required server-side** (the form does client-side):
+  a stale cached signup form must not hard-fail account creation; the gate
+  catches anything missing on first visit.
+- **Admins** can leave required fields blank when editing a user; that user
+  is prompted on their next visit. Skipped during "View as User".
+
+**Admin → Users.** Search matches custom field values too. A field filter
+(field + Has a value / Empty / a specific dropdown option) narrows the list
+and adds a column with that field's values.
 
 ## Admin "View as User"
 

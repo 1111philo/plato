@@ -7,7 +7,9 @@ import {
   getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
-import { updateProfile } from '../../js/auth.js';
+import { updateProfile, getMyFields } from '../../js/auth.js';
+import { missingRequired, pickValues } from '../lib/userFields.js';
+import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile } from '../lib/profileQueue.js';
@@ -36,12 +38,41 @@ export default function Settings() {
   const [nameFeedback, setNameFeedback] = useState('');
   const [usernameFeedback, setUsernameFeedback] = useState('');
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [userFields, setUserFields] = useState([]);
+  const [fieldValues, setFieldValues] = useState({});
+  const [fieldsFeedback, setFieldsFeedback] = useState('');
+  const [fieldsSaving, setFieldsSaving] = useState(false);
 
   useEffect(() => {
     (async () => {
       setProfileSummary(await getLearnerProfileSummary());
     })();
+    getMyFields()
+      .then((data) => {
+        setUserFields(data.userFields || []);
+        setFieldValues(data.values || {});
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSaveFields = async (e) => {
+    e.preventDefault();
+    if (missingRequired(userFields, fieldValues).length) {
+      setFieldsFeedback('Fill in all required fields.');
+      return;
+    }
+    setFieldsSaving(true);
+    try {
+      const data = await updateProfile({ customFields: pickValues(fieldValues, userFields.map((f) => f.id)) });
+      setFieldValues(data.customFields || {});
+      setFieldsFeedback('Saved!');
+    } catch (err) {
+      setFieldsFeedback(err.message || 'Failed to update');
+    } finally {
+      setFieldsSaving(false);
+    }
+    setTimeout(() => setFieldsFeedback(''), 3000);
+  };
 
   const handleSaveUsername = async (e) => {
     e.preventDefault();
@@ -171,6 +202,32 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
+
+      {userFields.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-4" onSubmit={handleSaveFields} noValidate>
+              {userFields.map((f) => (
+                <CustomFieldInput
+                  key={f.id}
+                  field={f}
+                  idPrefix="settings-field"
+                  value={fieldValues[f.id]}
+                  onChange={(v) => setFieldValues((prev) => ({ ...prev, [f.id]: v }))}
+                  disabled={fieldsSaving}
+                />
+              ))}
+              <Button type="submit" disabled={fieldsSaving}>
+                {fieldsSaving ? 'Saving...' : 'Save'}
+              </Button>
+              {fieldsFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{fieldsFeedback}</p>}
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

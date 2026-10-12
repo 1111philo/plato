@@ -1317,3 +1317,102 @@ describe('GET /v1/admin/users?include=stats', () => {
     assert.equal(scanned, false, 'base endpoint should not scan sync-data');
   });
 });
+
+describe('custom user fields admin API (#364)', () => {
+  let settings;
+  let userUpdates;
+  let users;
+
+  beforeEach(() => {
+    settings = { userGroups: ['A'], userFields: [
+      { id: 'fld_org', label: 'Organization', type: 'text', required: true },
+      { id: 'fld_role', label: 'Role', type: 'dropdown', required: false, options: ['Teacher', 'Student'] },
+    ] };
+    userUpdates = [];
+    users = [
+      { userId: 'usr_1', email: 'a@x.com', name: 'A', role: 'user', createdAt: '2024-01-01', customFields: { fld_org: 'UIC', fld_role: 'Teacher' } },
+      { userId: 'usr_2', email: 'b@x.com', name: 'B', role: 'user', createdAt: '2024-01-01' },
+    ];
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
+      return users.find((u) => u.userId === id) || null;
+    };
+    db.getSyncData = async (userId, key) =>
+      userId === '_system' && key === 'settings' ? { data: settings, version: 1 } : null;
+    db.putSyncData = async (_u, _k, data) => { settings = data; };
+    db.listAllUsers = async () => users;
+    db.updateUser = async (userId, updates) => { userUpdates.push({ userId, updates }); };
+  });
+
+  function makeApp() {
+    const app = new Hono();
+    app.route('/', admin);
+    return app;
+  }
+
+  it('lists definitions', async () => {
+    const data = await (await adminReq(makeApp(), 'GET', '/v1/admin/user-fields')).json();
+    assert.equal(data.userFields.length, 2);
+  });
+
+  it('rejects non-admin', async () => {
+    const res = await userReq(makeApp(), 'GET', '/v1/admin/user-fields');
+    assert.equal(res.status, 403);
+  });
+
+  it('creates a field and preserves other settings', async () => {
+    const res = await adminReq(makeApp(), 'POST', '/v1/admin/user-fields', { label: 'Phone', type: 'phone', required: false });
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.userFields.length, 3);
+    assert.match(data.userFields[2].id, /^fld_/);
+    assert.deepEqual(settings.userGroups, ['A']);
+  });
+
+  it('rejects invalid and duplicate fields', async () => {
+    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/user-fields', { label: 'X', type: 'date' })).status, 400);
+    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/user-fields', { label: 'organization', type: 'text' })).status, 409);
+  });
+
+  it('updates label/required/options but not type', async () => {
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_role', { label: 'Position', required: true, options: ['Teacher', 'Staff'] });
+    assert.equal(res.status, 200);
+    const f = (await res.json()).userFields.find((x) => x.id === 'fld_role');
+    assert.deepEqual(f, { id: 'fld_role', label: 'Position', type: 'dropdown', required: true, options: ['Teacher', 'Staff'] });
+    const typeChange = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_role', { label: 'Position', type: 'text' });
+    assert.equal(typeChange.status, 400);
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_nope', { label: 'Y' })).status, 404);
+  });
+
+  it('reorders fields; rejects a non-permutation', async () => {
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/order', { ids: ['fld_role', 'fld_org'] });
+    assert.equal(res.status, 200);
+    assert.deepEqual(settings.userFields.map((f) => f.id), ['fld_role', 'fld_org']);
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/order', { ids: ['fld_role'] })).status, 400);
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/order', { ids: ['fld_role', 'fld_role'] })).status, 400);
+  });
+
+  it('deletes a field and erases its values from users', async () => {
+    const res = await adminReq(makeApp(), 'DELETE', '/v1/admin/user-fields/fld_role');
+    assert.equal(res.status, 200);
+    assert.deepEqual(settings.userFields.map((f) => f.id), ['fld_org']);
+    assert.deepEqual(userUpdates, [{ userId: 'usr_1', updates: { customFields: { fld_org: 'UIC' } } }]);
+  });
+
+  it('includes customFields on the user list and detail', async () => {
+    const list = await (await adminReq(makeApp(), 'GET', '/v1/admin/users')).json();
+    assert.deepEqual(list[0].customFields, { fld_org: 'UIC', fld_role: 'Teacher' });
+    assert.deepEqual(list[1].customFields, {});
+    const detail = await (await adminReq(makeApp(), 'GET', '/v1/admin/users/usr_1')).json();
+    assert.deepEqual(detail.customFields, { fld_org: 'UIC', fld_role: 'Teacher' });
+  });
+
+  it('PATCH user merges customFields without enforcing required', async () => {
+    const res = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_org: '', fld_role: 'Student' } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(userUpdates[0].updates.customFields, { fld_role: 'Student' });
+    const bad = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_role: 'Nope' } });
+    assert.equal(bad.status, 400);
+  });
+});

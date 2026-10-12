@@ -7,6 +7,14 @@ import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
 import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
+import {
+  getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues,
+} from '../lib/user-fields.js';
+
+async function loadFieldDefinitions() {
+  const settings = await db.getSyncData('_system', 'settings');
+  return getFieldDefinitions(settings?.data);
+}
 
 const me = new Hono();
 
@@ -16,8 +24,9 @@ me.use('/v1/plugins', authenticate);
 me.use('/v1/plugins/extension-points', authenticate);
 
 // GET /v1/me — get own profile
-me.get('/v1/me', (c) => {
+me.get('/v1/me', async (c) => {
   const user = c.get('user');
+  const defs = await loadFieldDefinitions();
   return c.json({
     userId: user.userId,
     email: user.email,
@@ -25,7 +34,23 @@ me.get('/v1/me', (c) => {
     name: user.name,
     userGroup: user.userGroup,
     role: user.role,
+    customFields: visibleFieldValues(defs, user.customFields),
     createdAt: user.createdAt,
+  });
+});
+
+// GET /v1/me/fields — admin-defined custom user fields (#364), the caller's
+// values, and which required ones are still missing. Read fresh on every
+// classroom load (the cached auth user can't know an admin just added a
+// required field) — the client's ProfileCompletionGate blocks the classroom
+// until `missing` is empty.
+me.get('/v1/me/fields', async (c) => {
+  const user = c.get('user');
+  const defs = await loadFieldDefinitions();
+  return c.json({
+    userFields: defs,
+    values: visibleFieldValues(defs, user.customFields),
+    missing: missingRequiredFields(defs, user.customFields),
   });
 });
 
@@ -35,6 +60,14 @@ me.patch('/v1/me', async (c) => {
   const body = await c.req.json();
   const allowed = ['name', 'email', 'username', 'group', 'password'];
   const updates = {};
+  let defs = null;
+
+  if (body.customFields !== undefined) {
+    defs = await loadFieldDefinitions();
+    const merged = mergeFieldValues(defs, c.get('user').customFields, body.customFields, { enforceRequired: true });
+    if (merged.error) return c.json({ error: merged.error }, 400);
+    updates.customFields = merged.values;
+  }
 
   for (const key of allowed) {
     if (body[key] !== undefined) {
@@ -69,6 +102,7 @@ me.patch('/v1/me', async (c) => {
 
   await db.updateUser(userId, updates);
   const updated = await db.getUserById(userId);
+  if (!defs) defs = await loadFieldDefinitions();
 
   return c.json({
     userId: updated.userId,
@@ -77,6 +111,7 @@ me.patch('/v1/me', async (c) => {
     name: updated.name,
     userGroup: updated.userGroup,
     role: updated.role,
+    customFields: visibleFieldValues(defs, updated.customFields),
   });
 });
 
@@ -88,6 +123,7 @@ me.get('/v1/me/export', async (c) => {
   const user = c.get('user');
   const syncItems = (await db.getAllSyncData(user.userId))
     .filter((item) => !item.dataKey?.startsWith('userMeta:'));
+  const defs = await loadFieldDefinitions();
   const syncData = {};
   for (const item of syncItems) {
     syncData[item.dataKey] = { data: item.data, version: item.version, updatedAt: item.updatedAt };
@@ -100,6 +136,10 @@ me.get('/v1/me/export', async (c) => {
       name: user.name,
       userGroup: user.userGroup,
       role: user.role,
+      // Exported with labels so the file is readable without the definitions.
+      customFields: defs
+        .filter((d) => typeof user.customFields?.[d.id] === 'string')
+        .map((d) => ({ id: d.id, label: d.label, value: user.customFields[d.id] })),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     },

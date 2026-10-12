@@ -7,6 +7,7 @@ import { signAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
+import { getFieldDefinitions, mergeFieldValues } from '../lib/user-fields.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -99,7 +100,7 @@ auth.post('/v1/auth/setup', async (c) => {
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail } = await c.req.json();
+  const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = await c.req.json();
 
   if (!inviteToken || !name || !password) {
     return c.json({ error: 'inviteToken, name, and password are required' }, 400);
@@ -151,6 +152,17 @@ auth.post('/v1/auth/signup', async (c) => {
     if (existingUsername) return c.json({ error: 'Username already taken' }, 409);
   }
 
+  // Custom user fields (#364): format-validated here, but required-ness is NOT
+  // enforced at signup — a stale cached signup form shouldn't hard-fail. Any
+  // missing required field is collected by ProfileCompletionGate on first visit.
+  let customFields = {};
+  if (rawCustomFields !== undefined) {
+    const settings = await db.getSyncData('_system', 'settings');
+    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), {}, rawCustomFields);
+    if (merged.error) return c.json({ error: merged.error }, 400);
+    customFields = merged.values;
+  }
+
   // For link invites, increment usage count BEFORE creating the user.
   // The atomic operation must gate account creation to prevent orphaned accounts
   // when the usage limit is reached during concurrent signups.
@@ -178,6 +190,7 @@ auth.post('/v1/auth/signup', async (c) => {
     userGroup: userGroup || null,
     role: 'user',
     slackUserId: invite.slackUserId || null,
+    customFields,
   });
 
   await emitHook('userCreated', { userId, email: userEmail, role: 'user' });

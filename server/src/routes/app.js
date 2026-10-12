@@ -64,6 +64,15 @@ app.get('/v1/groups', async (c) => {
   return c.json({ userGroups: item?.data?.userGroups || [] });
 });
 
+// Custom user field definitions (#364) — public so the signup form can render
+// them. Definitions only (labels/types/options); values are never exposed here.
+app.get('/v1/user-fields', async (c) => {
+  const db = (await import('../lib/db.js')).default;
+  const { getFieldDefinitions } = await import('../lib/user-fields.js');
+  const item = await db.getSyncData('_system', 'settings');
+  return c.json({ userFields: getFieldDefinitions(item?.data) });
+});
+
 app.get('/v1/invite-example.csv', (c) => {
   const csv = 'email\njane@example.com\ncarlos@example.com\naisha@example.com\n';
   c.header('Content-Type', 'text/csv');

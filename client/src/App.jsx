@@ -11,6 +11,7 @@ import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
+import ProfileCompletionGate from './components/ProfileCompletionGate.jsx';
 import { BrandingProvider } from './contexts/BrandingContext.jsx';
 
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
@@ -128,6 +129,8 @@ export default function App() {
           <RequireAuth>
             <BrandingProvider>
             <AppShell>
+              {/* Required custom user fields (#364) must be filled before the classroom renders. */}
+              <ProfileCompletionGate>
               <Routes>
                 <Route path="/lessons" element={<LessonsList />} />
                 <Route path="/lessons/create" element={<Navigate to="/lessons" replace />} />
@@ -136,6 +139,7 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/lessons" replace />} />
                 <Route path="*" element={<Navigate to="/lessons" replace />} />
               </Routes>
+              </ProfileCompletionGate>
             </AppShell>
             </BrandingProvider>
           </RequireAuth>

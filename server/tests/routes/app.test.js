@@ -40,3 +40,14 @@ describe('marketing redirects', () => {
     assert.equal(res.status, 404);
   });
 });
+
+describe('GET /v1/user-fields', () => {
+  it('returns field definitions publicly (no auth)', async () => {
+    const { default: db } = await import('../../src/lib/db.js');
+    const fields = [{ id: 'fld_org', label: 'Organization', type: 'text', required: true }];
+    db.getSyncData = async () => ({ data: { userFields: fields, userGroups: ['A'] } });
+    const res = await makeApp().request('/v1/user-fields');
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { userFields: fields });
+  });
+});

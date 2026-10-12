@@ -19,7 +19,7 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId }) {
+  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const item = {
       userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
@@ -27,6 +27,7 @@ const db = {
       role, createdAt: now, updatedAt: now,
     };
     if (slackUserId) item.slackUserId = slackUserId;
+    if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
     await doc.send(new PutCommand({
       TableName: USERS_TABLE,
       Item: item,

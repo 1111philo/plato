@@ -39,6 +39,19 @@ describe('db-sqlite', () => {
       assert.equal(user.role, 'user');
     });
 
+    it('round-trips customFields as an object', async () => {
+      const id = `usr_cf_${Date.now()}`;
+      await db.createUser({
+        userId: id, email: `cf-${Date.now()}@example.com`, passwordHash: 'x', name: 'CF', role: 'user',
+        customFields: { fld_org: 'UIC' },
+      });
+      assert.deepEqual((await db.getUserById(id)).customFields, { fld_org: 'UIC' });
+      await db.updateUser(id, { customFields: { fld_org: 'UIC', fld_bio: 'Hi' } });
+      assert.deepEqual((await db.getUserById(id)).customFields, { fld_org: 'UIC', fld_bio: 'Hi' });
+      const listed = (await db.listAllUsers()).find((u) => u.userId === id);
+      assert.deepEqual(listed.customFields, { fld_org: 'UIC', fld_bio: 'Hi' });
+    });
+
     it('retrieves user by email (case-insensitive)', async () => {
       const user = await db.getUserByEmail('TEST@example.COM');
       assert.equal(user.userId, userId);
