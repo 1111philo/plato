@@ -67,8 +67,17 @@ describe('user-fields: values', () => {
     assert.deepEqual(values, {});
   });
 
-  it('rejects clearing a required field only when enforced', () => {
-    assert.match(mergeFieldValues(DEFS, { fld_org: 'UIC' }, { fld_org: '' }, { enforceRequired: true }).error, /required/);
+  it('enforceRequired: the merged result must have every required field', () => {
+    const full = { fld_org: 'UIC', fld_role: 'Teacher' };
+    assert.equal(mergeFieldValues(DEFS, full, { fld_org: '' }, { enforceRequired: true }).error, 'Organization is required');
+    // A required field that was never filled blocks the save too, not just an explicit clear.
+    assert.equal(mergeFieldValues(DEFS, {}, { fld_bio: 'hi' }, { enforceRequired: true }).error, 'Required: Organization, Role');
+    // A stale dropdown value counts as missing.
+    assert.equal(mergeFieldValues(DEFS, { fld_org: 'UIC', fld_role: 'Gone' }, {}, { enforceRequired: true }).error, 'Role is required');
+    assert.deepEqual(mergeFieldValues(DEFS, full, { fld_bio: 'hi' }, { enforceRequired: true }).values, { ...full, fld_bio: 'hi' });
+  });
+
+  it('without enforceRequired (signup), required fields may be blank', () => {
     assert.deepEqual(mergeFieldValues(DEFS, { fld_org: 'UIC' }, { fld_org: '' }).values, {});
   });
 

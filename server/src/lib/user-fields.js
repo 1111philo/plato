@@ -87,8 +87,9 @@ function validateValue(def, value) {
 /**
  * Merge an incoming `{ [fieldId]: value }` patch onto `current` values.
  * Unknown ids are ignored; empty strings / null clear a value. When
- * `enforceRequired` is set, clearing a required field is rejected (learner
- * self-edits); admins may leave required fields blank.
+ * `enforceRequired` is set (learner self-edits AND admin edits), the merged
+ * result must have every required field filled. Signup doesn't set it — a
+ * stale cached signup form must not hard-fail; the gate collects the rest.
  *
  * Returns `{ values }` (the full merged object, pruned of ids that no longer
  * have a definition) or `{ error }`.
@@ -107,7 +108,6 @@ export function mergeFieldValues(defs, current, patch, { enforceRequired = false
     const value = raw == null ? '' : typeof raw === 'string' ? raw.trim() : null;
     if (value === null) return { error: `${def.label} must be a string` };
     if (value === '') {
-      if (enforceRequired && def.required) return { error: `${def.label} is required` };
       delete values[id];
       continue;
     }
@@ -115,7 +115,16 @@ export function mergeFieldValues(defs, current, patch, { enforceRequired = false
     if (err) return { error: err };
     values[id] = value;
   }
+  if (enforceRequired) {
+    const missing = missingRequiredFields(defs, values);
+    if (missing.length) return { error: requiredError(defs, missing) };
+  }
   return { values };
+}
+
+function requiredError(defs, missing) {
+  const labels = defs.filter((d) => missing.includes(d.id)).map((d) => d.label);
+  return labels.length === 1 ? `${labels[0]} is required` : `Required: ${labels.join(', ')}`;
 }
 
 /**

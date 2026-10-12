@@ -19,7 +19,7 @@ import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
 import UserFieldsDialog from './UserFieldsDialog.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
-import { customFieldsMatch, matchesFieldFilter } from '../../lib/userFields.js';
+import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
 
 const PAGE_SIZE = 20;
 
@@ -488,6 +488,12 @@ export default function AdminUsers() {
 
   async function saveEditUser() {
     if (!editUser) return;
+    const missing = missingRequired(userFields, editForm.customFields);
+    if (missing.length) {
+      const labels = userFields.filter(f => missing.includes(f.id)).map(f => f.label);
+      setMessage({ text: `Fill in required ${labels.length === 1 ? 'field' : 'fields'}: ${labels.join(', ')}.`, type: 'error' });
+      return;
+    }
     try {
       await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
         name: editForm.name,

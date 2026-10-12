@@ -1408,11 +1408,24 @@ describe('custom user fields admin API (#364)', () => {
     assert.deepEqual(detail.customFields, { fld_org: 'UIC', fld_role: 'Teacher' });
   });
 
-  it('PATCH user merges customFields without enforcing required', async () => {
-    const res = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_org: '', fld_role: 'Student' } });
+  it('PATCH user merges customFields', async () => {
+    const res = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_org: 'MIT', fld_role: 'Student' } });
     assert.equal(res.status, 200);
-    assert.deepEqual(userUpdates[0].updates.customFields, { fld_role: 'Student' });
+    assert.deepEqual(userUpdates[0].updates.customFields, { fld_org: 'MIT', fld_role: 'Student' });
     const bad = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_role: 'Nope' } });
     assert.equal(bad.status, 400);
+  });
+
+  it('PATCH user rejects saving with a required field blank', async () => {
+    const cleared = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_1', { customFields: { fld_org: '' } });
+    assert.equal(cleared.status, 400);
+    assert.equal((await cleared.json()).error, 'Organization is required');
+    // usr_2 never filled the required field — the save is refused until it is.
+    const never = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_2', { name: 'B2', customFields: { fld_role: 'Student' } });
+    assert.equal(never.status, 400);
+    assert.equal(userUpdates.length, 0);
+    // Edits that don't touch customFields are unaffected.
+    const nameOnly = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_2', { name: 'B2' });
+    assert.equal(nameOnly.status, 200);
   });
 });

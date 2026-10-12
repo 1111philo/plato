@@ -7,8 +7,8 @@ const SELECT_CLASS = 'h-10 w-full rounded-lg border border-input bg-transparent 
 /**
  * One admin-defined custom user field (#364), rendered by type. Used on
  * Signup, /settings, ProfileCompletionGate, and the Admin → Edit User card.
- * Optional fields get an "(optional)" hint (matches Signup's convention);
- * required ones carry aria-required.
+ * Required fields show a visible "(required)" marker; it's aria-hidden
+ * because aria-required already announces it (avoids "required, required").
  */
 export default function CustomFieldInput({ field, value, onChange, idPrefix = 'cf', disabled = false }) {
   const id = `${idPrefix}-${field.id}`;
@@ -45,7 +45,7 @@ export default function CustomFieldInput({ field, value, onChange, idPrefix = 'c
     <div className="space-y-1.5">
       <Label htmlFor={id}>
         {field.label}
-        {!field.required && <span className="text-muted-foreground text-xs">(optional)</span>}
+        {field.required && <span className="text-muted-foreground text-xs" aria-hidden="true">(required)</span>}
       </Label>
       {control}
     </div>

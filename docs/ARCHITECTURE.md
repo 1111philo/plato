@@ -853,12 +853,12 @@ Users list, none of which have plugin slots, and #363 depends on it.
 | --- | --- | --- |
 | `GET /v1/user-fields` | public | Definitions only (for the signup form) |
 | `GET /v1/me/fields` | user | `{ userFields, values, missing }` |
-| `PATCH /v1/me` `{ customFields }` | user | Partial merge; clearing a required field → 400 |
+| `PATCH /v1/me` `{ customFields }` | user | Partial merge; result must have every required field → else 400 |
 | `GET/POST /v1/admin/user-fields` | admin | List / add (`{ userFields }` response) |
 | `PUT /v1/admin/user-fields/:id` | admin | Edit label / required / options |
 | `PUT /v1/admin/user-fields/order` | admin | Reorder (`{ ids }`, must be a permutation) |
 | `DELETE /v1/admin/user-fields/:id` | admin | Remove + erase values |
-| `PATCH /v1/admin/users/:id` `{ customFields }` | admin | Edit values; required **not** enforced |
+| `PATCH /v1/admin/users/:id` `{ customFields }` | admin | Edit values; same required rule as `/v1/me` |
 
 `GET /v1/admin/users[/:id]` and `GET /v1/me` include `customFields`;
 `GET /v1/me/export` includes them with labels.
@@ -877,8 +877,14 @@ learners re-pick after an admin edits the list. Deliberate choices:
 - **Signup doesn't enforce required server-side** (the form does client-side):
   a stale cached signup form must not hard-fail account creation; the gate
   catches anything missing on first visit.
-- **Admins** can leave required fields blank when editing a user; that user
-  is prompted on their next visit. Skipped during "View as User".
+- **Admin edits enforce required fields too** (Edit User form + server): a
+  save with `customFields` is refused until every required field is filled.
+  Consequence: after adding a required field, an admin must fill it in to
+  save any Edit User change for a user who hasn't answered yet. (Edits that
+  omit `customFields` are unaffected.) The gate is skipped during "View as
+  User".
+- Required fields show a visible "(required)" label marker (aria-hidden;
+  `aria-required` carries it for screen readers).
 
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list

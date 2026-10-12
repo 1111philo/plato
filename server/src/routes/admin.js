@@ -414,10 +414,11 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   }
   if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
   if (body.customFields !== undefined) {
-    // Admins may leave required fields blank — the learner is prompted to
-    // fill them on their next classroom visit (ProfileCompletionGate).
+    // Same rule as learner self-edits: the result must have every required
+    // field filled. (Users who simply haven't been edited yet are prompted by
+    // ProfileCompletionGate on their next classroom visit.)
     const settings = await db.getSyncData('_system', 'settings');
-    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), user.customFields, body.customFields);
+    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), user.customFields, body.customFields, { enforceRequired: true });
     if (merged.error) return c.json({ error: merged.error }, 400);
     updates.customFields = merged.values;
   }
