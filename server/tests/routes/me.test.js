@@ -14,6 +14,13 @@ async function authedReq(app, method, path, body, role = 'user') {
   });
 }
 
+// Routes read custom user field definitions from `_system:settings` (#364).
+// Default to "no settings" so tests that don't care never fall through to the
+// real DynamoDB client; tests that need fields override this.
+beforeEach(() => {
+  db.getSyncData = async () => null;
+});
+
 describe('GET /v1/me', () => {
   beforeEach(() => {
     db.getUserById = async () => ({
