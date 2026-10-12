@@ -212,6 +212,21 @@ const db = {
     }));
   },
 
+  // Replace an invite / wait-list entry's stored profile (used when a custom
+  // user field is deleted, so its answers are erased here too).
+  async setInviteProfile(inviteToken, profile) {
+    await doc.send(new UpdateCommand({
+      TableName: INVITES_TABLE,
+      Key: { inviteToken },
+      UpdateExpression: 'SET #p = :p',
+      ConditionExpression: 'attribute_exists(inviteToken)',
+      ExpressionAttributeNames: { '#p': 'profile' },
+      ExpressionAttributeValues: { ':p': profile },
+    })).catch((err) => {
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
+    });
+  },
+
   async getWaitlistEntryByEmail(email) {
     const result = await doc.send(new QueryCommand({
       TableName: INVITES_TABLE,
@@ -274,14 +289,22 @@ const db = {
   },
 
   async getInviteLinkToken() {
-    const result = await doc.send(new ScanCommand({
-      TableName: INVITES_TABLE,
-      FilterExpression: 'isLink = :true AND #s = :pending',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':true': true, ':pending': 'pending' },
-      Limit: 1,
-    }));
-    return (result.Items && result.Items[0]) || null;
+    // No `Limit` here: DynamoDB applies Limit BEFORE FilterExpression, so
+    // `Limit: 1` only ever examined one row and missed the link invite
+    // whenever it wasn't first in the scan. Page until a match is found.
+    let lastKey;
+    do {
+      const result = await doc.send(new ScanCommand({
+        TableName: INVITES_TABLE,
+        FilterExpression: 'isLink = :true AND #s = :pending',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':true': true, ':pending': 'pending' },
+        ExclusiveStartKey: lastKey,
+      }));
+      if (result.Items?.length) return result.Items[0];
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+    return null;
   },
 
   async incrementLinkUsage(inviteToken) {

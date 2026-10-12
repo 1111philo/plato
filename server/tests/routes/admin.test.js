@@ -1351,6 +1351,7 @@ describe('custom user fields admin API (#364)', () => {
     db.listAllUsers = async () => users;
     db.updateUser = async (userId, updates) => { userUpdates.push({ userId, updates }); };
     db.removeUserCustomField = async (userId, fieldId) => { userUpdates.push({ userId, removed: fieldId }); };
+    db.listInvites = async () => [];
   });
 
   function makeApp() {

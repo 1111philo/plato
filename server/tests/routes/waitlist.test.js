@@ -49,7 +49,8 @@ async function adminReq(app, method, path, body) {
 }
 
 beforeEach(() => {
-  store = { settings: SETTINGS, waitlist: { open: true, apiKeyHash: null } };
+  // Fresh copy each test — admin routes mutate settings in place.
+  store = { settings: structuredClone(SETTINGS), waitlist: { open: true, apiKeyHash: null } };
   created = [];
   db.getSyncData = async (_u, key) => (key in store ? { data: store[key], version: 1 } : null);
   db.putSyncData = async (_u, key, data) => { store[key] = data; };
@@ -96,6 +97,19 @@ describe('POST /v1/waitlist', () => {
   it('accepts the API key even when closed', async () => {
     store.waitlist = { open: false, apiKeyHash: hashToken('wlk_test') };
     const res = await post(makeApp(), '/v1/waitlist', VALID, { Authorization: 'Bearer wlk_test' });
+    assert.equal(res.status, 202);
+    assert.equal(created.length, 1);
+  });
+
+  it('drops a public submission that fills the honeypot, with the normal reply', async () => {
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, website: 'http://spam.example' });
+    assert.equal(res.status, 202);
+    assert.equal(created.length, 0);
+  });
+
+  it('ignores the honeypot for keyed requests', async () => {
+    store.waitlist = { open: false, apiKeyHash: hashToken('wlk_test') };
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, website: 'https://ada.dev' }, { Authorization: 'Bearer wlk_test' });
     assert.equal(res.status, 202);
     assert.equal(created.length, 1);
   });
@@ -148,6 +162,29 @@ describe('admin wait-list routes', () => {
     assert.equal(data.open, true);
     assert.equal(data.hasApiKey, true);
     assert.equal(JSON.stringify(data).includes('"h"'), false, 'the key hash is never returned');
+  });
+
+  it('hides answers to fields that no longer exist', async () => {
+    db.listInvites = async () => [{ ...entry, profile: { ...entry.profile, customFields: { fld_org: 'UIC', fld_gone: 'x' } } }];
+    const data = await (await adminReq(makeApp(), 'GET', '/v1/admin/waitlist')).json();
+    assert.deepEqual(data.entries[0].customFields, { fld_org: 'UIC' });
+  });
+
+  it('deleting a custom field erases its answers from wait-list entries and invites', async () => {
+    const profiles = {};
+    db.listAllUsers = async () => [];
+    db.listInvites = async () => [
+      entry,
+      { inviteToken: 'inv_p', email: 'b@x.com', status: 'pending', profile: { name: 'B', customFields: { fld_org: 'MIT', fld_role: 'Staff' } } },
+      { inviteToken: 'inv_plain', email: 'c@x.com', status: 'pending' },
+    ];
+    db.setInviteProfile = async (token, profile) => { profiles[token] = profile; };
+    const res = await adminReq(makeApp(), 'DELETE', '/v1/admin/user-fields/fld_org');
+    assert.equal(res.status, 200);
+    assert.deepEqual(profiles, {
+      inv_wl1: { name: 'Ada', userGroup: 'Cohort A', customFields: {} },
+      inv_p: { name: 'B', customFields: { fld_role: 'Staff' } },
+    });
   });
 
   it('is admin-only', async () => {
@@ -252,6 +289,15 @@ describe('signup from a wait-list invite', () => {
       inviteToken: 'inv_x', name: 'Ada', password: 'password123', customFields: { fld_org: 'Other', fld_role: 'Staff' },
     });
     assert.deepEqual(user.customFields, { fld_org: 'Other', fld_role: 'Staff' });
+  });
+
+  it('ignores a wait-list group that was renamed or deleted since joining', async () => {
+    let user;
+    db.createUser = async (u) => { user = u; };
+    db.getInvite = async () => ({ ...invite, profile: { ...invite.profile, userGroup: 'Old Cohort' } });
+    const res = await post(makeApp(), '/v1/auth/signup', { inviteToken: 'inv_x', name: 'Ada', password: 'password123' });
+    assert.equal(res.status, 201);
+    assert.equal(user.userGroup, null);
   });
 
   it('a wait-list entry\'s token cannot sign up', async () => {

@@ -404,7 +404,10 @@ admin.delete('/v1/admin/invites/link', async (c) => {
 
 // GET /v1/admin/waitlist — entries, plus whether the form is open and a key exists
 admin.get('/v1/admin/waitlist', async (c) => {
-  const [invites, { config }] = await Promise.all([db.listInvites(), readWaitlistConfig()]);
+  const [invites, { config }, settings] = await Promise.all([
+    db.listInvites(), readWaitlistConfig(), db.getSyncData('_system', 'settings'),
+  ]);
+  const fieldDefs = getFieldDefinitions(settings?.data);
   const entries = invites
     .filter((inv) => inv.status === 'waitlist')
     .map((inv) => ({
@@ -412,7 +415,7 @@ admin.get('/v1/admin/waitlist', async (c) => {
       email: inv.email,
       name: inv.profile?.name || null,
       userGroup: inv.profile?.userGroup || null,
-      customFields: inv.profile?.customFields || {},
+      customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
       createdAt: inv.createdAt,
     }));
   return c.json({ entries, open: !!config.open, hasApiKey: !!config.apiKeyHash });
@@ -702,6 +705,15 @@ admin.delete('/v1/admin/user-fields/:id', async (c) => {
   await Promise.all(
     users.filter((u) => u.customFields && Object.hasOwn(u.customFields, id))
       .map((u) => db.removeUserCustomField(u.userId, id))
+  );
+  // Wait-list entries and the invites made from them (#363) carry answers too.
+  const invites = await db.listInvites();
+  await Promise.all(
+    invites.filter((inv) => inv.profile?.customFields && Object.hasOwn(inv.profile.customFields, id))
+      .map((inv) => {
+        const { [id]: _removed, ...rest } = inv.profile.customFields;
+        return db.setInviteProfile(inv.inviteToken, { ...inv.profile, customFields: rest });
+      })
   );
 
   return c.json({ userFields: fields });

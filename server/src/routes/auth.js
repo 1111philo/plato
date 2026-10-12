@@ -183,6 +183,13 @@ auth.post('/v1/auth/signup', async (c) => {
     customFields = merged.values;
   }
 
+  // A wait-list group may have been renamed or deleted since the person joined.
+  let profileGroup = null;
+  if (profile?.userGroup) {
+    const settings = await db.getSyncData('_system', 'settings');
+    if ((settings?.data?.userGroups || []).includes(profile.userGroup)) profileGroup = profile.userGroup;
+  }
+
   // For link invites, increment usage count BEFORE creating the user.
   // The atomic operation must gate account creation to prevent orphaned accounts
   // when the usage limit is reached during concurrent signups.
@@ -207,7 +214,7 @@ auth.post('/v1/auth/signup', async (c) => {
     username,
     passwordHash,
     name,
-    userGroup: userGroup || profile?.userGroup || null,
+    userGroup: userGroup || profileGroup || null,
     role: 'user',
     slackUserId: invite.slackUserId || null,
     customFields,

@@ -349,6 +349,13 @@ const db = {
     ).run(inviteToken, email.toLowerCase(), new Date().toISOString(), JSON.stringify(profile));
   },
 
+  // Replace an invite / wait-list entry's stored profile (used when a custom
+  // user field is deleted, so its answers are erased here too).
+  async setInviteProfile(inviteToken, profile) {
+    sqlite.prepare('UPDATE invites SET profile = ? WHERE inviteToken = ?')
+      .run(profile ? JSON.stringify(profile) : null, inviteToken);
+  },
+
   async getWaitlistEntryByEmail(email) {
     return rowToInvite(sqlite.prepare(
       "SELECT * FROM invites WHERE email = ? AND status = 'waitlist' LIMIT 1"

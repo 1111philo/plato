@@ -23,6 +23,7 @@ export default function Waitlist() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [website, setWebsite] = useState(''); // honeypot — see below
   const navigate = useNavigate();
   const branding = usePublicBranding('Join the wait list');
 
@@ -63,6 +64,7 @@ export default function Waitlist() {
           email: email.trim(),
           userGroup: group || undefined,
           customFields: userFields.length ? fieldValues : undefined,
+          website: website || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -132,6 +134,13 @@ export default function Waitlist() {
             onChange={(v) => setFieldValues(prev => ({ ...prev, [f.id]: v }))}
           />
         ))}
+        {/* Honeypot: off-screen, hidden from assistive tech, and out of the tab
+            order, so only bots fill it. The server silently drops those. */}
+        <div aria-hidden="true" className="absolute -left-[9999px] h-px w-px overflow-hidden">
+          <label htmlFor="waitlist-website">Website</label>
+          <input id="waitlist-website" type="text" name="website" tabIndex={-1} autoComplete="off"
+            value={website} onChange={(e) => setWebsite(e.target.value)} />
+        </div>
         <Button className="w-full" onClick={handleSubmit} disabled={submitting}>
           {submitting ? 'Sending...' : 'Join the wait list'}
         </Button>

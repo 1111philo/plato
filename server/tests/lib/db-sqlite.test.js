@@ -166,6 +166,13 @@ describe('db-sqlite', () => {
       assert.equal(await db.getInviteByEmail('wait@test.com'), null);
     });
 
+    it('replaces an entry\'s profile', async () => {
+      const next = { ...profile, customFields: {} };
+      await db.setInviteProfile(token, next);
+      assert.deepEqual((await db.getInvite(token)).profile, next);
+      await db.setInviteProfile(token, profile);
+    });
+
     it('keeps a profile on a pending invite', async () => {
       const inv = `inv_wlp_${Date.now()}`;
       await db.createInvite({ inviteToken: inv, email: 'p@test.com', invitedBy: 'usr_admin', profile });

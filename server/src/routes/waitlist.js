@@ -17,12 +17,20 @@ waitlist.get('/v1/waitlist', async (c) => {
 // says whether an email already has an account, invite, or entry.
 waitlist.post('/v1/waitlist', async (c) => {
   const { config } = await readWaitlistConfig();
-  if (!config.open && !hasValidApiKey(c.req.header('Authorization'), config)) {
+  const keyed = hasValidApiKey(c.req.header('Authorization'), config);
+  if (!config.open && !keyed) {
     return c.json({ error: 'The wait list is closed' }, 403);
   }
 
   let body;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  // Honeypot: the public form has a hidden `website` input people never see.
+  // A bot that fills every field gets the normal reply and nothing is stored.
+  // Keyed (server-to-server) requests skip this.
+  if (!keyed && typeof body?.website === 'string' && body.website.trim()) {
+    return c.json({ ok: true }, 202);
+  }
 
   const settings = await db.getSyncData('_system', 'settings');
   const result = validateWaitlistEntry(body, settings?.data || {});
