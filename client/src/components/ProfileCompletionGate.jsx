@@ -83,7 +83,7 @@ export default function ProfileCompletionGate({ children }) {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2 ref={headingRef} tabIndex={-1} className="outline-none">Complete your profile</h2>
+            <h2 ref={headingRef} tabIndex={-1} className="outline-none">Update your profile</h2>
           </CardTitle>
           <CardDescription>
             We&apos;ve added {fields.length === 1 ? 'a required field' : 'required fields'} you&apos;ll need to enter before you continue:
