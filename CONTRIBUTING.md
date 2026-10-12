@@ -137,6 +137,7 @@ plato/
 | `server/src/routes/sync.js` | Data sync endpoints (per-user key-value store with optimistic locking) |
 | `server/src/routes/admin.js` | Admin API (users, invites, content management) |
 | `server/src/routes/content.js` | Content API (prompts, lessons, knowledge base, branding) |
+| `server/src/routes/waitlist.js` | Public wait-list API (#363); admin wait-list routes are in `admin.js` |
 
 ### Content management
 

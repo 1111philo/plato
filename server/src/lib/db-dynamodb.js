@@ -175,7 +175,7 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
@@ -190,10 +190,51 @@ const db = {
     if (email) item.email = email.toLowerCase();
     if (slackUserId) item.slackUserId = slackUserId;
     if (maxUsages !== null) item.maxUsages = maxUsages;
+    if (profile) item.profile = profile;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
     }));
+  },
+
+  // Wait-list entries (#363) share the invites table with status 'waitlist' and
+  // no ttl, so they never expire and the pending-only lookups skip them.
+  async createWaitlistEntry({ inviteToken, email, profile }) {
+    await doc.send(new PutCommand({
+      TableName: INVITES_TABLE,
+      Item: {
+        inviteToken,
+        email: email.toLowerCase(),
+        status: 'waitlist',
+        createdAt: new Date().toISOString(),
+        profile,
+      },
+    }));
+  },
+
+  // Replace an invite / wait-list entry's stored profile (used when a custom
+  // user field is deleted, so its answers are erased here too).
+  async setInviteProfile(inviteToken, profile) {
+    await doc.send(new UpdateCommand({
+      TableName: INVITES_TABLE,
+      Key: { inviteToken },
+      UpdateExpression: 'SET #p = :p',
+      ConditionExpression: 'attribute_exists(inviteToken)',
+      ExpressionAttributeNames: { '#p': 'profile' },
+      ExpressionAttributeValues: { ':p': profile },
+    })).catch((err) => {
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
+    });
+  },
+
+  async getWaitlistEntryByEmail(email) {
+    const result = await doc.send(new QueryCommand({
+      TableName: INVITES_TABLE,
+      IndexName: 'email-index',
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: { ':email': email.toLowerCase() },
+    }));
+    return (result.Items || []).find(i => i.status === 'waitlist') || null;
   },
 
   async getInviteByEmail(email) {
@@ -248,14 +289,22 @@ const db = {
   },
 
   async getInviteLinkToken() {
-    const result = await doc.send(new ScanCommand({
-      TableName: INVITES_TABLE,
-      FilterExpression: 'isLink = :true AND #s = :pending',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: { ':true': true, ':pending': 'pending' },
-      Limit: 1,
-    }));
-    return (result.Items && result.Items[0]) || null;
+    // No `Limit` here: DynamoDB applies Limit BEFORE FilterExpression, so
+    // `Limit: 1` only ever examined one row and missed the link invite
+    // whenever it wasn't first in the scan. Page until a match is found.
+    let lastKey;
+    do {
+      const result = await doc.send(new ScanCommand({
+        TableName: INVITES_TABLE,
+        FilterExpression: 'isLink = :true AND #s = :pending',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':true': true, ':pending': 'pending' },
+        ExclusiveStartKey: lastKey,
+      }));
+      if (result.Items?.length) return result.Items[0];
+      lastKey = result.LastEvaluatedKey;
+    } while (lastKey);
+    return null;
   },
 
   async incrementLinkUsage(inviteToken) {

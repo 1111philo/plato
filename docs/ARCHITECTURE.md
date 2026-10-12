@@ -333,13 +333,28 @@ Added to enable bulk onboarding without collecting emails upfront (e.g., sharing
 - **Security:** 7-day TTL, audit-logged, clear UI warnings about sharing risks, email still required at signup (no anonymous accounts).
 - **UI:** Admin → Users → Invite Users → "Link" tab. Shows URL with copy button, usage stats, expiry date, and security warning. Regenerate/delete actions have confirmations.
 
+### Wait list (#363)
+
+People ask to join; an admin invites them later.
+
+- **Join:** `/waitlist` page, linked from sign-in when the list is open. It asks for name, email, group (optional), and the custom user fields, with required fields enforced.
+- **API:** `POST /v1/waitlist` (public) takes `{ name, email, userGroup, customFields }`. It works when the list is open, or with `Authorization: Bearer <key>` from an outside form, even when closed. Send the key from a server, not a web page. The reply is `202 { ok: true }` for any valid input, including an email that already has an account, invite, or entry, so it never reveals who is registered. `GET /v1/waitlist` returns `{ open }`.
+- **Storage:** rows in the `invites` table with `status: 'waitlist'`, no `ttl` (they never expire), and a `profile` of `{ name, userGroup, customFields }`. Pending-only lookups skip them, so a wait-list token can't sign up.
+- **Config:** `_system:waitlist` = `{ open, apiKeyHash }`, kept out of `_system:settings` so a stale settings save can't bring back a revoked key. The key is shown once; only its SHA-256 is stored.
+- **Admin:** Users → **Wait List** filter, with Invite and Remove per row; Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
+- **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.
+- **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. A stored group that has since been renamed or deleted is ignored rather than assigned.
+- **Custom fields:** deleting a custom user field also erases its answers from wait-list entries and the invites made from them (`setInviteProfile`), and `GET /v1/admin/waitlist` only returns answers to fields that still exist.
+- **No rate limit.** Like the rest of the public API, `POST /v1/waitlist` has none; an open list accepts any number of entries. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
+
 ### Signup flow
 
 `POST /v1/auth/signup` accepts `inviteToken`, `email`, `name`, `password`, `username` (optional), `userGroup` (optional), `customFields` (optional — see [Custom user fields](#custom-user-fields-364); format-validated, required-ness not enforced at signup).
 
 - **Email invites:** `email` must match `invite.email`.
 - **Link invites:** `email` can be any valid address (required field).
-- Both check TTL expiration, duplicate user, and username availability. On success, user is auto-logged in and invite is marked used (or usage count incremented for link invites).
+- **Wait-list invites:** `GET /v1/auth/invite/:token` returns the email, name, group, and field answers so the form starts filled in. Signup falls back to the invite's group and fields when the form leaves them out.
+- All check TTL expiration, duplicate user, and username availability. On success, user is auto-logged in and invite is marked used (or usage count incremented for link invites).
 
 Plugins can enrich lessons at start time by providing additional reference
 material — e.g., WordPress docs, React API updates, internal knowledge bases.
@@ -844,7 +859,8 @@ Users list, none of which have plugin slots, and #363 depends on it.
   `visibleFieldValues`). Values are keyed by stable id, so relabeling a field
   never orphans answers. A field's **type is fixed** once created (stored
   values were validated against it) — delete and re-add to change it.
-  Deleting a field erases its values from every user (same cascade as deleting
+  Deleting a field erases its values from every user, and from wait-list
+  entries and invites carrying a profile (same cascade as deleting
   a user group). Values for ids with no current definition are never returned.
 
 **API.**

@@ -98,6 +98,23 @@ auth.post('/v1/auth/setup', async (c) => {
   }, 201);
 });
 
+// GET /v1/auth/invite/:token — what the signup form can fill in for an email
+// invite: the email, and for a wait-list invite (#363) the person's answers.
+auth.get('/v1/auth/invite/:token', async (c) => {
+  const invite = await db.getInvite(c.req.param('token'));
+  if (!invite || invite.status !== 'pending' || !invite.email
+    || (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000))) {
+    return c.json({ error: 'Invalid or expired invite' }, 404);
+  }
+  const profile = invite.profile || {};
+  return c.json({
+    email: invite.email,
+    name: profile.name || null,
+    userGroup: profile.userGroup || null,
+    customFields: profile.customFields || {},
+  });
+});
+
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
   const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = await c.req.json();
@@ -155,12 +172,22 @@ auth.post('/v1/auth/signup', async (c) => {
   // Custom user fields (#364): format-validated here, but required-ness is NOT
   // enforced at signup — a stale cached signup form shouldn't hard-fail. Any
   // missing required field is collected by ProfileCompletionGate on first visit.
+  // A wait-list invite (#363) carries the person's answers; the form's values
+  // win over them.
+  const profile = invite.profile || null;
   let customFields = {};
-  if (rawCustomFields !== undefined) {
+  if (rawCustomFields !== undefined || profile?.customFields) {
     const settings = await db.getSyncData('_system', 'settings');
-    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), {}, rawCustomFields);
+    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), profile?.customFields || {}, rawCustomFields);
     if (merged.error) return c.json({ error: merged.error }, 400);
     customFields = merged.values;
+  }
+
+  // A wait-list group may have been renamed or deleted since the person joined.
+  let profileGroup = null;
+  if (profile?.userGroup) {
+    const settings = await db.getSyncData('_system', 'settings');
+    if ((settings?.data?.userGroups || []).includes(profile.userGroup)) profileGroup = profile.userGroup;
   }
 
   // For link invites, increment usage count BEFORE creating the user.
@@ -187,7 +214,7 @@ auth.post('/v1/auth/signup', async (c) => {
     username,
     passwordHash,
     name,
-    userGroup: userGroup || null,
+    userGroup: userGroup || profileGroup || null,
     role: 'user',
     slackUserId: invite.slackUserId || null,
     customFields,

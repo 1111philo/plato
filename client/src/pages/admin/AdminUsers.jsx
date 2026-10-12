@@ -18,6 +18,7 @@ import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
 import UserFieldsDialog from './UserFieldsDialog.jsx';
+import WaitlistDialog from './WaitlistDialog.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
 
@@ -99,6 +100,8 @@ export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
+  const [waitlistEntries, setWaitlistEntries] = useState([]);
+  const [waitlistSettings, setWaitlistSettings] = useState({ open: false, hasApiKey: false });
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
@@ -107,6 +110,7 @@ export default function AdminUsers() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [userFields, setUserFields] = useState([]);
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
@@ -149,18 +153,21 @@ export default function AdminUsers() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes] = await Promise.all([
+      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users?include=stats'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/plugins').catch(() => []),
         adminApi('GET', '/v1/admin/invites/link').catch(() => null),
+        adminApi('GET', '/v1/admin/waitlist').catch(() => null),
       ]);
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setPendingInvites(Array.isArray(invitesRes) ? invitesRes.filter(x => x.status === 'pending') : []);
       setGroups(settingsRes.userGroups || []);
       setUserFields(Array.isArray(settingsRes.userFields) ? settingsRes.userFields : []);
       setLinkInvite(linkRes);
+      setWaitlistEntries(Array.isArray(waitlistRes?.entries) ? waitlistRes.entries : []);
+      setWaitlistSettings({ open: !!waitlistRes?.open, hasApiKey: !!waitlistRes?.hasApiKey });
       // Slack connection status comes from the plugin's settings, not legacy _system:settings.slack.
       // The Slack tab is hidden when the plugin is disabled OR not connected.
       const slack = Array.isArray(pluginsRes) ? pluginsRes.find((entry) => entry.id === 'slack') : null;
@@ -417,6 +424,20 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
+  async function inviteFromWaitlist(token, email) {
+    try {
+      await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
+      setMessage({ text: `Invite sent to ${email}.`, type: 'success' });
+      loadData();
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
+  async function removeFromWaitlist(token, email) {
+    if (!confirm(`Remove ${email} from the wait list?`)) return;
+    try { await adminApi('DELETE', `/v1/admin/waitlist/${token}`); loadData(); }
+    catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
   async function revokeInvite(token) {
     try { await adminApi('DELETE', `/v1/admin/invites/${token}`); loadData(); } catch { /* ignore */ }
   }
@@ -523,17 +544,21 @@ export default function AdminUsers() {
         items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
       }
     }
+    for (const w of waitlistEntries) {
+      items.push({ _type: 'waitlist', _key: w.inviteToken, email: w.email, name: w.name, username: null, userGroup: w.userGroup, role: null, customFields: w.customFields || {}, createdAt: w.createdAt, _entry: w });
+    }
     for (const u of users) {
       items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
     }
     return items;
-  }, [users, pendingInvites]);
+  }, [users, pendingInvites, waitlistEntries]);
 
   const filterCounts = useMemo(() => ({
     all: combinedList.length,
     active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
     admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
     invited: combinedList.filter(i => i._type === 'invite').length,
+    waitlist: combinedList.filter(i => i._type === 'waitlist').length,
   }), [combinedList]);
 
   const filteredList = useMemo(() => {
@@ -543,11 +568,12 @@ export default function AdminUsers() {
     if (filter === 'active') list = list.filter(i => i._type === 'user' && i.role === 'user');
     else if (filter === 'admins') list = list.filter(i => i._type === 'user' && i.role === 'admin');
     else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
+    else if (filter === 'waitlist') list = list.filter(i => i._type === 'waitlist');
 
     // Apply custom-field filter (invites have no field values, so they drop out)
     const filterDef = userFields.find(f => f.id === fieldFilter.fieldId);
     if (filterDef && fieldFilter.value) {
-      list = list.filter(i => i._type === 'user' && matchesFieldFilter(i.customFields, filterDef, fieldFilter.value));
+      list = list.filter(i => i._type !== 'invite' && matchesFieldFilter(i.customFields, filterDef, fieldFilter.value));
     }
 
     // Apply search (custom field values are searchable too)
@@ -696,6 +722,7 @@ export default function AdminUsers() {
     { key: 'active', label: 'Active' },
     { key: 'admins', label: 'Admins' },
     { key: 'invited', label: 'Invited' },
+    { key: 'waitlist', label: 'Wait List' },
   ];
 
   return (
@@ -714,6 +741,10 @@ export default function AdminUsers() {
           <Button variant="outline" onClick={() => setFieldsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             User Fields
+          </Button>
+          <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Wait List
           </Button>
         </div>
       </div>
@@ -801,7 +832,30 @@ export default function AdminUsers() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageItems.map(item => item._type === 'invite' ? (
+                {pageItems.map(item => item._type === 'waitlist' ? (
+                  <TableRow key={item._key}>
+                    <TableCell>{item.name || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell>{item.email}</TableCell>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
+                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                    <TableCell><Badge variant="outline">Wait List</Badge></TableCell>
+                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
+                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
+                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
+                    {filterField && (
+                      <TableCell className="max-w-48 truncate">
+                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
+                      </TableCell>
+                    )}
+                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={() => inviteFromWaitlist(item._key, item.email)}>Invite</Button>
+                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={() => removeFromWaitlist(item._key, item.email)}>&#10005;</Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : item._type === 'invite' ? (
                   <TableRow key={item._key}>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{item.email}</TableCell>
@@ -1135,6 +1189,13 @@ export default function AdminUsers() {
           // Values for deleted fields were erased server-side; refresh rows.
           if (next.length < userFields.length) loadData();
         }}
+      />
+
+      <WaitlistDialog
+        open={waitlistOpen}
+        onOpenChange={setWaitlistOpen}
+        settings={waitlistSettings}
+        onChange={setWaitlistSettings}
       />
 
       <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>

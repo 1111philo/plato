@@ -148,6 +148,40 @@ describe('db-sqlite', () => {
     });
   });
 
+  describe('wait list (#363)', () => {
+    const token = `inv_wl_${Date.now()}`;
+    const profile = { name: 'Wait Person', userGroup: 'Cohort A', customFields: { fld_1: 'x' } };
+
+    it('stores an entry with its profile and no ttl', async () => {
+      await db.createWaitlistEntry({ inviteToken: token, email: 'Wait@Test.com', profile });
+      const entry = await db.getInvite(token);
+      assert.equal(entry.status, 'waitlist');
+      assert.equal(entry.email, 'wait@test.com');
+      assert.equal(entry.ttl, null);
+      assert.deepEqual(entry.profile, profile);
+    });
+
+    it('finds an entry by email, but not as a pending invite', async () => {
+      assert.equal((await db.getWaitlistEntryByEmail('wait@test.com')).inviteToken, token);
+      assert.equal(await db.getInviteByEmail('wait@test.com'), null);
+    });
+
+    it('replaces an entry\'s profile', async () => {
+      const next = { ...profile, customFields: {} };
+      await db.setInviteProfile(token, next);
+      assert.deepEqual((await db.getInvite(token)).profile, next);
+      await db.setInviteProfile(token, profile);
+    });
+
+    it('keeps a profile on a pending invite', async () => {
+      const inv = `inv_wlp_${Date.now()}`;
+      await db.createInvite({ inviteToken: inv, email: 'p@test.com', invitedBy: 'usr_admin', profile });
+      assert.deepEqual((await db.getInvite(inv)).profile, profile);
+      assert.deepEqual((await db.listInvites()).find(i => i.inviteToken === inv).profile, profile);
+      await db.deleteInvite(inv);
+    });
+  });
+
   describe('refresh tokens', () => {
     const hash = 'testhash_' + Date.now();
 

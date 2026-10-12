@@ -197,6 +197,14 @@ if (emailNotNull.count > 0) {
   `);
 }
 
+// Wait-list profile (#363): name, userGroup and customFields as JSON
+const hasInviteProfile = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'profile'"
+).get();
+if (hasInviteProfile.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN profile TEXT');
+}
+
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
 function cleanupExpired() {
@@ -215,6 +223,16 @@ function conditionalCheckFailed(message) {
   const err = new Error(message || 'The conditional request failed');
   err.name = 'ConditionalCheckFailedException';
   return err;
+}
+
+// -- Helper: invite row (de)serialization -------------------------------------
+
+function rowToInvite(row) {
+  if (!row) return null;
+  if (typeof row.profile === 'string') {
+    try { row.profile = JSON.parse(row.profile); } catch { row.profile = null; }
+  }
+  return row;
 }
 
 // -- Helper: user row (de)serialization ---------------------------------------
@@ -303,12 +321,12 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`
+      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages, profile)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
     ).run(
       inviteToken,
       email ? email.toLowerCase() : null,
@@ -318,8 +336,30 @@ const db = {
       ttl,
       isLink ? 1 : 0,
       usageCount,
-      maxUsages
+      maxUsages,
+      profile ? JSON.stringify(profile) : null
     );
+  },
+
+  // Wait-list entries (#363): status 'waitlist' and no ttl, so they never expire.
+  async createWaitlistEntry({ inviteToken, email, profile }) {
+    sqlite.prepare(
+      `INSERT INTO invites (inviteToken, email, status, createdAt, profile)
+       VALUES (?, ?, 'waitlist', ?, ?)`
+    ).run(inviteToken, email.toLowerCase(), new Date().toISOString(), JSON.stringify(profile));
+  },
+
+  // Replace an invite / wait-list entry's stored profile (used when a custom
+  // user field is deleted, so its answers are erased here too).
+  async setInviteProfile(inviteToken, profile) {
+    sqlite.prepare('UPDATE invites SET profile = ? WHERE inviteToken = ?')
+      .run(profile ? JSON.stringify(profile) : null, inviteToken);
+  },
+
+  async getWaitlistEntryByEmail(email) {
+    return rowToInvite(sqlite.prepare(
+      "SELECT * FROM invites WHERE email = ? AND status = 'waitlist' LIMIT 1"
+    ).get(email.toLowerCase()));
   },
 
   async getInviteByEmail(email) {
@@ -329,7 +369,7 @@ const db = {
   },
 
   async getInvite(inviteToken) {
-    return sqlite.prepare('SELECT * FROM invites WHERE inviteToken = ?').get(inviteToken) || null;
+    return rowToInvite(sqlite.prepare('SELECT * FROM invites WHERE inviteToken = ?').get(inviteToken));
   },
 
   async markInviteUsed(inviteToken) {
@@ -343,7 +383,7 @@ const db = {
   },
 
   async listInvites() {
-    return sqlite.prepare('SELECT * FROM invites').all();
+    return sqlite.prepare('SELECT * FROM invites').all().map(rowToInvite);
   },
 
   async getInviteLinkToken() {

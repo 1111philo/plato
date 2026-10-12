@@ -13,6 +13,9 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
 import {
+  readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey,
+} from '../lib/waitlist.js';
+import {
   getFieldDefinitions, validateFieldDefinition, mergeFieldValues, visibleFieldValues, MAX_FIELDS,
 } from '../lib/user-fields.js';
 
@@ -279,6 +282,7 @@ admin.get('/v1/admin/invites', async (c) => {
     inviteToken: inv.inviteToken,
     email: inv.email,
     status: inv.status,
+    isLink: !!inv.isLink,
     createdAt: inv.createdAt,
   })));
 });
@@ -301,6 +305,7 @@ admin.post('/v1/admin/invites/resend', async (c) => {
     inviteToken,
     email: email.toLowerCase(),
     invitedBy: adminUser.userId,
+    profile: pendingInvite.profile || null, // keep a wait-list entry's details
   });
 
   const result = await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
@@ -391,6 +396,85 @@ admin.delete('/v1/admin/invites/link', async (c) => {
     performedBy: adminUser.userId,
     details: JSON.stringify({ token: linkInvite.inviteToken }),
   });
+  return c.json({ ok: true });
+});
+
+// ── Wait list (#363) ──
+// Entries are invites rows with status 'waitlist'; see lib/waitlist.js.
+
+// GET /v1/admin/waitlist — entries, plus whether the form is open and a key exists
+admin.get('/v1/admin/waitlist', async (c) => {
+  const [invites, { config }, settings] = await Promise.all([
+    db.listInvites(), readWaitlistConfig(), db.getSyncData('_system', 'settings'),
+  ]);
+  const fieldDefs = getFieldDefinitions(settings?.data);
+  const entries = invites
+    .filter((inv) => inv.status === 'waitlist')
+    .map((inv) => ({
+      inviteToken: inv.inviteToken,
+      email: inv.email,
+      name: inv.profile?.name || null,
+      userGroup: inv.profile?.userGroup || null,
+      customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
+      createdAt: inv.createdAt,
+    }));
+  return c.json({ entries, open: !!config.open, hasApiKey: !!config.apiKeyHash });
+});
+
+// PUT /v1/admin/waitlist/settings — body `{ open: boolean }`
+admin.put('/v1/admin/waitlist/settings', async (c) => {
+  const { open } = await c.req.json();
+  if (typeof open !== 'boolean') return c.json({ error: 'open must be true or false' }, 400);
+  const { item, config } = await readWaitlistConfig();
+  await writeWaitlistConfig(item, { ...config, open });
+  return c.json({ open });
+});
+
+// POST /v1/admin/waitlist/key — make a new API key; replaces any old one.
+// The key is shown once; only its hash is stored.
+admin.post('/v1/admin/waitlist/key', async (c) => {
+  const apiKey = generateWaitlistApiKey();
+  const { item, config } = await readWaitlistConfig();
+  await writeWaitlistConfig(item, { ...config, apiKeyHash: hashToken(apiKey) });
+  await db.createAuditLog({ action: 'waitlist_key_created', userId: null, performedBy: c.get('user').userId });
+  return c.json({ apiKey }, 201);
+});
+
+// DELETE /v1/admin/waitlist/key — revoke the API key
+admin.delete('/v1/admin/waitlist/key', async (c) => {
+  const { item, config } = await readWaitlistConfig();
+  await writeWaitlistConfig(item, { ...config, apiKeyHash: null });
+  await db.createAuditLog({ action: 'waitlist_key_revoked', userId: null, performedBy: c.get('user').userId });
+  return c.json({ ok: true });
+});
+
+// POST /v1/admin/waitlist/:token/invite — send the invite email. The new invite
+// carries the entry's name, group and fields so signup can fill them in.
+admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
+  const entry = await db.getInvite(c.req.param('token'));
+  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
+
+  if (await db.getUserByEmail(entry.email)) {
+    return c.json({ error: 'User with this email already exists' }, 409);
+  }
+  if (await db.getInviteByEmail(entry.email)) {
+    return c.json({ error: 'A pending invite already exists for this email' }, 409);
+  }
+
+  const adminUser = c.get('user');
+  const inviteToken = generateInviteToken();
+  await db.createInvite({ inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null });
+  await db.deleteInvite(entry.inviteToken);
+
+  const result = await sendInviteEmail(entry.email, inviteToken, adminUser.name);
+  return c.json({ inviteToken, email: entry.email, ...result }, 201);
+});
+
+// DELETE /v1/admin/waitlist/:token — remove an entry
+admin.delete('/v1/admin/waitlist/:token', async (c) => {
+  const entry = await db.getInvite(c.req.param('token'));
+  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
+  await db.deleteInvite(entry.inviteToken);
   return c.json({ ok: true });
 });
 
@@ -621,6 +705,15 @@ admin.delete('/v1/admin/user-fields/:id', async (c) => {
   await Promise.all(
     users.filter((u) => u.customFields && Object.hasOwn(u.customFields, id))
       .map((u) => db.removeUserCustomField(u.userId, id))
+  );
+  // Wait-list entries and the invites made from them (#363) carry answers too.
+  const invites = await db.listInvites();
+  await Promise.all(
+    invites.filter((inv) => inv.profile?.customFields && Object.hasOwn(inv.profile.customFields, id))
+      .map((inv) => {
+        const { [id]: _removed, ...rest } = inv.profile.customFields;
+        return db.setInviteProfile(inv.inviteToken, { ...inv.profile, customFields: rest });
+      })
   );
 
   return c.json({ userFields: fields });
