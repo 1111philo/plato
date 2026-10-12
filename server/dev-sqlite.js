@@ -33,6 +33,7 @@ const { default: admin } = await import('./src/routes/admin.js');
 const { default: sync } = await import('./src/routes/sync.js');
 const { default: ai } = await import('./src/routes/ai.js');
 const { default: content } = await import('./src/routes/content.js');
+const { default: waitlist } = await import('./src/routes/waitlist.js');
 const { default: app } = await import('./src/routes/app.js');
 const { default: db } = await import('./src/lib/db.js');
 const { generateUserId } = await import('./src/lib/crypto.js');
@@ -86,6 +87,7 @@ server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
 server.route('/', content);
+server.route('/', waitlist);
 // `app` (SPA fallback `app.get('*')`) is mounted LAST — see plugin catch-all below.
 
 // Plugin registry: discover and activate plugins. Same catch-all pattern as

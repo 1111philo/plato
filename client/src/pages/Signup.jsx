@@ -42,6 +42,22 @@ export default function Signup() {
       .catch(() => {});
   }, []);
 
+  // An email invite fills in what it knows; a wait-list invite (#363) also
+  // carries the person's name, group, and field answers.
+  useEffect(() => {
+    if (!token) return;
+    fetch(`/v1/auth/invite/${encodeURIComponent(token)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!d) return;
+        if (d.email) setEmail(prev => prev || d.email);
+        if (d.name) setName(prev => prev || d.name);
+        if (d.userGroup) setGroup(prev => prev || d.userGroup);
+        if (d.customFields) setFieldValues(prev => ({ ...d.customFields, ...prev }));
+      })
+      .catch(() => {});
+  }, [token]);
+
   async function handleSignup() {
     // Email is optional in frontend validation for backwards compatibility:
     // - Email-specific invites: backend uses invite.email if not provided

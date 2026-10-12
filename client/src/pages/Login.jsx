@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
@@ -19,6 +19,14 @@ export default function Login() {
   const navigate = useNavigate();
   const passwordRef = useRef(null);
   const branding = usePublicBranding('Sign in');
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+
+  useEffect(() => {
+    fetch('/v1/waitlist')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setWaitlistOpen(!!d?.open))
+      .catch(() => {});
+  }, []);
 
   async function handleLogin() {
     if (!email.trim() || !password) {
@@ -74,8 +82,11 @@ export default function Login() {
             {submitting ? 'Signing in...' : 'Sign in'}
           </Button>
         </CardContent>
-        <CardFooter className="justify-center">
+        <CardFooter className="flex-col gap-1 justify-center">
           <Button variant="link" onClick={() => navigate('/forgot-password')}>Forgot password?</Button>
+          {waitlistOpen && (
+            <Button variant="link" onClick={() => navigate('/waitlist')}>No account? Join the wait list</Button>
+          )}
         </CardFooter>
       </Card>
       <p className="mt-4 text-xs text-white/60">

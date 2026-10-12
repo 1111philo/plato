@@ -175,7 +175,7 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
@@ -190,10 +190,36 @@ const db = {
     if (email) item.email = email.toLowerCase();
     if (slackUserId) item.slackUserId = slackUserId;
     if (maxUsages !== null) item.maxUsages = maxUsages;
+    if (profile) item.profile = profile;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
     }));
+  },
+
+  // Wait-list entries (#363) share the invites table with status 'waitlist' and
+  // no ttl, so they never expire and the pending-only lookups skip them.
+  async createWaitlistEntry({ inviteToken, email, profile }) {
+    await doc.send(new PutCommand({
+      TableName: INVITES_TABLE,
+      Item: {
+        inviteToken,
+        email: email.toLowerCase(),
+        status: 'waitlist',
+        createdAt: new Date().toISOString(),
+        profile,
+      },
+    }));
+  },
+
+  async getWaitlistEntryByEmail(email) {
+    const result = await doc.send(new QueryCommand({
+      TableName: INVITES_TABLE,
+      IndexName: 'email-index',
+      KeyConditionExpression: 'email = :email',
+      ExpressionAttributeValues: { ':email': email.toLowerCase() },
+    }));
+    return (result.Items || []).find(i => i.status === 'waitlist') || null;
   },
 
   async getInviteByEmail(email) {
