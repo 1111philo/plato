@@ -52,6 +52,21 @@ describe('db-sqlite', () => {
       assert.deepEqual(listed.customFields, { fld_org: 'UIC', fld_bio: 'Hi' });
     });
 
+    it('removeUserCustomField removes only that key', async () => {
+      const id = `usr_cfr_${Date.now()}`;
+      await db.createUser({
+        userId: id, email: `cfr-${Date.now()}@example.com`, passwordHash: 'x', name: 'CF', role: 'user',
+        customFields: { fld_a: '1', fld_b: '2' },
+      });
+      await db.removeUserCustomField(id, 'fld_a');
+      assert.deepEqual((await db.getUserById(id)).customFields, { fld_b: '2' });
+      // No-op for a user without customFields.
+      const bare = `usr_cfn_${Date.now()}`;
+      await db.createUser({ userId: bare, email: `cfn-${Date.now()}@example.com`, passwordHash: 'x', name: 'N', role: 'user' });
+      await db.removeUserCustomField(bare, 'fld_a');
+      assert.equal((await db.getUserById(bare)).customFields, null);
+    });
+
     it('retrieves user by email (case-insensitive)', async () => {
       const user = await db.getUserByEmail('TEST@example.COM');
       assert.equal(user.userId, userId);

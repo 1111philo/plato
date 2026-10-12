@@ -620,10 +620,7 @@ admin.delete('/v1/admin/user-fields/:id', async (c) => {
   const users = await db.listAllUsers();
   await Promise.all(
     users.filter((u) => u.customFields && Object.hasOwn(u.customFields, id))
-      .map((u) => {
-        const { [id]: _removed, ...rest } = u.customFields;
-        return db.updateUser(u.userId, { customFields: rest });
-      })
+      .map((u) => db.removeUserCustomField(u.userId, id))
   );
 
   return c.json({ userFields: fields });

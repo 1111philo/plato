@@ -112,6 +112,21 @@ const db = {
     }));
   },
 
+  // Remove one custom user field value (#364) in place — a nested REMOVE, not
+  // a read-modify-write of the whole map, so a concurrent profile save to a
+  // different field can't be clobbered by an admin deleting this one.
+  async removeUserCustomField(userId, fieldId) {
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'REMOVE #cf.#id',
+      ConditionExpression: 'attribute_exists(#cf)',
+      ExpressionAttributeNames: { '#cf': 'customFields', '#id': fieldId },
+    })).catch((err) => {
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
+    });
+  },
+
   async listUsers() {
     const items = [];
     let lastKey;

@@ -1350,6 +1350,7 @@ describe('custom user fields admin API (#364)', () => {
     db.putSyncData = async (_u, _k, data) => { settings = data; };
     db.listAllUsers = async () => users;
     db.updateUser = async (userId, updates) => { userUpdates.push({ userId, updates }); };
+    db.removeUserCustomField = async (userId, fieldId) => { userUpdates.push({ userId, removed: fieldId }); };
   });
 
   function makeApp() {
@@ -1404,7 +1405,8 @@ describe('custom user fields admin API (#364)', () => {
     const res = await adminReq(makeApp(), 'DELETE', '/v1/admin/user-fields/fld_role');
     assert.equal(res.status, 200);
     assert.deepEqual(settings.userFields.map((f) => f.id), ['fld_org']);
-    assert.deepEqual(userUpdates, [{ userId: 'usr_1', updates: { customFields: { fld_org: 'UIC' } } }]);
+    // Targeted per-key removal (not a whole-map rewrite), only for users holding a value.
+    assert.deepEqual(userUpdates, [{ userId: 'usr_1', removed: 'fld_role' }]);
   });
 
   it('includes customFields on the user list and detail', async () => {

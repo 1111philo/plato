@@ -280,6 +280,14 @@ const db = {
     sqlite.prepare(`UPDATE users SET ${field} = ? WHERE userId = ?`).run(value, userId);
   },
 
+  // Remove one custom user field value (#364) in place (json_remove), so a
+  // concurrent profile save to a different field can't be clobbered.
+  async removeUserCustomField(userId, fieldId) {
+    sqlite.prepare(
+      'UPDATE users SET customFields = json_remove(customFields, ?) WHERE userId = ? AND customFields IS NOT NULL'
+    ).run(`$."${fieldId}"`, userId);
+  },
+
   async listUsers() {
     return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all().map(rowToUser);
   },
