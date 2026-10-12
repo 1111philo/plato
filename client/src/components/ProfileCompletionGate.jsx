@@ -85,7 +85,9 @@ export default function ProfileCompletionGate({ children }) {
           <CardTitle>
             <h2 ref={headingRef} tabIndex={-1} className="outline-none">Complete your profile</h2>
           </CardTitle>
-          <CardDescription>A few more details are needed before you continue.</CardDescription>
+          <CardDescription>
+            We&apos;ve added {fields.length === 1 ? 'a required field' : 'required fields'} you&apos;ll need to enter before you continue:
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit} noValidate>
