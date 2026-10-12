@@ -866,7 +866,7 @@ Users list, none of which have plugin slots, and #363 depends on it.
 **Required fields & the gate.** `ProfileCompletionGate` wraps the classroom
 routes (not `/plato/*`) and fetches `GET /v1/me/fields` on every classroom load
 — the cached auth user in localStorage can't know an admin just made a field
-required. If anything required is missing, the learner sees "Complete your
+required. If anything required is missing, the learner sees "Update your
 profile" with just those fields and can't reach lessons until they're saved. A
 dropdown value that's no longer one of the options counts as missing, so
 learners re-pick after an admin edits the list. Deliberate choices:
