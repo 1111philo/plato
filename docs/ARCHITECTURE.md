@@ -335,7 +335,7 @@ Added to enable bulk onboarding without collecting emails upfront (e.g., sharing
 
 ### Wait list (#363)
 
-People ask to join; an admin invites them later.
+People ask to join; an admin invites them later. Integrator-facing API guide: [`WAITLIST_API.md`](WAITLIST_API.md).
 
 - **Join:** `/waitlist` page, linked from sign-in when the list is open. It asks for name, email, group (optional), and the custom user fields, with required fields enforced.
 - **API:** `POST /v1/waitlist` (public) takes `{ name, email, userGroup, customFields }`. It works when the list is open, or with `Authorization: Bearer <key>` from an outside form, even when closed. Send the key from a server, not a web page. The reply is `202 { ok: true }` for any valid input, including an email that already has an account, invite, or entry, so it never reveals who is registered. `GET /v1/waitlist` returns `{ open }`.

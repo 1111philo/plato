@@ -50,7 +50,7 @@ export default function Login() {
   const { primary: headerBg, logo, classroomName } = branding;
 
   return (
-    <main className="min-h-dvh flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
+    <main className="min-h-dvh shrink-0 flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
       {logo ? (
         <img src={logo} alt={classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />
       ) : (
