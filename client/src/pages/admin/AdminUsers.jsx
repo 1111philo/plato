@@ -859,7 +859,7 @@ export default function AdminUsers() {
               </TableHeader>
               <TableBody>
                 {pageItems.map(item => item._type === 'waitlist' ? (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} role="button" tabIndex={0} aria-label={`Edit wait list entry for ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter') navigate(`/plato/users/waitlist/${item._key}`); }}>
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} role="button" tabIndex={0} aria-label={`Edit wait list entry for ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/plato/users/waitlist/${item._key}`); } }}>
                     <TableCell>{item.name || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
@@ -876,8 +876,8 @@ export default function AdminUsers() {
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => e.stopPropagation()}>Invite</Button>
-                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => e.stopPropagation()}>&#10005;</Button>
+                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>
+                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>&#10005;</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -901,7 +901,7 @@ export default function AdminUsers() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(item._user); }}>
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditUser(item._user); } }}>
                     <TableCell>{item.name}</TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
@@ -948,7 +948,8 @@ export default function AdminUsers() {
                       </TableCell>
                     )}
                     <TableCell>
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {/* Keep clicks and Enter/Space on these buttons from also activating the row. */}
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                         <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
                         {item._user.userId !== currentUser?.userId && (
                           <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
