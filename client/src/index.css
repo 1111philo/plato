@@ -128,6 +128,10 @@
   body {
     @apply bg-background text-foreground flex flex-col;
   }
+  /* #root is a full-height flex column, so a page's <main min-h-dvh> is a
+     flex item that SHRINKS to the viewport by default and clips long content
+     (the wait-list/signup forms with many custom fields). Full-page routes
+     use `min-h-dvh shrink-0` so they grow with their content and scroll. */
   #root {
     @apply flex flex-col;
   }

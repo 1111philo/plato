@@ -108,6 +108,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — subsystem deep-dives + incident history
 - [`docs/AUTOMATION.md`](docs/AUTOMATION.md) — CI/CD, agentic workflows, branch protection, versioning
 - [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) — why Qwen3-VL: constraints, benchmarks, rejected candidates
+- [`docs/WAITLIST_API.md`](docs/WAITLIST_API.md) — public wait-list API guide for outside forms/integrations
 - [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — error-reporting tiers + how to add an alert
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — AWS deploy, environments, backups
 - [`docs/plugins/`](docs/plugins/) — plugin authoring (human + AI guides, reference, examples)

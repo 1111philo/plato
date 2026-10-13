@@ -77,7 +77,10 @@ export default function WaitlistDialog({ open, onOpenChange, settings, onChange 
           <p className="text-sm text-muted-foreground">
             An outside form can add people by sending <code>POST /v1/waitlist</code> with the header{' '}
             <code>Authorization: Bearer &lt;key&gt;</code>. This works even when the wait list is closed.
-            Send it from a server, not from a web page, so the key stays private.
+            Send it from a server, not from a web page, so the key stays private.{' '}
+            <a href="https://github.com/1111philo/plato/blob/main/docs/WAITLIST_API.md" target="_blank" rel="noopener noreferrer" className="underline">
+              API guide<span className="sr-only"> (opens in a new tab)</span>
+            </a>
           </p>
           {newKey && (
             <div className="space-y-1">
