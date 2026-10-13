@@ -16,7 +16,8 @@ const EMPTY_FORM = { label: '', type: 'text', required: false, options: '' };
 /**
  * Admin → Users → "User Fields": manage admin-defined custom user fields
  * (#364). Same add/list/delete shape as the User Groups dialog, plus edit and
- * reorder. A field's type is fixed once created (server-enforced).
+ * reorder. Changing a type is allowed; if stored answers wouldn't pass the
+ * new rules, the server replies 409 with a count and we confirm first.
  */
 export default function UserFieldsDialog({ open, onOpenChange, fields, onChange }) {
   const [form, setForm] = useState(EMPTY_FORM);
@@ -59,9 +60,22 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
       required: form.required,
       options: form.type === 'dropdown' ? form.options.split('\n') : undefined,
     };
-    const ok = await run(() => editingId
-      ? adminApi('PUT', `/v1/admin/user-fields/${editingId}`, { ...body, type: undefined })
-      : adminApi('POST', '/v1/admin/user-fields', body));
+    const ok = await run(async () => {
+      if (!editingId) return adminApi('POST', '/v1/admin/user-fields', body);
+      const path = `/v1/admin/user-fields/${editingId}`;
+      try {
+        return await adminApi('PUT', path, body);
+      } catch (err) {
+        // A new type (or fewer dropdown options) can leave stored answers that
+        // no longer pass; the server reports how many and waits for a yes.
+        if (err.status !== 409 || !err.data?.invalidCount) throw err;
+        const n = err.data.invalidCount;
+        if (!confirm(`${n} existing ${n === 1 ? 'answer doesn\'t' : 'answers don\'t'} fit the new rules. They'll be kept, but must be fixed the next time they're edited. Save anyway?`)) {
+          throw new Error('Not saved.');
+        }
+        return adminApi('PUT', path, { ...body, confirmInvalid: true });
+      }
+    });
     if (ok) resetForm();
   }
 
@@ -116,7 +130,7 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="user-field-type">Type</Label>
-              <select id="user-field-type" className={SELECT_CLASS} value={form.type} disabled={!!editingId}
+              <select id="user-field-type" className={SELECT_CLASS} value={form.type}
                 onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 {FIELD_TYPE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>

@@ -13,10 +13,10 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
 import {
-  readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey,
+  readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey, validateWaitlistEntry,
 } from '../lib/waitlist.js';
 import {
-  getFieldDefinitions, validateFieldDefinition, mergeFieldValues, visibleFieldValues, MAX_FIELDS,
+  getFieldDefinitions, validateFieldDefinition, mergeFieldValues, visibleFieldValues, validateValue, MAX_FIELDS,
 } from '../lib/user-fields.js';
 
 const admin = new Hono();
@@ -470,6 +470,41 @@ admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
   return c.json({ inviteToken, email: entry.email, ...result }, 201);
 });
 
+// PUT /v1/admin/waitlist/:token — edit an entry's name, email, group, and
+// custom fields. Same validation as joining (required fields included). A new
+// email must not already belong to a user, a pending invite, or another entry.
+admin.put('/v1/admin/waitlist/:token', async (c) => {
+  const entry = await db.getInvite(c.req.param('token'));
+  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
+  const body = await c.req.json();
+  const settings = await db.getSyncData('_system', 'settings');
+  const result = validateWaitlistEntry(body, settings?.data || {});
+  if (result.error) return c.json({ error: result.error }, 400);
+
+  if (result.email !== entry.email) {
+    if (await db.getUserByEmail(result.email)) return c.json({ error: 'A user with this email already exists' }, 409);
+    if (await db.getInviteByEmail(result.email)) return c.json({ error: 'A pending invite already exists for this email' }, 409);
+    const other = await db.getWaitlistEntryByEmail(result.email);
+    if (other && other.inviteToken !== entry.inviteToken) return c.json({ error: 'This email is already on the wait list' }, 409);
+  }
+
+  try {
+    await db.updateWaitlistEntry(entry.inviteToken, { email: result.email, profile: result.profile });
+  } catch (err) {
+    // Invited or removed between the read above and this write.
+    if (err.name === 'ConditionalCheckFailedException') return c.json({ error: 'Wait-list entry not found' }, 404);
+    throw err;
+  }
+  return c.json({
+    inviteToken: entry.inviteToken,
+    email: result.email,
+    name: result.profile.name,
+    userGroup: result.profile.userGroup,
+    customFields: visibleFieldValues(getFieldDefinitions(settings?.data), result.profile.customFields),
+    createdAt: entry.createdAt,
+  });
+});
+
 // DELETE /v1/admin/waitlist/:token — remove an entry
 admin.delete('/v1/admin/waitlist/:token', async (c) => {
   const entry = await db.getInvite(c.req.param('token'));
@@ -669,22 +704,44 @@ admin.put('/v1/admin/user-fields/order', async (c) => {
   return c.json({ userFields: reordered });
 });
 
-// PUT /v1/admin/user-fields/:id — edit a field. The type is fixed once
-// created (stored values were validated against it); label, required, and
-// dropdown options are editable.
+// Every stored answer to field `id`: on user records, and on the profiles of
+// wait-list entries and the invites made from them (#363).
+async function storedFieldValues(id) {
+  const [users, invites] = await Promise.all([db.listAllUsers(), db.listInvites()]);
+  return [
+    ...users.map((u) => u.customFields?.[id]),
+    ...invites.map((inv) => inv.profile?.customFields?.[id]),
+  ].filter((v) => typeof v === 'string' && v.trim());
+}
+
+// PUT /v1/admin/user-fields/:id — edit a field: label, required, dropdown
+// options, and type. Changing the type (or a dropdown's options) can leave
+// stored answers that no longer pass validation; if so, reply 409 with
+// `invalidCount` unless the body has `confirmInvalid: true`. Confirmed,
+// those answers are kept as-is — every later save through any route
+// re-validates, so they must be fixed the next time they're edited.
 admin.put('/v1/admin/user-fields/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json();
   const { current, settings, fields } = await readUserFieldSettings();
   const idx = fields.findIndex((f) => f.id === id);
   if (idx === -1) return c.json({ error: 'Field not found' }, 404);
-  if (body.type !== undefined && body.type !== fields[idx].type) {
-    return c.json({ error: 'A field\'s type cannot be changed — delete it and add a new one' }, 400);
-  }
-  const { field, error } = validateFieldDefinition({ ...body, type: fields[idx].type }, fields[idx]);
+  const { field, error } = validateFieldDefinition({ ...body, type: body.type ?? fields[idx].type }, fields[idx]);
   if (error) return c.json({ error }, 400);
   if (fields.some((f, i) => i !== idx && f.label.toLowerCase() === field.label.toLowerCase())) {
     return c.json({ error: 'A field with that label already exists' }, 409);
+  }
+  const prev = fields[idx];
+  const rulesChanged = field.type !== prev.type
+    || (field.type === 'dropdown' && JSON.stringify(field.options) !== JSON.stringify(prev.options));
+  if (rulesChanged && body.confirmInvalid !== true) {
+    const invalidCount = (await storedFieldValues(id)).filter((v) => validateValue(field, v.trim())).length;
+    if (invalidCount > 0) {
+      return c.json({
+        error: `${invalidCount} existing ${invalidCount === 1 ? 'answer doesn\'t' : 'answers don\'t'} fit the new rules for ${field.label}`,
+        invalidCount,
+      }, 409);
+    }
   }
   fields[idx] = field;
   await writeUserFields(current, settings, fields);

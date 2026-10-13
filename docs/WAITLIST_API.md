@@ -46,9 +46,11 @@ curl https://plato.courses/v1/user-fields
 # ]}
 ```
 
-Field ids never change, even when an admin renames the label — map your form
-to the ids, not the labels. If an admin **deletes** a field and adds a new
-one, it gets a new id; re-run the lookup.
+Field ids never change, even when an admin renames the label or changes the
+field's type — map your form to the ids, not the labels. An admin can change
+a field's **type** (say, Text → Phone), which tightens its rules from then on,
+so re-check the `type` when you update your form. If an admin **deletes** a
+field and adds a new one, it gets a new id; re-run the lookup.
 
 ## Add someone
 

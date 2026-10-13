@@ -19,6 +19,7 @@ import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
 import UserFieldsDialog from './UserFieldsDialog.jsx';
 import WaitlistDialog from './WaitlistDialog.jsx';
+import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
 
@@ -96,7 +97,7 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function AdminUsers() {
   const navigate = useNavigate();
-  const { userId: paramUserId } = useParams();
+  const { userId: paramUserId, waitlistToken } = useParams();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
@@ -429,14 +430,23 @@ export default function AdminUsers() {
       await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
       setMessage({ text: `Invite sent to ${email}.`, type: 'success' });
       loadData();
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+      return true;
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
   }
 
   async function removeFromWaitlist(token, email) {
-    if (!confirm(`Remove ${email} from the wait list?`)) return;
-    try { await adminApi('DELETE', `/v1/admin/waitlist/${token}`); loadData(); }
-    catch (e) { setMessage({ text: e.message, type: 'error' }); }
+    if (!confirm(`Remove ${email} from the wait list?`)) return false;
+    try { await adminApi('DELETE', `/v1/admin/waitlist/${token}`); loadData(); return true; }
+    catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
   }
+
+  // -- Edit a wait-list entry (#363) --
+  // Driven by the URL (/plato/users/waitlist/:token), like Edit User.
+  const editEntry = waitlistToken ? waitlistEntries.find((w) => w.inviteToken === waitlistToken) || null : null;
+  useEffect(() => {
+    // Stale link (invited/removed since): back to the list once data is in.
+    if (waitlistToken && !loading && !editEntry) navigate('/plato/users', { replace: true });
+  }, [waitlistToken, loading, editEntry, navigate]);
 
   async function revokeInvite(token) {
     try { await adminApi('DELETE', `/v1/admin/invites/${token}`); loadData(); } catch { /* ignore */ }
@@ -636,6 +646,22 @@ export default function AdminUsers() {
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
+  if (editEntry) {
+    const back = () => navigate('/plato/users');
+    return (
+      <WaitlistEntryEdit
+        key={editEntry.inviteToken}
+        entry={editEntry}
+        groups={groups}
+        userFields={userFields}
+        onBack={back}
+        onSaved={(text) => { setMessage({ text, type: 'success' }); back(); loadData(); }}
+        onInvite={async (e) => { if (await inviteFromWaitlist(e.inviteToken, e.email)) back(); }}
+        onRemove={async (e) => { if (await removeFromWaitlist(e.inviteToken, e.email)) back(); }}
+      />
+    );
+  }
+
   // Edit user view
   if (editUser) {
     const isSelf = editUser.userId === currentUser?.userId;
@@ -833,7 +859,7 @@ export default function AdminUsers() {
               </TableHeader>
               <TableBody>
                 {pageItems.map(item => item._type === 'waitlist' ? (
-                  <TableRow key={item._key}>
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} role="button" tabIndex={0} aria-label={`Edit wait list entry for ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/plato/users/waitlist/${item._key}`); } }}>
                     <TableCell>{item.name || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
@@ -850,8 +876,8 @@ export default function AdminUsers() {
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={() => inviteFromWaitlist(item._key, item.email)}>Invite</Button>
-                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={() => removeFromWaitlist(item._key, item.email)}>&#10005;</Button>
+                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>
+                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>&#10005;</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -875,7 +901,7 @@ export default function AdminUsers() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter') openEditUser(item._user); }}>
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditUser(item._user); } }}>
                     <TableCell>{item.name}</TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
@@ -922,7 +948,8 @@ export default function AdminUsers() {
                       </TableCell>
                     )}
                     <TableCell>
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {/* Keep clicks and Enter/Space on these buttons from also activating the row. */}
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
                         <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
                         {item._user.userId !== currentUser?.userId && (
                           <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>

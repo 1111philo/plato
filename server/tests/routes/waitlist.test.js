@@ -238,6 +238,60 @@ describe('admin wait-list routes', () => {
     assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_p')).status, 404);
   });
 
+  it('edits an entry', async () => {
+    let updated;
+    db.getInvite = async () => entry;
+    db.updateWaitlistEntry = async (token, patch) => { updated = { token, ...patch }; };
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', {
+      name: ' Ada L. ', email: 'ADA.L@example.com', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(updated, {
+      token: 'inv_wl1', email: 'ada.l@example.com',
+      profile: { name: 'Ada L.', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' } },
+    });
+    const data = await res.json();
+    assert.equal(data.email, 'ada.l@example.com');
+    assert.equal(data.name, 'Ada L.');
+  });
+
+  it('edit validates like joining', async () => {
+    db.getInvite = async () => entry;
+    db.updateWaitlistEntry = async () => { throw new Error('should not write'); };
+    const missing = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', { name: 'Ada', email: 'ada@example.com', customFields: {} });
+    assert.equal(missing.status, 400);
+    assert.equal((await missing.json()).error, 'Organization is required');
+    const badEmail = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', { name: 'Ada', email: 'nope', customFields: { fld_org: 'UIC' } });
+    assert.equal(badEmail.status, 400);
+  });
+
+  it('edit refuses an email that belongs to someone else', async () => {
+    db.getInvite = async () => entry;
+    db.updateWaitlistEntry = async () => { throw new Error('should not write'); };
+    const body = { name: 'Ada', email: 'taken@example.com', customFields: { fld_org: 'UIC' } };
+    db.getUserByEmail = async () => ({ userId: 'usr_x' });
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', body)).status, 409);
+    db.getUserByEmail = async () => null;
+    db.getWaitlistEntryByEmail = async () => ({ inviteToken: 'inv_other' });
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', body)).status, 409);
+  });
+
+  it('edit keeps its own email without a conflict', async () => {
+    db.getInvite = async () => entry;
+    db.getWaitlistEntryByEmail = async () => entry;
+    db.updateWaitlistEntry = async () => {};
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', { name: 'Ada', email: 'ada@example.com', customFields: { fld_org: 'UIC' } });
+    assert.equal(res.status, 200);
+  });
+
+  it('edit 404s for a pending invite, an unknown token, or a lost race', async () => {
+    db.getInvite = async () => ({ ...entry, status: 'pending' });
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', { name: 'A', email: 'a@x.com', customFields: { fld_org: 'U' } })).status, 404);
+    db.getInvite = async () => entry;
+    db.updateWaitlistEntry = async () => { const e = new Error('gone'); e.name = 'ConditionalCheckFailedException'; throw e; };
+    assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', { name: 'A', email: 'ada@example.com', customFields: { fld_org: 'U' } })).status, 404);
+  });
+
   it('removes an entry', async () => {
     const deleted = [];
     db.getInvite = async () => entry;

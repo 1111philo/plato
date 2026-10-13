@@ -1384,14 +1384,50 @@ describe('custom user fields admin API (#364)', () => {
     assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/user-fields', { label: 'organization', type: 'text' })).status, 409);
   });
 
-  it('updates label/required/options but not type', async () => {
+  it('updates label/required/options', async () => {
+    // usr_1's "Teacher" is kept as an option, so nothing becomes invalid.
     const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_role', { label: 'Position', required: true, options: ['Teacher', 'Staff'] });
     assert.equal(res.status, 200);
     const f = (await res.json()).userFields.find((x) => x.id === 'fld_role');
     assert.deepEqual(f, { id: 'fld_role', label: 'Position', type: 'dropdown', required: true, options: ['Teacher', 'Staff'] });
-    const typeChange = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_role', { label: 'Position', type: 'text' });
-    assert.equal(typeChange.status, 400);
     assert.equal((await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_nope', { label: 'Y' })).status, 404);
+  });
+
+  it('changes a field\'s type when every stored answer fits', async () => {
+    users[0].customFields.fld_org = '+1 (312) 555-0100';
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_org', { label: 'Phone', type: 'phone', required: true });
+    assert.equal(res.status, 200);
+    assert.equal(settings.userFields.find((f) => f.id === 'fld_org').type, 'phone');
+  });
+
+  it('asks for confirmation when a type change would leave invalid answers', async () => {
+    // usr_1 has "UIC"; a wait-list profile has a valid number; one invite has junk.
+    db.listInvites = async () => [
+      { inviteToken: 'inv_w', status: 'waitlist', profile: { customFields: { fld_org: '312-555-0100' } } },
+      { inviteToken: 'inv_p', status: 'pending', profile: { customFields: { fld_org: 'call me' } } },
+    ];
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_org', { label: 'Organization', type: 'phone' });
+    assert.equal(res.status, 409);
+    const data = await res.json();
+    assert.equal(data.invalidCount, 2);
+    assert.match(data.error, /2 existing answers don't fit/);
+    assert.equal(settings.userFields.find((f) => f.id === 'fld_org').type, 'text', 'unchanged until confirmed');
+
+    const confirmed = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_org', { label: 'Organization', type: 'phone', confirmInvalid: true });
+    assert.equal(confirmed.status, 200);
+    assert.equal(settings.userFields.find((f) => f.id === 'fld_org').type, 'phone');
+    assert.equal(userUpdates.length, 0, 'stored answers are kept, not rewritten');
+  });
+
+  it('counts answers removed from a dropdown\'s options', async () => {
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_role', { label: 'Role', options: ['Student'] });
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).invalidCount, 1);
+  });
+
+  it('switching to a dropdown requires options', async () => {
+    const res = await adminReq(makeApp(), 'PUT', '/v1/admin/user-fields/fld_org', { label: 'Organization', type: 'dropdown' });
+    assert.equal(res.status, 400);
   });
 
   it('reorders fields; rejects a non-permutation', async () => {
