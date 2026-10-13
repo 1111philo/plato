@@ -356,6 +356,14 @@ const db = {
       .run(profile ? JSON.stringify(profile) : null, inviteToken);
   },
 
+  // Edit a wait-list entry in place (#363); only while it's still an entry.
+  async updateWaitlistEntry(inviteToken, { email, profile }) {
+    const result = sqlite.prepare(
+      "UPDATE invites SET email = ?, profile = ? WHERE inviteToken = ? AND status = 'waitlist'"
+    ).run(email.toLowerCase(), JSON.stringify(profile), inviteToken);
+    if (result.changes === 0) throw conditionalCheckFailed('Not a wait-list entry');
+  },
+
   async getWaitlistEntryByEmail(email) {
     return rowToInvite(sqlite.prepare(
       "SELECT * FROM invites WHERE email = ? AND status = 'waitlist' LIMIT 1"

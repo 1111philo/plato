@@ -61,7 +61,7 @@ export function validateFieldDefinition(input, existing = null) {
 const PHONE_RE = /^\+?[0-9 ().-]+$/;
 
 /** Validate one value against its definition. Returns an error string or null. Empty is valid here (required is checked separately). */
-function validateValue(def, value) {
+export function validateValue(def, value) {
   if (value.length > MAX_VALUE_LENGTH[def.type]) {
     return `${def.label} must be ${MAX_VALUE_LENGTH[def.type]} characters or fewer`;
   }

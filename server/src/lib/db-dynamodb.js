@@ -227,6 +227,19 @@ const db = {
     });
   },
 
+  // Edit a wait-list entry in place (#363). Conditional on it still being a
+  // wait-list entry, so an edit racing an Invite can't resurrect it.
+  async updateWaitlistEntry(inviteToken, { email, profile }) {
+    await doc.send(new UpdateCommand({
+      TableName: INVITES_TABLE,
+      Key: { inviteToken },
+      UpdateExpression: 'SET #e = :e, #p = :p',
+      ConditionExpression: '#s = :waitlist',
+      ExpressionAttributeNames: { '#e': 'email', '#p': 'profile', '#s': 'status' },
+      ExpressionAttributeValues: { ':e': email.toLowerCase(), ':p': profile, ':waitlist': 'waitlist' },
+    }));
+  },
+
   async getWaitlistEntryByEmail(email) {
     const result = await doc.send(new QueryCommand({
       TableName: INVITES_TABLE,

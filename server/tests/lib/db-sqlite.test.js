@@ -166,6 +166,17 @@ describe('db-sqlite', () => {
       assert.equal(await db.getInviteByEmail('wait@test.com'), null);
     });
 
+    it('edits an entry in place, only while it is still an entry', async () => {
+      const t = `inv_wle_${Date.now()}`;
+      await db.createWaitlistEntry({ inviteToken: t, email: 'edit-me@test.com', profile });
+      const next = { ...profile, name: 'Edited' };
+      await db.updateWaitlistEntry(t, { email: 'Edited@Test.com', profile: next });
+      const got = await db.getInvite(t);
+      assert.equal(got.email, 'edited@test.com');
+      assert.deepEqual(got.profile, next);
+      await assert.rejects(db.updateWaitlistEntry('inv_missing', { email: 'x@test.com', profile }), { name: 'ConditionalCheckFailedException' });
+    });
+
     it('replaces an entry\'s profile', async () => {
       const next = { ...profile, customFields: {} };
       await db.setInviteProfile(token, next);

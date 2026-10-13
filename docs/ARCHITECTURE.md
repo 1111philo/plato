@@ -341,7 +341,7 @@ People ask to join; an admin invites them later. Integrator-facing API guide: [`
 - **API:** `POST /v1/waitlist` (public) takes `{ name, email, userGroup, customFields }`. It works when the list is open, or with `Authorization: Bearer <key>` from an outside form, even when closed. Send the key from a server, not a web page. The reply is `202 { ok: true }` for any valid input, including an email that already has an account, invite, or entry, so it never reveals who is registered. `GET /v1/waitlist` returns `{ open }`.
 - **Storage:** rows in the `invites` table with `status: 'waitlist'`, no `ttl` (they never expire), and a `profile` of `{ name, userGroup, customFields }`. Pending-only lookups skip them, so a wait-list token can't sign up.
 - **Config:** `_system:waitlist` = `{ open, apiKeyHash }`, kept out of `_system:settings` so a stale settings save can't bring back a revoked key. The key is shown once; only its SHA-256 is stored.
-- **Admin:** Users → **Wait List** filter, with Invite and Remove per row; Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
+- **Admin:** Users → **Wait List** filter, with Invite and Remove per row; click a row to edit the entry (`/plato/users/waitlist/:token`: name, email, group, custom fields — same validation as joining, and a new email must not belong to a user, pending invite, or other entry). Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `PUT /v1/admin/waitlist/:token` (edit; conditional on the row still being an entry, so it can't race an Invite), `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
 - **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.
 - **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. A stored group that has since been renamed or deleted is ignored rather than assigned.
 - **Custom fields:** deleting a custom user field also erases its answers from wait-list entries and the invites made from them (`setInviteProfile`), and `GET /v1/admin/waitlist` only returns answers to fields that still exist.
@@ -857,8 +857,15 @@ Users list, none of which have plugin slots, and #363 depends on it.
 - `server/src/lib/user-fields.js` is the single validator
   (`validateFieldDefinition`, `mergeFieldValues`, `missingRequiredFields`,
   `visibleFieldValues`). Values are keyed by stable id, so relabeling a field
-  never orphans answers. A field's **type is fixed** once created (stored
-  values were validated against it) — delete and re-add to change it.
+  never orphans answers. A field's **type can be changed** (`PUT
+  /v1/admin/user-fields/:id` with `type`), keeping its id and answers. If
+  the new type — or a dropdown losing options — would leave stored answers
+  (users + wait-list/invite profiles) that fail the new rules, the server
+  replies `409 { invalidCount }` and the dialog confirms before resending with
+  `confirmInvalid: true`. Those answers are kept as-is; every later save
+  through any route re-validates, so they get fixed the next time they're
+  edited. (Delete + re-add would erase every answer and mint a new id,
+  breaking integrations that map to it.)
   Deleting a field erases its values from every user, and from wait-list
   entries and invites carrying a profile (same cascade as deleting
   a user group). Values for ids with no current definition are never returned.
@@ -871,7 +878,7 @@ Users list, none of which have plugin slots, and #363 depends on it.
 | `GET /v1/me/fields` | user | `{ userFields, values, missing }` |
 | `PATCH /v1/me` `{ customFields }` | user | Partial merge; result must have every required field → else 400 |
 | `GET/POST /v1/admin/user-fields` | admin | List / add (`{ userFields }` response) |
-| `PUT /v1/admin/user-fields/:id` | admin | Edit label / required / options |
+| `PUT /v1/admin/user-fields/:id` | admin | Edit label / required / options / type (`409 { invalidCount }` unless `confirmInvalid`) |
 | `PUT /v1/admin/user-fields/order` | admin | Reorder (`{ ids }`, must be a permutation) |
 | `DELETE /v1/admin/user-fields/:id` | admin | Remove + erase values |
 | `PATCH /v1/admin/users/:id` `{ customFields }` | admin | Edit values; same required rule as `/v1/me` |
