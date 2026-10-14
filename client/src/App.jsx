@@ -8,6 +8,7 @@ import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import Waitlist from './pages/Waitlist.jsx';
+import Privacy from './pages/Privacy.jsx';
 import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/waitlist" element={<RequireGuest><Waitlist /></RequireGuest>} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
+        <Route path="/privacy" element={<Privacy />} />
 
         <Route path="/plato/*" element={
           <RequireAuth>

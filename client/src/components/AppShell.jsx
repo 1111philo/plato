@@ -161,6 +161,8 @@ export default function AppShell({ children }) {
       </main>
 
       <footer className="shrink-0 border-t px-4 py-2 text-center text-xs text-muted-foreground">
+        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-foreground">Privacy</a>
+        {' · '}
         Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">plato</a>.
       </footer>
 
