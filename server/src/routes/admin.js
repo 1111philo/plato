@@ -1126,6 +1126,7 @@ admin.get('/v1/admin/theme', async (c) => {
     theme: settings.theme || {},
     logoBase64: settings.logoBase64 || null,
     classroomName: settings.classroomName || settings.logoAlt || '',
+    language: settings.language || 'en',
   });
 });
 
@@ -1140,6 +1141,7 @@ admin.put('/v1/admin/theme', async (c) => {
     settings.classroomName = body.classroomName;
     settings.logoAlt = body.classroomName; // backward compat
   }
+  if (body.language !== undefined) settings.language = body.language;
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
   return c.json({ ok: true });
 });

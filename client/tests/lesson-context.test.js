@@ -37,7 +37,9 @@ describe('buildContext', () => {
       sampleLesson(),
       { status: 'completed', progress: 10, activitiesCompleted: 12 },
       'Learner profile summary',
-      'Alex'
+      'Alex',
+      undefined,
+      'en'
     ));
 
     assert.equal(context.lessonStatus, 'completed');

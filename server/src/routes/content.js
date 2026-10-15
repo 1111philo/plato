@@ -69,6 +69,7 @@ content.get('/v1/branding', async (c) => {
     theme: settings.theme || null,
     logoBase64: settings.logoBase64 || null,
     classroomName: settings.classroomName || settings.logoAlt || '',
+    language: settings.language || 'en',
   });
 });
 

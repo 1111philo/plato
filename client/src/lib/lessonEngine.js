@@ -23,6 +23,24 @@ import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 
 function ts() { return Date.now(); }
 
+// Cache language setting so we don't fetch it on every message
+let cachedLanguage = null;
+async function getLanguageSetting() {
+  if (cachedLanguage !== null) return cachedLanguage;
+  try {
+    const response = await fetch('/v1/branding');
+    if (response.ok) {
+      const data = await response.json();
+      cachedLanguage = data.language || 'en';
+      return cachedLanguage;
+    }
+  } catch {
+    // Ignore errors, fall back to default
+  }
+  cachedLanguage = 'en';
+  return cachedLanguage;
+}
+
 /**
  * Defense-in-depth guard for the "View as User" admin feature: if the SPA
  * is currently impersonating a learner, no write paths in the lesson engine
@@ -204,7 +222,8 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
   if (onProgress) onProgress('starting');
   const prefs = await getPreferences();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const language = await getLanguageSetting();
+  const context = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress, language);
   const coachMsg = await orchestrator.converseStream(
     'coach',
     [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
@@ -308,7 +327,8 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // Always include context as first message so coach has lesson + profile info
   const prefs = await getPreferences();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const language = await getLanguageSetting();
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress, language);
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
@@ -562,7 +582,7 @@ async function loadCourseProgressSummary(lesson) {
   }
 }
 
-export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress) {
+export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress, language) {
   const completed = lessonKB?.activitiesCompleted || 0;
   const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
@@ -577,6 +597,7 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     learnerPosition: lessonKB?.learnerPosition || 'New learner',
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
+    language: language || 'en',
   };
   // Optional author-supplied coach directive: high-priority runtime guidance
   // the lesson author baked into the lesson markdown (`## Coach Directive`),
