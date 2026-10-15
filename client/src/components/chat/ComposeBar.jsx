@@ -250,21 +250,26 @@ export default function ComposeBar({
     <div className="px-4 pb-4 pt-2">
       <div className={`mx-auto max-w-3xl rounded-lg border border-input bg-background ${elevated ? 'shadow-lg' : ''}`}>
         {images.length > 0 && (
-          <div className="m-2 flex flex-wrap gap-2">
-            {images.map((img, idx) => (
-              <div key={idx} className="relative inline-block">
-                <img src={img.dataUrl} alt={img.name} className="h-20 rounded-md object-cover" />
-                <Button
-                  variant="secondary"
-                  size="icon-xs"
-                  className="absolute -top-1.5 -right-1.5 rounded-full"
-                  onClick={() => removeImage(idx)}
-                  aria-label={`Remove ${img.name}`}
-                >
-                  &times;
-                </Button>
-              </div>
-            ))}
+          <div className="m-2 space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {images.map((img, idx) => (
+                <div key={idx} className="relative inline-block">
+                  <img src={img.dataUrl} alt={img.name} className="h-20 rounded-md object-cover" />
+                  <Button
+                    variant="secondary"
+                    size="icon-xs"
+                    className="absolute -top-1.5 -right-1.5 rounded-full"
+                    onClick={() => removeImage(idx)}
+                    aria-label={`Remove ${img.name}`}
+                  >
+                    &times;
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Images will be stored and sent to the AI coach. Be mindful of sensitive information.
+            </p>
           </div>
         )}
         {links.length > 0 && (
