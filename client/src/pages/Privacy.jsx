@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import usePublicBranding from '../hooks/usePublicBranding.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import {
   Card, CardHeader, CardTitle, CardContent,
@@ -7,6 +8,7 @@ import {
 
 export default function Privacy() {
   const navigate = useNavigate();
+  const { loggedIn } = useAuth();
   const branding = usePublicBranding('Privacy & Data Handling');
 
   if (!branding) return null;
@@ -56,13 +58,12 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">AI Provider</h2>
             <p className="text-muted-foreground mb-2">
-              plato uses Amazon Bedrock to power the AI coach and other lesson features. Bedrock is Amazon's
+              plato uses Amazon Bedrock to power the AI coach and other lesson features. Bedrock is Amazon’s
               managed AI service that provides access to foundation models.
             </p>
             <p className="text-muted-foreground">
-              Your conversation messages are sent to Bedrock to generate coaching responses. Amazon does not use
-              customer data sent to Bedrock to train foundation models unless you explicitly opt in to such data
-              collection. Review Amazon's <a
+              Your conversation messages are sent to Bedrock to generate coaching responses. Amazon states that
+              Bedrock does not use your prompts or responses to train AI models. Review Amazon’s <a
                 href="https://aws.amazon.com/bedrock/data-privacy/"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -80,7 +81,7 @@ export default function Privacy() {
               <li>The image is compressed automatically to reduce storage size.</li>
               <li>It is stored in a separate database record and referenced by your conversation.</li>
               <li>The image is sent to Amazon Bedrock along with your message so the AI coach can see and
-                discuss what you've shared.</li>
+                discuss what you’ve shared.</li>
               <li>Images remain accessible when you resume a lesson later.</li>
             </ul>
             <p className="text-muted-foreground mt-2">
@@ -103,7 +104,7 @@ export default function Privacy() {
             <p className="text-muted-foreground">
               Administrators of your plato instance may have access to user accounts, lessons, and activity for
               support and content management purposes. In some cases, administrators can view your lessons using
-              a read-only "View as User" feature that is logged for audit purposes.
+              a read-only “View as User” feature that is logged for audit purposes.
             </p>
           </section>
 
@@ -129,8 +130,8 @@ export default function Privacy() {
         </CardContent>
       </Card>
       <div className="mt-4 flex gap-4 items-center text-xs text-white/60">
-        <Button variant="link" className="text-white/60 hover:text-white/80 h-auto p-0" onClick={() => navigate('/login')}>
-          Back to Sign In
+        <Button variant="link" className="text-white/60 hover:text-white/80 h-auto p-0" onClick={() => navigate(loggedIn ? '/lessons' : '/login')}>
+          {loggedIn ? 'Back to Lessons' : 'Back to Sign In'}
         </Button>
         <span>·</span>
         <span>
