@@ -10,6 +10,31 @@ import { validateLessonKB } from './validators.js';
 const promptCache = {};
 let knowledgeBase = null;
 
+/**
+ * Detect the user's browser language from navigator.language.
+ * Falls back to 'en' if unavailable (SSR/Node contexts).
+ */
+function getBrowserLanguage() {
+  if (typeof navigator === 'undefined') return 'en';
+  const lang = navigator.language || navigator.userLanguage || 'en';
+  return lang;
+}
+
+/**
+ * Convert a language code (e.g., 'es-MX', 'fr', 'en-US') to a human-readable
+ * language name for prompts. Maps common codes; falls through to English.
+ */
+function getLanguageName(code) {
+  const base = code.split('-')[0].toLowerCase();
+  const names = {
+    en: 'English', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
+    pt: 'Portuguese', zh: 'Chinese', ja: 'Japanese', ko: 'Korean',
+    ar: 'Arabic', hi: 'Hindi', ru: 'Russian', nl: 'Dutch', pl: 'Polish',
+    tr: 'Turkish', sv: 'Swedish', da: 'Danish', fi: 'Finnish', no: 'Norwegian',
+  };
+  return names[base] || 'English';
+}
+
 async function loadPrompt(name) {
   if (promptCache[name]) return promptCache[name];
   const resp = await authenticatedFetch(`/v1/prompts/${encodeURIComponent(name)}`);
@@ -139,6 +164,10 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
 
+  // Append language instruction for all agents
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+
   const resp = await authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -159,7 +188,9 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
 // -- Lesson Owner (LLM) -------------------------------------------------------
 
 export async function initializeLessonKB(lesson, profileSummary) {
-  const systemPrompt = await loadPrompt('lesson-owner');
+  let systemPrompt = await loadPrompt('lesson-owner');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const userContent = JSON.stringify({
     lessonId: lesson.lessonId, lessonName: lesson.name,
     lessonDescription: lesson.description, exemplar: lesson.exemplar,
@@ -193,7 +224,9 @@ function profileForAgent(profile) {
 // -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
 
 export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
-  const systemPrompt = await loadPrompt('learner-profile-owner');
+  let systemPrompt = await loadPrompt('learner-profile-owner');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const userContent = JSON.stringify({ currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
     model: LLM, systemPrompt,
@@ -215,7 +248,9 @@ export function incrementalProfileUpdate(profile, lessonId) {
 // -- Profile feedback (LLM) --------------------------------------------------
 
 export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext) {
-  const systemPrompt = await loadPrompt('learner-profile-update');
+  let systemPrompt = await loadPrompt('learner-profile-update');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const userContent = JSON.stringify({
     currentProfile: profileForAgent(fullProfile), learnerFeedback: feedbackText,
     context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
@@ -230,7 +265,9 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
 // -- Course Progress Updater (LLM — distill cross-lesson progress) ------------
 
 export async function updateCourseProgress(courseName, lessonsInCourse, priorSummary, completedLesson, completedLessonIds) {
-  const systemPrompt = await loadPrompt('course-progress-update');
+  let systemPrompt = await loadPrompt('course-progress-update');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const userContent = JSON.stringify({
     courseName,
     lessonsInCourse,
@@ -248,7 +285,9 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
 // -- Lesson markdown extraction (from conversation) ---------------------------
 
 export async function extractLessonMarkdown(conversationText) {
-  const systemPrompt = await loadPrompt('lesson-extractor');
+  let systemPrompt = await loadPrompt('lesson-extractor');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content: conversationText }], maxTokens: 1536,
@@ -259,7 +298,9 @@ export async function extractLessonMarkdown(conversationText) {
 // -- Knowledge base markdown extraction (from conversation) -------------------
 
 export async function extractKBMarkdown(conversationText, existingKB = '') {
-  const systemPrompt = await loadPrompt('knowledge-base-extractor');
+  let systemPrompt = await loadPrompt('knowledge-base-extractor');
+  const languageName = getLanguageName(getBrowserLanguage());
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
   const userContent = existingKB
     ? `## EXISTING KNOWLEDGE BASE\n\n${existingKB}\n\n## CONVERSATION\n\n${conversationText}`
     : `## EXISTING KNOWLEDGE BASE\n\n(none — creating from scratch)\n\n## CONVERSATION\n\n${conversationText}`;
