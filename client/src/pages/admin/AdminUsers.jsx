@@ -487,6 +487,52 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
+  // -- CSV download --
+
+  function downloadCsv() {
+    // Escape CSV field value
+    const escape = (val) => {
+      if (val == null) return '';
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Build header row: standard fields + custom fields
+    const headers = ['Email', 'Name', 'Username', 'Group', 'Role', 'Type', 'Date Joined'];
+    userFields.forEach(f => headers.push(f.label));
+
+    // Build data rows from sortedList (respects current filter/sort)
+    const rows = sortedList.map(item => {
+      const row = [
+        escape(item.email),
+        escape(item.name),
+        escape(item.username),
+        escape(item.userGroup),
+        escape(item.role),
+        escape(item._type),
+        escape(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''),
+      ];
+      // Add custom field values in same order as header
+      userFields.forEach(f => {
+        const value = item.customFields?.[f.id] ?? '';
+        row.push(escape(value));
+      });
+      return row.join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `plato-users-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   // -- Edit user --
   // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
   // browser refresh / back-button preserve the selection. openEditUser only
@@ -771,6 +817,10 @@ export default function AdminUsers() {
           <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Wait List
+          </Button>
+          <Button variant="outline" onClick={downloadCsv} aria-label="Download user list as CSV">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download CSV
           </Button>
         </div>
       </div>
