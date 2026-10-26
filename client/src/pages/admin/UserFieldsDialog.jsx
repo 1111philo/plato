@@ -94,14 +94,14 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[calc(100vh-4rem)] flex flex-col">
         <DialogHeader>
           <DialogTitle>User Fields</DialogTitle>
           <DialogDescription>
             Extra profile fields users fill in at signup and in their settings. Required fields must be completed before a user can continue to their lessons.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto -mx-4 px-4" tabIndex={0} role="region" aria-label="User fields content">
           {fields.length > 0 ? (
             <ul className="space-y-1" aria-label="Custom user fields">
               {fields.map((f, idx) => (
