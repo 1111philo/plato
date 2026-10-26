@@ -6,34 +6,10 @@
 import { parseSSEStream, parseResponse, LLM, ApiError } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
+import { withLanguage } from './language.js';
 
 const promptCache = {};
 let knowledgeBase = null;
-
-/**
- * Detect the user's browser language from navigator.language.
- * Falls back to 'en' if unavailable (SSR/Node contexts).
- */
-function getBrowserLanguage() {
-  if (typeof navigator === 'undefined') return 'en';
-  const lang = navigator.language || navigator.userLanguage || 'en';
-  return lang;
-}
-
-/**
- * Convert a language code (e.g., 'es-MX', 'fr', 'en-US') to a human-readable
- * language name for prompts. Maps common codes; falls through to English.
- */
-function getLanguageName(code) {
-  const base = code.split('-')[0].toLowerCase();
-  const names = {
-    en: 'English', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
-    pt: 'Portuguese', zh: 'Chinese', ja: 'Japanese', ko: 'Korean',
-    ar: 'Arabic', hi: 'Hindi', ru: 'Russian', nl: 'Dutch', pl: 'Polish',
-    tr: 'Turkish', sv: 'Swedish', da: 'Danish', fi: 'Finnish', no: 'Norwegian',
-  };
-  return names[base] || 'English';
-}
 
 async function loadPrompt(name) {
   if (promptCache[name]) return promptCache[name];
@@ -164,9 +140,8 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
 
-  // Append language instruction for all agents
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  // The learner's language, if not English (#240) — see language.js.
+  systemPrompt = withLanguage(systemPrompt);
 
   const resp = await authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
@@ -189,8 +164,7 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
 
 export async function initializeLessonKB(lesson, profileSummary) {
   let systemPrompt = await loadPrompt('lesson-owner');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const userContent = JSON.stringify({
     lessonId: lesson.lessonId, lessonName: lesson.name,
     lessonDescription: lesson.description, exemplar: lesson.exemplar,
@@ -225,8 +199,7 @@ function profileForAgent(profile) {
 
 export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
   let systemPrompt = await loadPrompt('learner-profile-owner');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const userContent = JSON.stringify({ currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
     model: LLM, systemPrompt,
@@ -249,8 +222,7 @@ export function incrementalProfileUpdate(profile, lessonId) {
 
 export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext) {
   let systemPrompt = await loadPrompt('learner-profile-update');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const userContent = JSON.stringify({
     currentProfile: profileForAgent(fullProfile), learnerFeedback: feedbackText,
     context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
@@ -266,8 +238,7 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
 
 export async function updateCourseProgress(courseName, lessonsInCourse, priorSummary, completedLesson, completedLessonIds) {
   let systemPrompt = await loadPrompt('course-progress-update');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const userContent = JSON.stringify({
     courseName,
     lessonsInCourse,
@@ -286,8 +257,7 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
 
 export async function extractLessonMarkdown(conversationText) {
   let systemPrompt = await loadPrompt('lesson-extractor');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content: conversationText }], maxTokens: 1536,
@@ -299,8 +269,7 @@ export async function extractLessonMarkdown(conversationText) {
 
 export async function extractKBMarkdown(conversationText, existingKB = '') {
   let systemPrompt = await loadPrompt('knowledge-base-extractor');
-  const languageName = getLanguageName(getBrowserLanguage());
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Language\n\nRespond in ${languageName} when communicating with the user.`;
+  systemPrompt = withLanguage(systemPrompt);
   const userContent = existingKB
     ? `## EXISTING KNOWLEDGE BASE\n\n${existingKB}\n\n## CONVERSATION\n\n${conversationText}`
     : `## EXISTING KNOWLEDGE BASE\n\n(none — creating from scratch)\n\n## CONVERSATION\n\n${conversationText}`;

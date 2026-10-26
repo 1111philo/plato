@@ -49,6 +49,32 @@ Context appended at runtime (`client/js/orchestrator.js`):
 - Knowledge base is created/edited by admins via the KB Editor agent in the
   Customizer (not directly editable).
 
+### Learner language (#240)
+
+Every agent writes in the learner's browser language (`navigator.languages[0]`
+/ `navigator.language`). `client/js/language.js` maps the code to a language
+name and `withLanguage()` appends a `## Language` section to each of the 9
+agents' system prompts in `orchestrator.js`. Rules:
+
+- **English or an unmapped language adds nothing**, so English learners'
+  prompts are byte-for-byte what they were. Unknown codes fall back to
+  English rather than guessing.
+- **The directive names every literal plato parses out of agent output** as
+  "keep in English": the bracketed tags (`[PROGRESS: N]`, `[KB_UPDATE:]`,
+  `[PROFILE_UPDATE:]`, `[READINESS: N]`, `[DRAFT]`), JSON keys and fixed values
+  (`"status": "active"`), lesson markdown headings (`## Learning Objectives`,
+  `## Exemplar`, `## Coach Directive`), and the `- Can ` objective prefix that
+  `validateLessonMarkdown` requires. A translated tag or heading would break
+  parsing silently, so if you add a new parsed literal to a prompt, add it to
+  the directive too.
+- Admin-side agents (lesson creator/extractor, KB editor/extractor) follow
+  the *admin's* browser, so lessons and the KB are authored in that language.
+- Verified against Qwen3-VL on Bedrock (Spanish, 3 runs × 7 agents, outputs
+  run through plato's own parsers): all tags, JSON, headings, and `- Can `
+  objectives parsed; prose came back in Spanish. Internal KB fields the coach
+  reads but learners never see (`evidence`, `learnerPosition`) sometimes stay
+  English because their input (the lesson) is English — harmless.
+
 ## AI provider & model choice
 
 plato runs **one model for all nine agents** — no per-agent routing. It is
