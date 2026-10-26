@@ -4,6 +4,7 @@ import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import Check from 'lucide-react/dist/esm/icons/check';
+import { courseCompletion, groupByCourse } from '../lib/courseCompletion.js';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -171,6 +172,10 @@ export default function LessonsList() {
     });
   }, [lessons, courseFilter, statusFilter, lessonData]);
 
+  // Course progress counts every lesson the learner has, not just the filtered
+  // view, so a status filter can't skew "N of M" (#395).
+  const progressByCourse = useMemo(() => courseCompletion(lessons, lessonData), [lessons, lessonData]);
+
   // Pagination math. We clamp the current page to the available range so a
   // filter that shrinks the list below the current page doesn't strand us.
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -287,32 +292,41 @@ export default function LessonsList() {
           No lessons match this filter.
         </div>
       ) : (
-        <ul
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-          role="list"
-          aria-label="Lessons"
-        >
-          {visibleLessons.map((c, i) => (
-            <li
-              key={c.lessonId}
-              className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
-              style={{ animationDelay: `${i * 30}ms` }}
-            >
-              {/* Title-first layout: lesson name leads, description supports,
-                  and metadata (course / expected time / status) collapses to
-                  one muted line in the footer. The Open and Overview triggers
-                  are sibling buttons so screen readers never see
-                  interactive-within-interactive. */}
-              <LessonCard
-                lesson={c}
-                progress={lessonData[c.lessonId]}
-                timeStats={timeStats[c.lessonId]}
-                onOpen={() => navigate(`/lessons/${c.lessonId}`)}
-                onShowOverview={() => setDetailLesson(c)}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-6">
+          {/* One progress header per course on this page; counts come from
+              progressByCourse (all lessons), not from what's visible. */}
+          {groupByCourse(visibleLessons).map((group) => {
+            const progress = group.courseId ? progressByCourse[group.courseId] : null;
+            return (
+              <div key={group.courseId || 'uncategorized'}>
+                {group.courseName && progress && (
+                  <CourseProgressHeader
+                    courseName={group.courseName}
+                    completed={progress.completed}
+                    total={progress.total}
+                  />
+                )}
+                <ul
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                  role="list"
+                  aria-label={group.courseName ? `${group.courseName} lessons` : 'Lessons'}
+                >
+                  {group.lessons.map((lesson, i) => (
+                    <LessonCardItem
+                      key={lesson.lessonId}
+                      lesson={lesson}
+                      lessonData={lessonData}
+                      timeStats={timeStats}
+                      navigate={navigate}
+                      setDetailLesson={setDetailLesson}
+                      animationDelay={i * 30}
+                    />
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {totalPages > 1 && (
@@ -351,6 +365,58 @@ export default function LessonsList() {
         />
       )}
     </div>
+  );
+}
+
+// Course progress header — completed / total lessons in the course (the
+// learner's own custom-* lessons excluded) with a visual progress bar.
+function CourseProgressHeader({ courseName, completed, total }) {
+  if (total === 0) return null;
+  const pct = Math.round((completed / total) * 100);
+
+  return (
+    <div className="mb-3">
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {courseName}
+        </h2>
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {completed} of {total} lesson{total === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-label={`${courseName} progress: ${completed} of ${total} lessons completed`}
+        className="h-1.5 rounded-full bg-muted overflow-hidden"
+      >
+        <div
+          className="h-full rounded-full bg-primary transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Wrapper for individual lesson cards in the grid. Extracted to avoid
+// duplicating the card rendering logic when grouping by course.
+function LessonCardItem({ lesson, lessonData, timeStats, navigate, setDetailLesson, animationDelay }) {
+  return (
+    <li
+      className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
+      style={{ animationDelay: `${animationDelay}ms` }}
+    >
+      <LessonCard
+        lesson={lesson}
+        progress={lessonData[lesson.lessonId]}
+        timeStats={timeStats[lesson.lessonId]}
+        onOpen={() => navigate(`/lessons/${lesson.lessonId}`)}
+        onShowOverview={() => setDetailLesson(lesson)}
+      />
+    </li>
   );
 }
 
