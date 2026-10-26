@@ -22,6 +22,7 @@ import WaitlistDialog from './WaitlistDialog.jsx';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
+import { toCsv, usersCsvRows } from '../../lib/csv.js';
 
 const PAGE_SIZE = 20;
 
@@ -622,6 +623,20 @@ export default function AdminUsers() {
     });
   }, [filteredList, sortBy]);
 
+  // CSV of the list as shown (current filter, search, sort) — see lib/csv.js.
+  function downloadCsv() {
+    const blob = new Blob(['\uFEFF' + toCsv(usersCsvRows(sortedList, userFields))], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `plato-users-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoking synchronously can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems = sortedList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -771,6 +786,10 @@ export default function AdminUsers() {
           <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Wait List
+          </Button>
+          <Button variant="outline" onClick={downloadCsv} aria-label="Download user list as CSV">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download CSV
           </Button>
         </div>
       </div>
