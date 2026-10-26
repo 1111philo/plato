@@ -4,6 +4,7 @@ import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import Check from 'lucide-react/dist/esm/icons/check';
+import { courseCompletion, groupByCourse } from '../lib/courseCompletion.js';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -171,42 +172,9 @@ export default function LessonsList() {
     });
   }, [lessons, courseFilter, statusFilter, lessonData]);
 
-  // Group filtered lessons by course for the progress display. Each group
-  // tracks completed lessons / total public lessons (excluding custom lessons,
-  // matching the admin KPI definition from lesson-visibility.js).
-  const courseGroups = useMemo(() => {
-    const groups = [];
-    let currentCourse = null;
-    let currentGroup = null;
-
-    for (const lesson of filtered) {
-      const courseId = lesson.course?.id || null;
-      const courseName = lesson.course?.name || null;
-      const isCustom = lesson.lessonId.startsWith('custom-');
-
-      if (courseId !== currentCourse) {
-        if (currentGroup) groups.push(currentGroup);
-        currentGroup = {
-          courseId,
-          courseName,
-          lessons: [],
-          totalPublic: 0,
-          completedPublic: 0,
-        };
-        currentCourse = courseId;
-      }
-
-      currentGroup.lessons.push(lesson);
-      if (!isCustom) {
-        currentGroup.totalPublic++;
-        if (lessonData[lesson.lessonId]?.status === 'completed') {
-          currentGroup.completedPublic++;
-        }
-      }
-    }
-    if (currentGroup) groups.push(currentGroup);
-    return groups;
-  }, [filtered, lessonData]);
+  // Course progress counts every lesson the learner has, not just the filtered
+  // view, so a status filter can't skew "N of M" (#395).
+  const progressByCourse = useMemo(() => courseCompletion(lessons, lessonData), [lessons, lessonData]);
 
   // Pagination math. We clamp the current page to the available range so a
   // filter that shrinks the list below the current page doesn't strand us.
@@ -325,64 +293,39 @@ export default function LessonsList() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Group visible lessons by course. Show a progress header for each
-              course in the paginated view. Progress counts only public lessons
-              (excluding custom-*) to match admin KPI definitions. */}
-          {(() => {
-            // Group visible lessons by course ID
-            const visibleGroups = [];
-            let currentCourseId = undefined;
-            let currentLessons = [];
-
-            visibleLessons.forEach((lesson) => {
-              const courseId = lesson.course?.id || null;
-              if (courseId !== currentCourseId) {
-                if (currentLessons.length > 0) {
-                  visibleGroups.push({ courseId: currentCourseId, lessons: currentLessons });
-                }
-                currentCourseId = courseId;
-                currentLessons = [lesson];
-              } else {
-                currentLessons.push(lesson);
-              }
-            });
-            if (currentLessons.length > 0) {
-              visibleGroups.push({ courseId: currentCourseId, lessons: currentLessons });
-            }
-
-            return visibleGroups.map((vg) => {
-              const group = courseGroups.find((g) => g.courseId === vg.courseId);
-              const courseName = group?.courseName;
-              return (
-                <div key={vg.courseId || 'uncategorized'}>
-                  {courseName && (
-                    <CourseProgressHeader
-                      courseName={courseName}
-                      completed={group.completedPublic}
-                      total={group.totalPublic}
+          {/* One progress header per course on this page; counts come from
+              progressByCourse (all lessons), not from what's visible. */}
+          {groupByCourse(visibleLessons).map((group) => {
+            const progress = group.courseId ? progressByCourse[group.courseId] : null;
+            return (
+              <div key={group.courseId || 'uncategorized'}>
+                {group.courseName && progress && (
+                  <CourseProgressHeader
+                    courseName={group.courseName}
+                    completed={progress.completed}
+                    total={progress.total}
+                  />
+                )}
+                <ul
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                  role="list"
+                  aria-label={group.courseName ? `${group.courseName} lessons` : 'Lessons'}
+                >
+                  {group.lessons.map((lesson, i) => (
+                    <LessonCardItem
+                      key={lesson.lessonId}
+                      lesson={lesson}
+                      lessonData={lessonData}
+                      timeStats={timeStats}
+                      navigate={navigate}
+                      setDetailLesson={setDetailLesson}
+                      animationDelay={i * 30}
                     />
-                  )}
-                  <ul
-                    className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-                    role="list"
-                    aria-label={courseName ? `${courseName} lessons` : 'Lessons'}
-                  >
-                    {vg.lessons.map((lesson, i) => (
-                      <LessonCardItem
-                        key={lesson.lessonId}
-                        lesson={lesson}
-                        lessonData={lessonData}
-                        timeStats={timeStats}
-                        navigate={navigate}
-                        setDetailLesson={setDetailLesson}
-                        animationDelay={i * 30}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              );
-            });
-          })()}
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -425,10 +368,8 @@ export default function LessonsList() {
   );
 }
 
-// Course progress header — shows completed / total public lessons with a
-// visual progress bar. Only counts published lessons (excluding custom-*)
-// to match admin KPI definitions. Hidden when the course has no public
-// lessons to avoid showing "0 / 0".
+// Course progress header — completed / total lessons in the course (the
+// learner's own custom-* lessons excluded) with a visual progress bar.
 function CourseProgressHeader({ courseName, completed, total }) {
   if (total === 0) return null;
   const pct = Math.round((completed / total) * 100);
@@ -465,7 +406,6 @@ function CourseProgressHeader({ courseName, completed, total }) {
 function LessonCardItem({ lesson, lessonData, timeStats, navigate, setDetailLesson, animationDelay }) {
   return (
     <li
-      key={lesson.lessonId}
       className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
       style={{ animationDelay: `${animationDelay}ms` }}
     >

@@ -542,6 +542,14 @@ filter is set to a course that no longer exists, it snaps back to "All courses"
 automatically. Filter and page changes are announced via an always-mounted
 `role="status" aria-live="polite"` region — no visible "N lessons" subhead.
 
+Lessons are grouped by course, and each course on the page gets a header with
+an "N of M lessons" progress bar (#395). The counts come from
+`courseCompletion()` (`client/src/lib/courseCompletion.js`) over **all** of
+the learner's lessons — never the filtered or paginated view, so a status
+filter like "Not started" can't turn "5 of 8" into "0 of 3". The learner's own
+`custom-*` lessons don't count toward a course. Purely informational; it reads
+`lessonKB.status` and never affects completion.
+
 `loadLessons()` merges system lessons (`/v1/lessons`) with user lessons from
 sync-data. To preview a lesson as a learner sees it (the live coach experience),
 admins share the lesson with themselves and view it in the classroom — the
