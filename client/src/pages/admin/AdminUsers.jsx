@@ -22,6 +22,7 @@ import WaitlistDialog from './WaitlistDialog.jsx';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
+import { toCsv, usersCsvRows } from '../../lib/csv.js';
 
 const PAGE_SIZE = 20;
 
@@ -487,52 +488,6 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
-  // -- CSV download --
-
-  function downloadCsv() {
-    // Escape CSV field value
-    const escape = (val) => {
-      if (val == null) return '';
-      const str = String(val);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    // Build header row: standard fields + custom fields
-    const headers = ['Email', 'Name', 'Username', 'Group', 'Role', 'Type', 'Date Joined'];
-    userFields.forEach(f => headers.push(f.label));
-
-    // Build data rows from sortedList (respects current filter/sort)
-    const rows = sortedList.map(item => {
-      const row = [
-        escape(item.email),
-        escape(item.name),
-        escape(item.username),
-        escape(item.userGroup),
-        escape(item.role),
-        escape(item._type),
-        escape(item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''),
-      ];
-      // Add custom field values in same order as header
-      userFields.forEach(f => {
-        const value = item.customFields?.[f.id] ?? '';
-        row.push(escape(value));
-      });
-      return row.join(',');
-    });
-
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `plato-users-${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   // -- Edit user --
   // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
   // browser refresh / back-button preserve the selection. openEditUser only
@@ -667,6 +622,20 @@ export default function AdminUsers() {
       return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
     });
   }, [filteredList, sortBy]);
+
+  // CSV of the list as shown (current filter, search, sort) — see lib/csv.js.
+  function downloadCsv() {
+    const blob = new Blob(['\uFEFF' + toCsv(usersCsvRows(sortedList, userFields))], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `plato-users-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoking synchronously can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 
   const totalPages = Math.max(1, Math.ceil(sortedList.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);

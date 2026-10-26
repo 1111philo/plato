@@ -911,7 +911,13 @@ learners re-pick after an admin edits the list. Deliberate choices:
 
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list
-and adds a column with that field's values.
+and adds a column with that field's values. **Download CSV** (#382) exports
+the list as shown (current filter, search, and sort) with one column per
+custom field (`client/src/lib/csv.js`). Cells that start with `= + - @` or a
+tab/CR get a leading `'` so spreadsheets treat them as text: names and
+answers arrive from the public wait-list form, so a formula there would be
+attacker-controlled (CSV injection). Dates are ISO; the file has a UTF-8 BOM
+and CRLF line endings so Excel opens it cleanly.
 
 ## Admin "View as User"
 
