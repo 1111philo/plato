@@ -859,7 +859,7 @@ export default function AdminUsers() {
 
       {filteredList.length > 0 ? (
         <>
-          <div className="rounded-lg border overflow-hidden">
+          <div className="rounded-lg border overflow-x-auto">
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
