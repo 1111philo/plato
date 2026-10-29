@@ -1259,8 +1259,12 @@ export default function AdminUsers() {
               <Button onClick={addGroup}>Add</Button>
             </div>
             {groups.length > 0 ? (
-              <ul className="space-y-1">
-                {groups.map(g => (
+              <ul className="space-y-1 max-h-80 overflow-y-auto">
+                {[...groups].sort((a, b) => {
+                  if (a === 'None / Other') return 1;
+                  if (b === 'None / Other') return -1;
+                  return a.localeCompare(b);
+                }).map(g => (
                   <li key={g} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
                     <span className="text-sm">{g}</span>
                     <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete group ${g}`} onClick={() => deleteGroup(g)}>&#10005;</Button>
