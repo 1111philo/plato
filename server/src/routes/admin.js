@@ -5,6 +5,7 @@ import { authorize } from '../middleware/authorize.js';
 import { ROLES, normalizeRole } from '../lib/permissions.js';
 import { registerHierarchyRoutes } from './admin-hierarchy.js';
 import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.js';
+import { registerNotificationRoutes } from './admin-notifications.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -1013,6 +1014,9 @@ admin.post('/v1/admin/bundled-lessons/:lessonId', async (c) => {
   }
   return c.json(result);
 });
+
+// ── Notifications (#388, #389, #400): routes/admin-notifications.js ──
+registerNotificationRoutes(admin);
 
 // ── Courses, units, lessons order (#408) ──
 // Units are stored as _system:course:<id>, courses as _system:program:<id>.

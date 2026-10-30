@@ -12,6 +12,9 @@ import auth from '../../src/routes/auth.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 import { hashToken } from '../../src/lib/crypto.js';
+import { setEmailTransport } from '../../src/lib/notifications.js';
+import unsubscribe from '../../src/routes/unsubscribe.js';
+import { unsubscribeToken } from '../../src/lib/notifications.js';
 
 const FIELDS = [
   { id: 'fld_org', label: 'Organization', type: 'text', required: true },
@@ -61,6 +64,70 @@ beforeEach(() => {
   db.createWaitlistEntry = async (entry) => { created.push(entry); };
   db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
   db.createAuditLog = async () => {};
+});
+
+// #388: the confirmation email, sent once, never failing the join.
+describe('wait list confirmation email (#388)', () => {
+  let mails;
+  beforeEach(() => { mails = []; setEmailTransport(async (raw) => { mails.push(raw); }); });
+  const subjectOf = (raw) => raw.match(/^Subject: (.*)$/m)[1];
+
+  it('is off by default', async () => {
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 0);
+  });
+
+  it('sends once when on, to the new entry only', async () => {
+    store.automations = { waitlistConfirmation: true };
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 1);
+    assert.match(mails[0], /^To: ada@example\.com$/m);
+    assert.equal(subjectOf(mails[0]), "You're on the wait list for plato");
+    // A retry finds the entry: same reply, no second email.
+    db.getWaitlistEntryByEmail = async () => ({ inviteToken: 'inv_wl_x', status: 'waitlist' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 1);
+  });
+
+  it('a concurrent duplicate that loses the create-only write sends nothing', async () => {
+    store.automations = { waitlistConfirmation: true };
+    db.createWaitlistEntry = async () => { throw Object.assign(new Error('exists'), { name: 'ConditionalCheckFailedException' }); };
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 0);
+  });
+
+  it('uses the admin’s edited copy', async () => {
+    store.automations = { waitlistConfirmation: true };
+    store['emailTemplate:waitlist-confirmation'] = { subject: 'Welcome aboard, {{firstName}}', body: 'Hi {{firstName}}' };
+    await post(makeApp(), '/v1/waitlist', VALID);
+    assert.equal(subjectOf(mails[0]), 'Welcome aboard, Ada');
+  });
+
+  it('a send failure is logged and the join still succeeds', async () => {
+    store.automations = { waitlistConfirmation: true };
+    setEmailTransport(async () => { throw new Error('SES down'); });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(created.length, 1);
+  });
+});
+
+describe('unsubscribe (#400)', () => {
+  const app = () => { const a = new Hono(); a.route('/', unsubscribe); return a; };
+  it('GET asks to confirm (no change); POST unsubscribes; a bad token changes nothing', async () => {
+    const writes = [];
+    db.putSyncData = async (u, key, data) => { writes.push({ u, key, data }); };
+    const token = unsubscribeToken('usr_ada', 'digest');
+    const get = await app().request(`/v1/unsubscribe?token=${token}`);
+    assert.equal(get.status, 200);
+    assert.match(await get.text(), /Unsubscribe from the weekly digest\?/);
+    assert.equal(writes.length, 0, 'GET never unsubscribes (link scanners)');
+    const res = await app().request(`/v1/unsubscribe?token=${token}`, { method: 'POST', body: 'List-Unsubscribe=One-Click' });
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /You’re unsubscribed/);
+    assert.deepEqual(writes.map((w) => [w.u, w.key, w.data.optOut]), [['usr_ada', 'notify:state', { digest: true }]]);
+    assert.equal((await app().request('/v1/unsubscribe?token=bad.token', { method: 'POST' })).status, 400);
+    assert.equal(writes.length, 1);
+  });
 });
 
 describe('GET /v1/waitlist', () => {

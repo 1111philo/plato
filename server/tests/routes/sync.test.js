@@ -184,6 +184,7 @@ describe('DELETE /v1/sync', () => {
       { dataKey: 'profile' },
       { dataKey: 'work' },
       { dataKey: 'preferences' },
+      { dataKey: 'notify:state' }, // email opt-outs survive a reset (#400)
     ];
     db.deleteSyncData = async (_uid, key) => { deleted.push(key); };
     const app = new Hono();

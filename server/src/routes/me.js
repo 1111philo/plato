@@ -5,6 +5,7 @@ import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
+import { readNotifyState, setOptOut } from '../lib/notifications.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
@@ -120,6 +121,20 @@ me.patch('/v1/me', async (c) => {
     role: normalizeRole(updated.role),
     customFields: visibleFieldValues(defs, updated.customFields),
   });
+});
+
+// GET/PUT /v1/me/notifications — the learner's email opt-outs (#400):
+// `{ optOut: { nudge?, digest?, messages? } }`, true meaning "don't email me".
+// Stored in the server-only notify:state record.
+me.get('/v1/me/notifications', async (c) => {
+  const { optOut } = await readNotifyState(c.get('userId'));
+  return c.json({ optOut });
+});
+me.put('/v1/me/notifications', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const result = await setOptOut(c.get('userId'), body.optOut);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result);
 });
 
 // GET /v1/me/export — download all user data as JSON.

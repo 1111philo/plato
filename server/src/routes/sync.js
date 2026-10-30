@@ -258,7 +258,9 @@ sync.delete('/v1/sync', async (c) => {
   if (reject) return reject;
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
-  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:'));
+  // userMeta:* is admin-owned; notify:* holds email opt-outs (#400), which a
+  // progress reset shouldn't undo.
+  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('notify:'));
   await Promise.all(deletable.map((item) => db.deleteSyncData(userId, item.dataKey)));
   return c.json({ ok: true, deleted: deletable.length });
 });

@@ -34,6 +34,7 @@ const { default: sync } = await import('./src/routes/sync.js');
 const { default: ai } = await import('./src/routes/ai.js');
 const { default: content } = await import('./src/routes/content.js');
 const { default: waitlist } = await import('./src/routes/waitlist.js');
+const { default: unsubscribe } = await import('./src/routes/unsubscribe.js');
 const { default: links } = await import('./src/routes/links.js');
 const { viewAsReadOnly } = await import('./src/middleware/viewAsReadOnly.js');
 const { default: app } = await import('./src/routes/app.js');
@@ -95,6 +96,7 @@ server.route('/', ai);
 server.route('/', content);
 server.route('/', links);
 server.route('/', waitlist);
+server.route('/', unsubscribe);
 // `app` (SPA fallback `app.get('*')`) is mounted LAST — see plugin catch-all below.
 
 // Plugin registry: discover and activate plugins. Same catch-all pattern as

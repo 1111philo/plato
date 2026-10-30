@@ -37,8 +37,11 @@ export async function getClassroom() {
   };
 }
 
-/** Classroom-branded wrapper. `body` is trusted HTML built by the caller. */
-export function emailWrapper(classroom, body) {
+/**
+ * Classroom-branded wrapper. `body` and `footer` are trusted HTML built by the
+ * caller; `footer` sits just above "Powered by plato." (e.g. an unsubscribe line).
+ */
+export function emailWrapper(classroom, body, footer = '') {
   const primary = safeColor(classroom.primary);
   return `
     <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
@@ -47,6 +50,7 @@ export function emailWrapper(classroom, body) {
       </div>
       <div style="border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; padding: 24px 20px;">
         ${body}
+        ${footer}
         <p style="color: #999; font-size: 11px; line-height: 1.5; margin: 24px 0 0; text-align: center;">
           Powered by <a href="https://github.com/1111philo/plato" style="color: #999; text-decoration: underline;">plato</a>.
         </p>

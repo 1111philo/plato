@@ -113,6 +113,11 @@ isn't updated. This is deliberate: the API never reveals whether someone is
 already registered. So a `202` means "plato has this person in some form",
 not necessarily "a new entry was created".
 
+If an admin has turned on **Wait list confirmation** (Admin → Notifications),
+a new entry gets one confirmation email, whether it came from your form or
+plato's. A repeat request for an email plato already has sends nothing, so
+retries are safe. If your own system already confirms sign-ups, leave it off.
+
 ### From a browser (no key)
 
 With the list open, a form on any site can post directly (CORS is allowed
