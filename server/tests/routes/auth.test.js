@@ -38,7 +38,7 @@ describe('POST /v1/auth/signup', () => {
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
     assert.equal(data.user.email, 'test@example.com');
-    assert.equal(data.user.role, 'user');
+    assert.equal(data.user.role, 'learner', 'new signups are learners (#435)');
     assert.ok(data.user.username); // auto-generated when not provided
   });
 

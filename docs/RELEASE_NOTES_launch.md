@@ -17,7 +17,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 ## Data migrations
 | Id | What it changes | Reversible by | PR |
 |---|---|---|---|
-| _(runner only, no migrations yet)_ | | | |
+| `m003_role_learner` | stored role `user` → `learner` (conditional; `updatedAt` untouched) | `UPDATE … SET role='user' WHERE role='learner'` — and `normalizeRole` makes code indifferent to which is stored | roles PR |
 
 ## Sub-PRs merged into playground
 | PR | Area | Issues |

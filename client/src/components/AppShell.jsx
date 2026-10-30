@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { can } from '../lib/permissions.js';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBranding } from '../contexts/BrandingContext.jsx';
@@ -18,7 +19,8 @@ export default function AppShell({ children }) {
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [viewAsOpen, setViewAsOpen] = useState(false);
-  const isAdmin = user?.role === 'admin';
+  const isStaff = can(user, 'admin.access');
+  const canViewAs = can(user, 'impersonation.use');
   const impersonating = !!impersonatedUser;
 
   useEffect(() => {
@@ -50,14 +52,14 @@ export default function AppShell({ children }) {
       </a>
 
       {/* Admin bar — plato branding, quick links to dashboard */}
-      {isAdmin && (
+      {isStaff && (
         <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
           <div className="mx-auto max-w-5xl flex items-center gap-2">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
               <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
-            {!impersonating && (
+            {!impersonating && canViewAs && (
               <button
                 type="button"
                 onClick={() => setViewAsOpen(true)}

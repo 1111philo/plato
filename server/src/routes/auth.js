@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
+import { normalizeRole } from '../lib/permissions.js';
 import { generateUserId, generateRefreshToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
 import { signAccessToken } from '../lib/jwt.js';
@@ -215,12 +216,12 @@ auth.post('/v1/auth/signup', async (c) => {
     passwordHash,
     name,
     userGroup: userGroup || profileGroup || null,
-    role: 'user',
+    role: 'learner',
     slackUserId: invite.slackUserId || null,
     customFields,
   });
 
-  await emitHook('userCreated', { userId, email: userEmail, role: 'user' });
+  await emitHook('userCreated', { userId, email: userEmail, role: 'learner' });
 
   // Mark invite as used after successful user creation
   if (invite.isLink) {
@@ -234,14 +235,14 @@ auth.post('/v1/auth/signup', async (c) => {
     await db.markInviteUsed(inviteToken);
   }
 
-  const accessToken = await signAccessToken(userId, 'user');
+  const accessToken = await signAccessToken(userId, 'learner');
   const refreshToken = generateRefreshToken();
   await db.storeRefreshToken(hashToken(refreshToken), userId);
 
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: userEmail, username, name, role: 'user' },
+    user: { userId, email: userEmail, username, name, role: 'learner' },
   }, 201);
 });
 
@@ -289,7 +290,7 @@ auth.post('/v1/auth/login', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId: user.userId, email: user.email, username: user.username, name: user.name, role: user.role },
+    user: { userId: user.userId, email: user.email, username: user.username, name: user.name, role: normalizeRole(user.role) },
   });
 });
 

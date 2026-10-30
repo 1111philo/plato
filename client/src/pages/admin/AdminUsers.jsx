@@ -18,6 +18,15 @@ import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
 import UserFieldsDialog from './UserFieldsDialog.jsx';
+import { can, isTester, normalizeRole, roleLabel, ROLES, ROLE_LABELS } from '../../lib/permissions.js';
+
+// Shown under the role picker so the choice is informed (matrix: lib/permissions.js).
+const ROLE_HELP = {
+  admin: 'Full access, including settings, plugins, and roles.',
+  educator: 'Creates and edits lessons, courses, and units; views learners and invites them.',
+  learner: 'Takes lessons in the classroom. No dashboard access.',
+  tester: 'Can open every classroom and dashboard page, but can’t change anything.',
+};
 import WaitlistDialog from './WaitlistDialog.jsx';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
@@ -118,6 +127,10 @@ export default function AdminUsers() {
   const navigate = useNavigate();
   const { userId: paramUserId, waitlistToken } = useParams();
   const { user: currentUser } = useAuth();
+  // Controls render if the role can use them, or for testers (who explore
+  // everything; their writes are refused with a clear message). Educators
+  // don't see what they can't use.
+  const shows = (permission) => can(currentUser, permission) || isTester(currentUser);
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [waitlistEntries, setWaitlistEntries] = useState([]);
@@ -553,7 +566,7 @@ export default function AdminUsers() {
         // Send every defined field so cleared inputs clear the stored value.
         customFields: Object.fromEntries(userFields.map((f) => [f.id, editForm.customFields[f.id] ?? ''])),
       });
-      if (editForm.role !== editUser.role) {
+      if (normalizeRole(editForm.role) !== normalizeRole(editUser.role)) {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
       }
       setMessage({ text: 'User updated.', type: 'success' });
@@ -584,8 +597,8 @@ export default function AdminUsers() {
 
   const filterCounts = useMemo(() => ({
     all: combinedList.length,
-    active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
-    admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
+    active: combinedList.filter(i => i._type === 'user' && normalizeRole(i.role) === 'learner').length,
+    staff: combinedList.filter(i => i._type === 'user' && normalizeRole(i.role) !== 'learner').length,
     invited: combinedList.filter(i => i._type === 'invite').length,
     waitlist: combinedList.filter(i => i._type === 'waitlist').length,
   }), [combinedList]);
@@ -594,8 +607,8 @@ export default function AdminUsers() {
     let list = combinedList;
 
     // Apply filter
-    if (filter === 'active') list = list.filter(i => i._type === 'user' && i.role === 'user');
-    else if (filter === 'admins') list = list.filter(i => i._type === 'user' && i.role === 'admin');
+    if (filter === 'active') list = list.filter(i => i._type === 'user' && normalizeRole(i.role) === 'learner');
+    else if (filter === 'staff') list = list.filter(i => i._type === 'user' && normalizeRole(i.role) !== 'learner');
     else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
     else if (filter === 'waitlist') list = list.filter(i => i._type === 'waitlist');
 
@@ -691,6 +704,8 @@ export default function AdminUsers() {
         onSaved={(text) => { setMessage({ text, type: 'success' }); back(); loadData(); }}
         onInvite={async (e) => { if (await inviteFromWaitlist(e.inviteToken, e.email)) back(); }}
         onRemove={async (e) => { if (await removeFromWaitlist(e.inviteToken, e.email)) back(); }}
+        canEdit={shows('waitlist.write')}
+        canInvite={shows('waitlist.invite')}
       />
     );
   }
@@ -698,6 +713,7 @@ export default function AdminUsers() {
   // Edit user view
   if (editUser) {
     const isSelf = editUser.userId === currentUser?.userId;
+    const canEditUser = shows('users.write');
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -713,19 +729,19 @@ export default function AdminUsers() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+              <Input id="edit-name" disabled={!canEditUser} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+              <Input id="edit-email" disabled={!canEditUser} type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-username">Username</Label>
-              <Input id="edit-username" type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} />
+              <Input id="edit-username" disabled={!canEditUser} type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-group">User Group</Label>
-              <select id="edit-group" value={editForm.userGroup}
+              <select id="edit-group" value={editForm.userGroup} disabled={!canEditUser}
                 onChange={e => setEditForm({ ...editForm, userGroup: e.target.value })}
                 className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
                 <option value="">None</option>
@@ -739,23 +755,25 @@ export default function AdminUsers() {
                 idPrefix="edit-field"
                 value={editForm.customFields[f.id]}
                 onChange={(v) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [f.id]: v } }))}
+                disabled={!canEditUser}
               />
             ))}
-            {!isSelf && (
+            {!isSelf && shows('users.role') && (
               <div className="space-y-2">
                 <Label htmlFor="edit-role">Role</Label>
-                <select id="edit-role" value={editForm.role}
+                <select id="edit-role" value={normalizeRole(editForm.role)}
                   onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                  aria-describedby="edit-role-help"
                   className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
+                <p id="edit-role-help" className="text-xs text-muted-foreground">{ROLE_HELP[normalizeRole(editForm.role)]}</p>
               </div>
             )}
             <div className="flex items-center gap-3 pt-2">
-              <Button onClick={saveEditUser}>Save</Button>
-              <Button variant="outline" onClick={closeEditUser}>Cancel</Button>
-              {!isSelf && (
+              {canEditUser && <Button onClick={saveEditUser}>Save</Button>}
+              <Button variant="outline" onClick={closeEditUser}>{canEditUser ? 'Cancel' : 'Back'}</Button>
+              {!isSelf && canEditUser && (
                 <>
                   <Button variant="outline" className="ml-auto" onClick={() => resetUserPassword(editUser.userId, editUser.email)}>
                     Reset Password
@@ -779,7 +797,7 @@ export default function AdminUsers() {
   const filterButtons = [
     { key: 'all', label: 'All' },
     { key: 'active', label: 'Active' },
-    { key: 'admins', label: 'Admins' },
+    { key: 'staff', label: 'Staff' },
     { key: 'invited', label: 'Invited' },
     { key: 'waitlist', label: 'Wait List' },
   ];
@@ -790,22 +808,22 @@ export default function AdminUsers() {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Users</h1>
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setInviteOpen(true)}>
+          {shows('invites.write') && <Button onClick={() => setInviteOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Invite Users
-          </Button>
-          <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+          </Button>}
+          {shows('groups.write') && <Button variant="outline" onClick={() => setGroupsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             User Groups
-          </Button>
-          <Button variant="outline" onClick={() => setFieldsOpen(true)}>
+          </Button>}
+          {shows('fields.write') && <Button variant="outline" onClick={() => setFieldsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             User Fields
-          </Button>
-          <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
+          </Button>}
+          {shows('waitlist.write') && <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Wait List
-          </Button>
+          </Button>}
           <Button variant="outline" onClick={downloadCsv}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download CSV
@@ -921,8 +939,8 @@ export default function AdminUsers() {
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>
-                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>
+                        {shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+                        {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -956,8 +974,8 @@ export default function AdminUsers() {
                     <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                     <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                     <TableCell>
-                      <Badge variant={item.role === 'admin' ? 'default' : 'secondary'}>
-                        {item.role === 'admin' ? 'Admin' : 'User'}
+                      <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>
+                        {roleLabel(item.role)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
@@ -1000,7 +1018,7 @@ export default function AdminUsers() {
                       {/* Keep clicks on these buttons from also opening the row. */}
                       <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
-                        {item._user.userId !== currentUser?.userId && (
+                        {item._user.userId !== currentUser?.userId && shows('users.write') && (
                           <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
                         )}
                       </div>

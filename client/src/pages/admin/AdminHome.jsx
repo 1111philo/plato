@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { can, normalizeRole } from '../../lib/permissions.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
@@ -247,6 +249,9 @@ export default function AdminHome() {
   const [activeCount, setActiveCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [hasKB, setHasKB] = useState(true);
+  const { user } = useAuth();
+  // Educators can't read the KB (Customizer is admin/tester only, #435).
+  const canSeeKB = can(user, 'kb.read');
   const [lessonStats, setLessonStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshAnnounce, setRefreshAnnounce] = useState('');
@@ -261,16 +266,17 @@ export default function AdminHome() {
     Promise.all([
       adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
-      adminApi('GET', '/v1/admin/knowledge-base'),
+      // Optional: an Educator's 403 here must not blank the whole dashboard.
+      canSeeKB ? adminApi('GET', '/v1/admin/knowledge-base').catch(() => null) : Promise.resolve(null),
       loadStats(),
     ]).then(([users, invites, kb, stats]) => {
-      // Matches the Users page "Active" filter: learners only, not admins.
-      setActiveCount(Array.isArray(users) ? users.filter((u) => u.role !== 'admin').length : 0);
+      // Matches the Users page "Active" filter: learners only, not staff.
+      setActiveCount(Array.isArray(users) ? users.filter((u) => normalizeRole(u.role) === 'learner').length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setHasKB(!!kb?.content);
+      setHasKB(!canSeeKB || !!kb?.content);
       setLessonStats(stats);
     }).catch(() => {});
-  }, [loadStats]);
+  }, [loadStats, canSeeKB]);
 
   // Re-render the "Last updated" string every 30s so it stays accurate without
   // a refetch.

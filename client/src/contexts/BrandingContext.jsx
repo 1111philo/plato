@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { can } from '../lib/permissions.js';
 import { useAuth } from './AuthContext.jsx';
 import { buildThemeVars, generateFavicon, setFavicon } from '../lib/branding.js';
 
@@ -10,7 +11,8 @@ const BrandingContext = createContext(null);
  */
 export function BrandingProvider({ children }) {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  // Staff (admin.access) keep plato's favicon, as admins always have.
+  const isAdmin = can(user, 'admin.access');
 
   const [branding, setBranding] = useState({
     theme: null,

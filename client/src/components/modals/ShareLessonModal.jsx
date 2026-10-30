@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { normalizeRole, roleLabel } from '../../lib/permissions.js';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
@@ -132,7 +133,7 @@ export default function ShareLessonModal({
                         <span className="font-medium truncate block">{u.name || u.username || u.email}</span>
                         {u.name && <span className="text-xs text-muted-foreground truncate block">{u.email}</span>}
                       </span>
-                      {u.role === 'admin' && <span className="text-xs text-muted-foreground">Admin</span>}
+                      {normalizeRole(u.role) !== 'learner' && <span className="text-xs text-muted-foreground">{roleLabel(u.role)}</span>}
                     </label>
                   ))}
                 </div>

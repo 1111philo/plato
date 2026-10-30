@@ -2,7 +2,7 @@
 // learner account): a course, lessons in it, custom user fields, a group.
 import { execFileSync } from 'node:child_process';
 import { BASE_URL, DB_PATH } from './playwright.config.js';
-import { ADMIN, LEARNER, LESSONS, COURSE } from './fixtures.js';
+import { ADMIN, LEARNER, EDUCATOR, TESTER, LESSONS, COURSE } from './fixtures.js';
 
 async function api(method, path, token, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -22,9 +22,17 @@ export default async function globalSetup() {
   }
   await api('PUT', '/v1/admin/groups', admin, { name: 'Cohort A' });
   await api('POST', '/v1/admin/user-fields', admin, { label: 'Organization', type: 'text', required: false });
-  execFileSync(process.execPath, ['scripts/create-dev-user.js', LEARNER.email, LEARNER.password, LEARNER.name], {
-    cwd: new URL('../server/', import.meta.url),
-    env: { ...process.env, DB_BACKEND: 'sqlite', SQLITE_PATH: DB_PATH },
-    stdio: 'ignore',
-  });
+  for (const u of [LEARNER, EDUCATOR, TESTER]) {
+    execFileSync(process.execPath, ['scripts/create-dev-user.js', u.email, u.password, u.name], {
+      cwd: new URL('../server/', import.meta.url),
+      env: { ...process.env, DB_BACKEND: 'sqlite', SQLITE_PATH: DB_PATH },
+      stdio: 'ignore',
+    });
+  }
+  // Staff roles go through the real role endpoint (#435).
+  const users = await api('GET', '/v1/admin/users', admin);
+  for (const u of [EDUCATOR, TESTER]) {
+    const { userId } = users.find((x) => x.email === u.email);
+    await api('PUT', `/v1/admin/users/${userId}/role`, admin, { role: u.role });
+  }
 }

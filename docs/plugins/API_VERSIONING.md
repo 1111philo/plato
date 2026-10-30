@@ -5,12 +5,16 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.2.0'
+PLUGIN_API_VERSION = '1.4.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.4.0
+- **Changed** the role values in `userCreated` / `userDeleted` payloads and the `AdminUser.role` type (#435): roles are now `admin`, `educator`, `learner`, `tester`, always normalized. New signups are stored as `learner`, and accounts stored as `user` before this version are reported as `learner`. A plugin comparing `role === 'user'` should compare `role === 'learner'`; none of the bundled plugins read the role.
+- Plugin admin routes guarded with the SDK's `requireAdmin` remain **admin-only**. Educators and testers don't pass it.
 
 ### 1.2.0 (additive)
 - **Added** `onUninstall(ctx)` lifecycle hook — optional. Runs when an admin uses the "Delete plugin data" flow on `/plato/plugins` and the plugin needs cleanup beyond its activation record (e.g., per-user `userMeta:<id>` records). The host clears the activation record (settings) automatically; plugins only implement `onUninstall` when they own data elsewhere. Plugin must be **disabled** first, and the admin must type the plugin id in a confirm dialog before the destructive button enables. Errors propagate so partial-cleanup failures are surfaced loudly.

@@ -33,7 +33,8 @@ const TAG = 'Beta-RC-232';
 // Anything else differing from the RC-232 fixture fails the test.
 const ALLOWED = {
   added: [/^sync:_system:migrations$/],
-  changed: [],
+  // m003_role_learner: users whose stored role was 'user'
+  changed: [/^user:usr_(ada|cher|mae|jose|blank|pad)$/],
 };
 // Learner work is never rewritten by any migration, ever.
 const NEVER_TOUCHED = /^sync:usr_[^:]+:(messages|screenshot|lessonKB|courseProgress|lessons):/;
@@ -66,6 +67,15 @@ describe('upgrade from Beta-RC-232', () => {
     assert.deepEqual(removed, [], 'no record removed');
     for (const k of added) assert.ok(ALLOWED.added.some((re) => re.test(k)), `unexpected new record ${k}`);
     for (const k of changed) assert.ok(ALLOWED.changed.some((re) => re.test(k)), `unexpected change to ${k}`);
+  });
+
+  it("m003_role_learner: every 'user' becomes 'learner'; admins and nothing else change", () => {
+    for (const u of FIXTURE.users) {
+      const after = JSON.parse(after1[`user:${u.userId}`]);
+      const before = JSON.parse(before1[`user:${u.userId}`]);
+      assert.equal(after.role, u.role === 'user' ? 'learner' : u.role, u.userId);
+      assert.deepEqual({ ...after, role: null }, { ...before, role: null }, `${u.userId}: only the role changed (updatedAt untouched)`);
+    }
   });
 
   it('never rewrites learner work', () => {

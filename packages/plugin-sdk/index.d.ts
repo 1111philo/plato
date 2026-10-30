@@ -189,7 +189,8 @@ export interface AdminUser {
   name?: string;
   username?: string;
   userGroup?: string;
-  role: 'admin' | 'learner';
+  /** Normalized: accounts stored as 'user' before API 1.4.0 report 'learner'. */
+  role: 'admin' | 'educator' | 'learner' | 'tester';
   createdAt: string;
 }
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
+import { ROLES, normalizeRole } from '../lib/permissions.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -64,7 +65,7 @@ admin.get('/v1/admin/users', async (c) => {
     username: p.username,
     name: p.name,
     userGroup: p.userGroup,
-    role: p.role,
+    role: normalizeRole(p.role),
     slackUserId: p.slackUserId || null,
     customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
@@ -133,7 +134,7 @@ admin.get('/v1/admin/users/:userId', async (c) => {
     email: user.email,
     name: user.name,
     userGroup: user.userGroup,
-    role: user.role,
+    role: normalizeRole(user.role),
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), user.customFields),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -168,6 +169,7 @@ admin.post('/v1/admin/impersonation/start', async (c) => {
     email: target.email,
     username: target.username,
     name: target.name,
+    role: normalizeRole(target.role),
   });
 });
 
@@ -566,11 +568,27 @@ admin.put('/v1/admin/users/:userId/role', async (c) => {
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
   }
-  const { role } = await c.req.json();
-  if (role !== 'admin' && role !== 'user') {
-    return c.json({ error: 'Role must be admin or user' }, 400);
+  const body = await c.req.json();
+  // Accept the legacy name for learner from older clients.
+  const role = body.role === 'user' ? 'learner' : body.role;
+  if (!ROLES.includes(role)) {
+    return c.json({ error: `Role must be one of: ${ROLES.join(', ')}` }, 400);
+  }
+  const from = normalizeRole(user.role);
+  if (from === role) return c.json({ ok: true, role });
+  // Never leave the classroom without an admin.
+  if (from === 'admin') {
+    const admins = (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin');
+    if (admins.length <= 1) return c.json({ error: 'Cannot change the role of the only admin' }, 400);
   }
   await db.updateUser(userId, { role });
+  await db.createAuditLog({
+    action: 'role_changed',
+    userId,
+    email: user.email,
+    performedBy: adminUser.userId,
+    details: { from, to: role },
+  });
   return c.json({ ok: true, role });
 });
 
@@ -807,7 +825,7 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
 
   // Emit userDeleted BEFORE the cascade — plugins can react with the user's data
   // still in place. Hook errors are caught by emit() and don't block deletion.
-  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+  await emitHook('userDeleted', { userId, email: user.email, role: normalizeRole(user.role) });
 
   // Delete all sync data for this user (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
@@ -1294,7 +1312,7 @@ export async function computeLessonStats() {
   let learnersCompletedHalf = 0; // completed > 50% of lessons available to them
 
   for (const user of users) {
-    const isLearner = user.role !== 'admin';
+    const isLearner = normalizeRole(user.role) === 'learner';
     // Only `lessonKB:*` (counts/pacing) and `messages:*` (duration fallback for
     // legacy KBs without startedAt/completedAt) are needed — skip the large
     // screenshot:* records entirely.

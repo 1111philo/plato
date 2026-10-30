@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
+import { can } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
@@ -83,7 +84,8 @@ function resolveReadUserId(c) {
   const url = new URL(c.req.url);
   const asUserId = url.searchParams.get('asUserId');
   if (!asUserId) return { userId: c.get('userId'), impersonating: false };
-  if (c.get('role') !== 'admin') {
+  // View as User: admins and testers (lib/permissions.js).
+  if (!can(c.get('role'), 'impersonation.use')) {
     return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
   }
   return { userId: asUserId, impersonating: true };

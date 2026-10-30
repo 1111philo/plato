@@ -127,6 +127,26 @@ const db = {
     });
   },
 
+  // Migration helper: change a user's role only if it still holds `from`.
+  // Deliberately leaves updatedAt alone (a data migration, not a profile
+  // edit). Returns true if it changed the record.
+  async setUserRoleIf(userId, from, to) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET #r = :to',
+        ConditionExpression: '#r = :from',
+        ExpressionAttributeNames: { '#r': 'role' },
+        ExpressionAttributeValues: { ':from': from, ':to': to },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  },
+
   async listAllUsers() {
     const items = [];
     let lastKey;
