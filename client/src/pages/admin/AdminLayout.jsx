@@ -12,6 +12,8 @@ const NAV_LINKS = [
   { to: '/plato/plugins', label: 'Plugins' },
 ];
 
+const WIDE_PAGES = new Set(['/plato/users', '/plato/lessons']);
+
 function NavItems({ onClick }) {
   return NAV_LINKS.map(({ to, label, end }) => (
     <NavLink
@@ -52,8 +54,15 @@ export default function AdminLayout() {
     navigate('/login', { replace: true });
   };
 
+  // List pages hold wide tables, so they get the full width; forms and
+  // editors keep the readable max-width.
+  const wide = WIDE_PAGES.has(location.pathname.replace(/\/$/, ''));
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-primary focus:text-primary-foreground">
+        Skip to main content
+      </a>
       {/* Mobile: top bar with hamburger */}
       <header className="md:hidden bg-primary text-primary-foreground flex items-center justify-between px-4 py-3">
         <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }}>
@@ -186,8 +195,8 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6 md:ml-56">
-        <div className="max-w-4xl pb-4">
+      <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 p-6 md:ml-56 outline-none">
+        <div className={`${wide ? 'max-w-none' : 'max-w-4xl'} pb-4`}>
           <Outlet />
         </div>
       </main>
