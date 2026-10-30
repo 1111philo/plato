@@ -97,6 +97,11 @@ Resources:
   PlatoStreamFunction:
     Type: AWS::Serverless::Function
     Properties:
+      # Must exceed BEDROCK_TIMEOUT_MS (115s, src/lib/ai-provider.js) so a slow
+      # generation fails with a clean SSE error event instead of the Lambda
+      # being killed mid-stream (Globals default is 60s). Prod's slowest
+      # stream over 30 days was 58.0s — 2s under the old limit.
+      Timeout: 120
       Handler: src/index.streamHandler
       CodeUri: .
       Environment:

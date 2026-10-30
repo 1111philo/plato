@@ -339,10 +339,12 @@ const db = {
 
   // Wait-list entries (#363): status 'waitlist' and no ttl, so they never expire.
   async createWaitlistEntry({ inviteToken, email, profile }) {
-    sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, status, createdAt, profile)
+    const result = sqlite.prepare(
+      `INSERT OR IGNORE INTO invites (inviteToken, email, status, createdAt, profile)
        VALUES (?, ?, 'waitlist', ?, ?)`
     ).run(inviteToken, email.toLowerCase(), new Date().toISOString(), JSON.stringify(profile));
+    // Create-only, like DynamoDB's attribute_not_exists condition.
+    if (result.changes === 0) throw conditionalCheckFailed('Wait-list entry already exists');
   },
 
   // Replace an invite / wait-list entry's stored profile (used when a custom

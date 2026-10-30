@@ -166,6 +166,13 @@ describe('db-sqlite', () => {
       assert.equal(await db.getInviteByEmail('wait@test.com'), null);
     });
 
+    it('createWaitlistEntry is create-only', async () => {
+      const t = `inv_wlc_${Date.now()}`;
+      await db.createWaitlistEntry({ inviteToken: t, email: 'dup@test.com', profile });
+      await assert.rejects(db.createWaitlistEntry({ inviteToken: t, email: 'dup@test.com', profile: { ...profile, name: 'Other' } }), { name: 'ConditionalCheckFailedException' });
+      assert.deepEqual((await db.getInvite(t)).profile, profile);
+    });
+
     it('edits an entry in place, only while it is still an entry', async () => {
       const t = `inv_wle_${Date.now()}`;
       await db.createWaitlistEntry({ inviteToken: t, email: 'edit-me@test.com', profile });

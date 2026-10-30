@@ -7,7 +7,7 @@
  * bring back a revoked key.
  */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import db from './db.js';
 import { hashToken } from './crypto.js';
 import { getFieldDefinitions, mergeFieldValues } from './user-fields.js';
@@ -23,6 +23,17 @@ export async function readWaitlistConfig() {
 
 export async function writeWaitlistConfig(item, config) {
   await db.putSyncData('_system', 'waitlist', config, item?.version || 0);
+}
+
+/**
+ * A wait-list entry's key is derived from its email, so the create-only write
+ * in db.createWaitlistEntry dedupes concurrent joins (the lookup-then-insert
+ * in POST /v1/waitlist alone can't). Entries are only ever seen by admins and
+ * can't be used to sign up (signup requires status 'pending'); an invite made
+ * from an entry gets a fresh random token.
+ */
+export function waitlistTokenFor(email) {
+  return 'inv_wl_' + createHash('sha256').update(String(email).trim().toLowerCase()).digest('base64url').slice(0, 32);
 }
 
 export function generateWaitlistApiKey() {
