@@ -127,23 +127,6 @@ const db = {
     });
   },
 
-  async listUsers() {
-    const items = [];
-    let lastKey;
-    do {
-      const result = await doc.send(new ScanCommand({
-        TableName: USERS_TABLE,
-        FilterExpression: '#r = :role',
-        ExpressionAttributeNames: { '#r': 'role' },
-        ExpressionAttributeValues: { ':role': 'user' },
-        ExclusiveStartKey: lastKey,
-      }));
-      items.push(...result.Items);
-      lastKey = result.LastEvaluatedKey;
-    } while (lastKey);
-    return items;
-  },
-
   async listAllUsers() {
     const items = [];
     let lastKey;
@@ -444,6 +427,20 @@ const db = {
     }
     await doc.send(new PutCommand(params));
     return { version: newVersion, updatedAt: now };
+  },
+
+  // Create-only write: throws ConditionalCheckFailedException if the record
+  // already exists. putSyncData with expectedVersion 0/undefined is an
+  // unconditional overwrite, so it can't be used for "create if absent"
+  // (migration state, bundled content) where concurrent cold starts race.
+  async createSyncData(userId, dataKey, data) {
+    const now = new Date().toISOString();
+    await doc.send(new PutCommand({
+      TableName: SYNC_DATA_TABLE,
+      Item: { userId, dataKey, data, updatedAt: now, version: 1 },
+      ConditionExpression: 'attribute_not_exists(dataKey)',
+    }));
+    return { version: 1, updatedAt: now };
   },
 
   async deleteSyncData(userId, dataKey) {

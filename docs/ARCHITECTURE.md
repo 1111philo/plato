@@ -22,6 +22,46 @@ Detailed design notes and incident history for plato's load-bearing subsystems.
   `lessons:custom-*`. User-created lesson IDs start with `custom-`.
 - Classroom branding (colors, logo, name) stored in `_system` settings, fetched
   via `/v1/branding` (public, no auth).
+- Data changes to existing records go through [data migrations](#data-migrations)
+  — never ad-hoc scripts against prod.
+
+## Data migrations
+
+Every install upgrades itself — self-hosted ones included — so schema/data
+changes ship as migrations in `server/src/lib/migrations.js` (`MIGRATIONS`,
+append-only). They run **once per install, automatically, on cold start**
+(after prompt seeding, in `server/src/index.js` and `dev-sqlite.js`), bounded
+to 20 s so a slow run never holds the first request; code must therefore
+tolerate unmigrated data.
+
+**Rules every migration follows**
+- **Additive and idempotent.** Add fields/records, or change a value only via a
+  conditional write that still sees the exact old value. Never delete or
+  rename. Learner work (`messages:*`, `screenshot:*`, `lessonKB:*`,
+  `courseProgress:*`, `lessons:*`) is never rewritten.
+- **Rollback-compatible with the release being upgraded from** (Beta-RC-232 for
+  the Nov 2026 launch): that release's code must keep serving the migrated
+  data, so redeploying it is a safe rollback.
+- **Failure is non-fatal and retried.** A migration is recorded in
+  `_system:migrations.applied` only when it finishes with zero errors; anything
+  else reruns on the next cold start. A lock in the same record (optimistic
+  version write via `db.createSyncData` / `putSyncData`) stops concurrent Lambda
+  containers from running it twice. Results log as `migration_applied` /
+  `migration_failed`.
+
+**Before merging a migration**
+- `server/tests/migrations/upgrade-from-rc232.test.js` seeds an RC-232-shaped
+  fixture (`tests/migrations/fixtures/rc232.js`), runs every migration, and
+  fails on any record removed or any change outside its `ALLOWED` list. It
+  checks a second run is a no-op, then runs **Beta-RC-232's own route handlers**
+  (extracted from the git tag; CI fetches it) against the migrated db. Extend
+  `ALLOWED` and the fixture in the same PR as the migration.
+- `node server/scripts/migrate.js` reports, read-only, what each pending
+  migration would change on any backend (DynamoDB table names are
+  env-overridable for rehearsals on restored copies; `--apply` only there).
+
+`putSyncData` with no expected version is an unconditional overwrite; use
+`db.createSyncData` when you mean "create only if absent".
 
 ## AI agents
 

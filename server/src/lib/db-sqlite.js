@@ -306,10 +306,6 @@ const db = {
     ).run(`$."${fieldId}"`, userId);
   },
 
-  async listUsers() {
-    return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all().map(rowToUser);
-  },
-
   async listAllUsers() {
     return sqlite.prepare('SELECT * FROM users').all().map(rowToUser);
   },
@@ -519,6 +515,16 @@ const db = {
     ).run(userId, dataKey, jsonData, newVersion, now, jsonData, newVersion, now);
 
     return { version: newVersion, updatedAt: now };
+  },
+
+  // Create-only write (same contract as db-dynamodb.js createSyncData).
+  async createSyncData(userId, dataKey, data) {
+    const now = new Date().toISOString();
+    const result = sqlite.prepare(
+      'INSERT OR IGNORE INTO sync_data (userId, dataKey, data, version, updatedAt) VALUES (?, ?, ?, 1, ?)'
+    ).run(userId, dataKey, JSON.stringify(data), now);
+    if (result.changes === 0) throw conditionalCheckFailed('Record already exists');
+    return { version: 1, updatedAt: now };
   },
 
   async deleteSyncData(userId, dataKey) {
