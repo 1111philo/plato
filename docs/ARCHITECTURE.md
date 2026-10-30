@@ -859,6 +859,44 @@ coupling between the lessons themselves.
 *Known limitation (v1):* summaries build **forward** from completions after this
 shipped; pre-existing completions are not backfilled.
 
+### Getting Started, the bundled orientation lesson (#443)
+
+One lesson ships with plato: **Getting Started** (`client/prompts/lessons/getting-started.md`,
+fixed id `getting-started`). It teaches the classroom itself: the coach's
+role, objectives and exemplars, sending and attaching work, completion,
+navigation, and Settings → Chat. Its `## Coach Directive` lists the real
+control names so the coach doesn't invent UI. The file travels with the
+prompts (the deploy's `cp -r client/prompts` copies the `lessons/` folder),
+and `seedDefaultContent` calls `ensureBundledLessons()`
+(`server/src/lib/bundled-lessons.js`) on every cold start:
+
+| Situation | What happens |
+|---|---|
+| First time on an install, classroom has no lessons | created **public** |
+| First time on an existing classroom | created **private**; Admin → Lessons asks an admin to review and publish it |
+| Admin deleted it | never recreated (`_system:bundled:<id>` marker remembers the install) |
+| New version, copy unedited | updated in place; status, unit, and sharing kept; learner progress (`lessonKB:getting-started`) untouched |
+| New version, copy edited | never overwritten; Admin → Lessons shows "has an update" with **View update / Apply update / Dismiss** |
+| An admin's own lesson already uses the id | left alone (no `bundled` marker) |
+
+The record carries `bundled: { id, version, dismissed?, publishNoticeDismissed? }`.
+`version` is the hash of the canonical markdown the copy last synced to, and
+the copy counts as edited when its markdown no longer hashes to it. The admin
+lesson PUT keeps the marker, so editing makes a copy "edited" instead of
+detaching it. Routes: `GET /v1/admin/bundled-lessons` (content.read) and
+`POST /v1/admin/bundled-lessons/:id { action: 'apply' | 'dismiss' |
+'dismiss-publish' }` (content.write; apply is audit-logged
+`bundled_lesson_updated`).
+
+Learners see it first: lesson reads include `startHere: true`, and the lessons
+page puts it under a **Start here** heading above the courses. It isn't in any
+course, so it doesn't count toward course progress. Learners can reopen it any
+time; completion and progress persist like any lesson's.
+
+**Keep it current:** a PR that changes learner-facing behavior updates this
+lesson (see CLAUDE.md). Unedited copies everywhere pick up the change on the
+next deploy.
+
 ## Pacing & completion philosophy
 
 Microlearning constraints live in `client/src/lib/constants.js`:

@@ -7,6 +7,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from './db.js';
+import { ensureBundledLessons } from './bundled-lessons.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Lambda build: content copied to server/client-content/; local dev: ../../client relative to server/
@@ -73,7 +74,17 @@ export async function seedDefaultContent() {
     }
   }
 
-  // Lessons are NOT seeded — admins create their own for their deployment context via the lesson creation tools.
+  // Bundled lessons (#443): install once, keep unedited copies current.
+  try {
+    const bundled = await ensureBundledLessons({ db });
+    seeded += bundled.installed.length + bundled.updated.length;
+  } catch (err) {
+    console.error('Bundled lessons failed (non-fatal):', err.message);
+  }
+
+  // Lessons are NOT seeded, with one exception: lessons bundled with plato
+  // (Getting Started, #443) are installed and kept current by
+  // lib/bundled-lessons.js. Everything else, admins create for their context.
   // Knowledge base is NOT seeded — admins create their own via the KB Editor agent.
 
   // Seed default theme colors (no logo — admins set classroom name + optional logo in setup/customizer)

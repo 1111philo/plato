@@ -46,6 +46,19 @@ describe('nextLessonAfter', () => {
   });
 });
 
+describe('start here (#443)', () => {
+  const gs = { lessonId: 'getting-started', name: 'Getting Started', startHere: true, program: null, unit: null };
+  it('sorts first and gets its own group', () => {
+    const sorted = sortLessons([...lessons, gs]);
+    assert.equal(sorted[0].lessonId, 'getting-started');
+    const [first] = groupForDisplay(sorted);
+    assert.deepEqual([first.key, first.units.length, first.units[0].lessons.length], ['start-here', 1, 1]);
+  });
+  it('is not part of any course progress', () => {
+    assert.deepEqual(completionBy('program', [gs], { 'getting-started': { status: 'completed' } }), {});
+  });
+});
+
 describe('groupForDisplay', () => {
   it('groups a sorted page into course and unit runs', () => {
     const groups = groupForDisplay(sortLessons(lessons));

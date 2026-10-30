@@ -12,7 +12,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | Roles: Admin / Educator / Learner (renamed "user") / Tester (server-enforced read-only) | #435, Blake 2026-10-30 |
 | Private research ID = the existing immutable `usr_…` id, admin contexts only | #386, Blake 2026-10-30 |
 | plato-pilot keeps running; `ready-for-pilot` is removed from sprint issues (247 261 385 386 388 389 400 402 408 411 421 434 438) and restored on anything left open | Blake 2026-10-30 |
-| Defaults (open to override): weekly digest + 7-day nudge; assessment page with `[DECISION NEEDED]` markers; no AI-text detector; lesson rewrite drafts in the private deploy repo; Testers may take lessons; Educators get no logs or View-as; Getting Started arrives as a draft on existing installs; email automations ship OFF | sprint plan |
+| Defaults (open to override): weekly digest + 7-day nudge; assessment page with `[DECISION NEEDED]` markers; no AI-text detector; lesson rewrite drafts in the private deploy repo; Testers may take lessons; Educators get no logs or View-as; Getting Started arrives private on existing installs (admins get a notice to review and publish it); email automations ship OFF | sprint plan |
 
 ## Data migrations
 | Id | What it changes | Reversible by | PR |

@@ -22,6 +22,7 @@ process.env.SQLITE_PATH = DB_PATH;
 
 const { default: db } = await import('../../src/lib/db-sqlite.js');
 const { runMigrations, MIGRATIONS } = await import('../../src/lib/migrations.js');
+const { ensureBundledLessons } = await import('../../src/lib/bundled-lessons.js');
 const { seedRc232, snapshot, diffSnapshots, FIXTURE } = await import('./fixtures/rc232.js');
 
 const SERVER_DIR = join(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -35,6 +36,9 @@ const ALLOWED = {
   added: [
     /^sync:_system:migrations$/,
     /^sync:_system:program:prog-default$/, // m004_default_program
+    // Bundled lessons (#443): seeded at startup next to the migrations.
+    /^sync:_system:lesson:getting-started$/,
+    /^sync:_system:bundled:getting-started$/,
   ],
   changed: [
     /^user:usr_(ada|cher|mae|jose|blank|pad)$/, // m003_role_learner: stored role was 'user'
@@ -58,6 +62,9 @@ describe('upgrade from Beta-RC-232', () => {
     before1 = await snapshot(db);
     const outcome = await runMigrations();
     for (const { id, result } of outcome.ran) assert.equal(result.errors, 0, `${id} reported errors: ${JSON.stringify(result)}`);
+    // Startup also installs bundled lessons; include them so the rollback
+    // check below covers them.
+    assert.deepEqual((await ensureBundledLessons({ db })).installed, ['getting-started']);
     after1 = await snapshot(db);
   });
   after(() => { cleanup(); rmSync(RC232_DIR, { recursive: true, force: true }); });
@@ -121,6 +128,12 @@ describe('upgrade from Beta-RC-232', () => {
     }
   });
 
+  it('Getting Started arrives private on an existing classroom (learners see nothing new until an admin publishes)', async () => {
+    const l = (await db.getSyncData('_system', 'lesson:getting-started')).data;
+    assert.equal(l.status, 'private');
+    assert.deepEqual(l.sharedWith, []);
+  });
+
   it('never rewrites learner work', () => {
     for (const k of Object.keys(before1).filter((key) => NEVER_TOUCHED.test(key))) {
       assert.equal(after1[k], before1[k], `${k} unchanged`);
@@ -130,6 +143,7 @@ describe('upgrade from Beta-RC-232', () => {
   it('is idempotent: a second run changes nothing', async () => {
     const outcome = await runMigrations();
     assert.equal(outcome.ran.length, 0);
+    await ensureBundledLessons({ db });
     assert.deepEqual(diffSnapshots(after1, await snapshot(db)), { added: [], removed: [], changed: [] });
   });
 
@@ -157,7 +171,7 @@ describe('upgrade from Beta-RC-232', () => {
 
     const publicVisible = FIXTURE.lessons.filter((l) => l.status === 'public').length;
     assert.equal(results['admin users'].count, FIXTURE.users.length);
-    assert.equal(results['admin lessons'].count, FIXTURE.lessons.length);
+    assert.equal(results['admin lessons'].count, FIXTURE.lessons.length + 1, 'plus the private Getting Started');
     assert.equal(results['admin courses'].count, FIXTURE.courses.length);
     assert.equal(results['admin waitlist'].count, FIXTURE.waitlist.length);
     assert.equal(results['learner lessons'].count, publicVisible + 1, 'public + the private lesson shared with Ada');

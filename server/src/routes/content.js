@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import db from '../lib/db.js';
 import { can } from '../lib/permissions.js';
 import { buildHierarchy } from '../lib/hierarchy.js';
+import { isStartHere } from '../lib/bundled-lessons.js';
 import { authenticate } from '../middleware/authenticate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -128,6 +129,7 @@ content.get('/v1/lessons', async (c) => {
         lessonId,
         ...data,
         ...placementOf(h, lessonId, unitId),
+        startHere: isStartHere(data),
         updatedAt: i.updatedAt,
       };
     })
@@ -228,7 +230,7 @@ content.get('/v1/lessons/:lessonId', async (c) => {
   const { sharedWith: _sharedWith, course: unitId, ...data } = item.data;
   const placement = unitId ? placementOf(buildHierarchy(await db.getAllSyncData('_system')), lessonId, unitId)
     : { course: null, unit: null, program: null };
-  return c.json({ lessonId, ...data, ...placement, updatedAt: item.updatedAt });
+  return c.json({ lessonId, ...data, ...placement, startHere: isStartHere(data), updatedAt: item.updatedAt });
 });
 
 // GET /v1/knowledge-base — get the knowledge base content

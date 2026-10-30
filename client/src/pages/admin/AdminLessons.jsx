@@ -20,6 +20,7 @@ import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
 import AgentActivity from '../../components/chat/AgentActivity.jsx';
+import BundledLessonNotices from './BundledLessonNotices.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
@@ -279,6 +280,8 @@ export default function AdminLessons() {
           <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
+
+      <BundledLessonNotices onChanged={loadLessons} onMessage={setMessage} />
 
       <Card className="p-0 overflow-hidden">
         <Table aria-label="Lessons">

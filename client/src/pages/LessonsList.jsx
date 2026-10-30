@@ -295,8 +295,9 @@ export default function LessonsList() {
                     progress={progressByProgram[group.program.id]}
                   />
                 )}
+                {group.key === 'start-here' && <h2 className="text-base font-semibold mb-3">Start here</h2>}
                 {group.units.map((u) => {
-                  const unitName = u.unit?.name || (hasStructure ? 'Other lessons' : null);
+                  const unitName = group.key === 'start-here' ? null : u.unit?.name || (hasStructure ? 'Other lessons' : null);
                   return (
                     <div key={u.key}>
                       {unitName && (
@@ -309,7 +310,7 @@ export default function LessonsList() {
                       <ul
                         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
                         role="list"
-                        aria-label={unitName ? `${unitName} lessons` : 'Lessons'}
+                        aria-label={group.key === 'start-here' ? 'Start here' : unitName ? `${unitName} lessons` : 'Lessons'}
                       >
                         {u.lessons.map((lesson, i) => (
                           <LessonCardItem

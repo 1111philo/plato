@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES, normalizeRole } from '../lib/permissions.js';
 import { registerHierarchyRoutes } from './admin-hierarchy.js';
+import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -965,6 +966,9 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     createdBy: current?.data?.createdBy || adminUser.userId,
     createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
+    // Bundled lessons (#443) keep their marker, so an edit makes the copy
+    // "customized" instead of detaching it from upstream updates.
+    ...(current?.data?.bundled ? { bundled: current.data.bundled } : {}),
   };
   await db.putSyncData('_system', `lesson:${lessonId}`, data, current?.version || 0);
   return c.json({ lessonId, ok: true });
@@ -990,6 +994,24 @@ admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
   await db.deleteSyncData('_system', `lesson:${lessonId}`);
   return c.json({ ok: true });
+});
+
+// ── Bundled lessons (#443): Getting Started; see lib/bundled-lessons.js ──
+admin.get('/v1/admin/bundled-lessons', async (c) => c.json({ lessons: await bundledLessonStatus() }));
+
+// POST /v1/admin/bundled-lessons/:lessonId — body { action: 'apply' | 'dismiss' | 'dismiss-publish' }
+admin.post('/v1/admin/bundled-lessons/:lessonId', async (c) => {
+  const lessonId = c.req.param('lessonId');
+  const { action } = await c.req.json().catch(() => ({}));
+  const user = c.get('user');
+  const result = await actOnBundledLesson(lessonId, action, user);
+  if (result.error) return c.json({ error: result.error }, result.status);
+  if (action === 'apply') {
+    try {
+      await db.createAuditLog({ action: 'bundled_lesson_updated', userId: user.userId, performedBy: user.userId, details: { lessonId, version: result.version } });
+    } catch { /* best-effort */ }
+  }
+  return c.json(result);
 });
 
 // ── Courses, units, lessons order (#408) ──

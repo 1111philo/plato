@@ -63,6 +63,8 @@ const R = [
   ['PUT', '/v1/admin/lessons/:lessonId', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId/conversation', 'content.write'],
   ['DELETE', '/v1/admin/lessons/:lessonId', 'content.write'],
+  ['GET', '/v1/admin/bundled-lessons', 'content.read'],
+  ['POST', '/v1/admin/bundled-lessons/:lessonId', 'content.write'],
   // Units (stored as course:*); /courses is the pre-#408 alias
   ['GET', '/v1/admin/units', 'content.read'],
   ['GET', '/v1/admin/units/:unitId', 'content.read'],
