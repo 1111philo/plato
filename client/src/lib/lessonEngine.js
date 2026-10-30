@@ -20,6 +20,7 @@ import { syncInBackground } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 
 function ts() { return Date.now(); }
 
@@ -219,8 +220,9 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     await saveLessonKB(lessonId, lessonKB);
   }
 
+  const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
   ];
 
   await saveLessonMessages(lessonId, messages);
@@ -322,6 +324,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
 
   const parsed = parseCoachResponse(coachMsg);
 
+  const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   const applied = applyCoachResponseToKB(lessonKB, parsed, { now: ts });
   lessonKB = applied.lessonKB;
   const { achieved, phase } = applied;
@@ -361,7 +364,14 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     msgType: MSG_TYPES.USER, phase,
     metadata, timestamp: ts(),
   };
-  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
+  // What each agent read and did on this turn (#411), for "Behind this response".
+  const agents = coachTurnActivity({
+    before: kbBefore, after: lessonKB, parsed, achieved,
+    images: imageDataUrls.length, links: linkList.length,
+    hasUnitNote: !!courseProgress,
+    unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
+  });
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
 
   await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
   syncInBackground(`messages:${lessonId}`);

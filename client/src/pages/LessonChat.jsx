@@ -19,6 +19,7 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
+import AgentActivity from '../components/chat/AgentActivity.jsx';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
@@ -308,7 +309,12 @@ export default function LessonChat() {
   const renderMessage = (msg, idx) => {
     switch (msg.msgType) {
       case MSG_TYPES.GUIDE:
-        return <AssistantMessage key={idx} content={msg.content} />;
+        return (
+          <div key={idx}>
+            <AgentActivity agents={msg.metadata?.agents} />
+            <AssistantMessage content={msg.content} />
+          </div>
+        );
       case MSG_TYPES.USER:
         return (
           <div key={idx}>
