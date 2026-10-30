@@ -10,7 +10,9 @@ export async function adminApi(method, path, body) {
   // Testers see every admin page; the server refuses their writes
   // (lib/permissions.js). Fail fast here with a clear message instead of a
   // bare 403. View as User (a read-only audit) is still allowed.
-  if (method.toUpperCase() !== 'GET' && !path.startsWith('/v1/admin/impersonation/') && isTester(await getCurrentUser())) {
+  // The notifications audience preview is a read sent as POST.
+  const readOnly = method.toUpperCase() === 'GET' || path.startsWith('/v1/admin/impersonation/') || path === '/v1/admin/notifications/preview';
+  if (!readOnly && isTester(await getCurrentUser())) {
     const err = new Error(TESTER_READ_ONLY_MESSAGE);
     err.code = 'read_only_role';
     throw err;

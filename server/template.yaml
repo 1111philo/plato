@@ -35,7 +35,9 @@ Resources:
   PlatoApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Timeout: 120
+      # HTTP requests are capped by API Gateway (29 s) regardless; the longer
+      # timeout is for background jobs (lib/jobs.js), which run here.
+      Timeout: 300
       Handler: src/index.handler
       CodeUri: .
       Environment:
@@ -114,6 +116,7 @@ Resources:
       CodeUri: .
       Environment:
         Variables:
+          JOBS_FUNCTION: !Ref PlatoApiFunction
           USERS_TABLE: !Ref UsersTable
           INVITES_TABLE: !Ref InvitesTable
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable

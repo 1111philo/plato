@@ -137,6 +137,9 @@ const R = [
   ['PUT', '/v1/admin/notifications/templates/:id', 'notifications.write'],
   ['DELETE', '/v1/admin/notifications/templates/:id', 'notifications.write'],
   ['POST', '/v1/admin/notifications/templates/:id/test', 'notifications.write'],
+  ['POST', '/v1/admin/notifications/preview', 'notifications.read'],
+  ['GET', '/v1/admin/notifications/messages', 'notifications.read'],
+  ['POST', '/v1/admin/notifications/messages', 'notifications.write'],
   // Observability and audit
   ['GET', '/v1/admin/logs', 'logs.read'],
   ['POST', '/v1/admin/impersonation/start', 'impersonation.use'],

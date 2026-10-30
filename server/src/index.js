@@ -18,6 +18,7 @@ import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
 import { runMigrationsBounded } from './lib/migrations.js';
+import { isJobEvent, runJob } from './lib/jobs.js';
 import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
@@ -120,6 +121,7 @@ server.onError((err, c) => {
 // Wrapped to also handle self-invoke events for async dashboard-stats refresh.
 const _httpHandler = handle(server);
 export const handler = async (event, context) => {
+  if (isJobEvent(event)) return runJob(event.job, event.payload);
   if (isSelfInvokeEvent(event)) {
     try {
       await recomputeAndCacheLessonStats();

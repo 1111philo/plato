@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { to: '/plato', label: 'Home', end: true, permission: 'admin.access' },
   { to: '/plato/lessons', label: 'Lessons', permission: 'content.read' },
   { to: '/plato/users', label: 'Users', permission: 'users.read' },
+  { to: '/plato/notifications', label: 'Notifications', permission: 'notifications.read' },
   { to: '/plato/customizer', label: 'Customizer', permission: 'kb.read' },
   { to: '/plato/plugins', label: 'Plugins', permission: 'plugins.read' },
 ];
