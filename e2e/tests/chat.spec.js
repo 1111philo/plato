@@ -1,7 +1,7 @@
 // Composing while the coach replies, and the send-key preference (#247).
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
-import { LEARNER, LESSONS } from '../fixtures.js';
+import { ADMIN, LEARNER, LESSONS } from '../fixtures.js';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -56,4 +56,40 @@ test('choosing Enter to send in Settings applies to the chat', async ({ page }) 
   await page.goto('/settings');
   await page.getByRole('radio', { name: /^(⌘|Ctrl)\+Enter/ }).check();
   await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+});
+
+// #411: every reply has a "Behind this response" disclosure.
+test('learners can see which agents worked on a reply and what they did', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[2].id}`);
+  await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
+  // The opening message: the lesson planner and the coach.
+  const opening = page.getByRole('button', { name: /^Behind this response/ }).first();
+  await expect(opening).toHaveAccessibleName('Behind this response: Lesson planner, Coach');
+
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await composer.fill('Here is an example');
+  await composer.press(`${MOD}+Enter`);
+  await expect(page.getByText(/Can you give a specific example/)).toBeVisible({ timeout: 20_000 });
+  // The disclosure arrives with the persisted message, after the streamed text.
+  await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2);
+  const latest = page.getByRole('button', { name: /^Behind this response/ }).last();
+  await expect(latest).toHaveAttribute('aria-expanded', 'false');
+  await latest.focus();
+  await page.keyboard.press('Enter');
+  await expect(latest).toHaveAttribute('aria-expanded', 'true');
+  const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
+  await expect(panel).toContainText('Progress 0 → 3 of 10');
+  await expect(panel).toContainText('Mock insight after turn 1');
+  await expect(panel).toContainText('Learner profile');
+  await expectAccessible(page, { label: 'agent activity open' });
+});
+
+test('the lesson editor shows the lesson creator behind each reply', async ({ page }) => {
+  await login(page, ADMIN);
+  await page.goto('/plato/lessons/new');
+  const button = page.getByRole('button', { name: /^Behind this response/ }).first();
+  await expect(button).toBeVisible({ timeout: 20_000 });
+  await button.click();
+  await expect(page.getByText('Readiness 3 of 10')).toBeVisible();
 });

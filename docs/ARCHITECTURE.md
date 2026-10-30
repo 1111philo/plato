@@ -383,6 +383,35 @@ chat pages use to append the persisted message.
 Both preferences live in the learner's `preferences` sync record and are set
 in Settings → Chat, which saves on change.
 
+## Behind this response (#411)
+
+Every chat reply can show which of plato's agents worked on it, what each
+read, and what it did. A collapsed **"Behind this response · Coach, Learner
+profile"** button sits between a message and its reply
+(`client/src/components/chat/AgentActivity.jsx`). It's a real button with
+`aria-expanded`, so it's reachable by Tab in the chat log, and Alt+Arrow
+message navigation is unchanged.
+
+The content comes from `client/src/lib/agentActivity.js`, built from what
+plato already parses out of agent output: progress before and after, the
+coach's KB notes and learner position, the profile observation handed to the
+learner-profile agent, the unit-progress hand-off on completion, plugin
+enrichments, and readiness for the authoring agents. **It never shows the
+model's raw reasoning** (`converse.js` drops reasoning blocks, and Qwen3-VL's
+isn't a reliable account of what plato did). Notes are clipped to 280
+characters, at most 5 per agent.
+
+Storage: the assistant message carries `metadata.agents` =
+`[{ agent, label, read?, did?, notes? }]`. In lessons it's persisted in
+`messages:<lessonId>` (a few hundred bytes a turn). Messages from before #411
+simply have no disclosure. The admin chats (lesson editor, KB editor, KB
+setup) keep it in session only; their saved conversations store just role and
+content.
+
+Background agents (learner profile, unit progress) are listed as "Asked to…":
+the reply records the hand-off, not whether the background run later
+succeeded.
+
 ## Chat auto-scroll (#319, #321)
 
 `useStickToBottom` (consumed by `ChatArea`) follows streamed output while the
