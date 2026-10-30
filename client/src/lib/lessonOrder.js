@@ -10,12 +10,14 @@ const byName = (a, b) => (a || '').localeCompare(b || '', undefined, { numeric: 
 const rank = (v) => (typeof v === 'number' ? v : Number.POSITIVE_INFINITY);
 
 /**
- * Courses in their order, then units in the course's order, then lessons in
- * the unit's order. Units outside any course come after courses; lessons
- * outside any unit, including the learner's own custom-* lessons, come last.
- * Ties fall back to names.
+ * "Start here" lessons first (Getting Started, #443), then courses in their
+ * order, then units in the course's order, then lessons in the unit's order.
+ * Units outside any course come after courses; lessons outside any unit,
+ * including the learner's own custom-* lessons, come last. Ties fall back to
+ * names.
  */
 export function compareLessons(a, b) {
+  if (!!a.startHere !== !!b.startHere) return a.startHere ? -1 : 1;
   const pa = a.program, pb = b.program;
   if (!!pa !== !!pb) return pa ? -1 : 1;
   if (pa && pb && pa.id !== pb.id) return rank(pa.position) - rank(pb.position) || byName(pa.name, pb.name);
@@ -56,16 +58,17 @@ export function nextLessonAfter(lessons, lessonId) {
 export function groupForDisplay(sorted) {
   const groups = [];
   for (const lesson of sorted) {
-    const programKey = lesson.program?.id || (lesson.unit ? 'units-without-course' : 'other');
+    const programKey = lesson.startHere ? 'start-here'
+      : lesson.program?.id || (lesson.unit ? 'units-without-course' : 'other');
     let g = groups[groups.length - 1];
     if (!g || g.key !== programKey) {
       g = { key: programKey, program: lesson.program || null, units: [] };
       groups.push(g);
     }
-    const unitKey = lesson.unit?.id || 'no-unit';
+    const unitKey = lesson.startHere ? 'start-here' : lesson.unit?.id || 'no-unit';
     let u = g.units[g.units.length - 1];
     if (!u || u.key !== unitKey) {
-      u = { key: unitKey, unit: lesson.unit || null, lessons: [] };
+      u = { key: unitKey, unit: lesson.startHere ? null : lesson.unit || null, lessons: [] };
       g.units.push(u);
     }
     u.lessons.push(lesson);

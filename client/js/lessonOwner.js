@@ -35,6 +35,7 @@ export async function loadLessons() {
           if (lesson.course) parsed.course = lesson.course;
           if (lesson.unit) parsed.unit = lesson.unit;
           if (lesson.program) parsed.program = lesson.program;
+          if (lesson.startHere) parsed.startHere = true; // bundled orientation (#443)
           lessons.push(parsed);
         }
       }
