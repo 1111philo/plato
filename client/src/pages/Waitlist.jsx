@@ -163,10 +163,10 @@ export default function Waitlist() {
           </Button>
         </CardFooter>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white/80">Privacy</a>
+      <p className="mt-4 text-xs text-white/90">
+        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
       </p>
     </main>
   );

@@ -97,3 +97,30 @@ describe('renderMd markdown links', () => {
     assert.match(html, /<a href="https:\/\/b\.com"[^>]*>https:\/\/b\.com<\/a>/);
   });
 });
+
+describe('renderMd lists', () => {
+  it('renders bullets as a single valid <ul> with no <br> between items', () => {
+    const html = renderMd('Intro\n- Can name it\n- Can apply it\nOutro');
+    assert.ok(html.includes('<ul><li>Can name it</li><li>Can apply it</li></ul>'), html);
+    assert.ok(!html.includes('<ol>'), 'bullets are not re-wrapped as an ordered list');
+    assert.ok(!/<\/li><br>|<br><li>/.test(html), 'no <br> inside the list');
+  });
+
+  it('renders numbered items as <ol>', () => {
+    const html = renderMd('1. First\n2. Second');
+    assert.ok(html.startsWith('<ol><li>First</li><li>Second</li></ol>'), html);
+    assert.ok(!html.includes('<ul>'));
+  });
+
+  it('keeps separate bullet and numbered lists separate', () => {
+    const html = renderMd('- a\n- b\n\n1. one\n2. two');
+    assert.ok(html.includes('<ul><li>a</li><li>b</li></ul>'), html);
+    assert.ok(html.includes('<ol><li>one</li><li>two</li></ol>'), html);
+  });
+
+  it('only <li> children inside lists', () => {
+    const html = renderMd('- x\n- y\n- z');
+    const inner = html.match(/<ul>(.*)<\/ul>/)[1];
+    assert.equal(inner.replace(/<li>[^<]*<\/li>/g, ''), '', html);
+  });
+});

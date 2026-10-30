@@ -158,8 +158,10 @@ function PluginCard({ plugin, registryReady, onToggle, onSaveSettings, onUninsta
   //  - the plugin loaded cleanly
   const canUninstall = isDisabled && plugin.hasStoredState && !hasLoadError;
 
+  // Disabled cards aren't dimmed with opacity: that dropped their text below
+  // WCAG AA contrast. The visible "Disabled" status carries the state.
   return (
-    <Card className={cn('transition-opacity', isDisabled && !hasLoadError && 'opacity-75')}>
+    <Card className={cn(isDisabled && !hasLoadError && 'bg-muted/40')}>
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1 space-y-1">
