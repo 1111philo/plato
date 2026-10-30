@@ -40,6 +40,7 @@ const { generateUserId } = await import('./src/lib/crypto.js');
 const { hashPassword } = await import('./src/lib/password.js');
 const { ADMIN_EMAIL, ADMIN_PASSWORD } = await import('./src/config.js');
 const { seedDefaultContent } = await import('./src/lib/seed.js');
+const { runMigrationsBounded } = await import('./src/lib/migrations.js');
 const { pluginRegistry } = await import('./src/lib/plugins/registry.js');
 const { makePluginDispatcher, makeSlackLegacyShim } = await import('./src/lib/plugins/dispatcher.js');
 
@@ -79,6 +80,7 @@ try {
 } catch (err) {
   console.error('Seed failed:', err.message);
 }
+await runMigrationsBounded();
 
 server.route('/', health);
 server.route('/', auth);

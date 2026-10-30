@@ -100,7 +100,7 @@ describe('db-sqlite', () => {
     });
 
     it('lists users', async () => {
-      const list = await db.listUsers();
+      const list = await db.listAllUsers();
       assert.ok(list.some(u => u.userId === userId));
     });
 
@@ -242,6 +242,13 @@ describe('db-sqlite', () => {
       const item = await db.getSyncData(userId, 'profile');
       assert.deepEqual(item.data, { name: 'Blake' });
       assert.equal(item.version, 1);
+    });
+
+    it('createSyncData creates once, then refuses to overwrite', async () => {
+      const created = await db.createSyncData(userId, 'create-only', { n: 1 });
+      assert.equal(created.version, 1);
+      await assert.rejects(db.createSyncData(userId, 'create-only', { n: 2 }), { name: 'ConditionalCheckFailedException' });
+      assert.deepEqual((await db.getSyncData(userId, 'create-only')).data, { n: 1 });
     });
 
     it('increments version on update', async () => {

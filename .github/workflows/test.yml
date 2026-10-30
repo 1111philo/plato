@@ -34,5 +34,10 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: ${{ matrix.workspace }}/package-lock.json
+      # The upgrade-from-Beta-RC-232 gate (server/tests/migrations) runs the
+      # RC-232 route handlers from the tag against migrated data; the default
+      # shallow checkout has no tags.
+      - if: matrix.workspace == 'server'
+        run: git fetch --no-tags --depth=1 origin +refs/tags/Beta-RC-232:refs/tags/Beta-RC-232
       - run: npm ci
       - run: npm test

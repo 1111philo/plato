@@ -16,6 +16,7 @@ import { generateUserId } from './lib/crypto.js';
 import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
+import { runMigrationsBounded } from './lib/migrations.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
 import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
@@ -61,6 +62,10 @@ server.use('*', async (c, next) => {
     } catch (err) {
       console.error('Seed failed (non-fatal):', err.message);
     }
+    // Data migrations (once per install; see lib/migrations.js). Bounded so a
+    // slow or stuck migration never holds the first request hostage — code
+    // must tolerate unmigrated data anyway (another container may be mid-run).
+    await runMigrationsBounded();
     // Plugin registry: discover and activate plugins. Routes are NOT mounted here —
     // Hono throws "Can not add a route since the matcher is already built" if you
     // call server.route() mid-request. Instead we register a static catch-all (below)
