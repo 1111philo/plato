@@ -743,7 +743,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
             <ComposeBar
               placeholder="Describe what you want to teach..."
               onSend={handleSend}
-              disabled={isBusy}
+              sendDisabled={isBusy}
             />
           </div>
         </div>

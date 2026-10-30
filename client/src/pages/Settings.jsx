@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
+  savePreferences,
   getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import { updateProfile, getMyFields } from '../../js/auth.js';
+import { useApp } from '../contexts/AppContext.jsx';
+import { SEND_KEYS, sendKeyOf, isMacLike, prefersReducedMotion } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
@@ -224,6 +227,8 @@ export default function Settings() {
         </Card>
       )}
 
+      <ChatPreferences />
+
       <Card>
         <CardHeader>
           <CardTitle id="profile-heading">Learner Profile</CardTitle>
@@ -305,5 +310,66 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// How messages are sent and how coach replies appear, in every chat (#247).
+// Saved to the preferences record as soon as an option changes.
+function ChatPreferences() {
+  const { state, dispatch } = useApp();
+  const [feedback, setFeedback] = useState('');
+  const prefs = state.preferences || {};
+  const sendKey = sendKeyOf(prefs);
+  const mod = isMacLike() ? '⌘' : 'Ctrl';
+  const reducedMotion = prefersReducedMotion();
+  const instant = prefs.instantText ?? reducedMotion;
+
+  async function update(patch) {
+    const next = { ...prefs, ...patch };
+    dispatch({ type: 'SET_PREFERENCES', preferences: next });
+    try {
+      await savePreferences(next);
+      syncInBackground('preferences');
+      setFeedback('Saved.');
+    } catch {
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  const option = 'flex items-start gap-2 text-sm';
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Chat</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium mb-1">Send a message with</legend>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.MOD_ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.MOD_ENTER })} />
+            <span>{mod}+Enter <span className="text-muted-foreground">(Enter adds a new line)</span></span>
+          </label>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.ENTER })} />
+            <span>Enter <span className="text-muted-foreground">(Shift+Enter adds a new line)</span></span>
+          </label>
+        </fieldset>
+        <label className={option}>
+          <input type="checkbox" className="mt-0.5 accent-primary" checked={instant}
+            aria-describedby="instant-text-hint"
+            onChange={(e) => update({ instantText: e.target.checked })} />
+          <span>
+            Show coach replies instantly
+            <span id="instant-text-hint" className="block text-muted-foreground">
+              {reducedMotion ? 'On by default because your device asks for reduced motion.' : 'Skips the typing animation.'}
+            </span>
+          </span>
+        </label>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
   );
 }

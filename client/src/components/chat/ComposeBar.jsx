@@ -2,6 +2,8 @@ import { useState, useRef, useId, useEffect } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
 import { compressImageDataUrl } from '../../lib/imageCompression.js';
 import { fetchLinkContent } from '../../lib/links.js';
+import { useApp } from '../../contexts/AppContext.jsx';
+import { sendKeyOf, isSendKeystroke, sendHint } from '../../lib/chatPrefs.js';
 import { Button } from '@/components/ui/button';
 
 const MAX_IMAGES = 4;
@@ -22,10 +24,17 @@ function hostLabel(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
 }
 
+/**
+ * `disabled` turns the whole composer off (read-only views). `sendDisabled`
+ * only blocks sending, so the learner can write the next message while the
+ * coach is still replying (#247). How a message is sent comes from the
+ * learner's `sendKey` preference, shown as a hint next to Send.
+ */
 export default function ComposeBar({
   placeholder = 'Ask a question...',
   onSend,
   disabled = false,
+  sendDisabled = false,
   allowImages = false,
   allowLinks = false,
   elevated = false,
@@ -56,6 +65,9 @@ export default function ComposeBar({
   const linkInputId = useId();
   const linkGroupId = useId();
   const [loadingCount, setLoadingCount] = useState(0);
+  const hintId = useId();
+  const { state: appState } = useApp();
+  const sendKey = sendKeyOf(appState.preferences);
 
   // Link-attach UI state.
   const [linkOpen, setLinkOpen] = useState(false);
@@ -85,7 +97,7 @@ export default function ComposeBar({
 
   const send = () => {
     const val = text.trim();
-    if ((!val && images.length === 0 && links.length === 0) || disabled || loadingImages || fetchingLink) return;
+    if ((!val && images.length === 0 && links.length === 0) || disabled || sendDisabled || loadingImages || fetchingLink) return;
     const imageDataUrls = images.length > 0 ? images.map(i => i.dataUrl) : null;
     const linkPayload = links.length > 0 ? links.map(l => ({ url: l.url, title: l.title, text: l.text })) : null;
     const payload = { text: val || null, imageDataUrls, links: linkPayload };
@@ -317,10 +329,11 @@ export default function ComposeBar({
           value={text}
           onChange={(e) => { setText(e.target.value); handleResize(e); }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); }
+            if (isSendKeystroke(e, sendKey)) { e.preventDefault(); send(); }
           }}
           onPaste={handlePaste}
           disabled={disabled}
+          aria-describedby={disabled ? undefined : hintId}
         />
         {allowLinks && linkOpen && (
           <div id={linkGroupId} className="mx-2 mb-2 flex flex-col gap-1" role="group" aria-label="Attach a link">
@@ -408,6 +421,11 @@ export default function ComposeBar({
             </span>
           )}
           <div className="flex-1" />
+          {!disabled && (
+            <span id={hintId} className="text-xs text-muted-foreground px-1 truncate">
+              {sendDisabled ? 'Send when the reply finishes' : sendHint(sendKey)}
+            </span>
+          )}
           <Button
             variant="default"
             size="icon-sm"
@@ -415,7 +433,7 @@ export default function ComposeBar({
             aria-label="Send"
             aria-describedby={(allowImages || allowLinks) && busy ? statusId : undefined}
             onClick={send}
-            disabled={disabled || !hasContent || busy}
+            disabled={disabled || sendDisabled || !hasContent || busy}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <line x1="12" y1="19" x2="12" y2="5" />

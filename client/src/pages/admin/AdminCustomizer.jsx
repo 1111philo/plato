@@ -514,7 +514,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
             <ComposeBar
               placeholder="Tell me about your program..."
               onSend={handleSend}
-              disabled={isBusy}
+              sendDisabled={isBusy}
             />
           </div>
         </div>

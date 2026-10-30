@@ -22,7 +22,8 @@ test('learner completes a lesson using only the keyboard', async ({ page }) => {
   await page.keyboard.press('Alt+ArrowUp');
   await expect(page.locator(':focus[data-chat-message]')).toHaveCount(1);
 
-  await expect(composer).toBeEnabled({ timeout: 20_000 });
+  // The composer stays editable during a reply (#247); sending waits for it.
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
   await composer.focus();
   await page.keyboard.type('MOCK_COMPLETE');
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');

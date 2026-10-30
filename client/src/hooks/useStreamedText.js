@@ -1,18 +1,28 @@
 import { useState, useEffect, useRef } from 'react';
+import { useApp } from '../contexts/AppContext.jsx';
+import { nextRevealPosition, wantsInstantText, prefersReducedMotion, REVEAL_MS_PER_CHAR } from '../lib/chatPrefs.js';
 
 /**
- * Smoothly reveals streamed text at a steady typing cadence.
+ * Reveals streamed text at a typing cadence (pacing: `nextRevealPosition` in
+ * lib/chatPrefs.js, which also keeps the reveal close behind a fast stream
+ * and drains quickly once it's done, #247).
  *
  * rawText: the full accumulated text from the API (or null when not streaming).
- * Returns [displayText, isDraining]:
- *   - displayText: the portion to render (null when inactive)
- *   - isDraining: true while the drain is still catching up to the buffer
+ * Returns the portion to render, or null when inactive. It goes null only
+ * after the reveal has caught up with a finished stream; chat pages wait for
+ * that to append the persisted message.
  *
- * Continues streaming in background tabs (browsers throttle setInterval to 1000ms
- * when hidden, making it appear that streaming paused). When the tab becomes visible
- * again, the display catches up immediately.
+ * Instant mode (the learner's "Show coach replies instantly" preference, or
+ * prefers-reduced-motion when they haven't chosen) shows each chunk as it
+ * arrives. Background tabs throttle the timer; the elapsed-time step catches
+ * up, and returning to the tab shows everything buffered at once.
  */
 export function useStreamedText(rawText) {
+  const { state } = useApp();
+  const instant = wantsInstantText(state.preferences, prefersReducedMotion());
+  const instantRef = useRef(instant);
+  useEffect(() => { instantRef.current = instant; }, [instant]);
+
   const [display, setDisplay] = useState(null);
   const bufferRef = useRef('');
   const posRef = useRef(0);
@@ -20,6 +30,7 @@ export function useStreamedText(rawText) {
   const activeRef = useRef(false);
   const timerRef = useRef(null);
   const lastTickRef = useRef(0);
+  const catchUpRef = useRef(false); // tab just became visible
 
   // Update buffer when new text arrives
   useEffect(() => {
@@ -46,13 +57,15 @@ export function useStreamedText(rawText) {
 
     const tick = () => {
       const now = Date.now();
-      const elapsed = now - lastTickRef.current;
       const target = bufferRef.current;
-
-      // Catch up if we were throttled (e.g., tab was hidden)
-      // Advance by at least 1 char, or more if time has passed
-      const charsToAdd = Math.max(1, Math.floor(elapsed / 30));
-      const newPos = Math.min(posRef.current + charsToAdd, target.length);
+      const newPos = nextRevealPosition({
+        pos: posRef.current,
+        length: target.length,
+        elapsedMs: now - lastTickRef.current,
+        done: doneRef.current,
+        instant: instantRef.current || catchUpRef.current,
+      });
+      catchUpRef.current = false;
 
       if (newPos > posRef.current) {
         posRef.current = newPos;
@@ -72,7 +85,7 @@ export function useStreamedText(rawText) {
       }
     };
 
-    timerRef.current = setInterval(tick, 30);
+    timerRef.current = setInterval(tick, REVEAL_MS_PER_CHAR);
 
     return () => {
       if (timerRef.current) {
@@ -82,13 +95,11 @@ export function useStreamedText(rawText) {
     };
   }, [rawText]);
 
-  // Catch up immediately when tab becomes visible
+  // Returning to the tab: show everything buffered on the next tick rather
+  // than resuming the typing animation from where the throttled timer left it.
   useEffect(() => {
     const handleVisibility = () => {
-      if (!document.hidden && activeRef.current) {
-        // Reset timer to catch up now that we're visible
-        lastTickRef.current = Date.now();
-      }
+      if (!document.hidden && activeRef.current) catchUpRef.current = true;
     };
 
     document.addEventListener('visibilitychange', handleVisibility);

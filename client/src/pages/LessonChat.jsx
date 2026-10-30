@@ -485,7 +485,8 @@ export default function LessonChat() {
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={busy}
             allowImages
             allowLinks
             text={composeText}
@@ -504,7 +505,8 @@ export default function LessonChat() {
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={busy}
             allowImages
             allowLinks
             elevated
