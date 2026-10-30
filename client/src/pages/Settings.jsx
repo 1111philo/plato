@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useApp } from '../contexts/AppContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
-  savePreferences,
   getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import { updateProfile, getMyFields } from '../../js/auth.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
+import NameFields from '../components/NameFields.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile } from '../lib/profileQueue.js';
@@ -25,9 +24,8 @@ import {
 } from '@/components/ui/dialog';
 
 export default function Settings() {
-  const { state, dispatch } = useApp();
   const { user, refreshUser } = useAuth();
-  const [name, setName] = useState(user?.name || state.preferences?.name || '');
+  const [name, setName] = useState({ firstName: user?.firstName || '', lastName: user?.lastName || '' });
   const [username, setUsername] = useState(user?.username || '');
   const [profileSummary, setProfileSummary] = useState('');
 
@@ -94,14 +92,14 @@ export default function Settings() {
 
   const handleSaveName = async (e) => {
     e.preventDefault();
-    const trimmed = name.trim();
-    const prefs = { ...state.preferences, name: trimmed };
-    await savePreferences(prefs);
-    dispatch({ type: 'SET_PREFERENCES', preferences: prefs });
-    syncInBackground('preferences');
-
+    // Names live on the account (#402), not in preferences.
+    const next = { firstName: name.firstName.trim(), lastName: name.lastName.trim() };
+    if (!next.firstName) {
+      setNameFeedback('First name is required.');
+      return;
+    }
     try {
-      await updateProfile({ name: trimmed });
+      await updateProfile(next);
       await refreshUser();
       setNameFeedback('Saved!');
     } catch (err) {
@@ -163,12 +161,9 @@ export default function Settings() {
           <Separator />
 
           <form className="space-y-3" onSubmit={handleSaveName}>
-            <div className="space-y-1.5">
-              <Label htmlFor="account-name">Name</Label>
-              <Input id="account-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
+            <NameFields idPrefix="account" value={name} onChange={setName} inferred={user?.nameSource === 'auto'} />
             <Button type="submit">Save</Button>
-            {nameFeedback && <p className="text-sm text-green-600" role="status" aria-live="polite">{nameFeedback}</p>}
+            {nameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{nameFeedback}</p>}
           </form>
 
           <Separator />

@@ -6,7 +6,6 @@ import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { logger } from '../lib/logger.js';
-import { joinName, nameFields, readNameInput } from '../lib/names.js';
 
 const sync = new Hono();
 
@@ -14,17 +13,6 @@ sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
 const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseProgress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete)$/;
-
-// Older clients still save the learner's name in `preferences.name`. Carry
-// it to the user record (split, #402) only when it differs from the stored
-// name, so a stale preferences record can't undo an edit made elsewhere.
-async function syncNameIfNeeded(userId, dataKey, data) {
-  if (dataKey !== 'preferences' || typeof data?.name !== 'string' || !data.name.trim()) return;
-  const user = await db.getUserById(userId);
-  if (!user || nameFields(user).name === joinName(data.name)) return;
-  const { fields } = readNameInput({ name: data.name });
-  if (fields) await db.updateUser(userId, { ...fields, nameSource: 'user' });
-}
 
 function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
@@ -194,7 +182,6 @@ sync.put('/v1/sync/batch', async (c) => {
     try {
       const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
-      await syncNameIfNeeded(userId, item.dataKey, item.data);
       await applyActivityEffects(userId, item.dataKey, oldStatus, item.data);
       return { dataKey: item.dataKey, status: 'ok', version: result.version };
     } catch (err) {
@@ -247,7 +234,6 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   try {
     const oldStatus = await readOldLessonKBStatus(userId, dataKey);
     const result = await db.putSyncData(userId, dataKey, data, version || 0);
-    await syncNameIfNeeded(userId, dataKey, data);
     await applyActivityEffects(userId, dataKey, oldStatus, data);
     return c.json({ dataKey, version: result.version, updatedAt: result.updatedAt });
   } catch (err) {

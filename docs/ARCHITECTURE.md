@@ -1154,9 +1154,18 @@ signup can fill them in.
 many names had 3+ parts. Wait-list entries aren't migrated; they're split on
 read and replaced when the person signs up.
 
-**`preferences.name`:** older clients save the learner's name there. The sync
-route carries it to the user record only when it differs from the stored name,
-so a stale preferences record can't undo a corrected split.
+**`preferences.name` is retired.** Settings edits the name on the account
+(`PATCH /v1/me`), and the sync route no longer copies `preferences.name` to
+the user record, so an old value left in preferences can't undo a corrected
+split. The coach's `learnerName` is the account's `firstName` (it used to be
+`preferences.name`, which stayed blank until the learner saved Settings).
+
+**Client:** `client/src/components/NameFields.jsx` renders First name / Last
+name (optional) with `given-name` / `family-name` autocomplete, and the
+"Split automatically…" hint (tied to both inputs by `aria-describedby`) when
+`nameSource` is `'auto'`. It's used on signup, setup, the wait list, Settings,
+Edit User, and Edit Wait List Entry. The Users list sorts by last name, and
+the CSV has First Name and Last Name columns.
 
 ## Admin "View as User"
 

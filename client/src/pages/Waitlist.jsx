@@ -4,6 +4,7 @@ import usePublicBranding from '../hooks/usePublicBranding.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import { missingRequired } from '../lib/userFields.js';
 import { Button } from '@/components/ui/button';
+import NameFields from '../components/NameFields.jsx';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -15,7 +16,7 @@ import {
 export default function Waitlist() {
   const [open, setOpen] = useState(null);
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState({ firstName: '', lastName: '' });
   const [group, setGroup] = useState('');
   const [groups, setGroups] = useState([]);
   const [userFields, setUserFields] = useState([]);
@@ -43,8 +44,8 @@ export default function Waitlist() {
   }, []);
 
   async function handleSubmit() {
-    if (!name.trim() || !email.trim()) {
-      setError('Name and email are required.');
+    if (!name.firstName.trim() || !email.trim()) {
+      setError('First name and email are required.');
       return;
     }
     const missing = missingRequired(userFields, fieldValues);
@@ -60,7 +61,8 @@ export default function Waitlist() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: name.trim(),
+          firstName: name.firstName.trim(),
+          lastName: name.lastName.trim(),
           email: email.trim(),
           userGroup: group || undefined,
           customFields: userFields.length ? fieldValues : undefined,
@@ -100,10 +102,7 @@ export default function Waitlist() {
             {error}
           </div>
         )}
-        <div className="space-y-2">
-          <Label htmlFor="waitlist-name">Name</Label>
-          <Input id="waitlist-name" type="text" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
+        <NameFields idPrefix="waitlist" value={name} onChange={setName} />
         <div className="space-y-2">
           <Label htmlFor="waitlist-email">Email</Label>
           <Input id="waitlist-email" type="email" autoComplete="email" placeholder="your.email@example.com"

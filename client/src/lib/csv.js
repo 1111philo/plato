@@ -28,10 +28,11 @@ const TYPE_LABELS = { user: 'User', invite: 'Invited', waitlist: 'Wait List' };
  * in field order. Dates are ISO (YYYY-MM-DD), not the admin's locale format.
  */
 export function usersCsvRows(items, userFields) {
-  const header = ['Email', 'Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label)];
+  const header = ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label)];
   const rows = items.map((item) => [
     item.email,
-    item.name,
+    item.firstName,
+    item.lastName,
     item.username,
     item.userGroup,
     item.role,

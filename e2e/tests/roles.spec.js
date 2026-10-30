@@ -34,7 +34,8 @@ test.describe('educator', () => {
       await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
     }
     await page.getByRole('button', { name: `Edit ${LEARNER.name}` }).click();
-    await expect(page.getByLabel('Name', { exact: true })).toBeDisabled();
+    await expect(page.getByLabel('First name')).toBeDisabled();
+    await expect(page.getByLabel(/^Last name/)).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Save' })).toHaveCount(0);
     await expect(page.getByLabel('Role')).toHaveCount(0);
     await expectAccessible(page, { label: 'educator user view' });
