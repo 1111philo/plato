@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requireAdmin } from '../middleware/requireAdmin.js';
+import { authorize } from '../middleware/authorize.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -41,7 +41,8 @@ function validateLessonMarkdown(markdown) {
 // from every KPI (numerator AND denominator). `normalizeStatus` /
 // `publicLessonIds` are the single source of that rule (lesson-visibility.js).
 
-admin.use('/v1/admin/*', authenticate, requireAdmin);
+// Per-route permissions (lib/permissions.js); unmapped routes are admin-only.
+admin.use('/v1/admin/*', authenticate, authorize);
 
 // GET /v1/admin/users
 // Pass `?include=stats` to enrich each row with `lessonsCompleted`,
