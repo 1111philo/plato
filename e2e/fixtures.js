@@ -2,7 +2,9 @@ export const ADMIN = { email: 'admin@plato.dev', password: 'admin123' };
 export const LEARNER = { email: 'learner@example.com', password: 'password123', name: 'Lee Learner' };
 export const EDUCATOR = { email: 'educator@example.com', password: 'password123', name: 'Eda Educator', role: 'educator' };
 export const TESTER = { email: 'tester@example.com', password: 'password123', name: 'Tess Tester', role: 'tester' };
-export const COURSE = { id: 'course-e2e0001', name: 'Getting Ready' };
+// Hierarchy (#408): a Course (stored program:*) containing a Unit (stored course:*).
+export const PROGRAM = { id: 'prog-e2e0001', name: 'Launch Course' };
+export const COURSE = { id: 'course-e2e0001', name: 'Getting Ready' }; // a unit
 
 const md = (name) => `# ${name}
 
