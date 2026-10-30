@@ -192,6 +192,9 @@ const db = {
         createdAt: new Date().toISOString(),
         profile,
       },
+      // Create-only: the route derives the token from the email, so a second
+      // concurrent join for the same address fails here instead of duplicating.
+      ConditionExpression: 'attribute_not_exists(inviteToken)',
     }));
   },
 

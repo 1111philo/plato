@@ -54,6 +54,12 @@ export async function parseResponse(resp) {
 /**
  * Parse an SSE stream from the Messages API proxy.
  * Yields text delta strings as they arrive.
+ *
+ * Throws instead of ending quietly when the stream didn't finish: the server
+ * sends `{type:'error'}` if Bedrock fails mid-stream, and always ends a good
+ * stream with `[DONE]` — so a stream that stops without one (connection cut,
+ * Lambda timeout) was truncated. Ending "successfully" in either case used to
+ * hand callers a partial reply that was then parsed and saved as a real turn.
  */
 export async function* parseSSEStream(body, onDone) {
   const reader = body.getReader();
@@ -77,11 +83,15 @@ export async function* parseSSEStream(body, onDone) {
         let event;
         try { event = JSON.parse(data); } catch { continue; }
 
+        if (event.type === 'error') {
+          throw new ApiError('api', 'The response failed partway through. Please try again.');
+        }
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           yield event.delta.text;
         }
       }
     }
+    throw new ApiError('network', 'The response was interrupted. Please try again.');
   } finally {
     reader.releaseLock();
     onDone?.();

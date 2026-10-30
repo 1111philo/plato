@@ -521,7 +521,15 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   const body = await c.req.json();
   const updates = {};
   if (body.name !== undefined) updates.name = body.name;
-  if (body.email !== undefined) updates.email = body.email.toLowerCase();
+  if (body.email !== undefined) {
+    const email = String(body.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: 'A valid email is required' }, 400);
+    // Same rule as PATCH /v1/me: two accounts sharing an email would make
+    // login (getUserByEmail) ambiguous.
+    const existing = await db.getUserByEmail(email);
+    if (existing && existing.userId !== userId) return c.json({ error: 'Email already in use' }, 409);
+    updates.email = email;
+  }
   if (body.username !== undefined) {
     const usernameErr = validateUsername(body.username);
     if (usernameErr) return c.json({ error: usernameErr }, 400);

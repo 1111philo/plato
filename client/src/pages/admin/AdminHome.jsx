@@ -264,7 +264,8 @@ export default function AdminHome() {
       adminApi('GET', '/v1/admin/knowledge-base'),
       loadStats(),
     ]).then(([users, invites, kb, stats]) => {
-      setActiveCount(Array.isArray(users) ? users.length : 0);
+      // Matches the Users page "Active" filter: learners only, not admins.
+      setActiveCount(Array.isArray(users) ? users.filter((u) => u.role !== 'admin').length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
       setHasKB(!!kb?.content);
       setLessonStats(stats);

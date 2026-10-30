@@ -1475,3 +1475,32 @@ describe('custom user fields admin API (#364)', () => {
     assert.equal(nameOnly.status, 200);
   });
 });
+
+describe('PATCH /v1/admin/users/:userId email', () => {
+  let updates;
+  beforeEach(() => {
+    updates = [];
+    db.getUserById = async (id) => (id === 'usr_admin' ? { userId: 'usr_admin', role: 'admin' } : { userId: id, role: 'user', email: 'a@x.com' });
+    db.getUserByEmail = async (email) => (email === 'taken@x.com' ? { userId: 'usr_other' } : email === 'a@x.com' ? { userId: 'usr_a' } : null);
+    db.getUserByUsername = async () => null;
+    db.updateUser = async (userId, u) => { updates.push({ userId, ...u }); };
+  });
+  const app = () => { const a = new Hono(); a.route('/', admin); return a; };
+
+  it("refuses an email that belongs to another account", async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: 'Taken@X.com' });
+    assert.equal(res.status, 409);
+    assert.equal(updates.length, 0);
+  });
+
+  it('allows keeping (or re-casing) the user\'s own email, stored lowercase and trimmed', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: ' A@X.com ' });
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].email, 'a@x.com');
+  });
+
+  it('rejects a malformed email', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: 'not-an-email' });
+    assert.equal(res.status, 400);
+  });
+});

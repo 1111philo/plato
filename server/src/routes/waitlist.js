@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
-import { generateInviteToken } from '../lib/crypto.js';
-import { readWaitlistConfig, hasValidApiKey, validateWaitlistEntry } from '../lib/waitlist.js';
+import { readWaitlistConfig, hasValidApiKey, validateWaitlistEntry, waitlistTokenFor } from '../lib/waitlist.js';
 
 const waitlist = new Hono();
 
@@ -40,7 +39,13 @@ waitlist.post('/v1/waitlist', async (c) => {
     || await db.getInviteByEmail(result.email)
     || await db.getWaitlistEntryByEmail(result.email);
   if (!known) {
-    await db.createWaitlistEntry({ inviteToken: generateInviteToken(), email: result.email, profile: result.profile });
+    try {
+      await db.createWaitlistEntry({ inviteToken: waitlistTokenFor(result.email), email: result.email, profile: result.profile });
+    } catch (err) {
+      // A concurrent join for the same email won the create-only write — same
+      // outcome as `known`, same reply.
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
+    }
   }
   return c.json({ ok: true }, 202);
 });

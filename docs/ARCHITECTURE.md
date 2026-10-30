@@ -217,7 +217,14 @@ boundary, in `server/src/lib/converse.js`:
   **concatenated** so a tag split across blocks still parses; `reasoningContent`
   blocks are dropped.
 - Stream: `contentBlockDelta` → `content_block_delta` / `text_delta`, which is
-  the only event shape `parseSSEStream` in `client/js/api.js` matches on.
+  the only event shape `parseSSEStream` in `client/js/api.js` yields text for.
+  **A stream is complete only when it ends with `data: [DONE]`.** If Bedrock
+  fails mid-stream the route sends `{type:'error'}`; `parseSSEStream` throws on
+  that, and also throws when the stream ends without `[DONE]` (connection cut,
+  Lambda timeout), so callers show an error instead of parsing and saving a
+  truncated reply as a real turn. `PlatoStreamFunction` has `Timeout: 120` so a
+  slow generation hits the 115 s `BEDROCK_TIMEOUT_MS` (clean error event)
+  before Lambda kills it.
 
 Converse event order was verified identical for Anthropic and open-weight
 models (`messageStart → contentBlockDelta* → contentBlockStop → messageStop →
@@ -382,7 +389,7 @@ Admins invite users via email or shareable link. Invites expire after 7 days (TT
 ### Email invites
 
 - **Creation:** `POST /v1/admin/invites` (single) or `/v1/admin/invites/bulk` (up to 200). Bulk supports CSV upload.
-- **Delivery:** SES email (`server/src/lib/email.js`) with signup URL: `{APP_URL}/signup?token={inviteToken}`.
+- **Delivery:** SES email (`server/src/lib/email.js`) with signup URL: `{APP_URL}/signup?token={inviteToken}`. Every interpolated value is escaped (`escapeHtml`), the theme color must be a hex color (`safeColor`), and the From display name is sanitized (`fromHeader`) — classroom and inviter names are admin-editable.
 - **Validation:** Invite token must exist, status `pending`, TTL not expired, and **email must match** the invite.
 - **One-time:** Marked `used` on signup; cannot be reused.
 
@@ -405,7 +412,7 @@ People ask to join; an admin invites them later. Integrator-facing API guide: [`
 
 - **Join:** `/waitlist` page, linked from sign-in when the list is open. It asks for name, email, group (optional), and the custom user fields, with required fields enforced.
 - **API:** `POST /v1/waitlist` (public) takes `{ name, email, userGroup, customFields }`. It works when the list is open, or with `Authorization: Bearer <key>` from an outside form, even when closed. Send the key from a server, not a web page. The reply is `202 { ok: true }` for any valid input, including an email that already has an account, invite, or entry, so it never reveals who is registered. `GET /v1/waitlist` returns `{ open }`.
-- **Storage:** rows in the `invites` table with `status: 'waitlist'`, no `ttl` (they never expire), and a `profile` of `{ name, userGroup, customFields }`. Pending-only lookups skip them, so a wait-list token can't sign up.
+- **Storage:** rows in the `invites` table with `status: 'waitlist'`, no `ttl` (they never expire), and a `profile` of `{ name, userGroup, customFields }`. Pending-only lookups skip them, so a wait-list token can't sign up. New entries are keyed `inv_wl_<sha256(email)>` (`waitlistTokenFor`) and written create-only, so two concurrent joins for one address can't both insert; the lookup before the insert stays for older, randomly-keyed entries.
 - **Config:** `_system:waitlist` = `{ open, apiKeyHash }`, kept out of `_system:settings` so a stale settings save can't bring back a revoked key. The key is shown once; only its SHA-256 is stored.
 - **Admin:** Users → **Wait List** filter, with Invite and Remove per row; click a row to edit the entry (`/plato/users/waitlist/:token`: name, email, group, custom fields — same validation as joining, and a new email must not belong to a user, pending invite, or other entry). Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `PUT /v1/admin/waitlist/:token` (edit; conditional on the row still being an entry, so it can't race an Invite), `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
 - **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.

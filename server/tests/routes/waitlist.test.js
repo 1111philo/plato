@@ -144,6 +144,21 @@ describe('POST /v1/waitlist', () => {
     assert.deepEqual(await res.json(), { ok: true });
     assert.equal(created.length, 0);
   });
+
+  it('derives the entry key from the email, so the same address always maps to one entry', async () => {
+    await post(makeApp(), '/v1/waitlist', VALID);
+    await post(makeApp(), '/v1/waitlist', { ...VALID, email: '  ADA@example.com ' });
+    assert.equal(created.length, 2);
+    assert.equal(created[0].inviteToken, created[1].inviteToken);
+    assert.match(created[0].inviteToken, /^inv_wl_[A-Za-z0-9_-]{32}$/);
+  });
+
+  it('a concurrent join that loses the create-only write still gets 202', async () => {
+    db.createWaitlistEntry = async () => { const e = new Error('exists'); e.name = 'ConditionalCheckFailedException'; throw e; };
+    const res = await post(makeApp(), '/v1/waitlist', VALID);
+    assert.equal(res.status, 202);
+    assert.deepEqual(await res.json(), { ok: true });
+  });
 });
 
 describe('admin wait-list routes', () => {
