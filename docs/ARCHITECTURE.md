@@ -1289,6 +1289,52 @@ name (optional) with `given-name` / `family-name` autocomplete, and the
 Edit User, and Edit Wait List Entry. The Users list sorts by last name, and
 the CSV has First Name and Last Name columns.
 
+## Notifications (#388, #389, #400)
+
+Everything plato emails on its own (automations) or on an admin's behalf
+(messages) goes through `server/src/lib/notifications.js`. Invite and
+password-reset emails stay in `email.js`.
+
+- **Automations** live in `_system:automations` = `{ waitlistConfirmation,
+  inactivityNudge, weeklyDigest }`. Every one is **off** until an admin turns it
+  on, including on an upgraded install.
+- **Templates** come with a default copy in code (`TEMPLATES`); an admin's
+  version is stored in `_system:emailTemplate:<id>` (`{ subject, body }`) and
+  can be reset back to the default.
+  - A body is plain text: paragraphs separated by blank lines, `{{variables}}`
+    from that template's list, and a line holding only `{{link}}` becomes a
+    button.
+  - Saving refuses unknown variables, a multi-line subject, or anything over
+    200 characters (subject) or 5000 (body).
+  - Values are HTML-escaped in the HTML part.
+- **Sending** is multipart text + HTML, as raw MIME through SES
+  (`SendRawEmail`), so we can add `List-Unsubscribe` and one-click
+  `List-Unsubscribe-Post` (RFC 8058). Header values are forced onto one line.
+  - `SKIP_EMAIL=true` logs instead of sending.
+  - `EMAIL_ALLOWLIST` (the `EmailAllowlist` stack parameter) limits recipients.
+    When it's empty: anyone on prod, no one on other stages.
+- **Unsubscribe** uses tokens that are HMAC-signed per user and kind (`nudge`,
+  `digest`, `messages`; the key is derived from `JWT_SECRET`).
+  - `GET /v1/unsubscribe?token=` shows a confirm button, so link scanners can't
+    unsubscribe anyone. `POST` (the button, or a mail client's one-click
+    request) records the opt-out.
+  - Opt-outs and per-user bookkeeping live in the server-only `notify:state`
+    sync record, which learners can't write through `/v1/sync` and which a
+    progress reset keeps. Learners manage them through
+    `GET/PUT /v1/me/notifications`.
+- **Wait list confirmation (#388):** sent by `POST /v1/waitlist` only when
+  *that request* created the entry. The create-only insert means a retry or a
+  duplicate join (which finds the entry) never sends again. A failure logs
+  `waitlist_confirmation_failed` and never fails the join. It's one-time mail,
+  so it carries no unsubscribe link.
+- **Admin routes** (`server/src/routes/admin-notifications.js`) need
+  `notifications.read` (admins, testers) or `notifications.write` (admins):
+  - `GET /v1/admin/notifications`
+  - `PUT …/automations`
+  - `PUT` and `DELETE …/templates/:id`
+  - `POST …/templates/:id/test`, which sends the saved or unsaved draft to the
+    signed-in admin with sample values
+
 ## Admin "View as User"
 
 Admins can audit a learner's classroom (lesson list, conversation history,

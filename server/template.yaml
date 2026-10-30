@@ -10,6 +10,13 @@ Parameters:
       - prod
       - playground
     Description: Deployment stage (prod or playground)
+  EmailAllowlist:
+    Type: String
+    Default: ''
+    Description: >-
+      Comma-separated addresses and @domains that notification emails may go to
+      (automations, messages). Empty means anyone on prod and no one on other
+      stages. Invite and password-reset emails aren't affected.
 
 Conditions:
   IsProd: !Equals [!Ref Stage, prod]
@@ -44,6 +51,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -117,6 +125,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable

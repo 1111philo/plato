@@ -131,6 +131,12 @@ const R = [
   ['PUT', '/v1/admin/plugins/:id/activation', 'plugins.write'],
   ['PUT', '/v1/admin/plugins/:id/settings', 'plugins.write'],
   ['POST', '/v1/admin/plugins/:id/uninstall-data', 'plugins.write'],
+  // Notifications
+  ['GET', '/v1/admin/notifications', 'notifications.read'],
+  ['PUT', '/v1/admin/notifications/automations', 'notifications.write'],
+  ['PUT', '/v1/admin/notifications/templates/:id', 'notifications.write'],
+  ['DELETE', '/v1/admin/notifications/templates/:id', 'notifications.write'],
+  ['POST', '/v1/admin/notifications/templates/:id/test', 'notifications.write'],
   // Observability and audit
   ['GET', '/v1/admin/logs', 'logs.read'],
   ['POST', '/v1/admin/impersonation/start', 'impersonation.use'],

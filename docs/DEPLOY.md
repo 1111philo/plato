@@ -23,6 +23,13 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
+### Stack parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `Stage` | `prod` | `prod` or `playground` |
+| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. |
+
 ## 2. Configure SAM
 
 Copy the example config and customize it for your AWS account:

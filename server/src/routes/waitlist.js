@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { readWaitlistConfig, hasValidApiKey, validateWaitlistEntry, waitlistTokenFor } from '../lib/waitlist.js';
+import { readAutomations, sendTemplated } from '../lib/notifications.js';
+import { logger } from '../lib/logger.js';
 
 const waitlist = new Hono();
 
@@ -39,12 +41,26 @@ waitlist.post('/v1/waitlist', async (c) => {
     || await db.getInviteByEmail(result.email)
     || await db.getWaitlistEntryByEmail(result.email);
   if (!known) {
+    let created = false;
     try {
       await db.createWaitlistEntry({ inviteToken: waitlistTokenFor(result.email), email: result.email, profile: result.profile });
+      created = true;
     } catch (err) {
       // A concurrent join for the same email won the create-only write — same
       // outcome as `known`, same reply.
       if (err.name !== 'ConditionalCheckFailedException') throw err;
+    }
+    // #388: confirm once. Only the request that created the entry sends, so a
+    // retry or a duplicate join (which finds the entry) never sends again.
+    // A failure is logged and never fails the join.
+    if (created) {
+      try {
+        if ((await readAutomations()).waitlistConfirmation) {
+          await sendTemplated('waitlist-confirmation', { to: result.email, vars: { firstName: result.profile.firstName } });
+        }
+      } catch (err) {
+        logger.error('waitlist_confirmation_failed', { error: err?.message || String(err) });
+      }
     }
   }
   return c.json({ ok: true }, 202);
