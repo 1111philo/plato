@@ -195,7 +195,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 p-6 md:ml-56 outline-none">
+      <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 p-6 md:ml-56">
         <div className={`${wide ? 'max-w-none' : 'max-w-4xl'} pb-4`}>
           <Outlet />
         </div>
