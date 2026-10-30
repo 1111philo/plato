@@ -17,7 +17,7 @@ Conditions:
 Globals:
   Function:
     Timeout: 60
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     MemorySize: 1024
     Tags:
       Application: plato

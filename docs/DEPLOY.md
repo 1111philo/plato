@@ -138,9 +138,12 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - run: cd server && npm ci && npm test
 
   deploy:
@@ -155,9 +158,12 @@ jobs:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0  # need history + tags so we can read the latest Beta-RC-* tag
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
