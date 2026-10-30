@@ -160,19 +160,23 @@ export async function authenticatedFetch(path, options = {}) {
   const tokens = await getAuthTokens();
   if (!tokens?.accessToken) throw new Error('Not logged in');
 
-  // GET-only impersonation: if an admin is "viewing as" a learner, attach
-  // ?asUserId=<id> to reads. Writes never carry it — both as a client guard
-  // and to match the server-side write rejection in /v1/sync.
+  // "View as User": reads carry ?asUserId=<id> so the server returns the
+  // learner's data. Every request also carries X-Plato-View-As, and the
+  // server rejects any write that has it (server/src/middleware/
+  // viewAsReadOnly.js), so a stray write can't land on the admin's own
+  // records mid-session.
   const method = (options.method || 'GET').toUpperCase();
+  const asUserId = readImpersonatedUserId();
   let effectivePath = path;
-  if (method === 'GET') {
-    const asUserId = readImpersonatedUserId();
-    if (asUserId) effectivePath = appendQueryParam(path, 'asUserId', asUserId);
-  }
+  if (method === 'GET' && asUserId) effectivePath = appendQueryParam(path, 'asUserId', asUserId);
 
   const doFetch = (token) => fetch(`${SERVICE_URL}${effectivePath}`, {
     ...options,
-    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${token}`,
+      ...(asUserId ? { 'X-Plato-View-As': asUserId } : {}),
+    },
   });
 
   let res = await doFetch(tokens.accessToken);

@@ -34,6 +34,8 @@ const { default: sync } = await import('./src/routes/sync.js');
 const { default: ai } = await import('./src/routes/ai.js');
 const { default: content } = await import('./src/routes/content.js');
 const { default: waitlist } = await import('./src/routes/waitlist.js');
+const { default: links } = await import('./src/routes/links.js');
+const { viewAsReadOnly } = await import('./src/middleware/viewAsReadOnly.js');
 const { default: app } = await import('./src/routes/app.js');
 const { default: db } = await import('./src/lib/db.js');
 const { generateUserId } = await import('./src/lib/crypto.js');
@@ -49,7 +51,7 @@ const server = new Hono();
 server.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Plato-View-As'],
 }));
 
 // Admin bootstrap
@@ -82,6 +84,8 @@ try {
 }
 await runMigrationsBounded();
 
+server.use('*', viewAsReadOnly);
+
 server.route('/', health);
 server.route('/', auth);
 server.route('/', me);
@@ -89,6 +93,7 @@ server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
 server.route('/', content);
+server.route('/', links);
 server.route('/', waitlist);
 // `app` (SPA fallback `app.get('*')`) is mounted LAST — see plugin catch-all below.
 

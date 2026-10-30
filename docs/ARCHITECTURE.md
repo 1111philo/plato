@@ -1010,10 +1010,19 @@ strip with an "Exit" button surfaces underneath while impersonation is active.
 - Read-only `?asUserId=<id>` query param threaded onto GET `/v1/sync*` and GET
   `/v1/lessons*` from `client/js/auth.js`'s `authenticatedFetch`; admin-gated
   server-side.
-- **Writes never carry the param** — server returns 403 on PUT/DELETE with
-  `?asUserId=` (defense-in-depth), and `client/src/lib/lessonEngine.js`'s
-  `startLesson`/`sendMessage` throw at the top to belt-and-suspenders the
-  disabled `ComposeBar`.
+- **Read-only on the server for every route.** While a session is active,
+  `authenticatedFetch` sends `X-Plato-View-As: <targetUserId>` on *every*
+  request, and the global `viewAsReadOnly` middleware
+  (`server/src/middleware/viewAsReadOnly.js`, mounted before all routes in
+  `index.js` and `dev-sqlite.js`) rejects any non-GET carrying it with
+  `403 { code: 'view_as_read_only' }`. The only exceptions are leaving the
+  session (`POST /v1/admin/impersonation/end`), token refresh, and logout.
+  Writes never carry `?asUserId=`, so the older per-route check in `sync.js`
+  never fired on its own; before the header, a stray write mid-session would
+  have landed on the *admin's* own records. On top of that,
+  `client/src/lib/lessonEngine.js`'s `startLesson`/`sendMessage` throw at the
+  top to back up the disabled `ComposeBar`. A normal browsing session makes
+  no writes (verified across lessons, a lesson with history, and Settings).
 - Impersonation state lives in `sessionStorage('plato_impersonation')` (per-tab)
   and `AuthContext`. `startImpersonation` / `stopImpersonation` clear the storage
   cache *and* hard-reload to `/lessons` — clearing the cache alone wasn't enough

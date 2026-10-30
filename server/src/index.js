@@ -17,6 +17,7 @@ import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
 import { runMigrationsBounded } from './lib/migrations.js';
+import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
 import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
@@ -27,7 +28,7 @@ const server = new Hono();
 server.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Plato-View-As'],
 }));
 
 // First-request initialization: admin bootstrap, content seeding
@@ -78,6 +79,9 @@ server.use('*', async (c, next) => {
   }
   await next();
 });
+
+// View-as-User is read-only for every route (middleware/viewAsReadOnly.js).
+server.use('*', viewAsReadOnly);
 
 server.route('/', health);
 server.route('/', auth);
