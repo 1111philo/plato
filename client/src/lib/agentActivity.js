@@ -65,11 +65,14 @@ function progressLine(before, after, { achieved, wasCompleted }) {
  * A coach turn in a lesson. `before` / `after` are the lesson KB on either
  * side of applyCoachResponseToKB; `parsed` is parseCoachResponse's output.
  */
-export function coachTurnActivity({ before, after, parsed, achieved = false, images = 0, links = 0, hasUnitNote = false, unitName = null }) {
+export function coachTurnActivity({ before, after, parsed, achieved = false, newlyMet = [], images = 0, links = 0, hasUnitNote = false, unitName = null }) {
   const wasCompleted = before?.status === 'completed';
   const coach = entry('coach', {
     read: coachReads({ hasUnitNote, images, links }),
-    did: [progressLine(before?.progress, after?.progress, { achieved, wasCompleted })],
+    did: [
+      progressLine(before?.progress, after?.progress, { achieved, wasCompleted }),
+      ...newlyMet.map((o) => `Checked off an objective: ${o}`),
+    ],
     notes: [
       ...(parsed?.kbUpdate?.insights || []),
       ...(parsed?.kbUpdate?.learnerPosition ? [`Where you are: ${parsed.kbUpdate.learnerPosition}`] : []),

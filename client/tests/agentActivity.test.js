@@ -20,6 +20,11 @@ describe('coachTurnActivity', () => {
     assert.deepEqual(agents[1].notes, ['Gave a concrete example']);
   });
 
+  it('lists objectives checked off this turn (#438)', () => {
+    const [coach] = coachTurnActivity({ before: { progress: 2 }, after: { progress: 5 }, parsed: {}, newlyMet: ['Can name three values'] });
+    assert.deepEqual(coach.did, ['Progress 2 → 5 of 10', 'Checked off an objective: Can name three values']);
+  });
+
   it('prefers an explicit profile observation', () => {
     const [, profile] = coachTurnActivity({ before: { progress: 1 }, after: { progress: 1 }, parsed: { profileUpdate: { observation: 'Prefers examples' }, kbUpdate: { insights: ['x'] } } });
     assert.deepEqual(profile.notes, ['Prefers examples']);

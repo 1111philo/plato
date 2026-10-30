@@ -42,6 +42,8 @@ function coachReply(messages) {
       ? 'Excellent work. You have met every objective for this lesson.'
       : 'Good thinking. Can you give a specific example from your own experience?';
   const kb = { insights: [`Mock insight after turn ${learnerTurns.length}`], learnerPosition: `Mock position at progress ${progress}` };
+  // Each learner turn checks off the next objective (1-based), for the work view (#438).
+  if (learnerTurns.length > 0) kb.objectivesMet = [learnerTurns.length];
   return `${body}\n\n[PROGRESS: ${progress}]\n[KB_UPDATE: ${JSON.stringify(kb)}]`;
 }
 

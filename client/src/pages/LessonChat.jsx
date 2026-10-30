@@ -20,6 +20,7 @@ import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import AgentActivity from '../components/chat/AgentActivity.jsx';
+import LessonWork from '../components/chat/LessonWork.jsx';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
@@ -72,6 +73,8 @@ export default function LessonChat() {
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
   const [showObjectives, setShowObjectives] = useState(false);
+  // "Your work" (#438); `?view=work` opens it (from the lessons page).
+  const [showWork, setShowWork] = useState(() => new URLSearchParams(window.location.search).get('view') === 'work');
   const objectivesTitleRef = useRef(null);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
@@ -377,8 +380,8 @@ export default function LessonChat() {
               &larr;
             </Button>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowObjectives(true)}
@@ -387,6 +390,16 @@ export default function LessonChat() {
                 >
                   Lesson Overview ({lesson.learningObjectives.length} Objectives)
                 </button>
+                {phase && (
+                  <button
+                    className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+                    onClick={() => setShowWork(true)}
+                    aria-expanded={showWork}
+                    aria-controls="lesson-work-dialog"
+                  >
+                    Your work
+                  </button>
+                )}
               </div>
               <ProgressBar lessonKB={lessonKB} />
             </div>
@@ -416,8 +429,8 @@ export default function LessonChat() {
             &larr;
           </Button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowObjectives(true)}
@@ -426,6 +439,16 @@ export default function LessonChat() {
               >
                 Lesson Overview ({lesson.learningObjectives.length} Objectives)
               </button>
+              {phase && (
+                <button
+                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+                  onClick={() => setShowWork(true)}
+                  aria-expanded={showWork}
+                  aria-controls="lesson-work-dialog"
+                >
+                  Your work
+                </button>
+              )}
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
@@ -525,6 +548,8 @@ export default function LessonChat() {
           />
         </div>
       )}
+
+      <LessonWork open={showWork} onOpenChange={setShowWork} lesson={lesson} lessonKB={lessonKB} messages={messages} />
 
       {/* Objectives dialog */}
       <Dialog open={showObjectives} onOpenChange={setShowObjectives}>

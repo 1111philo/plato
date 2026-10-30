@@ -93,3 +93,28 @@ test('the lesson editor shows the lesson creator behind each reply', async ({ pa
   await button.click();
   await expect(page.getByText('Readiness 3 of 10')).toBeVisible();
 });
+
+// #438: the work view, by keyboard, with the checklist the coach fills in.
+test('"Your work" shows the objectives checked so far, a summary, and shared links', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[2].id}`); // continues the conversation from the test above
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+
+  const open = page.getByRole('button', { name: 'Your work' }).first();
+  await open.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Your work' });
+  await expect(dialog).toBeVisible();
+  const objectives = dialog.getByRole('list', { name: 'Objectives' }).getByRole('listitem');
+  await expect(objectives).toHaveCount(4);
+  await expect(objectives.first()).toContainText(', shown');
+  await expect(objectives.nth(1)).toContainText(', not yet');
+  await dialog.getByText('Summary', { exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'Where you are' })).toBeVisible();
+  await dialog.locator('summary', { hasText: 'Artifacts' }).click();
+  await expect(dialog.getByText(/Nothing shared yet/)).toBeVisible();
+  await expectAccessible(page, { include: '[role=dialog]', label: 'your work dialog' });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});
