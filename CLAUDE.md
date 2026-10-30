@@ -54,7 +54,14 @@ Client hot reload: `cd client && npm run dev` (port 5173, proxies API to :3000).
 
 ```bash
 cd server && npm test
+cd client && npm test
+cd client && npm run build && cd ../e2e && npx playwright test   # accessibility + e2e (see e2e/README.md)
 ```
+
+The e2e suite runs axe on every page and dialog (no serious/critical WCAG 2.1
+A/AA violations) and keyboard flows, against `dev-sqlite` with
+`AI_PROVIDER=mock`. CI runs it on every PR (`.github/workflows/a11y.yml`).
+Add any new page or dialog to `e2e/tests/a11y.spec.js` in the same PR.
 
 AI route tests mock `ai-provider.js` (not `bedrock.js`), and use the real `converse.js` translation so a translation regression surfaces there too. Run `npm test` before deploying.
 
