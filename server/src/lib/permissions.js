@@ -63,10 +63,22 @@ const R = [
   ['PUT', '/v1/admin/lessons/:lessonId', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId/conversation', 'content.write'],
   ['DELETE', '/v1/admin/lessons/:lessonId', 'content.write'],
+  // Units (stored as course:*); /courses is the pre-#408 alias
+  ['GET', '/v1/admin/units', 'content.read'],
+  ['GET', '/v1/admin/units/:unitId', 'content.read'],
+  ['PUT', '/v1/admin/units/:unitId', 'content.write'],
+  ['PUT', '/v1/admin/units/:unitId/order', 'content.write'],
+  ['DELETE', '/v1/admin/units/:unitId', 'content.write'],
   ['GET', '/v1/admin/courses', 'content.read'],
   ['GET', '/v1/admin/courses/:courseId', 'content.read'],
   ['PUT', '/v1/admin/courses/:courseId', 'content.write'],
   ['DELETE', '/v1/admin/courses/:courseId', 'content.write'],
+  // Courses (stored as program:*)
+  ['GET', '/v1/admin/programs', 'content.read'],
+  ['GET', '/v1/admin/programs/:programId', 'content.read'],
+  ['PUT', '/v1/admin/programs/:programId', 'content.write'],
+  ['PUT', '/v1/admin/programs/:programId/order', 'content.write'],
+  ['DELETE', '/v1/admin/programs/:programId', 'content.write'],
   // Users
   ['GET', '/v1/admin/users', 'users.read'],
   ['GET', '/v1/admin/users/:userId', 'users.read'],

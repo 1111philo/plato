@@ -591,20 +591,51 @@ finalizes the same record with extracted markdown and flips status
 finalized lessons and manage shared users via the Share modal. Drafts hide the
 Share icon (nothing shareable yet).
 
-### Courses
+### Courses, units, and lessons (#408)
 
-Optional taxonomy for grouping lessons. Each course is a first-class
-`_system:course:<id>` sync-data record with `{ name }`. Each lesson carries an
-optional `course` field (course ID, like `userGroup` on users). Pure
-organization — courses don't carry visibility/ACL; lesson visibility is
-unchanged. The learner-facing `GET /v1/lessons` and `/v1/lessons/:id` inline
-`course: { id, name } | null` so the coach context (`buildContext` in
-`client/src/lib/lessonEngine.js`) can include `course: { name }` when assigned.
-Admin manages courses via a "Courses" button on Admin → Lessons (mirrors the
-User Groups pattern); the lesson editor has a course dropdown that persists
-immediately on edit; the lessons table has a Course column. Course delete
-cascades: any lesson whose `course` referenced the deleted course is rewritten
-with `course: null`.
+Lessons are organized as **Course → Unit → Lesson**. Every part is optional:
+a lesson can sit outside any unit, and a unit outside any course. Everything
+here is organization only. Lesson visibility (public/private/draft +
+`sharedWith`) is unchanged, and nothing here affects completion.
+
+**Storage keeps its pre-hierarchy names** (glossary: storage `course` = UI
+**Unit**; storage `program` = UI **Course**). Nothing that references a unit
+had to move: `lesson.course`, learners' `courseProgress:<unitId>` memory, and
+stats.
+
+| UI | Record | Membership | Order |
+|---|---|---|---|
+| Course | `_system:program:<id>` `{ name, description, unitIds }` | top level | by name |
+| Unit | `_system:course:<id>` `{ name, programId, lessonIds }` | `unit.programId` | `program.unitIds` |
+| Lesson | `_system:lesson:<id>` | `lesson.course` (the unit id) | `unit.lessonIds` |
+
+`server/src/lib/hierarchy.js` is the single place that reads it:
+- **Order arrays only order.** `orderIds()` lists the ids an array names that
+  are still members, then any members it's missing by name (the
+  pre-hierarchy behavior). A stale or missing array can't hide or duplicate
+  anything; it falls back to alphabetical.
+- Reorders must be an exact permutation of the members
+  (`PUT /v1/admin/units/:id/order` and `/programs/:id/order`).
+- `buildHierarchy()` gives positions. The learner reads (`GET /v1/lessons`
+  and `/v1/lessons/:id`) inline `unit: { id, name, position, lessonPosition }`
+  and `program: { id, name, position } | null`. They keep `course: { id, name }`
+  (the unit) for one release, for cached clients.
+
+Admin routes live in `server/src/routes/admin-hierarchy.js`:
+- `/v1/admin/units*`, with `/v1/admin/courses*` kept as the deprecated alias.
+- `/v1/admin/programs*`.
+- Unit `PUT` **preserves fields it doesn't set**. The pre-hierarchy handler
+  rebuilt the record and would have dropped `programId` and `lessonIds`.
+
+**Cascades:**
+- Deleting a unit sets `course: null` on its lessons (re-reading each and
+  skipping any another admin already moved) and removes it from its course's
+  order.
+- Deleting a course leaves its units, unassigned.
+
+**Migration:** `m004_default_program` puts every existing unit into one
+default Course, named after the classroom, with the name-sorted lesson order
+it already had, so nothing reorders on upgrade.
 
 ### Learner classroom
 

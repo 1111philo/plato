@@ -3,6 +3,7 @@ import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { authorize } from '../middleware/authorize.js';
 import { ROLES, normalizeRole } from '../lib/permissions.js';
+import { registerHierarchyRoutes } from './admin-hierarchy.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -987,128 +988,10 @@ admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Courses ──
-//
-// Courses are an optional taxonomy for grouping lessons. Each course is a first-class
-// _system:course:<id> sync-data record with { name }. Each lesson optionally carries
-// a `course` field (the course's id). Courses are pure organization — they don't carry
-// their own visibility/ACL; lesson visibility (public/private/draft + sharedWith) is
-// unchanged. Coach receives course { name } in its context JSON when a lesson belongs
-// to one.
-
-const COURSE_NAME_MAX = 80;
-
-function validateCourseBody(body) {
-  if (!body || typeof body !== 'object') return 'Request body is required';
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return 'Course name is required';
-  if (name.length > COURSE_NAME_MAX) return `Course name must be ${COURSE_NAME_MAX} characters or fewer`;
-  return null;
-}
-
-// GET /v1/admin/courses — list all courses with a per-course lesson count
-admin.get('/v1/admin/courses', async (c) => {
-  const items = await db.getAllSyncData('_system');
-  const lessonCounts = new Map();
-  for (const i of items) {
-    if (!i.dataKey.startsWith('lesson:')) continue;
-    const cid = i.data?.course;
-    if (cid) lessonCounts.set(cid, (lessonCounts.get(cid) || 0) + 1);
-  }
-  const courses = items
-    .filter(i => i.dataKey.startsWith('course:'))
-    .map(i => {
-      const courseId = i.dataKey.slice('course:'.length);
-      return {
-        courseId,
-        name: i.data.name || courseId,
-        createdByName: i.data.createdByName || null,
-        updatedByName: i.data.updatedByName || null,
-        updatedAt: i.updatedAt,
-        lessonCount: lessonCounts.get(courseId) || 0,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-  return c.json(courses);
-});
-
-// GET /v1/admin/courses/:courseId
-admin.get('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-  return c.json({ courseId, ...item.data, updatedAt: item.updatedAt });
-});
-
-// PUT /v1/admin/courses/:courseId — create or update
-admin.put('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const body = await c.req.json();
-  const adminUser = c.get('user');
-  const err = validateCourseBody(body);
-  if (err) return c.json({ error: err }, 400);
-  const trimmedName = body.name.trim();
-
-  // Reject duplicate names (case-insensitive) across other courses. Lookups are
-  // cheap — we already iterate _system syncdata for the list endpoint and
-  // there's typically only a handful of courses.
-  const items = await db.getAllSyncData('_system');
-  for (const i of items) {
-    if (!i.dataKey.startsWith('course:')) continue;
-    const otherId = i.dataKey.slice('course:'.length);
-    if (otherId === courseId) continue;
-    if ((i.data?.name || '').trim().toLowerCase() === trimmedName.toLowerCase()) {
-      return c.json({ error: 'A course with that name already exists' }, 409);
-    }
-  }
-
-  const current = await db.getSyncData('_system', `course:${courseId}`);
-  const now = new Date().toISOString();
-  const data = {
-    name: trimmedName,
-    createdBy: current?.data?.createdBy || adminUser.userId,
-    createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
-    createdAt: current?.data?.createdAt || now,
-    updatedBy: adminUser.userId,
-    updatedByName: adminUser.username || adminUser.email,
-  };
-  await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);
-  return c.json({ courseId, ok: true });
-});
-
-// DELETE /v1/admin/courses/:courseId — delete + cascade-clear `course` on lessons
-admin.delete('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-
-  // Snapshot the affected lesson keys *before* the delete, so a concurrent
-  // /v1/lessons fetch in the gap can't see stale course refs without the
-  // course record existing — the inlining logic on the read path tolerates
-  // a missing course (returns course: null) but it still helps to keep the
-  // happy path tight.
-  const items = await db.getAllSyncData('_system');
-  const affectedKeys = items
-    .filter(i => i.dataKey.startsWith('lesson:') && i.data?.course === courseId)
-    .map(i => i.dataKey);
-
-  await db.deleteSyncData('_system', `course:${courseId}`);
-
-  // Cascade with per-lesson re-read so a concurrent admin edit on one of
-  // these lessons doesn't trigger a ConditionalCheckFailedException — we
-  // pick up the latest version and any new field values, then override
-  // just `course`. Skip the PUT if the lesson no longer references this
-  // course (another admin already moved it), so we don't clobber an
-  // intentional re-assignment.
-  for (const dataKey of affectedKeys) {
-    const fresh = await db.getSyncData('_system', dataKey);
-    if (!fresh) continue;
-    if (fresh.data?.course !== courseId) continue;
-    await db.putSyncData('_system', dataKey, { ...fresh.data, course: null }, fresh.version || 0);
-  }
-
-  return c.json({ ok: true });
-});
+// ── Courses, units, lessons order (#408) ──
+// Units are stored as _system:course:<id>, courses as _system:program:<id>.
+// Routes and rules live in routes/admin-hierarchy.js and lib/hierarchy.js.
+registerHierarchyRoutes(admin);
 
 // GET /v1/admin/knowledge-base
 admin.get('/v1/admin/knowledge-base', async (c) => {

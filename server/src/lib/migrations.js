@@ -55,6 +55,66 @@ export const MIGRATIONS = [
       return result;
     },
   },
+  {
+    // #408: today's courses become Units under a new Course level. Put every
+    // existing unit in one default Course (admins can rename or split it).
+    // Each unit also gets the name-sorted lesson order it already had, so
+    // nothing reorders. Only `_system` records change; lessons, progress, and
+    // course memory keep their keys. Rollback-safe: Beta-RC-232 ignores
+    // program:* records and the extra unit fields.
+    id: 'm004_default_program',
+    description: 'put existing units (stored course:*) into a default Course',
+    async run({ db, dryRun }) {
+      const result = { scanned: 0, updated: 0, skipped: 0, errors: 0, notes: [] };
+      const items = await db.getAllSyncData('_system');
+      const units = items.filter((i) => i.dataKey.startsWith('course:'));
+      const hasProgram = items.some((i) => i.dataKey.startsWith('program:'));
+      const pending = units.filter((u) => !u.data?.programId);
+      result.scanned = units.length;
+      if (pending.length === 0) { result.skipped = units.length; return result; }
+      if (hasProgram) {
+        // Courses already exist (created by an admin after an earlier failed
+        // run). Leave unassigned units for the admin to place.
+        result.skipped = units.length;
+        result.notes.push(`${pending.length} unit(s) left unassigned: courses already exist`);
+        return result;
+      }
+
+      const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+      const settings = items.find((i) => i.dataKey === 'settings')?.data || {};
+      const programId = 'prog-default';
+      const unitIds = units.map((u) => ({ id: u.dataKey.slice(7), name: u.data?.name })).sort(sortByName).map((u) => u.id);
+      const name = (settings.classroomName || settings.logoAlt || '').trim() || 'Main Course';
+      result.notes.push(`create Course "${name}" with ${unitIds.length} unit(s)`);
+      if (!dryRun) {
+        try {
+          await db.createSyncData('_system', `program:${programId}`, {
+            name, description: '', unitIds,
+            createdBy: 'migration', createdByName: 'migration', createdAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          if (err.name !== 'ConditionalCheckFailedException') throw err; // another container created it
+        }
+      }
+
+      const lessons = items.filter((i) => i.dataKey.startsWith('lesson:')).map((i) => ({ id: i.dataKey.slice(7), name: i.data?.name, unit: i.data?.course }));
+      for (const u of pending) {
+        const unitId = u.dataKey.slice(7);
+        const lessonIds = u.data?.lessonIds || lessons.filter((l) => l.unit === unitId).sort(sortByName).map((l) => l.id);
+        if (dryRun) { result.updated++; continue; }
+        try {
+          await db.putSyncData('_system', u.dataKey, { ...u.data, programId, lessonIds }, u.version);
+          result.updated++;
+        } catch (err) {
+          // Lost a race with an admin edit: retry on the next cold start.
+          if (err.name === 'ConditionalCheckFailedException') result.errors++;
+          else throw err;
+        }
+      }
+      result.skipped = units.length - pending.length;
+      return result;
+    },
+  },
 ];
 
 function emptyResult() {
