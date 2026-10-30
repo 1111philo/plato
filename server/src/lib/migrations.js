@@ -25,6 +25,7 @@
 
 import defaultDb from './db.js';
 import { logger } from './logger.js';
+import { splitName } from './names.js';
 
 const STATE_KEY = 'migrations';
 const LOCK_TTL_MS = 5 * 60 * 1000;
@@ -112,6 +113,38 @@ export const MIGRATIONS = [
         }
       }
       result.skipped = units.length - pending.length;
+      return result;
+    },
+  },
+  {
+    // #402: first and last names. Infer them from the stored `name` by
+    // splitting at the first whitespace ("Mary Ann Evans" → "Mary" / "Ann
+    // Evans"), marked nameSource 'auto' so the UI can invite a correction.
+    // `name` itself is never rewritten. Conditional on `name` being unchanged
+    // and no split existing, so a person's own edit always wins. Rollback-safe:
+    // Beta-RC-232 reads only `name`.
+    id: 'm005_name_split',
+    description: 'infer firstName/lastName from the stored name',
+    async run({ db, dryRun }) {
+      const result = { scanned: 0, updated: 0, skipped: 0, errors: 0, notes: [] };
+      let multiPart = 0;
+      let empty = 0;
+      for (const u of await db.listAllUsers()) {
+        result.scanned++;
+        if (typeof u.firstName === 'string') { result.skipped++; continue; }
+        const { firstName, lastName, parts } = splitName(u.name);
+        if (!firstName) { empty++; result.skipped++; continue; }
+        if (parts > 2) multiPart++;
+        if (dryRun) { result.updated++; continue; }
+        try {
+          if (await db.setUserNameSplitIf(u.userId, u.name, { firstName, lastName, nameSource: 'auto' })) result.updated++;
+          else result.skipped++;
+        } catch {
+          result.errors++;
+        }
+      }
+      if (multiPart) result.notes.push(`${multiPart} name(s) with 3+ parts: everything after the first word became the last name`);
+      if (empty) result.notes.push(`${empty} user(s) with no name: left without a split`);
       return result;
     },
   },

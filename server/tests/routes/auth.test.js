@@ -42,6 +42,28 @@ describe('POST /v1/auth/signup', () => {
     assert.ok(data.user.username); // auto-generated when not provided
   });
 
+  it('stores first and last name, with the derived name (#402)', async () => {
+    let created;
+    db.createUser = async (u) => { created = u; };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', firstName: ' Mary ', lastName: 'Ann Evans', password: 'password123',
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual([created.firstName, created.lastName, created.name, created.nameSource], ['Mary', 'Ann Evans', 'Mary Ann Evans', 'user']);
+    const { user } = await res.json();
+    assert.deepEqual([user.firstName, user.lastName, user.name], ['Mary', 'Ann Evans', 'Mary Ann Evans']);
+  });
+
+  it('requires a first name', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', lastName: 'Evans', password: 'password123' });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /first name is required/i);
+  });
+
   it('creates user with custom username', async () => {
     const app = new Hono();
     app.route('/', auth);

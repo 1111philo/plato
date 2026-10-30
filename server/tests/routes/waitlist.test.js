@@ -84,7 +84,26 @@ describe('POST /v1/waitlist', () => {
     assert.equal(created.length, 1);
     assert.equal(created[0].email, 'ada@example.com');
     assert.ok(created[0].inviteToken.startsWith('inv_'));
-    assert.deepEqual(created[0].profile, { name: 'Ada', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' } });
+    // A lone `name` (the public API's original field) is split, marked 'auto' (#402).
+    assert.deepEqual(created[0].profile, {
+      firstName: 'Ada', lastName: '', name: 'Ada', nameSource: 'auto', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
+    });
+  });
+
+  it('accepts firstName / lastName (#402)', async () => {
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, name: undefined, firstName: ' Mary ', lastName: 'Ann  Evans' });
+    assert.equal(res.status, 202);
+    assert.deepEqual(
+      [created[0].profile.firstName, created[0].profile.lastName, created[0].profile.name, created[0].profile.nameSource],
+      ['Mary', 'Ann Evans', 'Mary Ann Evans', 'user'],
+    );
+  });
+
+  it('requires a first name', async () => {
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, name: undefined, firstName: '  ', lastName: 'Evans' });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /first name is required/i);
+    assert.equal(created.length, 0);
   });
 
   it('refuses when closed and no key is given', async () => {
@@ -258,16 +277,19 @@ describe('admin wait-list routes', () => {
     db.getInvite = async () => entry;
     db.updateWaitlistEntry = async (token, patch) => { updated = { token, ...patch }; };
     const res = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', {
-      name: ' Ada L. ', email: 'ADA.L@example.com', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
+      firstName: ' Ada ', lastName: 'L.', email: 'ADA.L@example.com', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
     });
     assert.equal(res.status, 200);
     assert.deepEqual(updated, {
       token: 'inv_wl1', email: 'ada.l@example.com',
-      profile: { name: 'Ada L.', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' } },
+      profile: {
+        firstName: 'Ada', lastName: 'L.', name: 'Ada L.', nameSource: 'user',
+        userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
+      },
     });
     const data = await res.json();
     assert.equal(data.email, 'ada.l@example.com');
-    assert.equal(data.name, 'Ada L.');
+    assert.deepEqual([data.name, data.firstName, data.lastName], ['Ada L.', 'Ada', 'L.']);
   });
 
   it('edit validates like joining', async () => {
@@ -331,8 +353,10 @@ describe('signup from a wait-list invite', () => {
 
   it('GET /v1/auth/invite/:token returns the answers to fill in', async () => {
     const res = await makeApp().request('/v1/auth/invite/inv_x');
+    // This entry predates #402 (profile.name only): split on read.
     assert.deepEqual(await res.json(), {
-      email: 'ada@example.com', name: 'Ada', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
+      email: 'ada@example.com', name: 'Ada', firstName: 'Ada', lastName: '', nameSource: 'auto',
+      userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
     });
     assert.equal((await makeApp().request('/v1/auth/invite/inv_none')).status, 404);
   });

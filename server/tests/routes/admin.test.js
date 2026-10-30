@@ -1504,3 +1504,33 @@ describe('PATCH /v1/admin/users/:userId email', () => {
     assert.equal(res.status, 400);
   });
 });
+
+describe('PATCH /v1/admin/users/:userId name (#402)', () => {
+  let updates;
+  beforeEach(() => {
+    updates = [];
+    db.getUserById = async (id) => (id === 'usr_admin'
+      ? { userId: 'usr_admin', role: 'admin' }
+      : { userId: id, role: 'learner', email: 'a@x.com', name: 'Mary Ann Evans' }); // pre-m005: no parts yet
+    db.updateUser = async (userId, u) => { updates.push(u); };
+  });
+  const app = () => { const a = new Hono(); a.route('/', admin); return a; };
+
+  it('the part not sent comes from the stored name, split on read', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { lastName: 'Evans' });
+    assert.equal(res.status, 200);
+    // splitName('Mary Ann Evans') gives first name 'Mary'.
+    assert.deepEqual(updates, [{ firstName: 'Mary', lastName: 'Evans', name: 'Mary Evans', nameSource: 'user' }]);
+  });
+
+  it('sets both parts', async () => {
+    await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { firstName: 'Mary Ann', lastName: 'Evans' });
+    assert.deepEqual(updates, [{ firstName: 'Mary Ann', lastName: 'Evans', name: 'Mary Ann Evans', nameSource: 'user' }]);
+  });
+
+  it('refuses an empty first name', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { firstName: '', lastName: 'Evans' });
+    assert.equal(res.status, 400);
+    assert.equal(updates.length, 0);
+  });
+});

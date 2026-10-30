@@ -65,7 +65,8 @@ curl -X POST https://plato.courses/v1/waitlist \
   -H "Authorization: Bearer $PLATO_WAITLIST_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Ada Lovelace",
+    "firstName": "Ada",
+    "lastName": "Lovelace",
     "email": "ada@example.com",
     "userGroup": "University of Illinois Chicago",
     "customFields": {
@@ -79,7 +80,9 @@ curl -X POST https://plato.courses/v1/waitlist \
 
 | Field | Required | Rules |
 | --- | --- | --- |
-| `name` | yes | 1–200 characters |
+| `firstName` | yes | up to 100 characters |
+| `lastName` | no | up to 100 characters; leave out for people with one name |
+| `name` | instead of the two above | still accepted from older integrations: split at the first space ("Mary Ann Evans" → "Mary" / "Ann Evans"), and an admin can correct the split |
 | `email` | yes | a valid address, up to 254 characters; stored lowercase |
 | `userGroup` | no | must exactly match one of `GET /v1/groups` |
 | `customFields` | if any field is required | object of `{ "<field id>": "<value>" }`; every required field must be present and non-empty |
@@ -117,7 +120,8 @@ from any origin):
 
 ```html
 <form id="join">
-  <input name="name" required>
+  <input name="firstName" required>
+  <input name="lastName">
   <input name="email" type="email" required>
   <button>Join</button>
 </form>
@@ -128,7 +132,7 @@ from any origin):
     const res = await fetch('https://plato.courses/v1/waitlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: f.get('name'), email: f.get('email') }),
+      body: JSON.stringify({ firstName: f.get('firstName'), lastName: f.get('lastName'), email: f.get('email') }),
     });
     const data = await res.json();
     alert(res.ok ? "You're on the wait list." : data.error);

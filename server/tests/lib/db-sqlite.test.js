@@ -104,6 +104,25 @@ describe('db-sqlite', () => {
       assert.ok(list.some(u => u.userId === userId));
     });
 
+    it('stores first/last name; setUserNameSplitIf is conditional and leaves updatedAt (#402)', async () => {
+      const id = `${userId}_n`;
+      await db.createUser({ userId: id, email: 'names@example.com', passwordHash: 'x', name: 'Mary Ann Evans', role: 'learner' });
+      const before = await db.getUserById(id);
+      assert.equal(before.firstName, null);
+      assert.equal(await db.setUserNameSplitIf(id, 'Someone Else', { firstName: 'S', lastName: 'E', nameSource: 'auto' }), false, 'name changed: no write');
+      assert.equal(await db.setUserNameSplitIf(id, 'Mary Ann Evans', { firstName: 'Mary', lastName: 'Ann Evans', nameSource: 'auto' }), true);
+      assert.equal(await db.setUserNameSplitIf(id, 'Mary Ann Evans', { firstName: 'X', lastName: 'Y', nameSource: 'auto' }), false, 'already split: no write');
+      const after = await db.getUserById(id);
+      assert.deepEqual([after.firstName, after.lastName, after.nameSource, after.name], ['Mary', 'Ann Evans', 'auto', 'Mary Ann Evans']);
+      assert.equal(after.updatedAt, before.updatedAt);
+
+      const id2 = `${userId}_n2`;
+      await db.createUser({ userId: id2, email: 'names2@example.com', passwordHash: 'x', name: 'Ada King', firstName: 'Ada', lastName: 'King', nameSource: 'user', role: 'learner' });
+      const u2 = await db.getUserById(id2);
+      assert.deepEqual([u2.firstName, u2.lastName, u2.nameSource], ['Ada', 'King', 'user']);
+      await db.deleteUser(id); await db.deleteUser(id2);
+    });
+
     it('deletes a user', async () => {
       await db.deleteUser(userId);
       const user = await db.getUserById(userId);

@@ -9,6 +9,7 @@ import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { getFieldDefinitions, mergeFieldValues } from '../lib/user-fields.js';
+import { nameFields, readNameInput } from '../lib/names.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -39,10 +40,13 @@ auth.post('/v1/auth/setup', async (c) => {
     return c.json({ error: 'Setup already completed' }, 400);
   }
 
-  const { email, name, password, username: rawUsername, classroomName } = await c.req.json();
-  if (!email || !name || !password) {
-    return c.json({ error: 'email, name, and password are required' }, 400);
+  const body = await c.req.json();
+  const { email, password, username: rawUsername, classroomName } = body;
+  if (!email || !password) {
+    return c.json({ error: 'email, first name, and password are required' }, 400);
   }
+  const nameInput = readNameInput(body, { required: true });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
@@ -63,7 +67,7 @@ auth.post('/v1/auth/setup', async (c) => {
     email: email.toLowerCase(),
     username,
     passwordHash,
-    name,
+    ...nameInput.fields,
     role: 'admin',
   });
 
@@ -95,7 +99,7 @@ auth.post('/v1/auth/setup', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: email.toLowerCase(), username, name, role: 'admin' },
+    user: { userId, email: email.toLowerCase(), username, ...nameFields(nameInput.fields), role: 'admin' },
   }, 201);
 });
 
@@ -108,9 +112,10 @@ auth.get('/v1/auth/invite/:token', async (c) => {
     return c.json({ error: 'Invalid or expired invite' }, 404);
   }
   const profile = invite.profile || {};
+  const named = profile.firstName || profile.name;
   return c.json({
     email: invite.email,
-    name: profile.name || null,
+    ...(named ? nameFields(profile) : { name: null, firstName: null, lastName: null }),
     userGroup: profile.userGroup || null,
     customFields: profile.customFields || {},
   });
@@ -118,11 +123,14 @@ auth.get('/v1/auth/invite/:token', async (c) => {
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = await c.req.json();
+  const body = await c.req.json();
+  const { inviteToken, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = body;
 
-  if (!inviteToken || !name || !password) {
-    return c.json({ error: 'inviteToken, name, and password are required' }, 400);
+  if (!inviteToken || !password) {
+    return c.json({ error: 'inviteToken, first name, and password are required' }, 400);
   }
+  const nameInput = readNameInput(body, { required: true });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
@@ -214,7 +222,7 @@ auth.post('/v1/auth/signup', async (c) => {
     email: userEmail,
     username,
     passwordHash,
-    name,
+    ...nameInput.fields,
     userGroup: userGroup || profileGroup || null,
     role: 'learner',
     slackUserId: invite.slackUserId || null,
@@ -242,7 +250,7 @@ auth.post('/v1/auth/signup', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: userEmail, username, name, role: 'learner' },
+    user: { userId, email: userEmail, username, ...nameFields(nameInput.fields), role: 'learner' },
   }, 201);
 });
 
@@ -290,7 +298,7 @@ auth.post('/v1/auth/login', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId: user.userId, email: user.email, username: user.username, name: user.name, role: normalizeRole(user.role) },
+    user: { userId: user.userId, email: user.email, username: user.username, ...nameFields(user), role: normalizeRole(user.role) },
   });
 });
 

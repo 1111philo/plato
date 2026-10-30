@@ -5,12 +5,15 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.4.0'
+PLUGIN_API_VERSION = '1.5.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.5.0 (additive)
+- **Added** `firstName`, `lastName`, and `nameSource` (`'user' | 'auto'`) to `AdminUser` (#402). `name` stays, always derived as `firstName lastName`. `'auto'` means the parts were inferred from an older single name (split at the first space) and haven't been confirmed.
 
 ### 1.4.0
 - **Changed** the role values in `userCreated` / `userDeleted` payloads and the `AdminUser.role` type (#435): roles are now `admin`, `educator`, `learner`, `tester`, always normalized. New signups are stored as `learner`, and accounts stored as `user` before this version are reported as `learner`. A plugin comparing `role === 'user'` should compare `role === 'learner'`; none of the bundled plugins read the role.

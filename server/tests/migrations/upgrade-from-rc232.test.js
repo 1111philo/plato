@@ -38,6 +38,7 @@ const ALLOWED = {
   ],
   changed: [
     /^user:usr_(ada|cher|mae|jose|blank|pad)$/, // m003_role_learner: stored role was 'user'
+    /^user:usr_admin$/, // m005_name_split: firstName/lastName added
     /^sync:_system:course:/, // m004: units gain programId + lessonIds
   ],
 };
@@ -79,7 +80,8 @@ describe('upgrade from Beta-RC-232', () => {
       const after = JSON.parse(after1[`user:${u.userId}`]);
       const before = JSON.parse(before1[`user:${u.userId}`]);
       assert.equal(after.role, u.role === 'user' ? 'learner' : u.role, u.userId);
-      assert.deepEqual({ ...after, role: null }, { ...before, role: null }, `${u.userId}: only the role changed (updatedAt untouched)`);
+      const strip = ({ role, firstName, lastName, nameSource, ...rest }) => rest; // eslint-disable-line no-unused-vars
+      assert.deepEqual(strip(after), strip(before), `${u.userId}: only the role (and m005's name parts) changed; updatedAt untouched`);
     }
   });
 
@@ -96,6 +98,26 @@ describe('upgrade from Beta-RC-232', () => {
     // Lessons themselves are untouched (membership stays on lesson.course).
     for (const l of FIXTURE.lessons) {
       assert.equal(after1[`sync:_system:lesson:${l.id}`], before1[`sync:_system:lesson:${l.id}`], l.id);
+    }
+  });
+
+  it('m005_name_split: first/last inferred at the first whitespace; name itself never rewritten', () => {
+    const expected = {
+      usr_admin: ['Admin', ''],
+      usr_ada: ['Ada', 'Lovelace'],
+      usr_cher: ['Cher', ''],
+      usr_mae: ['Mary', 'Ann Evans'],
+      usr_jose: ['José', 'María García López'],
+      usr_pad: ['Padded', 'Name'],
+    };
+    for (const u of FIXTURE.users) {
+      const after = JSON.parse(after1[`user:${u.userId}`]);
+      assert.equal(after.name, u.name, `${u.userId}: name unchanged`);
+      if (expected[u.userId]) {
+        assert.deepEqual([after.firstName, after.lastName, after.nameSource], [...expected[u.userId], 'auto'], u.userId);
+      } else {
+        assert.equal(after.firstName ?? null, null, `${u.userId}: an empty name gets no split`);
+      }
     }
   });
 
