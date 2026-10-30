@@ -4,6 +4,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../lib/db.js';
 import { can } from '../lib/permissions.js';
+import { buildHierarchy } from '../lib/hierarchy.js';
 import { authenticate } from '../middleware/authenticate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -88,16 +89,30 @@ content.get('/v1/prompts/:name', async (c) => {
 // When a lesson has a `course` field (course id), it's inlined as `{ id, name }`
 // so the client can display + the coach context can reference it without a
 // second fetch.
+// Where a lesson sits in the Course → Unit → Lesson hierarchy (#408;
+// lib/hierarchy.js). `unit` and `program` (a Course in the UI) carry positions
+// so the client can order without re-deriving them. `course` keeps its
+// pre-#408 meaning (the unit, as { id, name }) for one release, for cached
+// clients.
+function placementOf(h, lessonId, unitId) {
+  const unit = unitId ? h.units.get(unitId) : null;
+  if (!unit) return { course: null, unit: null, program: null };
+  const where = h.placement.get(lessonId);
+  const programIndex = unit.programId ? h.programs.findIndex((p) => p.id === unit.programId) : -1;
+  const program = programIndex >= 0 ? h.programs[programIndex] : null;
+  return {
+    course: { id: unit.id, name: unit.name },
+    unit: { id: unit.id, name: unit.name, position: where?.unitPosition ?? null, lessonPosition: where?.lessonPosition ?? null },
+    program: program ? { id: program.id, name: program.name, position: programIndex } : null,
+  };
+}
+
 content.get('/v1/lessons', async (c) => {
   const resolved = resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const userId = resolved.userId;
   const items = await db.getAllSyncData('_system');
-  const coursesById = new Map();
-  for (const i of items) {
-    if (!i.dataKey.startsWith('course:')) continue;
-    coursesById.set(i.dataKey.slice('course:'.length), i.data || {});
-  }
+  const h = buildHierarchy(items);
   const lessons = items
     .filter(i => {
       if (!i.dataKey.startsWith('lesson:')) return false;
@@ -107,15 +122,12 @@ content.get('/v1/lessons', async (c) => {
       return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
-      const { sharedWith: _sharedWith, course: courseId, ...data } = i.data;
-      const courseRecord = courseId ? coursesById.get(courseId) : null;
-      const course = courseRecord
-        ? { id: courseId, name: courseRecord.name || courseId }
-        : null;
+      const { sharedWith: _sharedWith, course: unitId, ...data } = i.data;
+      const lessonId = i.dataKey.slice('lesson:'.length);
       return {
-        lessonId: i.dataKey.slice('lesson:'.length),
+        lessonId,
         ...data,
-        course,
+        ...placementOf(h, lessonId, unitId),
         updatedAt: i.updatedAt,
       };
     })
@@ -213,18 +225,10 @@ content.get('/v1/lessons/:lessonId', async (c) => {
       return c.json({ error: 'Lesson not found' }, 404);
     }
   }
-  const { sharedWith: _sharedWith, course: courseId, ...data } = item.data;
-  let course = null;
-  if (courseId) {
-    const courseItem = await db.getSyncData('_system', `course:${courseId}`);
-    if (courseItem?.data) {
-      course = {
-        id: courseId,
-        name: courseItem.data.name || courseId,
-      };
-    }
-  }
-  return c.json({ lessonId, ...data, course, updatedAt: item.updatedAt });
+  const { sharedWith: _sharedWith, course: unitId, ...data } = item.data;
+  const placement = unitId ? placementOf(buildHierarchy(await db.getAllSyncData('_system')), lessonId, unitId)
+    : { course: null, unit: null, program: null };
+  return c.json({ lessonId, ...data, ...placement, updatedAt: item.updatedAt });
 });
 
 // GET /v1/knowledge-base — get the knowledge base content

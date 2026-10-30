@@ -32,9 +32,14 @@ const TAG = 'Beta-RC-232';
 // What the migrations are allowed to add or change, as snapshot-key regexes.
 // Anything else differing from the RC-232 fixture fails the test.
 const ALLOWED = {
-  added: [/^sync:_system:migrations$/],
-  // m003_role_learner: users whose stored role was 'user'
-  changed: [/^user:usr_(ada|cher|mae|jose|blank|pad)$/],
+  added: [
+    /^sync:_system:migrations$/,
+    /^sync:_system:program:prog-default$/, // m004_default_program
+  ],
+  changed: [
+    /^user:usr_(ada|cher|mae|jose|blank|pad)$/, // m003_role_learner: stored role was 'user'
+    /^sync:_system:course:/, // m004: units gain programId + lessonIds
+  ],
 };
 // Learner work is never rewritten by any migration, ever.
 const NEVER_TOUCHED = /^sync:usr_[^:]+:(messages|screenshot|lessonKB|courseProgress|lessons):/;
@@ -75,6 +80,22 @@ describe('upgrade from Beta-RC-232', () => {
       const before = JSON.parse(before1[`user:${u.userId}`]);
       assert.equal(after.role, u.role === 'user' ? 'learner' : u.role, u.userId);
       assert.deepEqual({ ...after, role: null }, { ...before, role: null }, `${u.userId}: only the role changed (updatedAt untouched)`);
+    }
+  });
+
+  it('m004_default_program: one default Course holding every unit, lesson order unchanged', async () => {
+    const program = (await db.getSyncData('_system', 'program:prog-default'))?.data;
+    assert.equal(program.name, FIXTURE.settings.classroomName);
+    assert.deepEqual(program.unitIds, ['course-lead001', 'course-found01'], 'units ordered by name (AI Leadership, Foundations)');
+    const found = (await db.getSyncData('_system', 'course:course-found01')).data;
+    assert.equal(found.programId, 'prog-default');
+    assert.deepEqual(found.lessonIds, ['les-f1', 'les-f2'], 'name order: "Foundations 1" before "Foundations 2"');
+    assert.equal(found.name, 'Foundations', 'existing unit fields kept');
+    const lead = (await db.getSyncData('_system', 'course:course-lead001')).data;
+    assert.deepEqual(lead.lessonIds, ['les-l1', 'les-priv']);
+    // Lessons themselves are untouched (membership stays on lesson.course).
+    for (const l of FIXTURE.lessons) {
+      assert.equal(after1[`sync:_system:lesson:${l.id}`], before1[`sync:_system:lesson:${l.id}`], l.id);
     }
   });
 
