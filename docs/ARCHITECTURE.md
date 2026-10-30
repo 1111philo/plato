@@ -1000,6 +1000,29 @@ answers arrive from the public wait-list form, so a formula there would be
 attacker-controlled (CSV injection). Dates are ISO; the file has a UTF-8 BOM
 and CRLF line endings so Excel opens it cleanly.
 
+## Roles & permissions (#435)
+
+Four roles. `server/src/lib/permissions.js` is the single source of who may do what.
+
+| Role | Can |
+|---|---|
+| **admin** | everything |
+| **educator** | lessons, courses, and units (read/write); view users and progress; invite learners; invite from the wait list. **Not:** Customizer (theme, knowledge base), prompts, settings writes, plugins, custom fields, groups, user edits/deletion, roles, logs, View as User |
+| **learner** | the classroom only. Stored as `user` before #435; `normalizeRole()` maps legacy and unknown values to `learner` |
+| **tester** | every `*.read` permission, so they see all classroom and admin pages, plus View as User; **no writes** to admin routes. They can still take lessons, since their own `/v1/sync` and `/v1/me` writes aren't admin routes |
+
+**Enforcement:** `/v1/admin/*` runs `authenticate`, then `authorize`
+(`server/src/middleware/authorize.js`).
+- `authenticate` reloads the user's role from the DB on every request, so a
+  role change applies immediately.
+- `authorize` looks the request up in `ROUTE_PERMISSIONS`. **Any route not in
+  the table is admin-only**, so a new route is safe by default.
+- `tests/lib/permissions.test.js` fails if a registered admin route is unmapped
+  or a table row is stale. `tests/routes/admin-authorization.test.js` drives
+  the real admin app as each role.
+- A refusal returns `403 { code: 'forbidden', permission }`.
+- Plugin admin routes still use the SDK's `requireAdmin` (admin only).
+
 ## Admin "View as User"
 
 Admins can audit a learner's classroom (lesson list, conversation history,
