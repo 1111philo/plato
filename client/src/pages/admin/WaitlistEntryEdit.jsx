@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { adminApi } from './adminApi.js';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
+import NameFields from '../../components/NameFields.jsx';
 import { missingRequired } from '../../lib/userFields.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,8 @@ import { Card, CardContent } from '@/components/ui/card';
  */
 export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onRemove, canEdit = true, canInvite = true }) {
   const [form, setForm] = useState({
-    name: entry.name || '',
+    firstName: entry.firstName || '',
+    lastName: entry.lastName || '',
     email: entry.email || '',
     userGroup: entry.userGroup || '',
     customFields: { ...(entry.customFields || {}) },
@@ -33,7 +35,8 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
     setMessage(null);
     try {
       await adminApi('PUT', `/v1/admin/waitlist/${entry.inviteToken}`, {
-        name: form.name,
+        firstName: form.firstName,
+        lastName: form.lastName,
         email: form.email,
         userGroup: form.userGroup || null,
         // Send every defined field so cleared inputs clear the stored answer.
@@ -62,10 +65,13 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
           <p className="text-sm text-muted-foreground">
             Joined {new Date(entry.createdAt).toLocaleDateString()}. Invite sends the signup email, prefilled with these answers.
           </p>
-          <div className="space-y-2">
-            <Label htmlFor="wl-edit-name">Name</Label>
-            <Input id="wl-edit-name" disabled={!canEdit} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-          </div>
+          <NameFields
+            idPrefix="wl-edit"
+            disabled={!canEdit}
+            inferred={entry.nameSource === 'auto'}
+            value={{ firstName: form.firstName, lastName: form.lastName }}
+            onChange={(n) => setForm({ ...form, ...n })}
+          />
           <div className="space-y-2">
             <Label htmlFor="wl-edit-email">Email</Label>
             <Input id="wl-edit-email" disabled={!canEdit} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />

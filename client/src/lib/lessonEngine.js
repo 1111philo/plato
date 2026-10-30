@@ -8,7 +8,7 @@
  */
 
 import {
-  getLearnerProfileSummary, getPreferences,
+  getLearnerProfileSummary, getPreferences, getAuthUser,
   getLessonKB, saveLessonKB, getCourseProgress,
   saveScreenshot, getScreenshot,
   saveLessonMessages, getLessonMessages, replaceLessonMessages,
@@ -202,9 +202,9 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
 
   // Coach opens the conversation
   if (onProgress) onProgress('starting');
-  const prefs = await getPreferences();
+  const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
   const coachMsg = await orchestrator.converseStream(
     'coach',
     [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
@@ -306,9 +306,9 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   const userParts = buildUserParts(text, imageDataUrls, linkList);
 
   // Always include context as first message so coach has lesson + profile info
-  const prefs = await getPreferences();
+  const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
@@ -544,6 +544,19 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   }
   const phase = next.status === 'completed' ? LESSON_PHASES.COMPLETED : LESSON_PHASES.LEARNING;
   return { lessonKB: next, achieved, phase };
+}
+
+/**
+ * The learner's first name for the coach (#402): from the signed-in account,
+ * which `/v1/me` refreshes on every load, so it's set from signup on. Falls
+ * back to the old `preferences.name`, which was blank until the learner saved
+ * Settings.
+ */
+async function learnerFirstName() {
+  const user = await getAuthUser().catch(() => null);
+  if (user?.firstName) return user.firstName;
+  const prefs = await getPreferences().catch(() => null);
+  return (prefs?.name || user?.name || '').trim().split(/\s+/)[0] || '';
 }
 
 /**

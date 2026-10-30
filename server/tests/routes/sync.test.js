@@ -157,28 +157,18 @@ describe('PUT /v1/sync/batch', () => {
   });
 });
 
-describe('preferences.name → user record (#402)', () => {
-  let updates;
-  beforeEach(() => {
-    updates = [];
+// #402: names live on the account (PATCH /v1/me). A preferences record that
+// still carries an old `name` must not write it back over a corrected one.
+describe('preferences.name no longer touches the user record (#402)', () => {
+  it('saves preferences without updating the user', async () => {
+    const updates = [];
     db.putSyncData = async () => ({ version: 2, updatedAt: '2024-01-01T00:00:00Z' });
-    db.getUserById = async () => ({ userId: 'usr_test', role: 'learner', name: 'Mary Ann Evans', firstName: 'Mary Ann', lastName: 'Evans', nameSource: 'user' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'learner', name: 'Ada King', firstName: 'Ada', lastName: 'King' });
     db.updateUser = async (id, u) => { updates.push(u); };
-  });
-  const put = (data) => { const app = new Hono(); app.route('/', sync); return authedReq(app, 'PUT', '/v1/sync/preferences', { data, version: 1 }); };
-
-  it('leaves the record alone when the name is unchanged (keeps a corrected split)', async () => {
-    assert.equal((await put({ name: 'Mary  Ann Evans' })).status, 200);
-    assert.deepEqual(updates, []);
-  });
-
-  it('splits and stores a changed name', async () => {
-    await put({ name: 'Ada Lovelace' });
-    assert.deepEqual(updates, [{ firstName: 'Ada', lastName: 'Lovelace', name: 'Ada Lovelace', nameSource: 'user' }]);
-  });
-
-  it('ignores preferences without a name', async () => {
-    await put({ theme: 'dark' });
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/preferences', { data: { name: 'Ada Lovelace' }, version: 1 });
+    assert.equal(res.status, 200);
     assert.deepEqual(updates, []);
   });
 });

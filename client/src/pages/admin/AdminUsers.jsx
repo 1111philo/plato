@@ -32,11 +32,12 @@ import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
 import { toCsv, usersCsvRows } from '../../lib/csv.js';
+import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
 
 const SORT_LABELS = {
-  name: 'name', email: 'email', username: 'username',
+  name: 'last name', email: 'email', username: 'username',
   group: 'group', role: 'role', completed: 'completion',
   lastActive: 'last active', date: 'join date',
 };
@@ -46,7 +47,8 @@ const SORT_LABELS = {
 // eslint-disable on exhaustive-deps). Items are the wrapper rows from
 // combinedList — see _user for the underlying user record.
 const SORT_KEY_FNS = {
-  name: (i) => i.name || i.email || '',
+  // Last name, then first (#402); people with one name sort by it.
+  name: (i) => (i.name ? [i.lastName, i.firstName].filter(Boolean).join(' ') || i.name : i.email || ''),
   email: (i) => i.email || '',
   username: (i) => i.username || '',
   group: (i) => i.userGroup || '',
@@ -146,7 +148,7 @@ export default function AdminUsers() {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [userFields, setUserFields] = useState([]);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
 
   // Invite modal state
   const [inviteInput, setInviteInput] = useState('');
@@ -546,7 +548,7 @@ export default function AdminUsers() {
       return;
     }
     setEditUser(u);
-    setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
+    setEditForm({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
   }, [paramUserId, users, navigate]);
 
   async function saveEditUser() {
@@ -559,7 +561,8 @@ export default function AdminUsers() {
     }
     try {
       await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
-        name: editForm.name,
+        firstName: editForm.firstName,
+        lastName: editForm.lastName,
         email: editForm.email,
         username: editForm.username,
         userGroup: editForm.userGroup || null,
@@ -583,14 +586,14 @@ export default function AdminUsers() {
     const items = [];
     for (const inv of pendingInvites) {
       if (!inv.isLink) {
-        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
+        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, firstName: null, lastName: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
       }
     }
     for (const w of waitlistEntries) {
-      items.push({ _type: 'waitlist', _key: w.inviteToken, email: w.email, name: w.name, username: null, userGroup: w.userGroup, role: null, customFields: w.customFields || {}, createdAt: w.createdAt, _entry: w });
+      items.push({ _type: 'waitlist', _key: w.inviteToken, email: w.email, name: w.name, firstName: w.firstName, lastName: w.lastName, username: null, userGroup: w.userGroup, role: null, customFields: w.customFields || {}, createdAt: w.createdAt, _entry: w });
     }
     for (const u of users) {
-      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
+      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, firstName: u.firstName, lastName: u.lastName, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
     }
     return items;
   }, [users, pendingInvites, waitlistEntries]);
@@ -727,10 +730,13 @@ export default function AdminUsers() {
         )}
         <Card>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" disabled={!canEditUser} value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-            </div>
+            <NameFields
+              idPrefix="edit"
+              disabled={!canEditUser}
+              inferred={editUser.nameSource === 'auto'}
+              value={{ firstName: editForm.firstName, lastName: editForm.lastName }}
+              onChange={(n) => setEditForm({ ...editForm, ...n })}
+            />
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
               <Input id="edit-email" disabled={!canEditUser} type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
