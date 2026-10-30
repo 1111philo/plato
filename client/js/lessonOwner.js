@@ -5,12 +5,14 @@
 
 import { authenticatedFetch } from './auth.js';
 import { getUserLessons } from './storage.js';
+import { sortLessons } from '../src/lib/lessonOrder.js';
 
 let lessonsCache = null;
 
 /**
  * Load all lessons from the server.
- * Returns an array of { lessonId, name, description, exemplar, learningObjectives }.
+ * Returns an array of { lessonId, name, description, exemplar, learningObjectives,
+ * course?, unit?, program? }, in Course → Unit → Lesson order (lessonOrder.js).
  */
 export async function loadLessons() {
   if (lessonsCache) return lessonsCache;
@@ -24,12 +26,15 @@ export async function loadLessons() {
         if (lesson.markdown) {
           // parseLessonPrompt only knows about fields encoded inside the
           // markdown (name, description, exemplar, objectives). Top-level
-          // server fields like `course` (the inlined { id, name } block)
-          // need to be carried forward explicitly so they survive into the
-          // client-side lesson model used by the classroom UI and the coach
-          // context builder.
+          // server fields need to be carried forward explicitly so they
+          // survive into the client-side lesson model used by the classroom
+          // UI and the coach context builder: `unit` and `program` (the
+          // Course → Unit → Lesson placement and order, #408) and the legacy
+          // `course` block, which is the unit.
           const parsed = parseLessonPrompt(lesson.lessonId, lesson.markdown);
           if (lesson.course) parsed.course = lesson.course;
+          if (lesson.unit) parsed.unit = lesson.unit;
+          if (lesson.program) parsed.program = lesson.program;
           lessons.push(parsed);
         }
       }
@@ -46,9 +51,8 @@ export async function loadLessons() {
     }
   } catch { /* ignore */ }
 
-  lessons.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-  lessonsCache = lessons;
-  return lessons;
+  lessonsCache = sortLessons(lessons);
+  return lessonsCache;
 }
 
 /** Clear the cache so loadLessons() re-fetches on next call. */
@@ -57,7 +61,8 @@ export function invalidateLessonsCache() {
 }
 
 /**
- * Return the lessons belonging to a course as `[{ name, description }]`.
+ * Return the lessons belonging to a unit (stored as a course, #408) as
+ * `[{ name, description }]`, in the unit's order.
  * Used to give the course-progress agent the course's shape for naming and
  * framing. Empty array when the course has no lessons or is unknown.
  */

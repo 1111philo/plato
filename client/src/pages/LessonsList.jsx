@@ -4,7 +4,7 @@ import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import Check from 'lucide-react/dist/esm/icons/check';
-import { courseCompletion, groupByCourse } from '../lib/courseCompletion.js';
+import { completionBy, groupForDisplay, sortLessons } from '../lib/lessonOrder.js';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,7 +17,8 @@ const MINS_PER_EXCHANGE = 1.8;
 const PAGE_SIZE = 12;
 
 // Sentinel filter values. 'all' shows everything; 'none' isolates lessons
-// that have no course assigned (e.g. legacy or admin-personal customs).
+// that aren't in any course (units outside a course, unit-less lessons, and
+// the learner's own customs).
 const FILTER_ALL = 'all';
 const FILTER_NONE = 'none';
 
@@ -111,22 +112,20 @@ export default function LessonsList() {
     return () => { cancelled = true; };
   }, []);
 
-  // Build the course list for the filter dropdown from the inlined `course`
-  // field on each lesson. Sorted alphabetically. We add an "Uncategorized"
-  // option only when at least one lesson has no course — so learners aren't
-  // confronted with a meaningless option in classrooms where every lesson
-  // belongs to a course. The whole filter UI is hidden when no courses
-  // exist (named.length === 0) — there's nothing meaningful to filter by.
+  // Build the course list for the filter dropdown from the inlined `program`
+  // field on each lesson (a Course in the UI, #408), in the admin-defined
+  // order. "Other lessons" appears only when at least one lesson is outside
+  // every course. The whole filter UI is hidden when no courses exist.
   const courseOptions = useMemo(() => {
     const map = new Map();
     let hasUncategorized = false;
     for (const l of lessons) {
-      if (l.course?.id) map.set(l.course.id, l.course.name);
+      if (l.program?.id) map.set(l.program.id, l.program);
       else hasUncategorized = true;
     }
-    const named = [...map.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    const named = [...map.values()].sort((a, b) =>
+      (a.position ?? Infinity) - (b.position ?? Infinity)
+      || a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     return { named, hasUncategorized };
   }, [lessons]);
   const hasCourseFilter = courseOptions.named.length > 0;
@@ -146,35 +145,23 @@ export default function LessonsList() {
     }
   }, [hasCourseFilter, courseFilter, courseOptions.named]);
 
-  // Apply both filters. Course narrows by taxonomy; status narrows by the
-  // learner's progress on each lesson. Combined as logical AND so the grid
-  // only shows lessons matching every active filter.
+  // Apply both filters (logical AND), then keep the Course → Unit → Lesson
+  // order (lessonOrder.js).
   const filtered = useMemo(() => {
     let result = lessons;
-    if (courseFilter === FILTER_NONE) result = result.filter((l) => !l.course?.id);
-    else if (courseFilter !== FILTER_ALL) result = result.filter((l) => l.course?.id === courseFilter);
+    if (courseFilter === FILTER_NONE) result = result.filter((l) => !l.program?.id);
+    else if (courseFilter !== FILTER_ALL) result = result.filter((l) => l.program?.id === courseFilter);
     if (statusFilter !== STATUS_ALL) {
       result = result.filter((l) => lessonStatusKey(lessonData[l.lessonId]) === statusFilter);
     }
-    // Sort by course name first (uncategorized lessons last), then by lesson
-    // title within each course.
-    return result.slice().sort((a, b) => {
-      const courseA = a.course?.name || '';
-      const courseB = b.course?.name || '';
-      // Push lessons without courses to the end
-      if (!courseA && courseB) return 1;
-      if (courseA && !courseB) return -1;
-      // Compare course names alphabetically
-      const courseCompare = courseA.localeCompare(courseB, undefined, { numeric: true, sensitivity: 'base' });
-      if (courseCompare !== 0) return courseCompare;
-      // Within the same course (or both uncategorized), sort by lesson name
-      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-    });
+    return sortLessons(result);
   }, [lessons, courseFilter, statusFilter, lessonData]);
 
-  // Course progress counts every lesson the learner has, not just the filtered
+  // Progress counts every lesson the learner has, not just the filtered
   // view, so a status filter can't skew "N of M" (#395).
-  const progressByCourse = useMemo(() => courseCompletion(lessons, lessonData), [lessons, lessonData]);
+  const progressByProgram = useMemo(() => completionBy('program', lessons, lessonData), [lessons, lessonData]);
+  const progressByUnit = useMemo(() => completionBy('unit', lessons, lessonData), [lessons, lessonData]);
+  const hasStructure = useMemo(() => lessons.some((l) => l.unit || l.program), [lessons]);
 
   // Pagination math. We clamp the current page to the available range so a
   // filter that shrinks the list below the current page doesn't strand us.
@@ -194,7 +181,7 @@ export default function LessonsList() {
   // the first time on render is sometimes missed).
   const filterPhrase = useMemo(() => {
     const phrases = [];
-    if (courseFilter === FILTER_NONE) phrases.push('without a course');
+    if (courseFilter === FILTER_NONE) phrases.push('not in a course');
     else if (courseFilter !== FILTER_ALL) {
       const name = courseOptions.named.find((c) => c.id === courseFilter)?.name;
       phrases.push(name ? `in the course "${name}"` : 'in the selected course');
@@ -246,7 +233,7 @@ export default function LessonsList() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
                 {courseOptions.hasUncategorized && (
-                  <option value={FILTER_NONE}>Uncategorized</option>
+                  <option value={FILTER_NONE}>Other lessons</option>
                 )}
               </select>
             </div>
@@ -292,38 +279,54 @@ export default function LessonsList() {
           No lessons match this filter.
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* One progress header per course on this page; counts come from
-              progressByCourse (all lessons), not from what's visible. */}
-          {groupByCourse(visibleLessons).map((group) => {
-            const progress = group.courseId ? progressByCourse[group.courseId] : null;
+        <div className="space-y-8">
+          {/* Course (h2) → Unit (h3) runs on this page. Units outside a
+              course take the h2 level so headings never skip. Counts come
+              from all lessons, not from what's visible. */}
+          {groupForDisplay(visibleLessons).map((group) => {
+            const unitLevel = group.program ? 3 : 2;
             return (
-              <div key={group.courseId || 'uncategorized'}>
-                {group.courseName && progress && (
-                  <CourseProgressHeader
-                    courseName={group.courseName}
-                    completed={progress.completed}
-                    total={progress.total}
+              <section key={group.key} aria-labelledby={group.program ? `course-${group.key}` : undefined} className="space-y-5">
+                {group.program && (
+                  <ProgressHeader
+                    id={`course-${group.key}`}
+                    level={2}
+                    name={group.program.name}
+                    progress={progressByProgram[group.program.id]}
                   />
                 )}
-                <ul
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-                  role="list"
-                  aria-label={group.courseName ? `${group.courseName} lessons` : 'Lessons'}
-                >
-                  {group.lessons.map((lesson, i) => (
-                    <LessonCardItem
-                      key={lesson.lessonId}
-                      lesson={lesson}
-                      lessonData={lessonData}
-                      timeStats={timeStats}
-                      navigate={navigate}
-                      setDetailLesson={setDetailLesson}
-                      animationDelay={i * 30}
-                    />
-                  ))}
-                </ul>
-              </div>
+                {group.units.map((u) => {
+                  const unitName = u.unit?.name || (hasStructure ? 'Other lessons' : null);
+                  return (
+                    <div key={u.key}>
+                      {unitName && (
+                        <ProgressHeader
+                          level={unitLevel}
+                          name={unitName}
+                          progress={u.unit ? progressByUnit[u.unit.id] : null}
+                        />
+                      )}
+                      <ul
+                        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+                        role="list"
+                        aria-label={unitName ? `${unitName} lessons` : 'Lessons'}
+                      >
+                        {u.lessons.map((lesson, i) => (
+                          <LessonCardItem
+                            key={lesson.lessonId}
+                            lesson={lesson}
+                            lessonData={lessonData}
+                            timeStats={timeStats}
+                            navigate={navigate}
+                            setDetailLesson={setDetailLesson}
+                            animationDelay={i * 30}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </section>
             );
           })}
         </div>
@@ -368,45 +371,57 @@ export default function LessonsList() {
   );
 }
 
-// Course progress header — completed / total lessons in the course (the
-// learner's own custom-* lessons excluded) with a visual progress bar.
-function CourseProgressHeader({ courseName, completed, total }) {
-  if (total === 0) return null;
-  const pct = Math.round((completed / total) * 100);
+// Course (level 2, with a progress bar) or unit (level 3, count only)
+// header: completed / total lessons, the learner's own custom-* lessons
+// excluded. Units outside a course render at level 2 without a bar.
+function ProgressHeader({ id, level, name, progress }) {
+  const Heading = `h${level}`;
+  const isCourse = level === 2 && !!id;
+  const { completed = 0, total = 0 } = progress || {};
+  const pct = total ? Math.round((completed / total) * 100) : 0;
 
   return (
-    <div className="mb-3">
-      <div className="flex items-baseline justify-between gap-3 mb-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {courseName}
-        </h2>
-        <span className="text-sm tabular-nums text-muted-foreground">
-          {completed} of {total} lesson{total === 1 ? '' : 's'}
-        </span>
+    <div className={isCourse ? 'mb-1' : 'mb-3'}>
+      <div className={`flex items-baseline justify-between gap-3 ${isCourse ? 'mb-2' : ''}`}>
+        <Heading
+          id={id}
+          className={isCourse
+            ? 'text-base font-semibold'
+            : 'text-sm font-semibold uppercase tracking-wider text-muted-foreground'}
+        >
+          {name}
+        </Heading>
+        {total > 0 && (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {completed} of {total} lesson{total === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
-      <div
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={pct}
-        aria-label={`${courseName} progress: ${completed} of ${total} lessons completed`}
-        className="h-1.5 rounded-full bg-muted overflow-hidden"
-      >
+      {isCourse && total > 0 && (
         <div
-          className="h-full rounded-full bg-primary transition-all"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+          aria-label={`${name} progress: ${completed} of ${total} lessons completed`}
+          className="h-1.5 rounded-full bg-muted overflow-hidden"
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
 // Wrapper for individual lesson cards in the grid. Extracted to avoid
-// duplicating the card rendering logic when grouping by course.
+// duplicating the card rendering logic across course and unit groups.
 function LessonCardItem({ lesson, lessonData, timeStats, navigate, setDetailLesson, animationDelay }) {
   return (
     <li
-      className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both list-none"
+      className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:fill-mode-both list-none"
       style={{ animationDelay: `${animationDelay}ms` }}
     >
       <LessonCard
@@ -422,7 +437,7 @@ function LessonCardItem({ lesson, lessonData, timeStats, navigate, setDetailLess
 
 function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
   // Stable id per card so the open-lesson button can describe itself with
-  // the meta strip — Tab navigation announces course + time as
+  // the meta strip — Tab navigation announces unit + time as
   // supplementary context (status now lives in the indicator and the
   // button label, so it's not duplicated here).
   const metaId = useId();
@@ -435,8 +450,8 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
   if (lesson.lessonId.startsWith('custom-')) {
     parts.push({ key: 'custom', text: 'My Lesson' });
   }
-  if (lesson.course?.name) {
-    parts.push({ key: 'course', text: lesson.course.name });
+  if (lesson.unit?.name) {
+    parts.push({ key: 'unit', text: lesson.unit.name });
   }
   if (range) {
     const completionWord = `learner completion${timeStats.sampleSize === 1 ? '' : 's'}`;
@@ -609,11 +624,11 @@ function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange })
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          {/* Course tag above the title — establishes scope before the
-              learner reads the title, matches the card's visual order. */}
-          {lesson.course?.name && (
+          {/* Course › Unit tag above the title: establishes scope before
+              the learner reads the title. */}
+          {lesson.unit?.name && (
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {lesson.course.name}
+              {lesson.program?.name ? `${lesson.program.name} › ${lesson.unit.name}` : lesson.unit.name}
             </p>
           )}
           <DialogTitle>{lesson.name}</DialogTitle>
