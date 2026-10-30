@@ -232,7 +232,7 @@ export default function AdminKBSetup() {
             <ComposeBar
               placeholder="Tell me about your program..."
               onSend={handleSend}
-              disabled={isBusy}
+              sendDisabled={isBusy}
             />
           </div>
         </div>

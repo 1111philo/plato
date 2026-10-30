@@ -354,6 +354,35 @@ server-side is where the SSRF defense must live.
   work-in-progress portfolio site for reference and the coach infers completion
   from content that doesn't exist or isn't finished yet.
 
+## Composing and reply reveal (#247)
+
+**Composing during a reply.** `ComposeBar` has two locks. `disabled` turns
+the whole composer off (read-only views such as View as User). `sendDisabled`
+only blocks sending: the textarea, attachments, and links stay usable, so a
+learner can write the next message while the coach is still replying. The
+send button is disabled, the keyboard shortcut does nothing, and the hint
+reads "Send when the reply finishes". Every chat (lesson, lesson editor, KB
+editor, KB setup) passes its busy state as `sendDisabled`.
+
+**Send key.** The `sendKey` preference (`'mod-enter'`, the default, or
+`'enter'`) decides whether plain Enter sends. Cmd/Ctrl+Enter always sends,
+Shift+Enter is always a new line, and Enter that confirms an IME composition
+never sends (`isSendKeystroke` in `client/src/lib/chatPrefs.js`). The current
+shortcut is visible next to Send and is the textarea's accessible description.
+
+**Reveal.** `useStreamedText` types replies out at about 33 characters a
+second, but `nextRevealPosition` keeps it at most ~40 ticks (~1.2 s) behind the
+stream. Once the stream ends, the rest drains in under a second, so a fast
+model never leaves a long typing backlog. Returning to a background tab shows
+everything buffered at once. **Instant mode** shows each chunk as it arrives.
+It's on with the `instantText` preference, or by default when the device
+prefers reduced motion; an explicit "off" wins. The hook still goes `null`
+only after the reveal catches up with a finished stream, which is the signal
+chat pages use to append the persisted message.
+
+Both preferences live in the learner's `preferences` sync record and are set
+in Settings → Chat, which saves on change.
+
 ## Chat auto-scroll (#319, #321)
 
 `useStickToBottom` (consumed by `ChatArea`) follows streamed output while the

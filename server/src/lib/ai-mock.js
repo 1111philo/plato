@@ -104,12 +104,15 @@ const mockAi = {
 
   // Same Anthropic-shaped events converse.js produces, in small chunks with a
   // short delay so the streaming UI (useStreamedText, aria-hidden while
-  // streaming) is exercised.
+  // streaming) is exercised. A learner message containing MOCK_SLOW streams
+  // over about two seconds, for tests of composing during a reply.
   async *invokeStream(_model, body) {
     const text = replyFor(agentOf(body.system), body.messages);
+    const lastUser = textOf([...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content);
+    const delay = /MOCK_SLOW/.test(lastUser) ? 250 : 5;
     yield { type: 'message_start', message: { role: 'assistant' } };
     for (let i = 0; i < text.length; i += 24) {
-      await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, delay));
       yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 24) } };
     }
     yield { type: 'message_stop' };
