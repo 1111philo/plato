@@ -7,6 +7,7 @@ import { registerHierarchyRoutes } from './admin-hierarchy.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
+import { nameFields, readNameInput } from '../lib/names.js';
 import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
@@ -64,7 +65,7 @@ admin.get('/v1/admin/users', async (c) => {
     userId: p.userId,
     email: p.email,
     username: p.username,
-    name: p.name,
+    ...nameFields(p),
     userGroup: p.userGroup,
     role: normalizeRole(p.role),
     slackUserId: p.slackUserId || null,
@@ -133,7 +134,8 @@ admin.get('/v1/admin/users/:userId', async (c) => {
   return c.json({
     userId: user.userId,
     email: user.email,
-    name: user.name,
+    username: user.username,
+    ...nameFields(user),
     userGroup: user.userGroup,
     role: normalizeRole(user.role),
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), user.customFields),
@@ -417,7 +419,7 @@ admin.get('/v1/admin/waitlist', async (c) => {
     .map((inv) => ({
       inviteToken: inv.inviteToken,
       email: inv.email,
-      name: inv.profile?.name || null,
+      ...nameFields(inv.profile),
       userGroup: inv.profile?.userGroup || null,
       customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
       createdAt: inv.createdAt,
@@ -502,7 +504,7 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   return c.json({
     inviteToken: entry.inviteToken,
     email: result.email,
-    name: result.profile.name,
+    ...nameFields(result.profile),
     userGroup: result.profile.userGroup,
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), result.profile.customFields),
     createdAt: entry.createdAt,
@@ -524,7 +526,9 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   if (!user) return c.json({ error: 'User not found' }, 404);
   const body = await c.req.json();
   const updates = {};
-  if (body.name !== undefined) updates.name = body.name;
+  const nameInput = readNameInput(body, { current: user });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
+  if (nameInput.fields) Object.assign(updates, nameInput.fields);
   if (body.email !== undefined) {
     const email = String(body.email).trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: 'A valid email is required' }, 400);

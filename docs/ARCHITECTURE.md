@@ -1098,6 +1098,40 @@ Four roles. `server/src/lib/permissions.js` is the single source of who may do w
 - `AuthContext` re-reads `/v1/me` on load (`refreshCurrentUser`), so a role
   change applies on the next page load, not just the next login.
 
+## First and last names (#402)
+
+Users have `firstName` and `lastName`. `name` stays on the record, always
+derived as `firstName lastName`, for plugins, the audit log, emails, and
+Beta-RC-232 rollback. `server/src/lib/names.js` is the single reader and
+writer:
+- `readNameInput(body, { current, required })` reads a request. `firstName` /
+  `lastName` win; a lone `name` (older clients, the public wait-list API) is
+  split. A part the body leaves out keeps its current value. A first name is
+  required; a last name is optional (people with one name exist). Each part is
+  at most 100 characters.
+- `nameFields(record)` is what every response sends: `name`, `firstName`,
+  `lastName`, `nameSource`. A record without parts (written before #402, or
+  not yet reached by the migration) is split on read.
+- **`nameSource`** is `'user'` when a person or admin entered the parts, and
+  `'auto'` when they were inferred. The UI hints that an `'auto'` split may
+  need a correction. Nothing is silently discarded: the inference splits at the
+  first whitespace and everything after it becomes the last name.
+
+Routes that take a name: setup, signup, `PATCH /v1/me`,
+`PATCH /v1/admin/users/:id`, and the wait list (join and admin edit; profiles
+store the same fields). `GET /v1/auth/invite/:token` returns the parts so
+signup can fill them in.
+
+**Migration:** `m005_name_split` writes the inferred parts with
+`setUserNameSplitIf` (conditional on `name` unchanged and no parts yet;
+`updatedAt` untouched). Empty names are left alone. The dry run reports how
+many names had 3+ parts. Wait-list entries aren't migrated; they're split on
+read and replaced when the person signs up.
+
+**`preferences.name`:** older clients save the learner's name there. The sync
+route carries it to the user record only when it differs from the stored name,
+so a stale preferences record can't undo a corrected split.
+
 ## Admin "View as User"
 
 Admins can audit a learner's classroom (lesson list, conversation history,

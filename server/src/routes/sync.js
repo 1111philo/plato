@@ -6,6 +6,7 @@ import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { logger } from '../lib/logger.js';
+import { joinName, nameFields, readNameInput } from '../lib/names.js';
 
 const sync = new Hono();
 
@@ -14,11 +15,15 @@ sync.use('/v1/sync/*', authenticate);
 
 const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseProgress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete)$/;
 
-// Keep user record name in sync with extension preferences
+// Older clients still save the learner's name in `preferences.name`. Carry
+// it to the user record (split, #402) only when it differs from the stored
+// name, so a stale preferences record can't undo an edit made elsewhere.
 async function syncNameIfNeeded(userId, dataKey, data) {
-  if (dataKey === 'preferences' && data?.name) {
-    await db.updateUser(userId, { name: data.name });
-  }
+  if (dataKey !== 'preferences' || typeof data?.name !== 'string' || !data.name.trim()) return;
+  const user = await db.getUserById(userId);
+  if (!user || nameFields(user).name === joinName(data.name)) return;
+  const { fields } = readNameInput({ name: data.name });
+  if (fields) await db.updateUser(userId, { ...fields, nameSource: 'user' });
 }
 
 function validateDataKey(dataKey) {

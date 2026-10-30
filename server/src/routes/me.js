@@ -4,6 +4,7 @@ import { normalizeRole } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
+import { nameFields, readNameInput } from '../lib/names.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
@@ -32,7 +33,7 @@ me.get('/v1/me', async (c) => {
     userId: user.userId,
     email: user.email,
     username: user.username,
-    name: user.name,
+    ...nameFields(user),
     userGroup: user.userGroup,
     role: normalizeRole(user.role),
     customFields: visibleFieldValues(defs, user.customFields),
@@ -59,9 +60,14 @@ me.get('/v1/me/fields', async (c) => {
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json();
-  const allowed = ['name', 'email', 'username', 'group', 'password'];
+  const allowed = ['email', 'username', 'group', 'password'];
   const updates = {};
   let defs = null;
+
+  // firstName / lastName (#402); a lone `name` from an older client is split.
+  const nameInput = readNameInput(body, { current: c.get('user') });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
+  if (nameInput.fields) Object.assign(updates, nameInput.fields);
 
   if (body.customFields !== undefined) {
     defs = await loadFieldDefinitions();
@@ -109,7 +115,7 @@ me.patch('/v1/me', async (c) => {
     userId: updated.userId,
     email: updated.email,
     username: updated.username,
-    name: updated.name,
+    ...nameFields(updated),
     userGroup: updated.userGroup,
     role: normalizeRole(updated.role),
     customFields: visibleFieldValues(defs, updated.customFields),
@@ -134,7 +140,7 @@ me.get('/v1/me/export', async (c) => {
       userId: user.userId,
       email: user.email,
       username: user.username,
-      name: user.name,
+      ...nameFields(user),
       userGroup: user.userGroup,
       role: normalizeRole(user.role),
       // Exported with labels so the file is readable without the definitions.

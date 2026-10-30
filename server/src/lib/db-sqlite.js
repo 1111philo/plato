@@ -133,6 +133,12 @@ if (hasCustomFields.count === 0) {
   sqlite.exec('ALTER TABLE users ADD COLUMN customFields TEXT');
 }
 
+// First/last name (#402). `name` stays, derived from them (lib/names.js).
+for (const col of ['firstName', 'lastName', 'nameSource']) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
@@ -250,13 +256,13 @@ function rowToUser(row) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const customJson = customFields && Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, slackUserId || null, customJson, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
@@ -309,6 +315,15 @@ const db = {
   // Migration helper (same contract as db-dynamodb.js setUserRoleIf).
   async setUserRoleIf(userId, from, to) {
     return sqlite.prepare('UPDATE users SET role = ? WHERE userId = ? AND role = ?').run(to, userId, from).changes > 0;
+  },
+
+  // Migration helper (same contract as db-dynamodb.js setUserNameSplitIf):
+  // only while `name` is still `expectedName` and no split exists yet.
+  // Leaves updatedAt alone.
+  async setUserNameSplitIf(userId, expectedName, { firstName, lastName, nameSource }) {
+    return sqlite.prepare(
+      'UPDATE users SET firstName = ?, lastName = ?, nameSource = ? WHERE userId = ? AND name IS ? AND firstName IS NULL'
+    ).run(firstName, lastName, nameSource, userId, expectedName).changes > 0;
   },
 
   async listAllUsers() {

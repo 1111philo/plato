@@ -19,13 +19,14 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const item = {
       userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
       userGroup: userGroup || null,
       role, createdAt: now, updatedAt: now,
     };
+    if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
     await doc.send(new PutCommand({
@@ -139,6 +140,25 @@ const db = {
         ConditionExpression: '#r = :from',
         ExpressionAttributeNames: { '#r': 'role' },
         ExpressionAttributeValues: { ':from': from, ':to': to },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  },
+
+  // Migration helper: set the inferred name split (#402) only while `name` is
+  // still `expectedName` and no split exists yet. Leaves updatedAt alone.
+  async setUserNameSplitIf(userId, expectedName, { firstName, lastName, nameSource }) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET #f = :f, #l = :l, #s = :s',
+        ConditionExpression: '#n = :n AND attribute_not_exists(#f)',
+        ExpressionAttributeNames: { '#f': 'firstName', '#l': 'lastName', '#s': 'nameSource', '#n': 'name' },
+        ExpressionAttributeValues: { ':f': firstName, ':l': lastName, ':s': nameSource, ':n': expectedName },
       }));
       return true;
     } catch (err) {

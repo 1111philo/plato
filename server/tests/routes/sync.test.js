@@ -157,6 +157,32 @@ describe('PUT /v1/sync/batch', () => {
   });
 });
 
+describe('preferences.name → user record (#402)', () => {
+  let updates;
+  beforeEach(() => {
+    updates = [];
+    db.putSyncData = async () => ({ version: 2, updatedAt: '2024-01-01T00:00:00Z' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'learner', name: 'Mary Ann Evans', firstName: 'Mary Ann', lastName: 'Evans', nameSource: 'user' });
+    db.updateUser = async (id, u) => { updates.push(u); };
+  });
+  const put = (data) => { const app = new Hono(); app.route('/', sync); return authedReq(app, 'PUT', '/v1/sync/preferences', { data, version: 1 }); };
+
+  it('leaves the record alone when the name is unchanged (keeps a corrected split)', async () => {
+    assert.equal((await put({ name: 'Mary  Ann Evans' })).status, 200);
+    assert.deepEqual(updates, []);
+  });
+
+  it('splits and stores a changed name', async () => {
+    await put({ name: 'Ada Lovelace' });
+    assert.deepEqual(updates, [{ firstName: 'Ada', lastName: 'Lovelace', name: 'Ada Lovelace', nameSource: 'user' }]);
+  });
+
+  it('ignores preferences without a name', async () => {
+    await put({ theme: 'dark' });
+    assert.deepEqual(updates, []);
+  });
+});
+
 describe('DELETE /v1/sync', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });

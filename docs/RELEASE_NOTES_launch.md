@@ -19,6 +19,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 |---|---|---|---|
 | `m003_role_learner` | stored role `user` → `learner` (conditional; `updatedAt` untouched) | `UPDATE … SET role='user' WHERE role='learner'` — and `normalizeRole` makes code indifferent to which is stored | roles PR |
 | `m004_default_program` | creates `_system:program:prog-default` (one Course named after the classroom) holding every existing unit; each unit gains `programId` + its current name-sorted `lessonIds` | delete the program record; Beta-RC-232 ignores both | hierarchy PR |
+| `m005_name_split` | users gain `firstName`/`lastName` inferred from `name` (split at the first whitespace; one word = first name only; empty names left alone), `nameSource: 'auto'`; `name` and `updatedAt` untouched; conditional on `name` unchanged and no split yet | drop the three fields; Beta-RC-232 reads only `name` | names PR |
 
 ## Sub-PRs merged into playground
 | PR | Area | Issues |

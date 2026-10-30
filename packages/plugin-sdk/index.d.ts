@@ -186,7 +186,14 @@ export interface SettingsPanelProps {
 export interface AdminUser {
   userId: string;
   email: string;
+  /** Derived: `firstName lastName` (API 1.5.0). */
   name?: string;
+  /** API 1.5.0 (#402). */
+  firstName?: string;
+  /** API 1.5.0 (#402). Empty for people with one name. */
+  lastName?: string;
+  /** 'auto' when inferred from an older single name and not yet confirmed (API 1.5.0). */
+  nameSource?: 'user' | 'auto';
   username?: string;
   userGroup?: string;
   /** Normalized: accounts stored as 'user' before API 1.4.0 report 'learner'. */
