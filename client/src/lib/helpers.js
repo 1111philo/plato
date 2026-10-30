@@ -37,12 +37,15 @@ export function renderMd(text) {
   escaped = escaped.replace(/^# (.+)$/gm, '<strong style="font-size:1rem;">$1</strong>');
   escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   escaped = escaped.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  escaped = escaped.replace(/^[-*] (.+)/gm, '<li>$1</li>');
-  escaped = escaped.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
-  escaped = escaped.replace(/^\d+[.)]\s+(.+)/gm, '<li>$1</li>');
-  escaped = escaped.replace(/(<li>.*<\/li>\n?)+/g, (match) =>
-    match.includes('<ul>') ? match : `<ol>${match}</ol>`
-  );
+  // Lists: mark bullet and numbered items with distinct placeholder tags, then
+  // wrap each run in its own <ul>/<ol>. (A single <li> marker let the
+  // numbered pass re-wrap bullet runs as <ul><ol>…, and the newlines between
+  // items became <br> *inside* the list: invalid markup that screen readers
+  // announce wrongly.)
+  escaped = escaped.replace(/^[-*] (.+)/gm, '<uli>$1</uli>');
+  escaped = escaped.replace(/^\d+[.)]\s+(.+)/gm, '<oli>$1</oli>');
+  escaped = escaped.replace(/(?:<uli>.*<\/uli>\n?)+/g, (run) => `<ul>${run.replace(/\n/g, '').replace(/<(\/?)uli>/g, '<$1li>')}</ul>\n`);
+  escaped = escaped.replace(/(?:<oli>.*<\/oli>\n?)+/g, (run) => `<ol>${run.replace(/\n/g, '').replace(/<(\/?)oli>/g, '<$1li>')}</ol>\n`);
   escaped = linkify(escaped);
   // Convert markdown tables to HTML tables
   escaped = escaped.replace(/((?:^\|.+\|$\n?)+)/gm, (block) => {

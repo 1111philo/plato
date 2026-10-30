@@ -130,6 +130,14 @@ const ai = {
  */
 export const LLM = 'qwen3-vl-235b';
 
-console.log(`AI provider: bedrock (${MODEL_MAP[LLM] || LLM})`);
+// AI_PROVIDER=mock swaps in a deterministic stand-in for e2e/accessibility
+// tests (ai-mock.js). Never on Lambda: a stray env var must not turn prod's
+// coach into canned replies.
+const wantsMock = process.env.AI_PROVIDER === 'mock';
+const onLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+if (wantsMock && onLambda) console.error('AI_PROVIDER=mock ignored on Lambda; using Bedrock');
+const provider = wantsMock && !onLambda ? (await import('./ai-mock.js')).default : ai;
 
-export default ai;
+console.log(`AI provider: ${provider === ai ? `bedrock (${MODEL_MAP[LLM] || LLM})` : 'mock (AI_PROVIDER=mock)'}`);
+
+export default provider;

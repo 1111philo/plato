@@ -431,7 +431,6 @@ export default function LessonChat() {
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowObjectives(true)}
-                aria-label={`View ${lesson.learningObjectives.length} objectives`}
                 aria-expanded={showObjectives}
                 aria-controls="lesson-objectives-dialog"
               >
@@ -542,7 +541,9 @@ export default function LessonChat() {
             <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
             {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
           </DialogHeader>
-          <div className="overflow-y-auto flex-1 space-y-4 pr-2">
+          {/* Focusable so keyboard users can scroll it: its content is all
+              text, nothing inside takes focus (axe scrollable-region-focusable). */}
+          <div className="overflow-y-auto flex-1 space-y-4 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Lesson overview">
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Exemplar</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>

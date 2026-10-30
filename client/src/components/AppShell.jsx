@@ -110,11 +110,13 @@ export default function AppShell({ children }) {
         role="banner"
       >
         <nav className="mx-auto max-w-5xl flex items-center gap-2" aria-label="Main navigation">
-          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0" aria-label="Go to lessons list">
+          {/* Accessible name starts with the visible classroom name (WCAG 2.5.3
+              label-in-name); "lessons" says where it goes. */}
+          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0">
             {classroomLogo ? (
-              <img src={classroomLogo} alt="" className="h-8 w-auto" />
+              <img src={classroomLogo} alt={`${classroomName}: lessons`} className="h-8 w-auto" />
             ) : (
-              <span className="text-sm font-semibold">{classroomName}</span>
+              <span className="text-sm font-semibold">{classroomName}<span className="sr-only">: lessons</span></span>
             )}
           </a>
           <div className="flex-1" />
@@ -123,9 +125,9 @@ export default function AppShell({ children }) {
               <button
                 type="button"
                 className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none"
-                aria-label={`Account: ${user?.username || user?.email || 'signed in'}`}
               >
                 {user?.name || user?.username || user?.email || 'Account'}
+                <span className="sr-only">, account menu</span>
               </button>
             </DropdownMenuRadix.Trigger>
             <DropdownMenuRadix.Portal>

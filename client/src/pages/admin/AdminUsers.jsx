@@ -52,6 +52,24 @@ const SORT_KEY_FNS = {
   date: (i) => i.createdAt || '',
 };
 
+/**
+ * The keyboard/screen-reader way into a table row's edit view: a real button
+ * in the first cell, whose name starts with the visible text. The row itself
+ * stays clickable for the mouse. The button stops propagation so the click
+ * doesn't fire twice.
+ */
+function RowOpenButton({ onClick, srPrefix, children }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="text-left font-medium hover:underline cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <span className="sr-only">{srPrefix}</span>{children}
+    </button>
+  );
+}
+
 function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
   const active = sortBy.key === sortKey;
   const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
@@ -768,9 +786,10 @@ export default function AdminUsers() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      {/* Wraps on narrow screens; without it the trailing buttons ran off-screen on phones. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Users</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => setInviteOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Invite Users
@@ -787,7 +806,7 @@ export default function AdminUsers() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Wait List
           </Button>
-          <Button variant="outline" onClick={downloadCsv} aria-label="Download user list as CSV">
+          <Button variant="outline" onClick={downloadCsv}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download CSV
           </Button>
@@ -878,8 +897,15 @@ export default function AdminUsers() {
               </TableHeader>
               <TableBody>
                 {pageItems.map(item => item._type === 'waitlist' ? (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} role="button" tabIndex={0} aria-label={`Edit wait list entry for ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/plato/users/waitlist/${item._key}`); } }}>
-                    <TableCell>{item.name || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
+                  // Clicking anywhere on the row is a mouse convenience; the
+                  // name button is the keyboard/SR path. (A role="button" row
+                  // can't contain the row's own buttons: nested-interactive.)
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)}>
+                    <TableCell>
+                      <RowOpenButton onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} srPrefix="Edit wait list entry: ">
+                        {item.name || item.email}
+                      </RowOpenButton>
+                    </TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
@@ -895,8 +921,8 @@ export default function AdminUsers() {
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>
-                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>&#10005;</Button>
+                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>
+                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -920,8 +946,12 @@ export default function AdminUsers() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditUser(item._user); } }}>
-                    <TableCell>{item.name}</TableCell>
+                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)}>
+                    <TableCell>
+                      <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">
+                        {item.name || item.email}
+                      </RowOpenButton>
+                    </TableCell>
                     <TableCell>{item.email}</TableCell>
                     <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
                     <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
@@ -967,8 +997,8 @@ export default function AdminUsers() {
                       </TableCell>
                     )}
                     <TableCell>
-                      {/* Keep clicks and Enter/Space on these buttons from also activating the row. */}
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
+                      {/* Keep clicks on these buttons from also opening the row. */}
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
                         {item._user.userId !== currentUser?.userId && (
                           <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>

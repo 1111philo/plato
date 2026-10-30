@@ -459,18 +459,17 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
       <button
         type="button"
         onClick={onOpen}
-        // Status is folded into the button's accessible name — the visual
-        // indicator is aria-hidden, so without this the icon's meaning
-        // would be invisible to SR users. We use aria-label instead of
-        // wrapping an h3 inside the button (invalid HTML per WCAG 2.4.6).
-        aria-label={`Open lesson ${lesson.name}. ${statusText}.`}
+        // The accessible name comes from the visible content (title +
+        // description) so it contains the visible label (WCAG 2.5.3); the
+        // sr-only text adds the action and the status, whose visual
+        // indicator is aria-hidden.
         aria-describedby={parts.length > 0 ? metaId : undefined}
         className="flex-1 text-left px-4 pt-4 pb-2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 space-y-1.5">
             <span className="text-base font-semibold leading-snug transition-colors group-hover:text-primary block">
-              {lesson.name}
+              <span className="sr-only">Open lesson </span>{lesson.name}
             </span>
             {lesson.description && (
               <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
@@ -480,6 +479,7 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
           </div>
           <StatusIndicator progress={progress} statusText={statusText} />
         </div>
+        <span className="sr-only">. {statusText}.</span>
       </button>
       <div className="px-4 pb-3 pt-1 flex items-baseline gap-2 flex-wrap">
         {/* Visible separators are middle-dots; screen readers read commas

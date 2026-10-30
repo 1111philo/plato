@@ -129,13 +129,13 @@ export default function Privacy() {
           </section>
         </CardContent>
       </Card>
-      <div className="mt-4 flex gap-4 items-center text-xs text-white/60">
-        <Button variant="link" className="text-white/60 hover:text-white/80 h-auto p-0" onClick={() => navigate(loggedIn ? '/lessons' : '/login')}>
+      <div className="mt-4 flex gap-4 items-center text-xs text-white/90">
+        <Button variant="link" className="text-white/90 hover:text-white h-auto p-0" onClick={() => navigate(loggedIn ? '/lessons' : '/login')}>
           {loggedIn ? 'Back to Lessons' : 'Back to Sign In'}
         </Button>
         <span>·</span>
         <span>
-          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
         </span>
       </div>
     </main>
