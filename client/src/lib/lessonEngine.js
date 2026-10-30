@@ -21,6 +21,7 @@ import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfi
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
+import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 
 function ts() { return Date.now(); }
 
@@ -325,7 +326,14 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   const parsed = parseCoachResponse(coachMsg);
 
   const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
-  const applied = applyCoachResponseToKB(lessonKB, parsed, { now: ts });
+  // The objectives checklist (#438) first, against the KB as it was, so the
+  // turn that completes the lesson can still check off what it showed.
+  // Informational only: applyCoachResponseToKB alone decides completion.
+  const metBefore = new Set(lessonKB.objectivesMet || []);
+  const withMet = mergeObjectivesMet(lessonKB, parsed.kbUpdate);
+  const newlyMet = (withMet.objectivesMet || []).filter((i) => !metBefore.has(i))
+    .map((i) => withMet.objectives?.[i]?.objective).filter(Boolean);
+  const applied = applyCoachResponseToKB(withMet, parsed, { now: ts });
   lessonKB = applied.lessonKB;
   const { achieved, phase } = applied;
 
@@ -366,7 +374,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   };
   // What each agent read and did on this turn (#411), for "Behind this response".
   const agents = coachTurnActivity({
-    before: kbBefore, after: lessonKB, parsed, achieved,
+    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet,
     images: imageDataUrls.length, links: linkList.length,
     hasUnitNote: !!courseProgress,
     unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
@@ -601,6 +609,9 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // Objectives the coach has already marked as shown (#438), 1-based.
+  const met = objectivesMetForContext(lessonKB);
+  if (met) context.objectivesMet = met;
   // Optional author-supplied coach directive: high-priority runtime guidance
   // the lesson author baked into the lesson markdown (`## Coach Directive`),
   // e.g. "reference the learner's portfolio project" or "offer this code".

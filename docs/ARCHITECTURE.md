@@ -897,6 +897,32 @@ time; completion and progress persist like any lesson's.
 lesson (see CLAUDE.md). Unedited copies everywhere pick up the change on the
 next deploy.
 
+### Your work: the lesson work view (#438)
+
+A **"Your work"** button next to "Lesson Overview" (and on the lessons
+page's outline dialog for started lessons, via `/lessons/:id?view=work`)
+opens a read-only dialog (`client/src/components/chat/LessonWork.jsx`) with
+three native `<details>` sections:
+- **Progress:** the progress score and an objectives checklist.
+- **Summary:** the exemplar, the coach's "where you are", and its notes, all
+  read from the lesson KB. Nothing is generated for it.
+- **Artifacts:** images and links the learner shared, from the messages'
+  `metadata.imageKeys` / `metadata.links`. Images are fetched only when the
+  section opens, each key once.
+
+It works the same on completed lessons and in View as User (it only reads).
+
+**The checklist.** The coach may add `"objectivesMet": [1, 3]` (1-based, as
+the objectives are listed in its context) to `[KB_UPDATE]`.
+`mergeObjectivesMet` (`client/src/lib/lessonWork.js`) folds it into
+`lessonKB.objectivesMet` (0-based) **one way only**: a checked objective
+stays checked. The coach's context includes `objectivesMet` so it doesn't
+repeat itself. The merge runs before `applyCoachResponseToKB`, so the turn that
+completes a lesson can still check off what it showed. It's informational:
+completion is still the progress score alone, and a completed lesson shows
+every objective as met. In real Qwen3-VL runs the coach reported met
+objectives in 4 of 4 runs once the prompt's example included the field.
+
 ## Pacing & completion philosophy
 
 Microlearning constraints live in `client/src/lib/constants.js`:
