@@ -11,7 +11,6 @@ import {
 
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
-import CoursesModal from './CoursesModal.jsx';
 import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
@@ -44,8 +43,8 @@ export default function AdminLessons() {
   const isNewRoute = location.pathname.endsWith('/lessons/new');
 
   const [lessons, setLessons] = useState([]);
-  const [courses, setCourses] = useState([]);
-  const [coursesOpen, setCoursesOpen] = useState(false);
+  const [courses, setCourses] = useState([]); // units (stored course:*)
+  const [programNames, setProgramNames] = useState(new Map());
   // Editor data for the lesson open at /plato/lessons/:lessonId/edit.
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft, initialCourse, markdown }
   const [editorLoading, setEditorLoading] = useState(false);
@@ -69,8 +68,12 @@ export default function AdminLessons() {
     }
   }, [isNewRoute, navigate]);
 
-  // Map courseId -> name for rendering tags on lesson rows.
-  const courseNamesById = new Map(courses.map((c) => [c.courseId, c.name]));
+  // Unit id → "Course › Unit" for the lessons table (#408; units are stored
+  // as course:* and keep the lesson's `course` field).
+  const unitLabelById = new Map(courses.map((u) => {
+    const courseName = programNames.get(u.programId);
+    return [u.unitId || u.courseId, courseName ? `${courseName} › ${u.name}` : u.name];
+  }));
 
   useEffect(() => {
     document.title = 'Lessons — Admin';
@@ -80,8 +83,12 @@ export default function AdminLessons() {
 
   async function loadCourses() {
     try {
-      const data = await adminApi('GET', '/v1/admin/courses');
-      setCourses(Array.isArray(data) ? data : []);
+      const [units, programs] = await Promise.all([
+        adminApi('GET', '/v1/admin/units'),
+        adminApi('GET', '/v1/admin/programs'),
+      ]);
+      setCourses(Array.isArray(units) ? units : []);
+      setProgramNames(new Map((programs.programs || []).map((p) => [p.programId, p.name])));
     } catch { /* non-blocking — list still renders */ }
   }
 
@@ -240,9 +247,9 @@ export default function AdminLessons() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Lesson
           </Button>
-          <Button variant="outline" onClick={() => setCoursesOpen(true)}>
+          <Button variant="outline" onClick={() => navigate('/plato/lessons/structure')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-            Courses
+            Courses &amp; Units
           </Button>
         </div>
       </div>
@@ -276,7 +283,7 @@ export default function AdminLessons() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Course</TableHead>
+              <TableHead>Course › Unit</TableHead>
               <TableHead>Created by</TableHead>
               <TableHead>Updated by</TableHead>
               <TableHead>Updated</TableHead>
@@ -287,7 +294,7 @@ export default function AdminLessons() {
             {lessons.map(c => {
               const isDraft = c.status === 'draft';
               const isPublic = c.status === 'public';
-              const courseName = c.course ? (courseNamesById.get(c.course) || null) : null;
+              const unitLabel = c.course ? (unitLabelById.get(c.course) || null) : null;
               return (
                 <TableRow key={c.lessonId}>
                   <TableCell>
@@ -301,7 +308,7 @@ export default function AdminLessons() {
                       }
                     </span>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{courseName || '\u2014'}</TableCell>
+                  <TableCell className="text-muted-foreground">{unitLabel || '\u2014'}</TableCell>
                   <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
                   <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
                   <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
@@ -342,11 +349,6 @@ export default function AdminLessons() {
         />
       )}
 
-      <CoursesModal
-        open={coursesOpen}
-        onOpenChange={setCoursesOpen}
-        onMutated={() => { loadCourses(); loadLessons(); }}
-      />
 
       {shareModal && (
         <ShareLessonModal
@@ -376,8 +378,9 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [key, setKey] = useState(0); // increment to restart conversation
-  const [courses, setCourses] = useState([]);
-  const [course, setCourse] = useState(initialCourse || '');
+  const [courses, setCourses] = useState([]); // units (stored course:*)
+  const [unitGroups, setUnitGroups] = useState([]); // courses (programs), each with ordered unitIds
+  const [course, setCourse] = useState(initialCourse || ''); // the lesson's unit id
 
   // Markdown preview pane. Refreshed manually via the lesson-extractor agent;
   // never persisted until the admin clicks Create/Update Lesson.
@@ -391,14 +394,19 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     initialMarkdown ? (initialMessages?.length || 0) : 0
   );
 
-  // Load course list once on mount so the dropdown can populate.
+  // Load units and courses once so the Unit picker can group units by course.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await adminApi('GET', '/v1/admin/courses');
-        if (!cancelled && Array.isArray(data)) setCourses(data);
-      } catch { /* dropdown stays empty; admin can still create the lesson */ }
+        const [units, programs] = await Promise.all([
+          adminApi('GET', '/v1/admin/units'),
+          adminApi('GET', '/v1/admin/programs'),
+        ]);
+        if (cancelled) return;
+        if (Array.isArray(units)) setCourses(units);
+        setUnitGroups(programs.programs || []);
+      } catch { /* picker stays empty; admin can still create the lesson */ }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -450,7 +458,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       }
       await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, body);
     } catch (e) {
-      setError(e.message || 'Failed to update course.');
+      setError(e.message || 'Failed to update unit.');
     }
   }
 
@@ -640,20 +648,31 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
         </div>
       )}
 
-      {/* Lesson metadata — course assignment.
-          Visible during creation and editing; admins can re-assign at any time. */}
+      {/* The lesson's unit (#408), grouped by course. Stored in the lesson's
+          `course` field (units are course:* records). Admins can re-assign
+          at any time; order within a unit is set in Courses & Units. */}
       <div className="flex items-center gap-3 mb-4">
-        <label htmlFor="lesson-course" className="text-sm text-muted-foreground">Course</label>
+        <label htmlFor="lesson-course" className="text-sm text-muted-foreground">Unit</label>
         <select
           id="lesson-course"
           value={course}
           onChange={(e) => changeCourse(e.target.value)}
           className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <option value="">No course</option>
-          {courses.map((c) => (
-            <option key={c.courseId} value={c.courseId}>{c.name}</option>
+          <option value="">No unit</option>
+          {unitGroups.map((g) => (
+            <optgroup key={g.programId} label={g.name}>
+              {g.unitIds.map((id) => {
+                const u = courses.find((x) => x.unitId === id);
+                return u ? <option key={id} value={id}>{u.name}</option> : null;
+              })}
+            </optgroup>
           ))}
+          {courses.some((u) => !u.programId) && (
+            <optgroup label="Not in a course">
+              {courses.filter((u) => !u.programId).map((u) => <option key={u.unitId} value={u.unitId}>{u.name}</option>)}
+            </optgroup>
+          )}
         </select>
       </div>
 

@@ -633,6 +633,18 @@ Admin routes live in `server/src/routes/admin-hierarchy.js`:
   order.
 - Deleting a course leaves its units, unassigned.
 
+**Admin UI:** Admin → Lessons → **Courses & Units**
+(`/plato/lessons/structure`, `client/src/pages/admin/CourseStructure.jsx`)
+replaced the old Courses modal.
+- It adds, renames, and deletes courses and units, and puts a unit in a course.
+- It orders units within a course and lessons within a unit with **Move up /
+  Move down** buttons (no drag and drop). Each button names its item, and every
+  move is announced in a polite live region. Focus is restored after the
+  reloaded list renders. When an item reaches the top or bottom, focus moves
+  to the opposite button, so the same item can keep moving.
+- The lesson editor's picker is **Unit**, grouped by course (`<optgroup>`). The
+  lessons table shows "Course › Unit".
+
 **Migration:** `m004_default_program` puts every existing unit into one
 default Course, named after the classroom, with the name-sorted lesson order
 it already had, so nothing reorders on upgrade.

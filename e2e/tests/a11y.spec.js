@@ -77,7 +77,7 @@ test.describe('learner pages', () => {
 test.describe('admin pages', () => {
   test.beforeEach(async ({ page }) => { await login(page, ADMIN); });
 
-  for (const path of ['/plato', '/plato/lessons', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins']) {
+  for (const path of ['/plato', '/plato/lessons', '/plato/lessons/structure', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await settle(page);
@@ -96,7 +96,7 @@ test.describe('admin pages', () => {
 
   for (const [path, button] of [
     ['/plato/users', 'Invite Users'], ['/plato/users', 'User Groups'], ['/plato/users', 'User Fields'],
-    ['/plato/users', 'Wait List'], ['/plato/lessons', /^Courses$/],
+    ['/plato/users', 'Wait List'],
   ]) {
     test(`dialog: ${button}`, async ({ page }) => {
       await page.goto(path);

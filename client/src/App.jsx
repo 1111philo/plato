@@ -21,6 +21,7 @@ const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
 const AdminLessons = lazy(() => import('./pages/admin/AdminLessons.jsx'));
+const CourseStructure = lazy(() => import('./pages/admin/CourseStructure.jsx'));
 const AdminCustomizer = lazy(() => import('./pages/admin/AdminCustomizer.jsx'));
 const AdminPlugins = lazy(() => import('./pages/admin/AdminPlugins.jsx'));
 const AdminKBSetup = lazy(() => import('./pages/admin/AdminKBSetup.jsx'));
@@ -124,6 +125,7 @@ export default function App() {
           <Route path="users/:userId" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="users/waitlist/:waitlistToken" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="lessons" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
+          <Route path="lessons/structure" element={<RequirePermission permission="content.read"><Suspense fallback={<AdminFallback />}><CourseStructure /></Suspense></RequirePermission>} />
           <Route path="lessons/new" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           <Route path="lessons/:lessonId/edit" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           {/* Course management lives inside Admin → Lessons (a "Courses" button
