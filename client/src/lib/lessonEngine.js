@@ -587,14 +587,19 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
   if (lesson.coachDirective) {
     context.coachDirective = lesson.coachDirective;
   }
-  // Optional course taxonomy: when a lesson belongs to a wider course, the
-  // server inlines `lesson.course = { id, name }`. Surface the name so the
-  // coach can frame this lesson within the course's arc. When a cross-lesson
-  // progress note exists for this learner, attach it as `progress` so the coach
-  // can connect threads — informational only; it never touches completion.
-  if (lesson.course && lesson.course.name) {
-    context.course = { name: lesson.course.name };
-    if (courseProgress) context.course.progress = courseProgress;
+  // Optional placement (#408): the server inlines the lesson's unit (still
+  // stored as `lesson.course`) and the course above it (`lesson.program`).
+  // Surface the names so the coach can frame this lesson within that arc.
+  // The cross-lesson progress note is per unit (`courseProgress:<unitId>`);
+  // it rides on `unit.progress` and is informational only; it never touches
+  // completion.
+  const unitName = lesson.unit?.name || lesson.course?.name;
+  if (unitName) {
+    context.unit = { name: unitName };
+    if (courseProgress) context.unit.progress = courseProgress;
+  }
+  if (lesson.program?.name) {
+    context.course = { name: lesson.program.name };
   }
   // Optional enrichment context: plugins can enrich lessons at start time by
   // providing additional reference material (e.g., WordPress docs, React API

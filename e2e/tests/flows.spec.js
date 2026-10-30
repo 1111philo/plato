@@ -27,7 +27,8 @@ test('learner completes a lesson using only the keyboard', async ({ page }) => {
   await page.keyboard.type('MOCK_COMPLETE');
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
   await expect(page.getByText(/You have met every objective/)).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByRole('button', { name: /Continue to next lesson|Back to Lesson List/i }).first()).toBeVisible({ timeout: 20_000 });
+  // Next lesson follows the unit's stored order (default: by name), #408.
+  await expect(page.getByRole('button', { name: `Continue to next lesson: ${LESSONS[2].name}` })).toBeVisible({ timeout: 20_000 });
 });
 
 test('admin reaches main content with the skip link', async ({ page }) => {

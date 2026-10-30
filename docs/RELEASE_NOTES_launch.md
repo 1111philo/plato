@@ -23,6 +23,16 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 ## Sub-PRs merged into playground
 | PR | Area | Issues |
 |---|---|---|
+| #444 | Data-migration runner and Beta-RC-232 upgrade gate | infra |
+| #445 | Lockdown fixes: truncated streams, stream timeout, email escaping, dedupes | bugs |
+| #446 | Lambda runtime → nodejs24.x | infra |
+| #447 | View-as-User read-only enforced on the server | bug |
+| #448 | Dialogs fit the viewport; admin skip link, main landmark, wide tables | #421, #385 (part) |
+| #450 | Accessibility/e2e suite (Playwright + axe) and the fixes it found | a11y |
+| #452 | Roles & permissions layer for /v1/admin | #435 |
+| #453 | Educator, Tester, and Learner roles end to end | #435 |
+| #454 | Course → Unit → Lesson hierarchy: storage, routes, ordering, migration | #408 |
+| #455 | Courses & Units admin page; Unit picker grouped by course | #408 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 Filled in before the final PR: backup command, what migrates, how to check the logs, how to roll back.

@@ -1,7 +1,7 @@
 // Courses & Units (#408): build structure and reorder with the keyboard only.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
-import { ADMIN, PROGRAM, COURSE, LESSONS } from '../fixtures.js';
+import { ADMIN, LEARNER, PROGRAM, COURSE, LESSONS } from '../fixtures.js';
 
 test('admin builds and orders the Course → Unit → Lesson structure by keyboard', async ({ page }) => {
   await login(page, ADMIN);
@@ -46,4 +46,19 @@ test('the lesson editor offers units grouped by course', async ({ page }) => {
   await expect(picker).toBeVisible({ timeout: 15_000 });
   await expect(picker.locator('optgroup', { hasText: COURSE.name })).toHaveAttribute('label', PROGRAM.name);
   await expect(picker).toHaveValue(COURSE.id);
+});
+
+// Runs after the reorder above (workers: 1, file order), so the learner sees
+// the admin's order, not name order.
+test('learners see lessons grouped by course and unit, in the admin-defined order', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto('/lessons');
+  await expect(page.getByRole('heading', { level: 2, name: PROGRAM.name })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('heading', { level: 3, name: COURSE.name })).toBeVisible();
+  const cards = page.getByRole('list', { name: `${COURSE.name} lessons` }).getByRole('button', { name: /^Open lesson / });
+  await expect(cards).toHaveCount(LESSONS.length);
+  const names = await cards.evaluateAll((els) => els.map((e) => e.querySelector('span').textContent.replace(/^Open lesson /, '')));
+  expect(names).toEqual([LESSONS[1].name, LESSONS[0].name, LESSONS[2].name]);
+  await expect(page.getByLabel('Course', { exact: true })).toHaveValue('all');
+  await expectAccessible(page, { label: 'lessons by course and unit' });
 });

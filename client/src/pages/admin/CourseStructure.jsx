@@ -93,7 +93,7 @@ export default function CourseStructure() {
 
   function moveUnit(program, index, delta) {
     const unitId = program.unitIds[index];
-    const name = units.get(unitId)?.name;
+    const name = units.get(unitId)?.name || 'Unit';
     run(() => adminApi('PUT', `/v1/admin/programs/${program.programId}/order`, { unitIds: move(program.unitIds, index, delta) }),
       `Moved ${name} ${delta < 0 ? 'up' : 'down'}.`, `unit-${unitId}-${delta < 0 ? 'up' : 'down'}`);
   }
@@ -101,7 +101,7 @@ export default function CourseStructure() {
   function moveLesson(unit, index, delta) {
     const lessonId = unit.lessonIds[index];
     run(() => adminApi('PUT', `/v1/admin/units/${unit.unitId}/order`, { lessonIds: move(unit.lessonIds, index, delta) }),
-      `Moved ${lessonNames.get(lessonId)} ${delta < 0 ? 'up' : 'down'}.`, `lesson-${lessonId}-${delta < 0 ? 'up' : 'down'}`);
+      `Moved ${lessonNames.get(lessonId) || 'lesson'} ${delta < 0 ? 'up' : 'down'}.`, `lesson-${lessonId}-${delta < 0 ? 'up' : 'down'}`);
   }
 
   function saveEditing(e) {

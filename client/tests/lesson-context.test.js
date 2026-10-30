@@ -81,75 +81,62 @@ describe('buildContext', () => {
     assert.equal(context.postCompletionDirective, undefined);
   });
 
-  // Course taxonomy: when a lesson is part of a course, the server inlines
-  // `lesson.course = { id, name }` and buildContext surfaces just the name to
-  // the coach. Lessons without a course must produce no `course` key at all
-  // so the existing prompt contract for legacy lessons doesn't change.
-  it('includes course.name in the context when the lesson belongs to a course', () => {
+  // Placement (#408): the server inlines the unit (stored as
+  // `lesson.course`, also sent as `lesson.unit`) and its course
+  // (`lesson.program`). buildContext surfaces just the names to the coach, as
+  // `unit` and `course`. Lessons outside a unit produce neither key, so the
+  // prompt contract for unplaced lessons doesn't change.
+  const ctx = (lesson, note) => JSON.parse(buildContext(
+    lesson,
+    { status: 'active', progress: 2, activitiesCompleted: 3 },
+    'Learner profile summary',
+    'Alex',
+    note,
+  ));
+  const placed = () => ({
+    ...sampleLesson(),
+    course: { id: 'course-abc', name: 'AI Foundations' },
+    unit: { id: 'course-abc', name: 'AI Foundations', position: 0, lessonPosition: 1 },
+    program: { id: 'prog-default', name: 'AI Leaders', position: 0 },
+  });
+
+  it('includes unit.name and course.name when the lesson is placed', () => {
+    const context = ctx(placed());
+    assert.deepEqual(context.unit, { name: 'AI Foundations' });
+    assert.deepEqual(context.course, { name: 'AI Leaders' });
+  });
+
+  it('falls back to the legacy lesson.course for the unit name, with no course', () => {
     const lesson = sampleLesson();
     lesson.course = { id: 'course-abc', name: 'AI Foundations' };
-    const context = JSON.parse(buildContext(
-      lesson,
-      { status: 'active', progress: 2, activitiesCompleted: 3 },
-      'Learner profile summary',
-      'Alex'
-    ));
-
-    assert.deepEqual(context.course, { name: 'AI Foundations' });
+    const context = ctx(lesson);
+    assert.deepEqual(context.unit, { name: 'AI Foundations' });
+    assert.equal('course' in context, false, 'a unit outside any course emits no course key');
   });
 
-  it('omits course entirely when the lesson is not part of a course', () => {
-    const context = JSON.parse(buildContext(
-      sampleLesson(),
-      { status: 'active', progress: 2, activitiesCompleted: 3 },
-      'Learner profile summary',
-      'Alex'
-    ));
-
-    assert.equal('course' in context, false, 'no course key should be emitted');
+  it('omits unit and course entirely when the lesson is not in a unit', () => {
+    const context = ctx(sampleLesson());
+    assert.equal('unit' in context, false);
+    assert.equal('course' in context, false);
   });
 
-  // Cross-lesson course progress: a distilled, per-learner note of what they've
-  // demonstrated elsewhere in the course, passed as the 5th arg and surfaced as
-  // course.progress so the coach can connect threads. Absent arg → no progress.
-  it('attaches course.progress when a cross-lesson note is provided', () => {
-    const lesson = sampleLesson();
-    lesson.course = { id: 'course-abc', name: 'AI Foundations' };
-    const context = JSON.parse(buildContext(
-      lesson,
-      { status: 'active', progress: 2, activitiesCompleted: 3 },
-      'Learner profile summary',
-      'Alex',
-      'Completed Lesson B; wrote a clear system prompt.'
-    ));
-
-    assert.equal(context.course.name, 'AI Foundations');
-    assert.equal(context.course.progress, 'Completed Lesson B; wrote a clear system prompt.');
+  // Cross-lesson progress: a distilled, per-learner note of what they've
+  // demonstrated elsewhere in the unit (courseProgress:<unitId>), passed as the
+  // 5th arg and surfaced as unit.progress so the coach can connect threads.
+  it('attaches unit.progress when a cross-lesson note is provided', () => {
+    const context = ctx(placed(), 'Completed Lesson B; wrote a clear system prompt.');
+    assert.equal(context.unit.name, 'AI Foundations');
+    assert.equal(context.unit.progress, 'Completed Lesson B; wrote a clear system prompt.');
+    assert.deepEqual(context.course, { name: 'AI Leaders' }, 'the note never lands on course');
   });
 
-  it('omits course.progress when no cross-lesson note is provided', () => {
-    const lesson = sampleLesson();
-    lesson.course = { id: 'course-abc', name: 'AI Foundations' };
-    const context = JSON.parse(buildContext(
-      lesson,
-      { status: 'active', progress: 2, activitiesCompleted: 3 },
-      'Learner profile summary',
-      'Alex'
-    ));
-
-    assert.deepEqual(context.course, { name: 'AI Foundations' });
+  it('omits unit.progress when no cross-lesson note is provided', () => {
+    assert.deepEqual(ctx(placed()).unit, { name: 'AI Foundations' });
   });
 
-  it('does not attach course.progress when the lesson has no course', () => {
-    const context = JSON.parse(buildContext(
-      sampleLesson(),
-      { status: 'active', progress: 2, activitiesCompleted: 3 },
-      'Learner profile summary',
-      'Alex',
-      'Some stray progress note.'
-    ));
-
-    assert.equal('course' in context, false, 'no course note without a course');
+  it('does not attach a progress note when the lesson has no unit', () => {
+    const context = ctx(sampleLesson(), 'Some stray progress note.');
+    assert.equal('unit' in context, false, 'no progress note without a unit');
   });
 
   // Coach directive: author-supplied runtime guidance baked into the lesson

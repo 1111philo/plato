@@ -649,21 +649,42 @@ replaced the old Courses modal.
 default Course, named after the classroom, with the name-sorted lesson order
 it already had, so nothing reorders on upgrade.
 
+**Learner side:** `loadLessons()` carries `unit` and `program` onto each lesson
+and returns them in hierarchy order. `client/src/lib/lessonOrder.js` holds the
+pure helpers (tested in `client/tests/lessonOrder.test.js`):
+- `compareLessons`/`sortLessons`: course position, unit position, lesson
+  position, then name. Units outside a course come after courses; lessons
+  outside a unit (including the learner's `custom-*` lessons) come last.
+- `nextLessonAfter`: "Continue to Next Lesson" goes to the next lesson in the
+  unit, then on into the next unit **of the same course**. It never jumps to
+  another course. A unit outside any course stays within itself.
+- `groupForDisplay` and `completionBy('program' | 'unit')` drive the lessons
+  page (see [Learner classroom](#learner-classroom)).
+
+**Coach context:** `buildContext` sends `unit: { name, progress? }` (the
+cross-lesson note is per unit) and `course: { name }` (the course above it).
+Before #408 the unit was sent as `course`. The `course-progress-update`
+agent's input keys (`courseName`, `lessonsInCourse`) keep their old names; the
+prompt says they describe the unit.
+
 ### Learner classroom
 
 `/lessons` (`client/src/pages/LessonsList.jsx`): lessons render as a responsive
-grid (1 col mobile / 2 col `sm:` / 3 col `lg:`) with 12 per page. A course
-filter dropdown sits above the grid; it's hidden when no courses exist. When the
-filter is set to a course that no longer exists, it snaps back to "All courses"
-automatically. Filter and page changes are announced via an always-mounted
+grid (1 col mobile / 2 col `sm:` / 3 col `lg:`) with 12 per page, in the
+Course → Unit → Lesson order. A Course filter dropdown sits above the grid
+(courses in their order, plus "Other lessons" for anything outside a course);
+it's hidden when no courses exist. When the filter is set to a course that no
+longer exists, it snaps back to "All courses" automatically. Card entrance
+animations are `motion-safe:` only. Filter and page changes are announced via an always-mounted
 `role="status" aria-live="polite"` region — no visible "N lessons" subhead.
 
-Lessons are grouped by course, and each course on the page gets a header with
-an "N of M lessons" progress bar (#395). The counts come from
-`courseCompletion()` (`client/src/lib/courseCompletion.js`) over **all** of
+Each course on the page gets an `h2` with an "N of M lessons" progress bar
+(#395), and each unit an `h3` with its own "N of M" count. A unit outside any
+course takes the `h2` level so headings never skip. The counts come from
+`completionBy()` (`client/src/lib/lessonOrder.js`) over **all** of
 the learner's lessons — never the filtered or paginated view, so a status
 filter like "Not started" can't turn "5 of 8" into "0 of 3". The learner's own
-`custom-*` lessons don't count toward a course. Purely informational; it reads
+`custom-*` lessons don't count. Purely informational; it reads
 `lessonKB.status` and never affects completion.
 
 `loadLessons()` merges system lessons (`/v1/lessons`) with user lessons from
@@ -741,6 +762,10 @@ scrubbed-directive bug.
 
 ### Course progress (cross-lesson memory)
 
+*Since #408 this memory is per **unit** (what the UI now calls a unit is stored
+as a course). Keys, record shape, and the agent name are unchanged; read
+"course" below as "unit".*
+
 When a lesson belongs to a course, the coach gets a **tiny, distilled,
 per-learner note of what that learner has demonstrated in the course's *other*
 lessons**, so it can connect threads ("building on the prompt you wrote earlier
@@ -761,10 +786,11 @@ proven, bounded plumbing as `profileSummary`, not a new mechanism.
   cap**. This **incremental distillation** — never concatenating all sibling KBs
   — is what keeps both the agent's input and the injected note small.
 - **Inject** — `buildContext` takes an optional 5th `courseProgress` arg and, when
-  present, attaches it as `context.course.progress`. `startLesson`/`sendMessage`
+  present, attaches it as `context.unit.progress` (`context.course.progress`
+before #408). `startLesson`/`sendMessage`
   fetch it via `loadCourseProgressSummary` when the lesson opens (within a session
   the value only changes via *other* lessons' completions, so fetch-on-open is
-  enough). `coach.md` documents `course: { name, progress? }` as informational —
+  enough). `coach.md` documents `unit: { name, progress? }` as informational —
   it never touches the exemplar or completion (`applyCoachResponseToKB` stays the
   single owner of `progress`).
 

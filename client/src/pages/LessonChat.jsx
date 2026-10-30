@@ -19,6 +19,7 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
+import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
@@ -257,26 +258,9 @@ export default function LessonChat() {
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
-  // Find the next lesson in the same course
-  const nextLesson = (() => {
-    if (!lesson || !lessons.length) return null;
-    if (!lesson.course?.id) return null; // No next lesson for uncategorized lessons
-
-    // Get lessons in the same course, sorted by name
-    const sameCourse = lessons
-      .filter(l => l.course?.id === lesson.course?.id)
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-    // Find current lesson index in the sorted list
-    const currentIndex = sameCourse.findIndex(l => l.lessonId === lessonGroupId);
-
-    // Return next lesson in the course (if any)
-    if (currentIndex >= 0 && currentIndex < sameCourse.length - 1) {
-      return sameCourse[currentIndex + 1];
-    }
-
-    return null;
-  })();
+  // The next lesson in the admin-defined order: the rest of this unit, then
+  // the next unit of the same course (#408).
+  const nextLesson = lesson ? nextLessonAfter(lessons, lessonGroupId) : null;
 
   const handleExport = useCallback(async () => {
     const markdown = await getUserLessonMarkdown(lessonGroupId);
