@@ -576,12 +576,24 @@ admin.put('/v1/admin/users/:userId/role', async (c) => {
   }
   const from = normalizeRole(user.role);
   if (from === role) return c.json({ ok: true, role });
+  const countAdmins = async () => (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin').length;
   // Never leave the classroom without an admin.
-  if (from === 'admin') {
-    const admins = (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin');
-    if (admins.length <= 1) return c.json({ error: 'Cannot change the role of the only admin' }, 400);
+  if (from === 'admin' && (await countAdmins()) <= 1) {
+    return c.json({ error: 'Cannot change the role of the only admin' }, 400);
   }
-  await db.updateUser(userId, { role });
+  // Conditional on the role we read, so a concurrent change to this user
+  // isn't overwritten.
+  if (!(await db.setUserRoleIf(userId, user.role, role))) {
+    return c.json({ error: 'This user’s role just changed. Reload and try again.' }, 409);
+  }
+  // The check above is read-then-write: two admins demoting each other at
+  // the same moment could both pass it. Re-count after writing, and if no
+  // admin is left, undo this change. For any interleaving, at least one
+  // admin remains.
+  if (from === 'admin' && (await countAdmins()) === 0) {
+    await db.setUserRoleIf(userId, role, user.role);
+    return c.json({ error: 'Cannot remove the last admin' }, 409);
+  }
   await db.createAuditLog({
     action: 'role_changed',
     userId,
