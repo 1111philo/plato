@@ -121,7 +121,7 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `userCreated`
 
 - **Capability:** `hook.userCreated`
-- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'educator' | 'learner' | 'tester' }` (normalized; accounts stored as `user` before API 1.4.0 report `learner`)
 - **Emit point:** `server/src/routes/auth.js` after `db.createUser` — both the bootstrap-admin path (`POST /v1/auth/bootstrap-admin`) and the invite-accept signup path (`POST /v1/auth/signup`)
 - **Fires:** AFTER the user record is persisted. Observe-only; handlers can't abort. Errors in handlers are logged but don't fail the user-facing request.
 - **Phase:** 1.1
@@ -166,7 +166,7 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `userDeleted`
 
 - **Capability:** `hook.userDeleted`
-- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'educator' | 'learner' | 'tester' }` (normalized; accounts stored as `user` before API 1.4.0 report `learner`)
 - **Emit point:** `server/src/routes/me.js` DELETE `/v1/me`; `server/src/routes/admin.js` DELETE `/v1/admin/users/:id`
 - **Fires:** BEFORE the cascade. Plugins can read their own `userMeta:<id>` records before they're deleted by the cascade. The host awaits all handlers before proceeding to delete the user's sync-data and user record.
 - **Phase:** 1.1

@@ -5,7 +5,8 @@
 
 import {
   getAuthTokens, saveAuthTokens, clearAuth,
-  saveAuthUser
+  saveAuthUser,
+  getAuthUser,
 } from './storage.js';
 
 // When served from the same origin (Lambda), use relative paths.
@@ -124,6 +125,25 @@ export async function isLoggedIn() {
  * Get the current user object, or null if not logged in.
  */
 export { getAuthUser as getCurrentUser } from './storage.js';
+
+/**
+ * Re-read the signed-in user from the server and update the cached copy. The
+ * cache is written at login, so without this a role change (#435) would only
+ * show up after the next login. Best-effort: returns null on any failure.
+ */
+export async function refreshCurrentUser() {
+  try {
+    const res = await authenticatedFetch('/v1/me');
+    if (!res.ok) return null;
+    const fresh = await res.json();
+    const cached = (await getAuthUser()) || {};
+    const merged = { ...cached, ...fresh };
+    await saveAuthUser(merged);
+    return merged;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Refresh the access token using the stored refresh token.

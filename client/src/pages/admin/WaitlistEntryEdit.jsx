@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
  * group, and custom field answers before inviting them. Deep-linked at
  * /plato/users/waitlist/:token, same shape as the Edit User view.
  */
-export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onRemove }) {
+export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onRemove, canEdit = true, canInvite = true }) {
   const [form, setForm] = useState({
     name: entry.name || '',
     email: entry.email || '',
@@ -64,15 +64,15 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
           </p>
           <div className="space-y-2">
             <Label htmlFor="wl-edit-name">Name</Label>
-            <Input id="wl-edit-name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <Input id="wl-edit-name" disabled={!canEdit} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="wl-edit-email">Email</Label>
-            <Input id="wl-edit-email" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+            <Input id="wl-edit-email" disabled={!canEdit} type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="wl-edit-group">User Group</Label>
-            <select id="wl-edit-group" value={form.userGroup}
+            <select id="wl-edit-group" value={form.userGroup} disabled={!canEdit}
               onChange={e => setForm({ ...form, userGroup: e.target.value })}
               className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
               <option value="">None</option>
@@ -88,14 +88,14 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
               idPrefix="wl-edit-field"
               value={form.customFields[f.id]}
               onChange={(v) => setForm(prev => ({ ...prev, customFields: { ...prev.customFields, [f.id]: v } }))}
-              disabled={saving}
+              disabled={saving || !canEdit}
             />
           ))}
           <div className="flex items-center gap-3 pt-2">
-            <Button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
-            <Button variant="outline" onClick={onBack}>Cancel</Button>
-            <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>
-            <Button variant="destructive" onClick={() => onRemove(entry)} disabled={saving}>Remove</Button>
+            {canEdit && <Button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>}
+            <Button variant="outline" onClick={onBack}>{canEdit ? 'Cancel' : 'Back'}</Button>
+            {canInvite && <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
+            {canEdit && <Button variant="destructive" onClick={() => onRemove(entry)} disabled={saving}>Remove</Button>}
           </div>
         </CardContent>
       </Card>

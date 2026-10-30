@@ -1022,6 +1022,38 @@ Four roles. `server/src/lib/permissions.js` is the single source of who may do w
   the real admin app as each role.
 - A refusal returns `403 { code: 'forbidden', permission }`.
 - Plugin admin routes still use the SDK's `requireAdmin` (admin only).
+- View as User reads (`?asUserId=`, in `sync.js` and `content.js`) need
+  `impersonation.use` (admins and testers).
+
+**Data and API.**
+- The role endpoint (`PUT /v1/admin/users/:id/role`, admin only) accepts the
+  four roles, with legacy `user` read as learner. It refuses an admin's own
+  role, and refuses demoting the last admin. Every change writes an audit
+  entry `role_changed { from, to }`.
+- New signups are stored as `learner`. Migration `m003_role_learner` renames
+  stored `user` to `learner` conditionally, leaving `updatedAt` alone.
+- Every API response sends the normalized role. Stats count only
+  `role === 'learner'` as learners.
+- The plugin hook payloads (`userCreated` / `userDeleted`) carry the
+  normalized role (plugin API 1.4.0).
+
+**Client.**
+- `client/src/lib/permissions.js` mirrors the map, and a test compares it with
+  the server's.
+- `can(user, permission)` drives:
+  - the `/plato` route gate (`admin.access`) and per-page gates
+    (`RequirePermission`: Customizer and KB setup need `kb.read`, Plugins
+    needs `plugins.read`)
+  - the admin nav
+  - the classroom admin bar
+  - which controls render
+- Rule: a control shows if the role can use it, **or the user is a tester**.
+  Testers explore every screen, and `adminApi` refuses their writes up front
+  with "Testers can look around but can't save changes". Educators don't see
+  controls they can't use; Edit User is read-only for them.
+- AdminLayout shows testers a read-only notice.
+- `AuthContext` re-reads `/v1/me` on load (`refreshCurrentUser`), so a role
+  change applies on the next page load, not just the next login.
 
 ## Admin "View as User"
 

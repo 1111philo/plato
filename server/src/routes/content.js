@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../lib/db.js';
+import { can } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -37,7 +38,8 @@ function resolveReadUserId(c) {
   const url = new URL(c.req.url);
   const asUserId = url.searchParams.get('asUserId');
   if (!asUserId) return { userId: c.get('userId') };
-  if (c.get('role') !== 'admin') {
+  // View as User: admins and testers (lib/permissions.js).
+  if (!can(c.get('role'), 'impersonation.use')) {
     return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
   }
   return { userId: asUserId };

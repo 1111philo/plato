@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
+import { normalizeRole } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
@@ -33,7 +34,7 @@ me.get('/v1/me', async (c) => {
     username: user.username,
     name: user.name,
     userGroup: user.userGroup,
-    role: user.role,
+    role: normalizeRole(user.role),
     customFields: visibleFieldValues(defs, user.customFields),
     createdAt: user.createdAt,
   });
@@ -110,7 +111,7 @@ me.patch('/v1/me', async (c) => {
     username: updated.username,
     name: updated.name,
     userGroup: updated.userGroup,
-    role: updated.role,
+    role: normalizeRole(updated.role),
     customFields: visibleFieldValues(defs, updated.customFields),
   });
 });
@@ -135,7 +136,7 @@ me.get('/v1/me/export', async (c) => {
       username: user.username,
       name: user.name,
       userGroup: user.userGroup,
-      role: user.role,
+      role: normalizeRole(user.role),
       // Exported with labels so the file is readable without the definitions.
       customFields: defs
         .filter((d) => typeof user.customFields?.[d.id] === 'string')
@@ -170,7 +171,7 @@ me.delete('/v1/me', async (c) => {
   // Emit userDeleted BEFORE the cascade so plugins can read their per-user data
   // (userMeta:<id> records) while it still exists. Hook errors are caught by
   // emit(); they never block the deletion.
-  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+  await emitHook('userDeleted', { userId, email: user.email, role: normalizeRole(user.role) });
 
   // Delete all sync data (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);

@@ -31,7 +31,31 @@ const LOCK_TTL_MS = 5 * 60 * 1000;
 
 // Ordered registry. Append only — never reorder or remove an entry that may
 // already be recorded as applied on some install.
-export const MIGRATIONS = [];
+export const MIGRATIONS = [
+  {
+    // #435: the 'user' role is renamed 'learner'. normalizeRole() already
+    // reads 'user' as learner, so this only tidies stored data; code doesn't
+    // depend on it running. Rollback-safe: Beta-RC-232 treats any non-'admin'
+    // role as a regular user.
+    id: 'm003_role_learner',
+    description: "rename stored role 'user' to 'learner'",
+    async run({ db, dryRun }) {
+      const result = { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+      for (const u of await db.listAllUsers()) {
+        result.scanned++;
+        if (u.role !== 'user') { result.skipped++; continue; }
+        if (dryRun) { result.updated++; continue; }
+        try {
+          if (await db.setUserRoleIf(u.userId, 'user', 'learner')) result.updated++;
+          else result.skipped++;
+        } catch {
+          result.errors++;
+        }
+      }
+      return result;
+    },
+  },
+];
 
 function emptyResult() {
   return { scanned: 0, updated: 0, skipped: 0, errors: 0 };

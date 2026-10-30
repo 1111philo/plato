@@ -306,6 +306,11 @@ const db = {
     ).run(`$."${fieldId}"`, userId);
   },
 
+  // Migration helper (same contract as db-dynamodb.js setUserRoleIf).
+  async setUserRoleIf(userId, from, to) {
+    return sqlite.prepare('UPDATE users SET role = ? WHERE userId = ? AND role = ?').run(to, userId, from).changes > 0;
+  },
+
   async listAllUsers() {
     return sqlite.prepare('SELECT * FROM users').all().map(rowToUser);
   },

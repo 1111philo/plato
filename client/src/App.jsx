@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
+import { can } from './lib/permissions.js';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
@@ -40,7 +41,16 @@ function RequireAuth({ children }) {
 
 function RequireAdmin({ children }) {
   const { user } = useAuth();
-  if (user?.role !== 'admin') return <Navigate to="/lessons" replace />;
+  // Admins, educators, and testers (lib/permissions.js).
+  if (!can(user, 'admin.access')) return <Navigate to="/lessons" replace />;
+  return children;
+}
+
+// Per-page gate inside /plato (#435): a direct link to a page the role can't
+// use goes to the dashboard instead of rendering a page whose data 403s.
+function RequirePermission({ permission, children }) {
+  const { user } = useAuth();
+  if (!can(user, permission)) return <Navigate to="/plato" replace />;
   return children;
 }
 
@@ -120,13 +130,13 @@ export default function App() {
               opens a modal). Keep this route as a redirect for any bookmarked
               link from the prior standalone-page iteration. */}
           <Route path="courses" element={<Navigate to="/plato/lessons" replace />} />
-          <Route path="customizer" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="customizer/knowledge" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="customizer/knowledge/edit" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="plugins" element={<Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense>} />
+          <Route path="customizer" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="customizer/knowledge" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="customizer/knowledge/edit" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="plugins" element={<RequirePermission permission="plugins.read"><Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense></RequirePermission>} />
           {/* Back-compat redirect from the old /plato/integrations URL */}
           <Route path="integrations" element={<Navigate to="/plato/plugins" replace />} />
-          <Route path="setup-kb" element={<Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense>} />
+          <Route path="setup-kb" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense></RequirePermission>} />
         </Route>
 
         {/* Classroom routes — custom theme/branding applied here */}

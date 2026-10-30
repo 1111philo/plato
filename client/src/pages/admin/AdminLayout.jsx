@@ -3,19 +3,22 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { can, isTester } from '../../lib/permissions.js';
 
+// `permission`: who sees the link (lib/permissions.js). Educators don't get
+// Customizer or Plugins; testers see everything read-only.
 const NAV_LINKS = [
-  { to: '/plato', label: 'Home', end: true },
-  { to: '/plato/lessons', label: 'Lessons' },
-  { to: '/plato/users', label: 'Users' },
-  { to: '/plato/customizer', label: 'Customizer' },
-  { to: '/plato/plugins', label: 'Plugins' },
+  { to: '/plato', label: 'Home', end: true, permission: 'admin.access' },
+  { to: '/plato/lessons', label: 'Lessons', permission: 'content.read' },
+  { to: '/plato/users', label: 'Users', permission: 'users.read' },
+  { to: '/plato/customizer', label: 'Customizer', permission: 'kb.read' },
+  { to: '/plato/plugins', label: 'Plugins', permission: 'plugins.read' },
 ];
 
 const WIDE_PAGES = new Set(['/plato/users', '/plato/lessons']);
 
-function NavItems({ onClick }) {
-  return NAV_LINKS.map(({ to, label, end }) => (
+function NavItems({ onClick, user }) {
+  return NAV_LINKS.filter((l) => can(user, l.permission)).map(({ to, label, end }) => (
     <NavLink
       key={to}
       to={to}
@@ -109,7 +112,7 @@ export default function AdminLayout() {
             </div>
 
             <nav className="flex flex-col flex-1 gap-0.5 px-2" aria-label="Admin navigation">
-              <NavItems onClick={() => setMenuOpen(false)} />
+              <NavItems user={user} onClick={() => setMenuOpen(false)} />
             </nav>
 
             <div className="flex flex-col gap-2 px-4 py-3 mt-auto">
@@ -158,7 +161,7 @@ export default function AdminLayout() {
         </div>
 
         <nav className="flex flex-col flex-1 gap-0.5 px-2" aria-label="Admin navigation">
-          <NavItems />
+          <NavItems user={user} />
         </nav>
 
         <div className="flex flex-col gap-2 px-4 py-3 mt-auto">
@@ -197,6 +200,11 @@ export default function AdminLayout() {
 
       <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 p-6 md:ml-56">
         <div className={`${wide ? 'max-w-none' : 'max-w-4xl'} pb-4`}>
+          {isTester(user) && (
+            <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              <strong>Tester (read-only):</strong> you can open everything, but changes aren’t saved.
+            </p>
+          )}
           <Outlet />
         </div>
       </main>
