@@ -57,6 +57,7 @@ beforeEach(() => {
   db.getUserByEmail = async () => null;
   db.getUserByUsername = async () => null;
   db.getInviteByEmail = async () => null;
+  db.listAllUsers = async () => [];
   db.getWaitlistEntryByEmail = async () => null;
   db.createWaitlistEntry = async (entry) => { created.push(entry); };
   db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
@@ -137,11 +138,20 @@ describe('POST /v1/waitlist', () => {
     assert.equal(created.length, 0);
   });
 
-  it('answers the same for a known email, without adding it', async () => {
+  it('keeps the submission of someone who already has an account or invite, with the same reply', async () => {
     db.getUserByEmail = async () => ({ userId: 'usr_1' });
+    db.getInviteByEmail = async () => ({ inviteToken: 'inv_p', status: 'pending' });
     const res = await post(makeApp(), '/v1/waitlist', VALID);
     assert.equal(res.status, 202);
     assert.deepEqual(await res.json(), { ok: true });
+    assert.equal(created.length, 1, 'stored so admins can see what they sent');
+    assert.deepEqual(created[0].profile.customFields, { fld_org: 'UIC' });
+  });
+
+  it('a repeat join for an email already on the wait list stores nothing', async () => {
+    db.getWaitlistEntryByEmail = async () => ({ inviteToken: 'inv_wl', status: 'waitlist' });
+    const res = await post(makeApp(), '/v1/waitlist', VALID);
+    assert.equal(res.status, 202);
     assert.equal(created.length, 0);
   });
 });
@@ -162,6 +172,18 @@ describe('admin wait-list routes', () => {
     assert.equal(data.open, true);
     assert.equal(data.hasApiKey, true);
     assert.equal(JSON.stringify(data).includes('"h"'), false, 'the key hash is never returned');
+  });
+
+  it('marks entries whose email already has an account or a pending invite', async () => {
+    db.listInvites = async () => [
+      entry,
+      { ...entry, inviteToken: 'inv_wl2', email: 'Bo@X.com' },
+      { ...entry, inviteToken: 'inv_wl3', email: 'cy@x.com' },
+      { inviteToken: 'inv_p', email: 'cy@x.com', status: 'pending' },
+    ];
+    db.listAllUsers = async () => [{ userId: 'usr_bo', email: 'bo@x.com' }];
+    const data = await (await adminReq(makeApp(), 'GET', '/v1/admin/waitlist')).json();
+    assert.deepEqual(data.entries.map((e) => [e.email, e.alreadyRegistered]), [['ada@example.com', null], ['Bo@X.com', 'account'], ['cy@x.com', 'invite']]);
   });
 
   it('hides answers to fields that no longer exist', async () => {

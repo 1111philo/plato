@@ -883,7 +883,12 @@ export default function AdminUsers() {
                     <TableCell>{item.email}</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell><Badge variant="outline">Wait List</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant="outline">Wait List</Badge>
+                      {item._entry.alreadyRegistered && (
+                        <span className="block text-xs text-muted-foreground mt-1">{item._entry.alreadyRegistered === 'account' ? 'Has an account' : 'Invited'}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
                     <TableCell className="text-muted-foreground">&mdash;</TableCell>
                     <TableCell>{new Date(item.createdAt).toLocaleString()}</TableCell>
@@ -895,7 +900,8 @@ export default function AdminUsers() {
                     {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>
+                        {/* Someone who already has an account can't be invited again. */}
+                        {item._entry.alreadyRegistered !== 'account' && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>}
                         <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>&#10005;</Button>
                       </div>
                     </TableCell>

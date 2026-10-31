@@ -36,10 +36,12 @@ waitlist.post('/v1/waitlist', async (c) => {
   const result = validateWaitlistEntry(body, settings?.data || {});
   if (result.error) return c.json({ error: result.error }, 400);
 
-  const known = await db.getUserByEmail(result.email)
-    || await db.getInviteByEmail(result.email)
-    || await db.getWaitlistEntryByEmail(result.email);
-  if (!known) {
+  // Store the submission even when the email already has an account or a
+  // pending invite: admins need to see what the person sent (the Wait List
+  // marks them "Has an account" / "Invited"). Only a repeat join for an email
+  // already on the wait list stores nothing. The reply is the same either
+  // way, so it never reveals who's registered.
+  if (!(await db.getWaitlistEntryByEmail(result.email))) {
     await db.createWaitlistEntry({ inviteToken: generateInviteToken(), email: result.email, profile: result.profile });
   }
   return c.json({ ok: true }, 202);
