@@ -10,7 +10,7 @@ async function settle(page) {
 }
 
 test.describe('public pages', () => {
-  for (const path of ['/login', '/forgot-password', '/waitlist', '/signup']) {
+  for (const path of ['/login', '/forgot-password', '/waitlist', '/signup', '/how-assessment-works']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await settle(page);

@@ -92,6 +92,8 @@ export default function Login() {
       <p className="mt-4 text-xs text-white/90">
         <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
+        <a href="/how-assessment-works" onClick={e => { e.preventDefault(); navigate('/how-assessment-works'); }} className="underline hover:text-white">How assessment works</a>
+        {' · '}
         Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
       </p>
     </main>

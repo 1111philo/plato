@@ -945,6 +945,39 @@ Only the first line after the title is the lesson's description (what
 the last lesson" there. Coaching notes, such as terms to define at first use,
 go in the optional `## Coach Directive`. No new lesson fields are needed.
 
+### How assessment works (#257, #414)
+
+`/how-assessment-works` (`client/src/pages/HowAssessmentWorks.jsx`) is a
+public page, linked in the classroom footer and on the sign-in page, that
+describes what plato actually does:
+- each lesson's exemplar and 2–4 objectives
+- the AI coach scoring progress 0–10 after every reply, and the model used
+- what counts as evidence (text, screenshots, links, the learner's own reasons)
+- completion at 10, with no message limit
+- feedback-only after completion
+- no AI-writing detectors
+- the read-only, logged staff view
+
+**Policy only people can set** is shown as "To be decided by the program
+team" notes. Update the page when these are decided:
+1. When learners may use AI tools to make the work they submit, and how they
+   say so.
+2. Whether people review completed lessons (spot-checks), and how a learner
+   asks for a result to be reviewed (appeals).
+3. What completing a course certifies, and each course's competencies, the
+   evidence each needs, and their basis. This is deployment-specific, so it
+   belongs in the classroom's own content (course and unit descriptions,
+   lessons), not in plato's code.
+
+The coach prompt backs this up (#414). When a response could have come from
+anyone, the coach asks for a personal example or the learner's own
+reasoning before awarding progress, **without accusing or speculating about
+AI use**. It only checks off an objective when the evidence is in the
+learner's own words or work. In real Qwen3-VL runs with a generic,
+polished answer, it asked for the learner's own example in 6 of 6 runs, and
+it stopped making accusatory remarks (1 of 3 runs before the change, 0 of 3
+after). Genuine personal answers still scored 9–10.
+
 ## Pacing & completion philosophy
 
 Microlearning constraints live in `client/src/lib/constants.js`:
