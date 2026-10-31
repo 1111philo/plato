@@ -130,7 +130,7 @@ export default function AppShell({ children }) {
             <DropdownMenuRadix.Trigger asChild>
               <button
                 type="button"
-                className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none"
+                className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
                 {user?.name || user?.username || user?.email || 'Account'}
                 <span className="sr-only">, account menu</span>
