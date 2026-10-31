@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
+import { sortGroups } from '../lib/groups.js';
 
 const app = new Hono();
 
@@ -61,7 +62,7 @@ app.get('/assets/*', (c) => {
 app.get('/v1/groups', async (c) => {
   const db = (await import('../lib/db.js')).default;
   const item = await db.getSyncData('_system', 'settings');
-  return c.json({ userGroups: item?.data?.userGroups || [] });
+  return c.json({ userGroups: sortGroups(item?.data?.userGroups || []) });
 });
 
 // Custom user field definitions (#364) — public so the signup form can render

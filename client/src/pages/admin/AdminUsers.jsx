@@ -36,6 +36,7 @@ import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilt
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 import FiltersMenu from './FiltersMenu.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
+import GroupsDialog from './GroupsDialog.jsx';
 import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
@@ -174,8 +175,6 @@ export default function AdminUsers() {
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
   const [sortAnnouncement, setSortAnnouncement] = useState('');
 
-  // Groups form
-  const [newGroupName, setNewGroupName] = useState('');
 
   // Slack integration state
   const [slackConnected, setSlackConnected] = useState(false);
@@ -193,8 +192,9 @@ export default function AdminUsers() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkGenerating, setLinkGenerating] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  // `quiet` refreshes without the page spinner, which would unmount an open dialog.
+  const loadData = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     try {
       const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users?include=stats'),
@@ -512,23 +512,6 @@ export default function AdminUsers() {
 
   // -- Groups --
 
-  async function addGroup() {
-    const name = newGroupName.trim();
-    if (!name) return;
-    try {
-      const data = await adminApi('PUT', '/v1/admin/groups', { name });
-      setGroups(data.userGroups || []);
-      setNewGroupName('');
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
-
-  async function deleteGroup(name) {
-    try {
-      const data = await adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`);
-      setGroups(data.userGroups || []);
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
-
   // -- Edit user --
   // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
   // browser refresh / back-button preserve the selection. openEditUser only
@@ -606,6 +589,12 @@ export default function AdminUsers() {
     return items;
   }, [users, pendingInvites, waitlistEntries]);
 
+  // People (and wait-list entries) per group, for the User Groups dialog.
+  const groupCounts = useMemo(() => {
+    const counts = {};
+    for (const i of combinedList) if (i._type !== 'invite' && i.userGroup) counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
+    return counts;
+  }, [combinedList]);
   const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields }), [combinedList, groups, userFields]);
   const filterChips = describeFilters(filters, facets);
 
@@ -1227,35 +1216,13 @@ export default function AdminUsers() {
         onChange={setWaitlistSettings}
       />
 
-      <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>User Groups</DialogTitle>
-            <DialogDescription>Groups are available for users to select during signup.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Label htmlFor="new-group-name" className="sr-only">Group name</Label>
-              <Input id="new-group-name" type="text" placeholder="Group name" value={newGroupName}
-                onChange={e => setNewGroupName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addGroup(); }} className="flex-1" />
-              <Button onClick={addGroup}>Add</Button>
-            </div>
-            {groups.length > 0 ? (
-              <ul className="space-y-1">
-                {groups.map(g => (
-                  <li key={g} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
-                    <span className="text-sm">{g}</span>
-                    <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete group ${g}`} onClick={() => deleteGroup(g)}>&#10005;</Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No user groups yet.</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <GroupsDialog
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        groups={groups}
+        memberCounts={groupCounts}
+        onChanged={(next) => { setGroups(next); loadData({ quiet: true }); }}
+      />
     </div>
   );
 }
