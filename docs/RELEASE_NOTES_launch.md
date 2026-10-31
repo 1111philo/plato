@@ -53,6 +53,9 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #472 | Accessibility pass: global focus ring restored (it was dropped site-wide), reflow at 320 px | a11y |
 | #473 | Release prep: upgrade rehearsal script, these notes | release |
 | #475 | Scheduled emails from traffic, not EventBridge (playground deploys were failing on missing `events:*`) | #400 |
+| #477 | Port of prod hotfix #476: wait-list submissions from people who already have an account are kept | #363 |
+| #478 | Adversarial review blockers: SES SendRawEmail IAM, View-as `_system` refused, m004 retry, coach truncation, job reads/dispatch | review |
+| #479 | Adversarial review follow-ups: group rename retry, Slack invite awaited, record size guard, rollback edge cases, rate limit, contrast, focus guard | review |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
@@ -122,6 +125,9 @@ after the upgrade.
   deploy permissions. Normal traffic triggers them (`server/src/lib/schedule.js`),
   and they do nothing until an admin turns those automations on.
 - The API function's timeout is now 300 s, for background jobs.
+
+## Hotfix shipped to prod during the sprint
+- **#476** (2026-10-31, deployed to plato.courses): `POST /v1/waitlist` dropped submissions from emails that already had an account or invite. They're kept now and marked "Has an account" / "Invited" on the Wait List. Submissions lost before the fix weren't stored and can't be recovered.
 
 ## Prod rehearsal (2026-10-31)
 
