@@ -1367,6 +1367,15 @@ password-reset emails stay in `email.js`.
   - `POST …/templates/:id/test`, which sends the saved or unsaved draft to the
     signed-in admin with sample values
   - `POST …/preview`, `GET …/messages`, and `POST …/messages`
+- **Learner UI:** a **bell** in the classroom header (`client/src/components/NotificationsBell.jsx`;
+  hidden in View as User) lists messages, newest first, with an unread
+  count in its accessible name. Opening it marks what it shows as read.
+  An unread `important` message opens once as a dialog ("Got it" marks it
+  read). It re-checks when the tab comes back into view, with no polling. The bell
+  and the account menu are **non-modal** Radix menus, because a modal one
+  `aria-hidden`s the whole page while open (axe `aria-hidden-focus`).
+  Settings → **Email** has checkboxes for reminders, the weekly digest, and
+  classroom messages, saved on change.
 - **Admin UI:** Admin → **Notifications** (`client/src/pages/admin/AdminNotifications.jsx`)
   has three tabs. Compose: audience radios, a searchable people picker, the
   channels, the subject and message, the audience count, and a confirm dialog.

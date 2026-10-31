@@ -11,7 +11,8 @@ test('an admin sends a classroom message to everyone and sees it in History', as
   await expect(page.getByRole('status').filter({ hasText: /^Goes to \d+ (person|people)/ })).toBeVisible();
   await expectAccessible(page, { label: 'notifications compose' });
 
-  await page.getByLabel('Also show it as a pop-up the next time they open the classroom').check();
+  // (No pop-up here: every later spec's learner would get it. The pop-up has
+  // its own test, aimed at one learner, in notifications-learner.spec.js.)
   await page.getByLabel('Subject').fill('Welcome, {{firstName}}');
   await page.getByLabel('Message').fill('The classroom is open.\n\nSay hi to your coach.');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
@@ -22,7 +23,6 @@ test('an admin sends a classroom message to everyone and sees it in History', as
   await expect(page.getByRole('tab', { name: 'History', selected: true })).toBeVisible();
   const row = page.getByRole('table', { name: 'Sent messages' }).getByRole('row').nth(1);
   await expect(row).toContainText('Welcome, {{firstName}}');
-  await expect(row).toContainText('Pop-up');
   await expect(row).toContainText('Everyone');
   await expectAccessible(page, { label: 'notifications history' });
 });

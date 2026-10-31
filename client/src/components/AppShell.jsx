@@ -11,6 +11,7 @@ import {
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import ViewAsUserModal from './modals/ViewAsUserModal.jsx';
+import NotificationsBell from './NotificationsBell.jsx';
 
 export default function AppShell({ children }) {
   const navigate = useNavigate();
@@ -122,7 +123,10 @@ export default function AppShell({ children }) {
             )}
           </a>
           <div className="flex-1" />
-          <DropdownMenuRadix.Root>
+          {/* View as User reads the learner's data, not their inbox. */}
+          {!impersonating && <NotificationsBell />}
+          {/* Non-modal for the same reason as the bell (NotificationsBell.jsx). */}
+          <DropdownMenuRadix.Root modal={false}>
             <DropdownMenuRadix.Trigger asChild>
               <button
                 type="button"

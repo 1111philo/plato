@@ -6,7 +6,7 @@ import {
   getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
-import { updateProfile, getMyFields } from '../../js/auth.js';
+import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
 import { useApp } from '../contexts/AppContext.jsx';
 import { SEND_KEYS, sendKeyOf, isMacLike, prefersReducedMotion } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
@@ -229,6 +229,8 @@ export default function Settings() {
 
       <ChatPreferences />
 
+      <EmailPreferences />
+
       <Card>
         <CardHeader>
           <CardTitle id="profile-heading">Learner Profile</CardTitle>
@@ -368,6 +370,65 @@ function ChatPreferences() {
             </span>
           </span>
         </label>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Which optional emails the learner gets (#400). Saved on change to the
+// server-only notify:state record through /v1/me/notifications. Checked
+// means "send it"; the server stores opt-outs.
+const EMAIL_KINDS = [
+  { key: 'nudge', label: 'Reminders to finish a lesson I started' },
+  { key: 'digest', label: 'A weekly summary of my progress and new lessons' },
+  { key: 'messages', label: 'Messages from my classroom' },
+];
+
+function EmailPreferences() {
+  const [optOut, setOptOut] = useState(null);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    authenticatedFetch('/v1/me/notifications')
+      .then((r) => (r.ok ? r.json() : { optOut: {} }))
+      .then((d) => { if (!cancelled) setOptOut(d.optOut || {}); })
+      .catch(() => { if (!cancelled) setOptOut({}); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function update(key, receive) {
+    const before = optOut;
+    setOptOut({ ...optOut, [key]: !receive });
+    try {
+      const res = await authenticatedFetch('/v1/me/notifications', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ optOut: { [key]: !receive } }),
+      });
+      if (!res.ok) throw new Error();
+      setFeedback('Saved.');
+    } catch {
+      setOptOut(before);
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Email</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <fieldset className="space-y-2" disabled={!optOut}>
+          <legend className="text-sm font-medium mb-1">Email me</legend>
+          {EMAIL_KINDS.map((k) => (
+            <label key={k.key} className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 accent-primary" checked={!optOut?.[k.key]} onChange={(e) => update(k.key, e.target.checked)} />
+              <span>{k.label}</span>
+            </label>
+          ))}
+        </fieldset>
         <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
       </CardContent>
     </Card>
