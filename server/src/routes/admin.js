@@ -472,6 +472,39 @@ admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
   return c.json({ inviteToken, email: entry.email, ...result }, 201);
 });
 
+// POST /v1/admin/waitlist/:token/apply — the entry's email already has an
+// account: copy the entry's answers onto it, then remove the entry. Only
+// fills what the account is missing (no group yet, blank fields), so nothing
+// the person or an admin already set is overwritten. The name is never copied.
+admin.post('/v1/admin/waitlist/:token/apply', async (c) => {
+  const entry = await db.getInvite(c.req.param('token'));
+  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
+  const user = await db.getUserByEmail(entry.email);
+  if (!user) return c.json({ error: 'No account has this email' }, 404);
+
+  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
+  const profile = entry.profile || {};
+  const updates = {};
+  const group = profile.userGroup;
+  if (group && !user.userGroup && (settings.userGroups || []).includes(group)) updates.userGroup = group;
+  const fields = [];
+  const current = user.customFields || {};
+  for (const def of getFieldDefinitions(settings)) {
+    const value = typeof profile.customFields?.[def.id] === 'string' ? profile.customFields[def.id].trim() : '';
+    if (!value || current[def.id] || validateValue(def, value)) continue;
+    fields.push(def.id);
+    (updates.customFields ||= { ...current })[def.id] = value;
+  }
+
+  if (Object.keys(updates).length) await db.updateUser(user.userId, updates);
+  await db.deleteInvite(entry.inviteToken);
+  await db.createAuditLog({
+    action: 'waitlist_applied', userId: user.userId, performedBy: c.get('user').userId,
+    details: { userGroup: updates.userGroup || null, fields },
+  });
+  return c.json({ userId: user.userId, userGroup: updates.userGroup || null, fields });
+});
+
 // PUT /v1/admin/waitlist/:token — edit an entry's name, email, group, and
 // custom fields. Same validation as joining (required fields included). A new
 // email must not already belong to a user, a pending invite, or another entry.
