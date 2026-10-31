@@ -11,7 +11,8 @@ import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypt
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
-import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
+import { MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
+import { validateLessonMarkdown } from '../lib/lesson-markdown.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
@@ -27,20 +28,6 @@ import {
 
 const admin = new Hono();
 
-/** Validate lesson markdown for microlearning constraints. Returns error string or null. */
-function validateLessonMarkdown(markdown) {
-  const objSection = markdown.split(/^## Learning Objectives$/m)[1];
-  if (!objSection) return 'Lesson must have a "## Learning Objectives" section.';
-  const lines = objSection.split('\n');
-  const objectives = [];
-  for (const line of lines) {
-    if (/^## /.test(line)) break;
-    if (/^- Can .+/.test(line)) objectives.push(line);
-  }
-  if (objectives.length < MIN_OBJECTIVES) return `Too few objectives (${objectives.length}). Lessons need at least ${MIN_OBJECTIVES}.`;
-  if (objectives.length > MAX_OBJECTIVES) return `Too many objectives (${objectives.length}). Microlearning lessons need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives.`;
-  return null;
-}
 
 // Dashboard stats count ONLY published (public) lessons — drafts, privates
 // (even when shared to a learner), and user-created custom lessons are excluded
