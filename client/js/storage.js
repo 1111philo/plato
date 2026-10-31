@@ -266,8 +266,9 @@ export async function saveLessonMessages(lessonId, msgs) {
 // reply) is the part we can drop: oldest replies first, until the record
 // fits. The conversation text itself is never trimmed.
 export const MESSAGES_BUDGET = 340 * 1024;
+const byteSize = (m) => new TextEncoder().encode(JSON.stringify(m)).length;
 export function fitMessages(msgs, budget = MESSAGES_BUDGET) {
-  const size = (m) => new TextEncoder().encode(JSON.stringify(m)).length;
+  const size = byteSize;
   if (size(msgs) <= budget) return msgs;
   const out = msgs.slice();
   for (let i = 0; i < out.length && size(out) > budget; i++) {
@@ -276,6 +277,15 @@ export function fitMessages(msgs, budget = MESSAGES_BUDGET) {
     out[i] = { ...out[i], metadata: Object.keys(rest).length ? rest : null };
   }
   return out;
+}
+
+/**
+ * True when the cached conversation is over the budget even after trimming:
+ * the text alone is too long, so every later save will be refused too.
+ */
+export function conversationTooLong(lessonId) {
+  const all = _cache.get(`messages:${lessonId}`);
+  return Array.isArray(all) && byteSize(all) > MESSAGES_BUDGET;
 }
 
 /**

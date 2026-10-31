@@ -25,7 +25,7 @@ import {
   listChannelMembers,
   sendSlackDM,
 } from './slack-client.js';
-import { autoInvite, onUserCreated } from './auto-invite.js';
+import { autoInvite, onUserCreated, needsRetry } from './auto-invite.js';
 
 const routes = new Hono();
 
@@ -221,7 +221,7 @@ routes.post('/admin/auto-invite/retry', async (c) => {
   for (const u of targets) {
     if (body.all) {
       const meta = await getUserMeta(u.userId, 'slack');
-      if (!meta?.autoInvite || meta.autoInvite.status === 'invited') { counts.skipped++; continue; }
+      if (!needsRetry(meta)) { counts.skipped++; continue; }
     }
     const r = await autoInvite({ userId: u.userId, email: u.email }, settings);
     counts[r ? r.status : 'skipped']++;

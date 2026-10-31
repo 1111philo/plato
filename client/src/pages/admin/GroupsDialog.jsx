@@ -25,6 +25,9 @@ export default function GroupsDialog({ open, onOpenChange, groups, memberCounts,
   const [status, setStatus] = useState('');
   const [deleting, setDeleting] = useState(null);
   const [busy, setBusy] = useState(false);
+  // A rename that couldn't move everyone: { from, to }. Saving the same
+  // rename again finishes it (the server sees `to` listed and `from` gone).
+  const [unfinished, setUnfinished] = useState(null);
 
   async function call(fn, done) {
     setBusy(true);
@@ -54,10 +57,17 @@ export default function GroupsDialog({ open, onOpenChange, groups, memberCounts,
     const ok = await call(() => adminApi('PUT', '/v1/admin/groups', { oldName, name }), (d) => {
       const m = d.moved || {};
       const moved = (m.users || 0) + (m.invites || 0);
-      return `Renamed ${oldName} to ${name}${moved ? `; ${people(moved)} moved with it` : ''}.${m.failed ? ` ${m.failed} couldn’t be updated; rename again to retry.` : ''}`;
+      setUnfinished(m.failed ? { from: oldName, to: name } : null);
+      return `Renamed ${oldName} to ${name}${moved ? `; ${people(moved)} moved with it` : ''}.${m.failed ? ` ${m.failed} couldn’t be updated yet.` : ''}`;
     });
     if (ok) setEditing(null);
   };
+
+  const finishMove = ({ from, to }) => call(() => adminApi('PUT', '/v1/admin/groups', { oldName: from, name: to }), (d) => {
+    const m = d.moved || {};
+    setUnfinished(m.failed ? { from, to } : null);
+    return m.failed ? `${m.failed} still couldn’t be moved to ${to}. Try again in a moment.` : `Everyone from ${from} is now in ${to}.`;
+  });
 
   const remove = (name) => call(() => adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`), () => `Deleted ${name}.`);
 
@@ -105,6 +115,11 @@ export default function GroupsDialog({ open, onOpenChange, groups, memberCounts,
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">No user groups yet.</p>
+          )}
+          {unfinished && (
+            <Button variant="outline" size="sm" onClick={() => finishMove(unfinished)} disabled={busy}>
+              Finish moving people from {unfinished.from} to {unfinished.to}
+            </Button>
           )}
           <p className="sr-only" role="status" aria-live="polite">{status}</p>
           {status && <p className="text-sm text-muted-foreground" aria-hidden="true">{status}</p>}

@@ -110,11 +110,11 @@ Unknown field ids are ignored. An empty string means "no answer".
 `202` is returned for every valid request, so the API never reveals whether
 someone is already registered. If the email already has an account or a
 pending invite, the submission is still kept: admins see it on the Wait List
-marked "Has an account" or "Invited". An entry for an existing account
-can't be invited; **Copy to account** adds its group and answers to the
-account (only ones it doesn't have yet) and removes the entry. A repeat request for an email that's
-already on the wait list stores nothing, and the existing entry isn't
-updated.
+marked "Has an account" or "Invited", and no confirmation email is sent to
+them. An entry for an existing account can't be invited; **Copy to account**
+adds its group and answers to the account (only ones it doesn't have yet)
+and removes the entry. A repeat request for an email that's already on the
+wait list stores nothing, and the existing entry isn't updated.
 
 If an admin has turned on **Wait list confirmation** (Admin → Notifications),
 a new entry gets one confirmation email, whether it came from your form or
@@ -124,7 +124,9 @@ nothing, so retries are safe. If your own system already confirms sign-ups, leav
 ### Limits
 
 Requests **without** the key are limited to 5 per client IP address per 10
-minutes (`429 {"error":"Too many requests…"}` beyond that). Requests with the
+minutes (`429 {"error":"Too many requests…"}` beyond that). The address is
+the one plato's CDN saw, so a sender going through plato's address can't get
+around the limit by setting its own `X-Forwarded-For`. Requests with the
 key aren't limited; send those from your server.
 
 ### From a browser (no key)

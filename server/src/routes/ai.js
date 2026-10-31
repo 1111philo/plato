@@ -29,8 +29,14 @@ aiRoute.post('/v1/ai/messages', async (c) => {
   };
 
   if (!isStream) {
-    const responseBody = await ai.invoke(model, aiBody);
-    return c.json(responseBody);
+    try {
+      return c.json(await ai.invoke(model, aiBody));
+    } catch (err) {
+      // Coded like the stream path, so background agents' failures (profile,
+      // unit notes, lesson creation, extractors) aren't bare unhandled_errors.
+      logger.error('ai_invoke_failed', { error: err?.message || String(err), name: err?.name });
+      return c.json({ error: 'Internal server error' }, 500);
+    }
   }
 
   c.header('Content-Type', 'text/event-stream');

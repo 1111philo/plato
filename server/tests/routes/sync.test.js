@@ -187,6 +187,19 @@ describe('item size guard (#451 review M1)', () => {
     assert.equal((await res.json()).code, 'sync_item_too_large');
     assert.equal(wrote, false);
   });
+
+  it('counts UTF-8 bytes, so a non-Latin record under the limit in characters is still refused', async () => {
+    let wrote = false;
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => { wrote = true; return { version: 1 }; };
+    const app = new Hono();
+    app.route('/', sync);
+    const big = [{ role: 'user', content: '学'.repeat(180 * 1024) }]; // 180 K characters, 540 KB
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:les-1', { data: big, version: 0 });
+    assert.equal(res.status, 413);
+    assert.equal(wrote, false);
+  });
 });
 
 describe('DELETE /v1/sync', () => {

@@ -844,10 +844,10 @@ export default function AdminUsers() {
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
         <div className="flex gap-1">
-          {/* Someone who already has an account can't be invited again. */}
+          {/* An account gets Copy to account; an account or a pending invite can't be invited (the server refuses it). */}
           {item._entry.alreadyRegistered === 'account'
             ? shows('users.write') && <Button variant="outline" size="xs" aria-label={`Copy ${item.email}'s wait-list answers to their account`} onClick={(e) => { e.stopPropagation(); applyFromWaitlist(item._key, item.email); }}>Copy to account</Button>
-            : shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+            : !item._entry.alreadyRegistered && shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
           {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
         </div>
       ) : item._type === 'invite' ? (

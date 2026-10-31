@@ -120,6 +120,19 @@ describe('bundled lessons', () => {
     assert.equal(st.updateAvailable, true);
   });
 
+  it('a copy an older release only re-saved (same markdown) comes back unedited, with no notice', async () => {
+    await run();
+    const cur = await db.getSyncData('_system', 'lesson:getting-started');
+    const { bundled: _b, ...rolledBack } = cur.data;
+    await db.putSyncData('_system', 'lesson:getting-started', { ...rolledBack, status: 'public' }, cur.version);
+    const r = await run();
+    assert.deepEqual(r.customized, []);
+    const [st] = await bundledLessonStatus({ db, read });
+    assert.equal(st.edited, false);
+    assert.equal(st.updateAvailable, false);
+    assert.equal((await lesson()).status, 'public', 'its status is kept');
+  });
+
   it("leaves an admin's own lesson that happens to use the id alone", async () => {
     await db.createSyncData('_system', 'lesson:getting-started', { name: 'Ours', markdown: 'custom', status: 'public' });
     await run();
