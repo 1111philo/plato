@@ -24,7 +24,7 @@ const AUTOMATION_TEMPLATE = { waitlistConfirmation: 'waitlist-confirmation', ina
 const MESSAGE_VARIABLES = ['firstName', 'classroomName'];
 
 const vars = (list) => list.map((v) => `{{${v}}}`).join(', ');
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const peopleCount = (n) => `${n} ${n === 1 ? 'person' : 'people'}`;
 
 export default function AdminNotifications() {
   const { user } = useAuth();
@@ -218,7 +218,7 @@ function Compose({ canWrite, onNotice, onSent }) {
         </div>
 
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-          {count == null ? '' : `Goes to ${plural(count, 'person')}${email && preview?.emailOptedOut ? `; ${preview.emailOptedOut} turned off email` : ''}.`}
+          {count == null ? '' : `Goes to ${peopleCount(count)}${email && preview?.emailOptedOut ? `; ${preview.emailOptedOut} turned off email` : ''}.`}
         </p>
         <Button onClick={() => setConfirming(true)} disabled={!canWrite || sending || !audienceReady || !subject.trim() || !body.trim() || (!inApp && !email) || !count}>
           {sending ? 'Sending…' : 'Send'}
@@ -228,7 +228,7 @@ function Compose({ canWrite, onNotice, onSent }) {
       <ConfirmModal
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Send to ${plural(count || 0, 'person')}?`}
+        title={`Send to ${peopleCount(count || 0)}?`}
         message={`“${subject.trim()}” goes out ${channels} now. It can’t be unsent.`}
         confirmLabel="Send"
         variant="default"
@@ -353,7 +353,7 @@ function History({ messages }) {
                 <TableCell>{m.subject}{m.important && <span className="block text-xs text-muted-foreground">Pop-up</span>}</TableCell>
                 <TableCell>{AUDIENCE_LABEL[m.audience?.type]}{m.audience?.type === 'group' ? `: ${m.audience.group}` : m.audience?.type === 'users' ? ` (${m.audience.userIds.length})` : ''}</TableCell>
                 <TableCell>{[m.inApp && 'Classroom', m.email && 'Email'].filter(Boolean).join(', ')}</TableCell>
-                <TableCell>{plural(c.recipients ?? 0, 'person')}{emailLine && <span className="block text-xs text-muted-foreground">{emailLine}</span>}</TableCell>
+                <TableCell>{peopleCount(c.recipients ?? 0)}{emailLine && <span className="block text-xs text-muted-foreground">{emailLine}</span>}</TableCell>
               </TableRow>
             );
           })}

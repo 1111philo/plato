@@ -6,6 +6,7 @@ import { ROLES, normalizeRole } from '../lib/permissions.js';
 import { registerHierarchyRoutes } from './admin-hierarchy.js';
 import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.js';
 import { registerNotificationRoutes } from './admin-notifications.js';
+import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
 import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
@@ -642,60 +643,24 @@ admin.put('/v1/admin/settings', async (c) => {
 
 // PUT /v1/admin/groups — add or rename an group
 admin.put('/v1/admin/groups', async (c) => {
-  const { name, oldName } = await c.req.json();
-  if (!name || !name.trim()) {
-    return c.json({ error: 'Group name is required' }, 400);
+  const { name, oldName } = await c.req.json().catch(() => ({}));
+  const user = c.get('user');
+  const result = oldName ? await renameGroup(oldName, name) : await addGroup(name);
+  if (result.error) return c.json({ error: result.error }, result.status);
+  if (oldName && oldName !== name.trim()) {
+    try {
+      await db.createAuditLog({ action: 'group_renamed', userId: user.userId, performedBy: user.userId, details: { from: oldName, to: name.trim(), ...result.moved } });
+    } catch { /* best-effort */ }
   }
-  const trimmed = name.trim();
-  const current = await db.getSyncData('_system', 'settings');
-  const settings = current?.data || {};
-  const groups = settings.userGroups || [];
-
-  if (oldName) {
-    // Rename
-    const idx = groups.indexOf(oldName);
-    if (idx === -1) return c.json({ error: 'Group not found' }, 404);
-    groups[idx] = trimmed;
-    // Update all users with the old group
-    const users = await db.listAllUsers();
-    await Promise.all(
-      users.filter((u) => u.userGroup === oldName)
-        .map((u) => db.updateUser(u.userId, { userGroup: trimmed }))
-    );
-  } else {
-    // Add
-    if (groups.includes(trimmed)) {
-      return c.json({ error: 'Group already exists' }, 409);
-    }
-    groups.push(trimmed);
-  }
-
-  settings.userGroups = groups;
-  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-  return c.json({ userGroups: groups });
+  return c.json(result);
 });
 
-// DELETE /v1/admin/groups/:name — remove an group and clear from all users
+// DELETE /v1/admin/groups/:name — remove a group; its members, invites, and
+// wait-list entries lose it.
 admin.delete('/v1/admin/groups/:name', async (c) => {
-  const name = decodeURIComponent(c.req.param('name'));
-  const current = await db.getSyncData('_system', 'settings');
-  const settings = current?.data || {};
-  const groups = settings.userGroups || [];
-  const idx = groups.indexOf(name);
-  if (idx === -1) return c.json({ error: 'Group not found' }, 404);
-
-  groups.splice(idx, 1);
-  settings.userGroups = groups;
-  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-
-  // Clear group from all users who had it
-  const users = await db.listAllUsers();
-  await Promise.all(
-    users.filter((u) => u.userGroup === name)
-      .map((u) => db.updateUser(u.userId, { userGroup: null }))
-  );
-
-  return c.json({ userGroups: groups });
+  const result = await deleteGroup(decodeURIComponent(c.req.param('name')));
+  if (result.error) return c.json({ error: result.error }, result.status);
+  return c.json(result);
 });
 
 // ── Custom user fields (#364) ──

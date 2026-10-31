@@ -1227,6 +1227,29 @@ change is announced.
 (sortable and searchable) and the last CSV column, as a stable key for
 research and reporting. Admin contexts only; learners never see it.
 
+## User groups (#434)
+
+Group names live in `_system:settings.userGroups`. Membership is the name on
+each user (`userGroup`), on wait-list entries and invites (`profile.userGroup`),
+and on messages sent to a group (`audience.group`). `server/src/lib/groups.js`
+owns them:
+- Names are 1–80 characters and **unique ignoring case**. The list is stored
+  sorted A–Z, with "None" and "Other" last; `GET /v1/groups` sorts older lists
+  on read.
+- **Rename** (`PUT /v1/admin/groups { oldName, name }`) writes the group list
+  first, version-checked. Then it moves every membership: users, wait-list
+  entries, pending invites, and group messages, so the bell keeps showing them
+  to the group. It returns `moved: { users, invites, messages, failed }` and
+  writes a `group_renamed` audit entry. A failed membership write is retried by
+  renaming again.
+- **Delete** clears the group from users and invites. Messages already sent
+  keep their audience.
+
+The User Groups dialog (`client/src/pages/admin/GroupsDialog.jsx`) has inline
+rename (Enter saves, Escape cancels), member counts, and a delete
+confirmation. Errors show inside the dialog. Its parent refreshes quietly, so
+the page spinner doesn't unmount it.
+
 ## Roles & permissions (#435)
 
 Four roles. `server/src/lib/permissions.js` is the single source of who may do what.
