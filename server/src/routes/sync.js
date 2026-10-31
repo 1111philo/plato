@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
-import { can } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { logger } from '../lib/logger.js';
+import { resolveReadUserId } from '../lib/view-as.js';
 
 const sync = new Hono();
 
@@ -73,16 +73,6 @@ async function readOldLessonKBStatus(userId, dataKey) {
  * own JWT-derived userId. Writes never honor `asUserId` — callers must
  * reject the request before reaching the DB.
  */
-function resolveReadUserId(c) {
-  const url = new URL(c.req.url);
-  const asUserId = url.searchParams.get('asUserId');
-  if (!asUserId) return { userId: c.get('userId'), impersonating: false };
-  // View as User: admins and testers (lib/permissions.js).
-  if (!can(c.get('role'), 'impersonation.use')) {
-    return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
-  }
-  return { userId: asUserId, impersonating: true };
-}
 
 function rejectWriteIfImpersonating(c) {
   const url = new URL(c.req.url);
@@ -112,11 +102,12 @@ const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB
 //     every login *and* every tab refocus) would be wasteful; they're
 //     fetched on demand by key via GET /v1/sync/:dataKey instead.
 sync.get('/v1/sync', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const items = await db.getAllSyncData(resolved.userId);
   return c.json(items
-    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:'))
+    // notify:* is server-only bookkeeping (opt-outs come from /v1/me/notifications).
+    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:') && !item.dataKey?.startsWith('notify:'))
     .map((item) => ({
       dataKey: item.dataKey,
       data: item.data,
@@ -127,7 +118,7 @@ sync.get('/v1/sync', async (c) => {
 
 // GET /v1/sync/:dataKey — get specific item
 sync.get('/v1/sync/:dataKey', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const dataKey = c.req.param('dataKey');
 

@@ -61,10 +61,15 @@ export async function parseResponse(resp) {
  * Lambda timeout) was truncated. Ending "successfully" in either case used to
  * hand callers a partial reply that was then parsed and saved as a real turn.
  */
-export async function* parseSSEStream(body, onDone) {
+// `failOnTruncation`: a reply cut off at max_tokens (message_delta
+// stop_reason 'max_tokens') throws instead of returning, for callers that
+// parse tags out of the full text (the coach: a clipped [PROGRESS]/[KB_UPDATE]
+// would be saved as a real turn). Authoring chats keep their partial text.
+export async function* parseSSEStream(body, onDone, { failOnTruncation = false } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let truncated = false;
 
   try {
     while (true) {
@@ -78,7 +83,10 @@ export async function* parseSSEStream(body, onDone) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const data = line.slice(6);
-        if (data === '[DONE]') return;
+        if (data === '[DONE]') {
+          if (truncated && failOnTruncation) throw new ApiError('truncated', 'The reply was cut off. Please try again.');
+          return;
+        }
 
         let event;
         try { event = JSON.parse(data); } catch { continue; }
@@ -86,6 +94,7 @@ export async function* parseSSEStream(body, onDone) {
         if (event.type === 'error') {
           throw new ApiError('api', 'The response failed partway through. Please try again.');
         }
+        if (event.type === 'message_delta' && event.delta?.stop_reason === 'max_tokens') truncated = true;
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           yield event.delta.text;
         }

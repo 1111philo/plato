@@ -69,13 +69,15 @@ export const MIGRATIONS = [
       const result = { scanned: 0, updated: 0, skipped: 0, errors: 0, notes: [] };
       const items = await db.getAllSyncData('_system');
       const units = items.filter((i) => i.dataKey.startsWith('course:'));
-      const hasProgram = items.some((i) => i.dataKey.startsWith('program:'));
+      // Our own prog-default doesn't count: an earlier run that created it and
+      // then lost a unit write (or ran out of time) must finish the job.
+      const hasProgram = items.some((i) => i.dataKey.startsWith('program:') && i.dataKey !== 'program:prog-default');
       const pending = units.filter((u) => !u.data?.programId);
       result.scanned = units.length;
       if (pending.length === 0) { result.skipped = units.length; return result; }
       if (hasProgram) {
-        // Courses already exist (created by an admin after an earlier failed
-        // run). Leave unassigned units for the admin to place.
+        // Courses an admin created already exist. Leave unassigned units for
+        // the admin to place.
         result.skipped = units.length;
         result.notes.push(`${pending.length} unit(s) left unassigned: courses already exist`);
         return result;

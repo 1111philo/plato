@@ -49,6 +49,13 @@ describe('schedule', () => {
     assert.deepEqual(dispatched, []);
   });
 
+  it('a failed dispatch hands the day back for the next check', async () => {
+    const db = fakeDb({ inactivityNudge: true });
+    const t = at('2026-11-04T16:00:00Z');
+    assert.deepEqual(await runDueJobs({ db, dispatch: async () => ({ error: 'throttled' }), now: t, force: true }), []);
+    assert.deepEqual(await runDueJobs({ db, dispatch, now: t, force: true }), ['inactivity-nudge']);
+  });
+
   it('checks at most every 10 minutes per container', async () => {
     const db = fakeDb({ inactivityNudge: true });
     const t = at('2026-11-04T16:00:00Z');

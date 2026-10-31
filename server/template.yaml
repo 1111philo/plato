@@ -67,7 +67,11 @@ Resources:
             TableName: !Ref AuditLogTable
         - Statement:
             - Effect: Allow
-              Action: ses:SendEmail
+              # SendRawEmail: notification mail is raw MIME (multipart +
+              # List-Unsubscribe headers, lib/notifications.js).
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
               Resource: '*'
         - Statement:
             - Effect: Allow
@@ -142,7 +146,11 @@ Resources:
             TableName: !Ref AuditLogTable
         - Statement:
             - Effect: Allow
-              Action: ses:SendEmail
+              # SendRawEmail: notification mail is raw MIME (multipart +
+              # List-Unsubscribe headers, lib/notifications.js).
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
               Resource: '*'
         - Statement:
             - Effect: Allow

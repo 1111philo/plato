@@ -34,6 +34,15 @@ describe('parseSSEStream', () => {
     assert.equal(await collect(body(full.slice(0, 17), full.slice(17))), 'split');
   });
 
+  it('a reply cut off at max_tokens throws when the caller parses tags (the coach), and passes otherwise', async () => {
+    const cut = () => body(delta('Good. [PROGRESS: 1'), `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'max_tokens' } })}\n\n`, 'data: [DONE]\n\n');
+    const strict = async (stream) => { let out = ''; for await (const t of parseSSEStream(stream, undefined, { failOnTruncation: true })) out += t; return out; };
+    await assert.rejects(strict(cut()), (e) => e instanceof ApiError && e.type === 'truncated');
+    assert.equal(await collect(cut()), 'Good. [PROGRESS: 1');
+    const ended = body(delta('ok'), `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' } })}\n\n`, 'data: [DONE]\n\n');
+    assert.equal(await strict(ended), 'ok');
+  });
+
   it('throws on a server error event instead of returning the partial text', async () => {
     const stream = body(delta('partial'), `data: ${JSON.stringify({ type: 'error', error: { message: 'boom' } })}\n\n`);
     await assert.rejects(collect(stream), (e) => e instanceof ApiError && e.type === 'api');

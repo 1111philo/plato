@@ -190,6 +190,13 @@ me.delete('/v1/me', async (c) => {
   const user = c.get('user');
   const userId = user.userId;
 
+  // The last admin can't delete themselves: nobody could run the classroom,
+  // and /v1/auth/setup is closed once any user exists.
+  if (normalizeRole(user.role) === 'admin') {
+    const admins = (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin').length;
+    if (admins <= 1) return c.json({ error: 'You’re the only admin. Make someone else an admin before deleting your account.' }, 409);
+  }
+
   // Log deletion before destroying data
   await db.createAuditLog({
     action: 'user_deleted',

@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { runMigrations, runMigrationsBounded } from '../../src/lib/migrations.js';
+import { runMigrations, runMigrationsBounded, MIGRATIONS } from '../../src/lib/migrations.js';
 
 // In-memory stand-in with the same version semantics as the real backends.
 function fakeDb() {
@@ -123,5 +123,42 @@ describe('runMigrationsBounded', () => {
   it('never throws', async () => {
     const broken = { getSyncData: async () => { throw new Error('db down'); } };
     assert.equal(await runMigrationsBounded({ db: broken, migrations: [counter('x')] }), null);
+  });
+});
+
+// The real m004 body (#408). A partial run (one unit write lost) must be
+// finished by the retry, not recorded as done with units left outside the
+// Course. Adversarial review B3 on #451.
+describe('m004_default_program', () => {
+  const m004 = MIGRATIONS.find((m) => m.id === 'm004_default_program');
+  function unitDb() {
+    const db = fakeDb();
+    db.rows.set('_system:settings', { data: { classroomName: 'Plato' }, version: 1 });
+    for (const [id, name] of [['u1', 'A'], ['u2', 'B'], ['u3', 'C']]) db.rows.set(`_system:course:${id}`, { data: { name }, version: 1 });
+    db.getAllSyncData = async (u) => [...db.rows].filter(([k]) => k.startsWith(`${u}:`)).map(([k, v]) => ({ dataKey: k.slice(u.length + 1), ...v }));
+    return db;
+  }
+
+  it('a retry after a lost unit write assigns the rest', async () => {
+    const db = unitDb();
+    const put = db.putSyncData;
+    let failOnce = true;
+    db.putSyncData = async (u, k, d, v) => {
+      if (failOnce && k === 'course:u2') { failOnce = false; throw Object.assign(new Error('lost'), { name: 'ConditionalCheckFailedException' }); }
+      return put(u, k, d, v);
+    };
+    const first = await m004.run({ db, dryRun: false });
+    assert.equal(first.errors, 1);
+    const second = await m004.run({ db, dryRun: false });
+    assert.deepEqual([second.errors, second.updated], [0, 1]);
+    for (const id of ['u1', 'u2', 'u3']) assert.equal(db.rows.get(`_system:course:${id}`).data.programId, 'prog-default', id);
+  });
+
+  it('leaves unassigned units alone when an admin already made courses', async () => {
+    const db = unitDb();
+    db.rows.set('_system:program:p-admin', { data: { name: 'Mine', unitIds: [] }, version: 1 });
+    const r = await m004.run({ db, dryRun: false });
+    assert.equal(r.updated, 0);
+    assert.equal(db.rows.get('_system:course:u1').data.programId, undefined);
   });
 });

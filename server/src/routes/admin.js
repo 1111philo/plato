@@ -1294,7 +1294,9 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
       return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
     }
     if (status === 'stale') {
-      kickoffAsyncRefresh(); // fire and forget
+      // Awaited: an Event invoke returns in tens of ms, and a pending call
+      // would die when the container freezes after the response.
+      await kickoffAsyncRefresh();
       return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
     }
   }
