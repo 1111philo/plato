@@ -7,6 +7,7 @@ import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { readNotifyState, setOptOut } from '../lib/notifications.js';
 import { messagesFor, markRead } from '../lib/messages.js';
+import { pendingInviteFor, mergeProfile, acceptInvite, declineInvite } from '../lib/account-invites.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
@@ -145,6 +146,39 @@ me.get('/v1/me/messages', async (c) => c.json({ messages: await messagesFor(c.ge
 me.post('/v1/me/messages/read', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   return c.json(await markRead(c.get('userId'), body.ids));
+});
+
+// GET /v1/me/invite — an invite to this account (#363: the person joined
+// the wait list and an admin invited them), with what accepting would add.
+me.get('/v1/me/invite', async (c) => {
+  const user = c.get('user');
+  const inv = await pendingInviteFor(user);
+  if (!inv) return c.json({ invite: null });
+  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
+  const { userGroup, fields } = mergeProfile(user, inv.profile, settings);
+  const labels = new Map(getFieldDefinitions(settings).map((d) => [d.id, d.label]));
+  const inviter = inv.invitedBy ? await db.getUserById(inv.invitedBy).catch(() => null) : null;
+  return c.json({
+    invite: {
+      inviteToken: inv.inviteToken,
+      invitedByName: inviter ? nameFields(inviter).name || inviter.username || null : null,
+      userGroup,
+      fields: fields.map((id) => labels.get(id)),
+      createdAt: inv.createdAt,
+    },
+  });
+});
+
+// POST /v1/me/invite/:token/accept — merge the invite's answers into the account
+me.post('/v1/me/invite/:token/accept', async (c) => {
+  const r = await acceptInvite(c.get('user'), c.req.param('token'));
+  return r.error ? c.json({ error: r.error }, r.status) : c.json(r);
+});
+
+// POST /v1/me/invite/:token/decline — discard it; the account is untouched
+me.post('/v1/me/invite/:token/decline', async (c) => {
+  const r = await declineInvite(c.get('user'), c.req.param('token'));
+  return r.error ? c.json({ error: r.error }, r.status) : c.json(r);
 });
 
 // GET /v1/me/export — download all user data as JSON.

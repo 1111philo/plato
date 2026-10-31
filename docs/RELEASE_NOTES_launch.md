@@ -58,6 +58,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #479 | Adversarial review follow-ups: group rename retry, Slack invite awaited, record size guard, rollback edge cases, rate limit, contrast, focus guard | review |
 | #483 | Port of prod hotfix #482: Copy to account for wait-list entries whose email already has an account | #363 |
 | #484 | Second adversarial review: Slack 429 at signup, failed-turn restore, wait-list IP, refused-save resend, UTF-8 size guard, group rename finish, roles rollback script | review |
+| #486 | Invites for existing accounts: a wait-list entry whose email has an account can be invited; they get an email and a classroom notice, and accepting merges the answers (replaces Copy to account) | #363 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

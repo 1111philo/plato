@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import AccountInviteNotice from '../components/AccountInviteNotice.jsx';
 import Check from 'lucide-react/dist/esm/icons/check';
 import { completionBy, groupForDisplay, sortLessons } from '../lib/lessonOrder.js';
 import { Card } from '@/components/ui/card';
@@ -60,6 +62,7 @@ function formatTimeRange(p20, p80) {
 export default function LessonsList() {
   const { state } = useApp();
   const navigate = useNavigate();
+  const { impersonatedUser } = useAuth();
   const { lessons, loaded } = state;
   const [lessonData, setLessonData] = useState({});
   const [timeStats, setTimeStats] = useState({});
@@ -254,6 +257,8 @@ export default function LessonsList() {
           </div>
         </div>
       </div>
+      {/* An invite to this account (#363); View as User doesn't show the learner's. */}
+      {!impersonatedUser && <AccountInviteNotice />}
 
       {/* Always-mounted live region. Updates whenever filter or page changes.
           Persistent rather than conditional so screen readers reliably pick

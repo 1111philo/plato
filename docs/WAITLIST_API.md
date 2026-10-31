@@ -111,10 +111,11 @@ Unknown field ids are ignored. An empty string means "no answer".
 someone is already registered. If the email already has an account or a
 pending invite, the submission is still kept: admins see it on the Wait List
 marked "Has an account" or "Invited", and no confirmation email is sent to
-them. An entry for an existing account can't be invited; **Copy to account**
-adds its group and answers to the account (only ones it doesn't have yet)
-and removes the entry. A repeat request for an email that's already on the
-wait list stores nothing, and the existing entry isn't updated.
+them. Someone with an account can still be invited: they get an email and a
+notice in the classroom, and accepting adds the entry's group and answers to
+their account (only ones it doesn't have yet). A repeat request for an email
+that's already on the wait list stores nothing, and the existing entry isn't
+updated.
 
 If an admin has turned on **Wait list confirmation** (Admin → Notifications),
 a new entry gets one confirmation email, whether it came from your form or

@@ -198,7 +198,7 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
@@ -214,6 +214,7 @@ const db = {
     if (slackUserId) item.slackUserId = slackUserId;
     if (maxUsages !== null) item.maxUsages = maxUsages;
     if (profile) item.profile = profile;
+    if (forUserId) item.forUserId = forUserId;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
