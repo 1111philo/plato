@@ -4,3 +4,4 @@ node_modules/
 data/
 client-dist/
 .rc232/
+.rc232-rehearsal-*/
