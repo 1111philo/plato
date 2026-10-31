@@ -1191,6 +1191,42 @@ answers arrive from the public wait-list form, so a formula there would be
 attacker-controlled (CSV injection). Dates are ISO; the file has a UTF-8 BOM
 and CRLF line endings so Excel opens it cleanly.
 
+## Admin tables: filters, columns, User ID (#362, #385, #386)
+
+**Filters (Admin → Users).** A Filters menu (`client/src/pages/admin/FiltersMenu.jsx`,
+logic in `client/src/lib/userFilters.js`) replaced the single-choice
+All / Active / Staff / Invited / Wait List buttons and the one custom-field
+filter.
+- It has one group of checkbox items per facet: Status (Signed up, Invited,
+  Wait list), Role, Group (plus No group), and every custom field (its
+  dropdown options plus Empty, or Has a value / Empty). Each option shows its
+  count.
+- Filters combine as **OR within a facet, AND across facets**. Each facet has
+  Select all and Clear.
+- Facets that don't apply drop an item: a role filter leaves out invites and
+  wait-list entries, and invites have no field answers.
+- Active filters show as removable chips with a "Clear all" button, and a
+  polite status line says "N of M people".
+- Search also matches the User ID.
+
+**Columns (Users and Lessons).** A Columns dialog (`ColumnsDialog.jsx`,
+logic in `client/src/lib/tableColumns.js`) shows and hides columns and moves
+them with Move up / Move down buttons. Focus stays on the moved row, and each
+change is announced.
+- The layout is saved per browser in localStorage
+  (`plato:columns:users:v1`, `plato:columns:lessons:v1`) and reconciled with
+  the current columns: new ones appear in their default place, and removed
+  ones drop.
+- The name/open column and the actions column are fixed.
+- Every custom field is a Users column, hidden until chosen. This replaced the
+  old filter-driven extra column.
+- Lessons adds a hidden Lesson ID column.
+- Column resizing isn't built.
+
+**User ID (#386).** The immutable account id (`usr_…`) is a Users column
+(sortable and searchable) and the last CSV column, as a stable key for
+research and reporting. Admin contexts only; learners never see it.
+
 ## Roles & permissions (#435)
 
 Four roles. `server/src/lib/permissions.js` is the single source of who may do what.

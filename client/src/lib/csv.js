@@ -28,7 +28,9 @@ const TYPE_LABELS = { user: 'User', invite: 'Invited', waitlist: 'Wait List' };
  * in field order. Dates are ISO (YYYY-MM-DD), not the admin's locale format.
  */
 export function usersCsvRows(items, userFields) {
-  const header = ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label)];
+  // User ID (#386): the immutable account id, a stable key for research
+  // exports. Last, after the custom fields.
+  const header = ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label), 'User ID'];
   const rows = items.map((item) => [
     item.email,
     item.firstName,
@@ -39,6 +41,7 @@ export function usersCsvRows(items, userFields) {
     TYPE_LABELS[item._type] || item._type,
     item.createdAt ? new Date(item.createdAt).toISOString().slice(0, 10) : '',
     ...userFields.map((f) => item.customFields?.[f.id] ?? ''),
+    item._user?.userId || '',
   ]);
   return [header, ...rows];
 }

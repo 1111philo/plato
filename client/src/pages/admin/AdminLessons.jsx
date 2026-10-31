@@ -27,6 +27,10 @@ import ComposeBar from '../../components/chat/ComposeBar.jsx';
 import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
+import ColumnsDialog from './ColumnsDialog.jsx';
+import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
+
+const LESSON_COLUMNS_KEY = 'plato:columns:lessons:v1';
 
 // A draft id minted by /plato/lessons/new looks like `admin-<13-digit ms>`.
 // Within a few minutes of minting, a 404 means "not auto-saved yet" rather
@@ -43,6 +47,8 @@ export default function AdminLessons() {
   const location = useLocation();
   const { lessonId: routeLessonId } = useParams();
   const { user } = useAuth();
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(LESSON_COLUMNS_KEY));
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const isNewRoute = location.pathname.endsWith('/lessons/new');
 
   const [lessons, setLessons] = useState([]);
@@ -237,6 +243,44 @@ export default function AdminLessons() {
     );
   }
 
+  // Table columns (#385): Name and Actions always show; the rest follow the
+  // admin's saved layout (Columns dialog, lib/tableColumns.js).
+  const allColumns = [
+    { id: 'name', label: 'Name', fixed: true, cell: (c) => (
+      <span className="flex items-center gap-2">
+        {c.name || c.lessonId}
+        {c.status === 'draft'
+          ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
+          : c.status === 'public'
+            ? <Badge variant="outline" className="text-xs">Public</Badge>
+            : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>}
+      </span>
+    ) },
+    { id: 'unit', label: 'Course › Unit', cellClass: 'text-muted-foreground', cell: (c) => (c.course && unitLabelById.get(c.course)) || '\u2014' },
+    { id: 'createdBy', label: 'Created by', cellClass: 'text-muted-foreground', cell: (c) => c.createdByName || '\u2014' },
+    { id: 'updatedBy', label: 'Updated by', cellClass: 'text-muted-foreground', cell: (c) => c.updatedByName || '\u2014' },
+    { id: 'updated', label: 'Updated', cell: (c) => (c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014') },
+    { id: 'lessonId', label: 'Lesson ID', defaultHidden: true, cell: (c) => <code className="text-xs">{c.lessonId}</code> },
+    { id: 'actions', label: 'Actions', fixed: true, cell: (c) => {
+      const isDraft = c.status === 'draft';
+      return (
+        <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
+          {!isDraft && (
+            <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            </Button>
+          )}
+          <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => openLessonEditor(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
+          <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </Button>
+        </div>
+      );
+    } },
+  ];
+  const shownColumns = visibleColumns(allColumns, columnPrefs);
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(LESSON_COLUMNS_KEY, next); };
+
   // Lesson list
   if (loading) return spinner;
 
@@ -254,6 +298,7 @@ export default function AdminLessons() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
             Courses &amp; Units
           </Button>
+          <Button variant="outline" onClick={() => setColumnsOpen(true)}>Columns</Button>
         </div>
       </div>
 
@@ -287,60 +332,35 @@ export default function AdminLessons() {
         <Table aria-label="Lessons">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Course › Unit</TableHead>
-              <TableHead>Created by</TableHead>
-              <TableHead>Updated by</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead><span className="sr-only">Actions</span></TableHead>
+              {shownColumns.map((col) => (
+                <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {lessons.map(c => {
-              const isDraft = c.status === 'draft';
-              const isPublic = c.status === 'public';
-              const unitLabel = c.course ? (unitLabelById.get(c.course) || null) : null;
-              return (
-                <TableRow key={c.lessonId}>
-                  <TableCell>
-                    <span className="flex items-center gap-2">
-                      {c.name || c.lessonId}
-                      {isDraft
-                        ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
-                        : isPublic
-                          ? <Badge variant="outline" className="text-xs">Public</Badge>
-                          : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
-                      }
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{unitLabel || '\u2014'}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
-                  <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
-                      {!isDraft && (
-                        <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => openLessonEditor(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {lessons.map((c) => (
+              <TableRow key={c.lessonId}>
+                {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(c)}</TableCell>)}
+              </TableRow>
+            ))}
             {lessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
+                <TableCell colSpan={shownColumns.length} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+
+      <ColumnsDialog
+        open={columnsOpen}
+        onOpenChange={setColumnsOpen}
+        title="Lessons table columns"
+        columns={arrangeable(allColumns, columnPrefs)}
+        onToggle={(id, show) => updateColumns(toggleColumn(allColumns, columnPrefs, id, show))}
+        onMove={(id, delta) => updateColumns(moveColumn(allColumns, columnPrefs, id, delta))}
+        onReset={() => updateColumns(defaultPrefs(allColumns))}
+      />
 
       {confirmModal && (
         <ConfirmModal
