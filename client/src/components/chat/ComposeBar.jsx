@@ -260,7 +260,8 @@ export default function ComposeBar({
 
   return (
     <div className="px-4 pb-4 pt-2">
-      <div className={`mx-auto max-w-3xl rounded-lg border border-input bg-background ${elevated ? 'shadow-lg' : ''}`}>
+      {/* The textarea has no outline of its own; the box shows keyboard focus. */}
+      <div className={`mx-auto max-w-3xl rounded-lg border border-input bg-background focus-within:ring-2 focus-within:ring-ring ${elevated ? 'shadow-lg' : ''}`}>
         {images.length > 0 && (
           <div className="m-2 space-y-2">
             <div className="flex flex-wrap gap-2">
