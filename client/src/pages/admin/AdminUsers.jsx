@@ -30,16 +30,21 @@ const ROLE_HELP = {
 import WaitlistDialog from './WaitlistDialog.jsx';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
-import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
+import { customFieldsMatch, missingRequired } from '../../lib/userFields.js';
 import { toCsv, usersCsvRows } from '../../lib/csv.js';
+import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilters.js';
+import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
+import FiltersMenu from './FiltersMenu.jsx';
+import ColumnsDialog from './ColumnsDialog.jsx';
 import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
+const USER_COLUMNS_KEY = 'plato:columns:users:v1';
 
 const SORT_LABELS = {
   name: 'last name', email: 'email', username: 'username',
   group: 'group', role: 'role', completed: 'completion',
-  lastActive: 'last active', date: 'join date',
+  lastActive: 'last active', date: 'join date', userId: 'user ID',
 };
 
 // Module-level so the function references are stable across renders, which
@@ -60,6 +65,7 @@ const SORT_KEY_FNS = {
     return c / a;
   },
   lastActive: (i) => i._user?.lastActiveAt || null,
+  userId: (i) => i._user?.userId || null,
   date: (i) => i.createdAt || '',
 };
 
@@ -159,9 +165,11 @@ export default function AdminUsers() {
 
   // Search, filter, pagination
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  // Custom-field filter (#364): { fieldId, value } — value is '__set', '__empty', or a dropdown option.
-  const [fieldFilter, setFieldFilter] = useState({ fieldId: '', value: '' });
+  // Combined filters (#362): { [facetKey]: [values] }; see lib/userFilters.js.
+  const [filters, setFilters] = useState({});
+  // Column layout (#385), saved in this browser; see lib/tableColumns.js.
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(USER_COLUMNS_KEY));
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
   const [sortAnnouncement, setSortAnnouncement] = useState('');
@@ -598,28 +606,11 @@ export default function AdminUsers() {
     return items;
   }, [users, pendingInvites, waitlistEntries]);
 
-  const filterCounts = useMemo(() => ({
-    all: combinedList.length,
-    active: combinedList.filter(i => i._type === 'user' && normalizeRole(i.role) === 'learner').length,
-    staff: combinedList.filter(i => i._type === 'user' && normalizeRole(i.role) !== 'learner').length,
-    invited: combinedList.filter(i => i._type === 'invite').length,
-    waitlist: combinedList.filter(i => i._type === 'waitlist').length,
-  }), [combinedList]);
+  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields }), [combinedList, groups, userFields]);
+  const filterChips = describeFilters(filters, facets);
 
   const filteredList = useMemo(() => {
-    let list = combinedList;
-
-    // Apply filter
-    if (filter === 'active') list = list.filter(i => i._type === 'user' && normalizeRole(i.role) === 'learner');
-    else if (filter === 'staff') list = list.filter(i => i._type === 'user' && normalizeRole(i.role) !== 'learner');
-    else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
-    else if (filter === 'waitlist') list = list.filter(i => i._type === 'waitlist');
-
-    // Apply custom-field filter (invites have no field values, so they drop out)
-    const filterDef = userFields.find(f => f.id === fieldFilter.fieldId);
-    if (filterDef && fieldFilter.value) {
-      list = list.filter(i => i._type !== 'invite' && matchesFieldFilter(i.customFields, filterDef, fieldFilter.value));
-    }
+    let list = combinedList.filter((i) => matchesFilters(i, filters, facets));
 
     // Apply search (custom field values are searchable too)
     if (search.trim()) {
@@ -628,14 +619,13 @@ export default function AdminUsers() {
         (i.email && i.email.toLowerCase().includes(q)) ||
         (i.name && i.name.toLowerCase().includes(q)) ||
         (i.username && i.username.toLowerCase().includes(q)) ||
+        (i._user?.userId && i._user.userId.toLowerCase().includes(q)) ||
         customFieldsMatch(i.customFields, q)
       );
     }
 
     return list;
-  }, [combinedList, filter, search, userFields, fieldFilter]);
-
-  const filterField = userFields.find(f => f.id === fieldFilter.fieldId) || null;
+  }, [combinedList, filters, facets, search]);
 
   // Sort comparators live at module level (SORT_KEY_FNS) so their references
   // are stable; nullish values always sort last regardless of direction so
@@ -691,7 +681,7 @@ export default function AdminUsers() {
 
 
   // Reset page when filter/search/sort changes
-  useEffect(() => { setPage(1); }, [filter, search, sortBy, fieldFilter]);
+  useEffect(() => { setPage(1); }, [filters, search, sortBy]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -800,13 +790,69 @@ export default function AdminUsers() {
     );
   }
 
-  const filterButtons = [
-    { key: 'all', label: 'All' },
-    { key: 'active', label: 'Active' },
-    { key: 'staff', label: 'Staff' },
-    { key: 'invited', label: 'Invited' },
-    { key: 'waitlist', label: 'Wait List' },
+  // Table columns (#385). `fixed` ones always show, at the ends; the rest
+  // follow the admin's saved layout (Columns dialog). Every custom field is a
+  // column too, hidden until chosen.
+  const DASH = <span className="text-muted-foreground">&mdash;</span>;
+  const allColumns = [
+    { id: 'name', label: 'Name', fixed: true, sortKey: 'name', cell: (item) => (
+      item._type === 'waitlist' ? <RowOpenButton onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} srPrefix="Edit wait list entry: ">{item.name || item.email}</RowOpenButton>
+        : item._type === 'user' ? <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">{item.name || item.email}</RowOpenButton>
+          : DASH
+    ) },
+    { id: 'email', label: 'Email', sortKey: 'email', cell: (item) => item.email },
+    { id: 'username', label: 'Username', sortKey: 'username', cell: (item) => (item._type === 'user' && item.username) || DASH },
+    { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => (item._type !== 'invite' && item.userGroup) || DASH },
+    { id: 'role', label: 'Role', sortKey: 'role', cell: (item) => (
+      item._type === 'waitlist' ? <Badge variant="outline">Wait List</Badge>
+        : item._type === 'invite' ? <Badge variant="outline">Invited</Badge>
+          : <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>{roleLabel(item.role)}</Badge>
+    ) },
+    { id: 'completed', label: 'Completed', sortKey: 'completed', align: 'center', cellClass: 'text-center', cell: (item) => (
+      item._type === 'user' && typeof item._user.lessonsCompleted === 'number'
+        ? <div className="inline-flex"><CompletionRing completed={item._user.lessonsCompleted} available={item._user.lessonsAvailable} size={40} strokeWidth={5} compact /></div>
+        : DASH
+    ) },
+    { id: 'lastActive', label: 'Last active', sortKey: 'lastActive', cell: (item) => (item._type === 'user' && item._user.lastActiveAt ? new Date(item._user.lastActiveAt).toLocaleDateString() : DASH) },
+    { id: 'date', label: 'Date added', sortKey: 'date', cell: (item) => (item._type === 'waitlist' ? new Date(item.createdAt).toLocaleString() : new Date(item.createdAt).toLocaleDateString()) },
+    ...userFields.map((f) => ({
+      id: `field:${f.id}`, label: f.label, defaultHidden: true, cellClass: 'max-w-48 truncate',
+      cell: (item) => (item._type !== 'invite' && item.customFields?.[f.id]) || DASH,
+    })),
+    ...(slackConnected ? [{ id: 'slack', label: 'Slack', cell: (item) => (item._type === 'user' && item._user.slackUserId ? (
+      <span title={item._user.slackUserId} className="text-xs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">
+                              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
+                            </svg>
+        Linked
+      </span>
+    ) : DASH) }] : []),
+    // The immutable account id, for research and reporting (#386). Admin-only.
+    { id: 'userId', label: 'User ID', sortKey: 'userId', cell: (item) => (item._type === 'user' ? <code className="text-xs">{item._user.userId}</code> : DASH) },
+    { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
+      item._type === 'waitlist' ? (
+        <div className="flex gap-1">
+          {shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+          {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
+        </div>
+      ) : item._type === 'invite' ? (
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
+          <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
+        </div>
+      ) : (
+        // Keep clicks on these buttons from also opening the row.
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
+          {item._user.userId !== currentUser?.userId && shows('users.write') && (
+            <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
+          )}
+        </div>
+      )
+    ) },
   ];
+  const shownColumns = visibleColumns(allColumns, columnPrefs);
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(USER_COLUMNS_KEY, next); };
 
   return (
     <div>
@@ -856,45 +902,24 @@ export default function AdminUsers() {
           className="max-w-xs"
           aria-label="Search users"
         />
-        <div className="flex gap-1" role="group" aria-label="Filter users">
-          {filterButtons.map(f => (
-            <Button
-              key={f.key}
-              variant={filter === f.key ? 'default' : 'outline'}
-              size="default"
-              onClick={() => setFilter(f.key)}
-              aria-pressed={filter === f.key}
-            >
-              {f.label} <span className="ml-1 opacity-60">{filterCounts[f.key]}</span>
-            </Button>
-          ))}
-        </div>
-        {userFields.length > 0 && (
-          <div className="flex gap-2" role="group" aria-label="Filter by custom field">
-            <select
-              aria-label="Custom field"
-              value={fieldFilter.fieldId}
-              onChange={e => setFieldFilter({ fieldId: e.target.value, value: e.target.value ? '__set' : '' })}
-              className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
-            >
-              <option value="">Any field</option>
-              {userFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
-            {filterField && (
-              <select
-                aria-label={`${filterField.label} value`}
-                value={fieldFilter.value}
-                onChange={e => setFieldFilter(prev => ({ ...prev, value: e.target.value }))}
-                className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
-              >
-                <option value="__set">Has a value</option>
-                <option value="__empty">Empty</option>
-                {filterField.type === 'dropdown' && (filterField.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            )}
-          </div>
-        )}
+        <FiltersMenu facets={facets} filters={filters} onChange={setFilters} />
+        <Button variant="outline" onClick={() => setColumnsOpen(true)}>Columns</Button>
+        <span className="text-sm text-muted-foreground" role="status" aria-live="polite">
+          {filteredList.length === combinedList.length ? `${combinedList.length} people` : `${filteredList.length} of ${combinedList.length} people`}
+        </span>
       </div>
+      {filterChips.length > 0 && (
+        <ul className="flex flex-wrap items-center gap-2 mb-4" aria-label="Filters on">
+          {filterChips.map((chip) => (
+            <li key={chip.key} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-3 py-1 text-xs">
+              <span><span className="font-medium">{chip.label}:</span> {chip.values.join(', ')}</span>
+              <button type="button" className="ml-1 leading-none hover:opacity-70" aria-label={`Remove the ${chip.label} filter`}
+                onClick={() => setFilters((prev) => ({ ...prev, [chip.key]: [] }))}>&times;</button>
+            </li>
+          ))}
+          <li><Button variant="ghost" size="xs" onClick={() => setFilters({})}>Clear all</Button></li>
+        </ul>
+      )}
 
       {/* Polite live region announces sort changes for screen-reader users
           (aria-sort attribute changes aren't reliably announced by NVDA/JAWS). */}
@@ -906,131 +931,24 @@ export default function AdminUsers() {
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
-                  <SortHeader sortKey="name" sortBy={sortBy} onSort={handleSort}>Name</SortHeader>
-                  <SortHeader sortKey="email" sortBy={sortBy} onSort={handleSort}>Email</SortHeader>
-                  <SortHeader sortKey="username" sortBy={sortBy} onSort={handleSort}>Username</SortHeader>
-                  <SortHeader sortKey="group" sortBy={sortBy} onSort={handleSort}>Group</SortHeader>
-                  <SortHeader sortKey="role" sortBy={sortBy} onSort={handleSort}>Role</SortHeader>
-                  <SortHeader sortKey="completed" sortBy={sortBy} onSort={handleSort} align="center">Completed</SortHeader>
-                  <SortHeader sortKey="lastActive" sortBy={sortBy} onSort={handleSort}>Last active</SortHeader>
-                  <SortHeader sortKey="date" sortBy={sortBy} onSort={handleSort}>Date added</SortHeader>
-                  {filterField && <TableHead>{filterField.label}</TableHead>}
-                  {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                  {shownColumns.map((col) => (col.sortKey
+                    ? <SortHeader key={col.id} sortKey={col.sortKey} sortBy={sortBy} onSort={handleSort} align={col.align}>{col.label}</SortHeader>
+                    : <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageItems.map(item => item._type === 'waitlist' ? (
-                  // Clicking anywhere on the row is a mouse convenience; the
-                  // name button is the keyboard/SR path. (A role="button" row
-                  // can't contain the row's own buttons: nested-interactive.)
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)}>
-                    <TableCell>
-                      <RowOpenButton onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} srPrefix="Edit wait list entry: ">
-                        {item.name || item.email}
-                      </RowOpenButton>
-                    </TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell><Badge variant="outline">Wait List</Badge></TableCell>
-                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleString()}</TableCell>
-                    {filterField && (
-                      <TableCell className="max-w-48 truncate">
-                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
-                        {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : item._type === 'invite' ? (
-                  <TableRow key={item._key}>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>&mdash;</TableCell>
-                    <TableCell><Badge variant="outline">Invited</Badge></TableCell>
-                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
-                    {filterField && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
-                        <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)}>
-                    <TableCell>
-                      <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">
-                        {item.name || item.email}
-                      </RowOpenButton>
-                    </TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>
-                      <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>
-                        {roleLabel(item.role)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {typeof item._user.lessonsCompleted === 'number' ? (
-                        <div className="inline-flex">
-                          <CompletionRing
-                            completed={item._user.lessonsCompleted}
-                            available={item._user.lessonsAvailable}
-                            size={40}
-                            strokeWidth={5}
-                            compact
-                          />
-                        </div>
-                      ) : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                    <TableCell>
-                      {item._user.lastActiveAt
-                        ? new Date(item._user.lastActiveAt).toLocaleDateString()
-                        : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
-                    {filterField && (
-                      <TableCell className="max-w-48 truncate">
-                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    {slackConnected && (
-                      <TableCell>
-                        {item._user.slackUserId ? (
-                          <span title={item._user.slackUserId} className="text-xs">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">
-                              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
-                            </svg>
-                            Linked
-                          </span>
-                        ) : <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      {/* Keep clicks on these buttons from also opening the row. */}
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                        <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
-                        {item._user.userId !== currentUser?.userId && shows('users.write') && (
-                          <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {pageItems.map((item) => {
+                  // Clicking anywhere on a user or wait-list row is a mouse
+                  // convenience; the name button is the keyboard/SR path. (A
+                  // role="button" row can't contain the row's own buttons.)
+                  const open = item._type === 'waitlist' ? () => navigate(`/plato/users/waitlist/${item._key}`)
+                    : item._type === 'user' ? () => openEditUser(item._user) : null;
+                  return (
+                    <TableRow key={item._key} className={open ? 'cursor-pointer hover:bg-muted/50' : undefined} onClick={open || undefined}>
+                      {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(item)}</TableCell>)}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -1052,9 +970,19 @@ export default function AdminUsers() {
         </>
       ) : (
         <p className="text-muted-foreground py-8 text-center">
-          {search || filter !== 'all' ? 'No matching users.' : 'No users yet. Click "Invite Users" to get started.'}
+          {search || filterChips.length ? 'No matching users.' : 'No users yet. Click "Invite Users" to get started.'}
         </p>
       )}
+
+      <ColumnsDialog
+        open={columnsOpen}
+        onOpenChange={setColumnsOpen}
+        title="Users table columns"
+        columns={arrangeable(allColumns, columnPrefs)}
+        onToggle={(id, show) => updateColumns(toggleColumn(allColumns, columnPrefs, id, show))}
+        onMove={(id, delta) => updateColumns(moveColumn(allColumns, columnPrefs, id, delta))}
+        onReset={() => updateColumns(defaultPrefs(allColumns))}
+      />
 
       {/* Invite Users Modal */}
       <Dialog open={inviteOpen} onOpenChange={handleInviteClose}>
@@ -1285,7 +1213,8 @@ export default function AdminUsers() {
         onChange={(next) => {
           setUserFields(next);
           // Reset a filter pointing at a deleted field.
-          if (fieldFilter.fieldId && !next.some(f => f.id === fieldFilter.fieldId)) setFieldFilter({ fieldId: '', value: '' });
+          // Drop filters on a deleted field.
+          setFilters((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith('field:') || next.some((f) => `field:${f.id}` === k))));
           // Values for deleted fields were erased server-side; refresh rows.
           if (next.length < userFields.length) loadData();
         }}
