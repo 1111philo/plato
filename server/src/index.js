@@ -19,6 +19,7 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
 import { runMigrationsBounded } from './lib/migrations.js';
 import { isJobEvent, runJob } from './lib/jobs.js';
+import { runDueJobs } from './lib/schedule.js';
 import './lib/learner-emails.js'; // registers the scheduled email jobs (#400)
 import './lib/messages.js'; // registers send-message (#389)
 import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
@@ -80,6 +81,14 @@ server.use('*', async (c, next) => {
     } catch (err) {
       logger.error('plugin_registry_boot_failed', { error: err?.message, stack: err?.stack });
     }
+  }
+  // Scheduled learner emails (#400): traffic checks whether one is due, at
+  // most every 10 minutes per container (lib/schedule.js). Never fails or
+  // slows the request beyond a quick read.
+  try {
+    await runDueJobs();
+  } catch (err) {
+    logger.error('schedule_check_failed', { error: err?.message });
   }
   await next();
 });

@@ -1,6 +1,6 @@
 /**
- * Scheduled learner emails (#400), run by the API function on SAM Schedule
- * events (template.yaml) through lib/jobs.js. Each one does nothing unless
+ * Scheduled learner emails (#400), dispatched as background jobs
+ * (lib/jobs.js) when ordinary traffic finds one due (lib/schedule.js). Each one does nothing unless
  * its automation is on (Admin → Notifications → Automations), and honors the
  * learner's opt-out.
  *

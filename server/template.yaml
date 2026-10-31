@@ -97,20 +97,6 @@ Resources:
               Action: lambda:InvokeFunction
               Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-*"
       Events:
-        # Scheduled learner emails (#400, lib/learner-emails.js). Each job does
-        # nothing unless an admin turned its automation on.
-        InactivityNudges:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 15 * * ? *)
-            Description: plato inactivity reminders (daily, 15:00 UTC)
-            Input: '{"__platoInternal":"platoJob","job":"inactivity-nudge","payload":{}}'
-        WeeklyDigest:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 15 ? * MON *)
-            Description: plato weekly digest (Mondays, 15:00 UTC)
-            Input: '{"__platoInternal":"platoJob","job":"weekly-digest","payload":{}}'
         ApiCatchAll:
           Type: HttpApi
           Properties:
