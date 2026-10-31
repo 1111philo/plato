@@ -137,6 +137,18 @@ export async function sendMessageEmails({ id }, { db = defaultDb, send } = {}) {
     for (let u = queue.shift(); u; u = queue.shift()) {
       try {
         if ((await readNotifyState(u.userId, db)).optOut?.messages) { counts.optedOut++; continue; }
+        // Claim this recipient before sending. Lambda retries an async job
+        // that timed out or failed; the claim makes a retry skip everyone
+        // already emailed instead of emailing them twice.
+        let claimed = false;
+        await updateNotifyState(u.userId, (st) => {
+          claimed = !st.emailed?.[id]; // recomputed if the write is retried
+          if (!claimed) return st;
+          // Only recent messages need remembering; keep the record small.
+          const recent = Object.entries(st.emailed || {}).sort((a, b) => b[1].localeCompare(a[1])).slice(0, 49);
+          return { ...st, emailed: { ...Object.fromEntries(recent), [id]: new Date().toISOString() } };
+        }, db);
+        if (!claimed) { counts.emailed++; continue; }
         const unsubscribe = unsubscribeUrl(u.userId, 'messages');
         const label = UNSUBSCRIBE_KINDS.messages;
         const rendered = renderEmail(message, { firstName: nameFields(u).firstName, classroomName: classroom.name, link: APP_URL }, {
@@ -144,7 +156,19 @@ export async function sendMessageEmails({ id }, { db = defaultDb, send } = {}) {
           footerText: `To stop getting ${label} by email, unsubscribe: ${unsubscribe}`,
           footerHtml: `<p style="color: #777; font-size: 12px; line-height: 1.5; margin: 16px 0 0;">Don’t want ${escapeHtml(label)} by email? <a href="${escapeHtml(unsubscribe)}" style="color: #777;">Unsubscribe</a>.</p>`,
         });
-        const r = await sendNotificationEmail({ to: u.email, ...rendered, classroom, unsubscribe, ...(send ? { send } : {}) });
+        let r;
+        try {
+          r = await sendNotificationEmail({ to: u.email, ...rendered, classroom, unsubscribe, ...(send ? { send } : {}) });
+        } catch (err) {
+          // SES said no: release the claim so a retry can try this person
+          // again. (A run killed mid-send keeps its claims: at most once.)
+          await updateNotifyState(u.userId, (st) => {
+            if (!st.emailed?.[id]) return st;
+            const { [id]: _drop, ...rest } = st.emailed;
+            return { ...st, emailed: rest };
+          }, db).catch(() => {});
+          throw err;
+        }
         if (r.sent) counts.emailed++;
         else if (r.blocked) counts.blocked++;
         else counts.skipped++;

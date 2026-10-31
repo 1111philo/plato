@@ -10,6 +10,7 @@ import me from '../../src/routes/me.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 import { setEmailTransport } from '../../src/lib/notifications.js';
+import { whenJobsIdle } from '../../src/lib/jobs.js';
 
 let store;
 let mails;
@@ -107,7 +108,7 @@ describe('admin messages (#389)', () => {
     assert.equal(res.status, 201);
     const { message } = await res.json();
     assert.deepEqual([message.status, message.counts.recipients, message.important], ['sending', 2, true]);
-    await new Promise((r) => setTimeout(r, 50)); // the local job runs in-process
+    await whenJobsIdle(); // the job runs in-process here
     assert.equal(mails.length, 2);
     const history = await (await req('GET', '/v1/admin/notifications/messages')).json();
     assert.deepEqual([history.messages[0].status, history.messages[0].counts.emailed], ['sent', 2]);

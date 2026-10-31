@@ -1340,6 +1340,11 @@ password-reset emails stay in `email.js`.
     honoring the `messages` opt-out with an unsubscribe link. It records
     `counts` (emailed, opted out, not allowlisted, failed), and a re-run of a
     finished job sends nothing.
+  - Lambda retries an async job that failed or timed out, so each recipient is
+    **claimed** in their `notify:state.emailed[messageId]` before the send,
+    and a retry skips them. An SES error releases the claim, so the retry
+    tries that person again. A run killed mid-send keeps its claims (at most
+    once, never twice).
   - Compose shows the audience size first (`POST …/preview`) and asks for
     confirmation.
   - Each send writes a `message_sent` audit entry.

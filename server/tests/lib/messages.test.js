@@ -101,6 +101,22 @@ describe('send-message job', () => {
     assert.deepEqual(await m.sendMessageEmails({ id: msg.id }, { db }), { skipped: true }, 'a retried job sends nothing');
     assert.equal(mails.length, 1);
   });
+  it('a retried job (Lambda retries failed async jobs) emails only who it missed', async () => {
+    const msg = await m.createMessage(m.validateMessage(draft({ email: true })).message, admin, db);
+    // First attempt: one of the two sends fails, then the run dies before recording the result.
+    let calls = 0;
+    setEmailTransport(async (raw) => { calls++; mails.push(raw); if (calls === 1) throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); });
+    await m.sendMessageEmails({ id: msg.id }, { db }).catch(() => {});
+    setEmailTransport(async (raw) => { mails.push(raw); });
+    const before = mails.length;
+    // Simulate the crash: the record never flipped to 'sent'.
+    const rec = await db.getSyncData('_system', `message:${msg.id}`);
+    await db.putSyncData('_system', `message:${msg.id}`, { ...rec.data, status: 'sending' }, rec.version);
+    const counts = await m.sendMessageEmails({ id: msg.id }, { db });
+    assert.equal(mails.length - before, 1, 'only the person whose send failed gets a retry');
+    assert.equal(counts.emailed, 2);
+  });
+
   it('an in-app-only message is sent at once and never emails', async () => {
     const msg = await m.createMessage(m.validateMessage(draft()).message, admin, db);
     assert.equal(msg.status, 'sent');
@@ -113,7 +129,7 @@ describe('jobs', () => {
     let ran = null;
     jobs.registerJob('test-job', async (p) => { ran = p; return { ok: true }; });
     assert.deepEqual(await jobs.dispatchJob('test-job', { a: 1 }), { local: true });
-    await new Promise((r) => setTimeout(r, 10));
+    await jobs.whenJobsIdle();
     assert.deepEqual(ran, { a: 1 });
     assert.deepEqual(await jobs.runJob('nope'), { error: 'unknown job' });
     assert.equal(jobs.isJobEvent({ __platoInternal: 'platoJob', job: 'x' }), true);

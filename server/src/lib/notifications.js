@@ -213,11 +213,16 @@ export async function readNotifyState(userId, db = defaultDb) {
   return { optOut: {}, ...(item?.data || {}) };
 }
 
-/** Read-modify-write with one retry on a lost race. */
+/**
+ * Read-modify-write with one retry on a lost race. If `change` returns its
+ * argument unchanged (the same object), nothing is written.
+ */
 export async function updateNotifyState(userId, change, db = defaultDb) {
   for (let attempt = 0; attempt < 2; attempt++) {
     const item = await db.getSyncData(userId, STATE_KEY);
-    const next = change({ optOut: {}, ...(item?.data || {}) });
+    const cur = { optOut: {}, ...(item?.data || {}) };
+    const next = change(cur);
+    if (next === cur) return cur;
     try {
       await db.putSyncData(userId, STATE_KEY, next, item?.version || 0);
       return next;

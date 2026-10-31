@@ -17,7 +17,13 @@ import { logger } from './logger.js';
 
 const JOB_MARKER = 'platoJob';
 const jobs = new Map();
+const pendingLocal = new Set();
 let lambda = null;
+
+/** Resolves when every in-process job has finished (local dev and tests). */
+export async function whenJobsIdle() {
+  while (pendingLocal.size) await Promise.allSettled([...pendingLocal]);
+}
 
 export function registerJob(name, fn) {
   jobs.set(name, fn);
@@ -48,7 +54,11 @@ export async function runJob(name, payload = {}) {
 export async function dispatchJob(name, payload = {}) {
   const target = process.env.JOBS_FUNCTION || process.env.AWS_LAMBDA_FUNCTION_NAME;
   if (!target) {
-    setImmediate(() => { runJob(name, payload).catch(() => {}); });
+    const p = new Promise((resolve) => setImmediate(resolve))
+      .then(() => runJob(name, payload))
+      .catch(() => {})
+      .finally(() => pendingLocal.delete(p));
+    pendingLocal.add(p);
     return { local: true };
   }
   try {
