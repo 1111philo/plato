@@ -102,6 +102,7 @@ const R = [
   // Wait list
   ['GET', '/v1/admin/waitlist', 'waitlist.read'],
   ['POST', '/v1/admin/waitlist/:token/invite', 'waitlist.invite'],
+  ['POST', '/v1/admin/waitlist/:token/apply', 'users.write'],
   ['PUT', '/v1/admin/waitlist/:token', 'waitlist.write'],
   ['DELETE', '/v1/admin/waitlist/:token', 'waitlist.write'],
   ['PUT', '/v1/admin/waitlist/settings', 'waitlist.write'],

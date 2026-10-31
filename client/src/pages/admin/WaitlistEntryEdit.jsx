@@ -13,7 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
  * group, and custom field answers before inviting them. Deep-linked at
  * /plato/users/waitlist/:token, same shape as the Edit User view.
  */
-export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onRemove, canEdit = true, canInvite = true }) {
+export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onApply, onRemove, canEdit = true, canInvite = true, canApply = true }) {
   const [form, setForm] = useState({
     firstName: entry.firstName || '',
     lastName: entry.lastName || '',
@@ -63,7 +63,9 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
       <Card>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Joined {new Date(entry.createdAt).toLocaleDateString()}. Invite sends the signup email, prefilled with these answers.
+            Joined {new Date(entry.createdAt).toLocaleDateString()}. {entry.alreadyRegistered === 'account'
+              ? 'This email already has an account. Copy to account adds the group and answers it doesn\u2019t have yet.'
+              : 'Invite sends the signup email, prefilled with these answers.'}
           </p>
           <NameFields
             idPrefix="wl-edit"
@@ -100,7 +102,9 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
           <div className="flex items-center gap-3 pt-2">
             {canEdit && <Button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>}
             <Button variant="outline" onClick={onBack}>{canEdit ? 'Cancel' : 'Back'}</Button>
-            {canInvite && <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
+            {entry.alreadyRegistered === 'account'
+              ? canApply && <Button variant="outline" className="ml-auto" onClick={() => onApply(entry)} disabled={saving}>Copy to account</Button>
+              : canInvite && <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
             {canEdit && <Button variant="destructive" onClick={() => onRemove(entry)} disabled={saving}>Remove</Button>}
           </div>
         </CardContent>
