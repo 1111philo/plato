@@ -104,11 +104,12 @@ Unknown field ids are ignored. An empty string means "no answer".
 | `400` | `{"error":"Organization is required"}` | The input is invalid; `error` is a human-readable reason you can show to the person. |
 | `403` | `{"error":"The wait list is closed"}` | The list is closed and the request had no key, or a wrong one. |
 
-`202` is also returned when the email **already** has an account, a pending
-invite, or a wait-list entry — nothing new is stored, and the existing entry
-isn't updated. This is deliberate: the API never reveals whether someone is
-already registered. So a `202` means "plato has this person in some form",
-not necessarily "a new entry was created".
+`202` is returned for every valid request, so the API never reveals whether
+someone is already registered. If the email already has an account or a
+pending invite, the submission is still kept: admins see it on the Wait List
+marked "Has an account" or "Invited". A repeat request for an email that's
+already on the wait list stores nothing, and the existing entry isn't
+updated.
 
 ### From a browser (no key)
 
