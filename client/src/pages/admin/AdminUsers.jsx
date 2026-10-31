@@ -793,7 +793,14 @@ export default function AdminUsers() {
     { id: 'username', label: 'Username', sortKey: 'username', cell: (item) => (item._type === 'user' && item.username) || DASH },
     { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => (item._type !== 'invite' && item.userGroup) || DASH },
     { id: 'role', label: 'Role', sortKey: 'role', cell: (item) => (
-      item._type === 'waitlist' ? <Badge variant="outline">Wait List</Badge>
+      item._type === 'waitlist' ? (
+        <>
+          <Badge variant="outline">Wait List</Badge>
+          {item._entry.alreadyRegistered && (
+            <span className="block text-xs text-muted-foreground mt-1">{item._entry.alreadyRegistered === 'account' ? 'Has an account' : 'Invited'}</span>
+          )}
+        </>
+      )
         : item._type === 'invite' ? <Badge variant="outline">Invited</Badge>
           : <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>{roleLabel(item.role)}</Badge>
     ) },
@@ -821,7 +828,8 @@ export default function AdminUsers() {
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
         <div className="flex gap-1">
-          {shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+          {/* Someone who already has an account can't be invited again. */}
+          {shows('waitlist.invite') && item._entry.alreadyRegistered !== 'account' && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
           {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
         </div>
       ) : item._type === 'invite' ? (

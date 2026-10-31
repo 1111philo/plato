@@ -37,17 +37,19 @@ waitlist.post('/v1/waitlist', async (c) => {
   const result = validateWaitlistEntry(body, settings?.data || {});
   if (result.error) return c.json({ error: result.error }, 400);
 
-  const known = await db.getUserByEmail(result.email)
-    || await db.getInviteByEmail(result.email)
-    || await db.getWaitlistEntryByEmail(result.email);
-  if (!known) {
+  // Store the submission even when the email already has an account or a
+  // pending invite: admins need to see what the person sent (the Wait List
+  // marks them "Has an account" / "Invited"). Only a repeat join for an email
+  // already on the wait list stores nothing. The reply is the same either
+  // way, so it never reveals who's registered.
+  if (!(await db.getWaitlistEntryByEmail(result.email))) {
     let created = false;
     try {
       await db.createWaitlistEntry({ inviteToken: waitlistTokenFor(result.email), email: result.email, profile: result.profile });
       created = true;
     } catch (err) {
       // A concurrent join for the same email won the create-only write — same
-      // outcome as `known`, same reply.
+      // outcome as a repeat join, same reply.
       if (err.name !== 'ConditionalCheckFailedException') throw err;
     }
     // #388: confirm once. Only the request that created the entry sends, so a

@@ -404,11 +404,16 @@ admin.get('/v1/admin/waitlist', async (c) => {
     db.listInvites(), readWaitlistConfig(), db.getSyncData('_system', 'settings'),
   ]);
   const fieldDefs = getFieldDefinitions(settings?.data);
+  // Someone can join the wait list after they already have an account or an
+  // invite; say so, worked out now so it stays true if that changes.
+  const accounts = new Set((await db.listAllUsers()).map((u) => (u.email || '').toLowerCase()));
+  const invited = new Set(invites.filter((inv) => inv.status === 'pending' && inv.email).map((inv) => inv.email.toLowerCase()));
   const entries = invites
     .filter((inv) => inv.status === 'waitlist')
     .map((inv) => ({
       inviteToken: inv.inviteToken,
       email: inv.email,
+      alreadyRegistered: accounts.has(inv.email.toLowerCase()) ? 'account' : invited.has(inv.email.toLowerCase()) ? 'invite' : null,
       ...nameFields(inv.profile),
       userGroup: inv.profile?.userGroup || null,
       customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
