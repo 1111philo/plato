@@ -3,9 +3,12 @@ import { WebClient } from '../../../src/lib/plugins/sdk.js';
 /**
  * Create a Slack WebClient for the given bot token.
  */
-export function getSlackClient(token) {
-  return new WebClient(token);
+export function getSlackClient(token, options) {
+  return new WebClient(token, options);
 }
+
+// Auto-invite runs inside signup: one bounded try per call, no retries.
+const SIGNUP_CALL = { timeout: 4000, retryConfig: { retries: 0 } };
 
 /**
  * Validate a bot token by calling auth.test. Returns workspace info on success.
@@ -124,7 +127,7 @@ export async function sendSlackDM(token, slackUserId, text) {
  */
 export async function findSlackUserByEmail(token, email) {
   try {
-    const { user } = await getSlackClient(token).users.lookupByEmail({ email });
+    const { user } = await getSlackClient(token, SIGNUP_CALL).users.lookupByEmail({ email });
     return user && !user.deleted ? user.id : null;
   } catch (err) {
     if (err?.data?.error === 'users_not_found') return null;
@@ -139,7 +142,7 @@ export async function findSlackUserByEmail(token, email) {
  */
 export async function inviteToSlackChannel(token, channelId, slackUserId) {
   try {
-    await getSlackClient(token).conversations.invite({ channel: channelId, users: slackUserId });
+    await getSlackClient(token, SIGNUP_CALL).conversations.invite({ channel: channelId, users: slackUserId });
   } catch (err) {
     if (err?.data?.error === 'already_in_channel') return;
     throw err;

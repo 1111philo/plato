@@ -10,13 +10,22 @@ async function settle(page) {
 }
 
 test.describe('public pages', () => {
-  for (const path of ['/login', '/forgot-password', '/waitlist', '/signup', '/how-assessment-works']) {
+  for (const path of ['/login', '/forgot-password', '/waitlist', '/signup', '/how-assessment-works', '/privacy']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await settle(page);
       await expectAccessible(page, { label: path });
     });
   }
+});
+
+test('error banner (failed sign-in) has readable contrast', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel(/email or username/i).fill('nobody@example.com');
+  await page.locator('input[type=password]').fill('wrong-password');
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expectAccessible(page, { label: 'login error banner' });
 });
 
 test.describe('learner pages', () => {
@@ -72,12 +81,21 @@ test.describe('learner pages', () => {
     await settle(page);
     await expectAccessible(page, { label: '/settings' });
   });
+
+  test('dialog: sign out', async ({ page }) => {
+    await page.goto('/lessons');
+    await settle(page);
+    await page.getByRole('button', { name: /account menu/ }).click();
+    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expectAccessible(page, { include: '[role=alertdialog]', label: 'sign out dialog' });
+  });
 });
 
 test.describe('admin pages', () => {
   test.beforeEach(async ({ page }) => { await login(page, ADMIN); });
 
-  for (const path of ['/plato', '/plato/lessons', '/plato/lessons/structure', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/notifications', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins']) {
+  for (const path of ['/plato', '/plato/lessons', '/plato/lessons/structure', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/notifications', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins', '/plato/lessons/new']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await settle(page);
@@ -92,6 +110,14 @@ test.describe('admin pages', () => {
     await expect(page.getByRole('heading', { name: 'Edit User' })).toBeVisible();
     await settle(page);
     await expectAccessible(page, { label: 'edit user' });
+  });
+
+  test('dialog: lesson visibility & sharing', async ({ page }) => {
+    await page.goto('/plato/lessons');
+    await settle(page);
+    await page.getByRole('button', { name: `Visibility and sharing for ${LESSONS[0].name}` }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expectAccessible(page, { include: '[role=dialog]', label: 'share lesson dialog' });
   });
 
   for (const [path, button] of [

@@ -106,6 +106,20 @@ describe('bundled lessons', () => {
     assert.equal(await lesson(), undefined);
   });
 
+  it('takes back a copy whose marker an older release dropped, without overwriting it', async () => {
+    await run();
+    const cur = await db.getSyncData('_system', 'lesson:getting-started');
+    const { bundled: _b, ...rolledBack } = cur.data;
+    await db.putSyncData('_system', 'lesson:getting-started', { ...rolledBack, markdown: `${V1}\nEdited under RC-232.` }, cur.version);
+    canonical = V2;
+    await run();
+    const l = await lesson();
+    assert.equal(l.bundled.id, 'getting-started');
+    assert.match(l.markdown, /Edited under RC-232/, 'not overwritten');
+    const [st] = await bundledLessonStatus({ db, read });
+    assert.equal(st.updateAvailable, true);
+  });
+
   it("leaves an admin's own lesson that happens to use the id alone", async () => {
     await db.createSyncData('_system', 'lesson:getting-started', { name: 'Ours', markdown: 'custom', status: 'public' });
     await run();

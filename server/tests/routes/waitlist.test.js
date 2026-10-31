@@ -6,7 +6,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import waitlist from '../../src/routes/waitlist.js';
+import waitlist, { _resetJoinLimit, JOIN_LIMIT } from '../../src/routes/waitlist.js';
 import admin from '../../src/routes/admin.js';
 import auth from '../../src/routes/auth.js';
 import db from '../../src/lib/db.js';
@@ -52,6 +52,7 @@ async function adminReq(app, method, path, body) {
 }
 
 beforeEach(() => {
+  _resetJoinLimit();
   // Fresh copy each test — admin routes mutate settings in place.
   store = { settings: structuredClone(SETTINGS), waitlist: { open: true, apiKeyHash: null } };
   created = [];
@@ -128,6 +129,15 @@ describe('unsubscribe (#400)', () => {
     assert.deepEqual(writes.map((w) => [w.u, w.key, w.data.optOut]), [['usr_ada', 'notify:state', { digest: true }]]);
     assert.equal((await app().request('/v1/unsubscribe?token=bad.token', { method: 'POST' })).status, 400);
     assert.equal(writes.length, 1);
+  });
+});
+
+describe('join rate limit (#451 review M11)', () => {
+  it('limits unkeyed joins per IP; other IPs and keyed requests are unaffected', async () => {
+    const from = (ip, extra = {}) => post(makeApp(), '/v1/waitlist', { ...VALID, email: `p${Math.random()}@x.com` }, { 'X-Forwarded-For': ip, ...extra });
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from('1.2.3.4')).status, 202);
+    assert.equal((await from('1.2.3.4')).status, 429);
+    assert.equal((await from('5.6.7.8')).status, 202);
   });
 });
 

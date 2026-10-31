@@ -34,3 +34,16 @@ describe('lesson rewrite', () => {
     assert.equal(titleOf(MD), 'Values');
   });
 });
+
+describe('validateLessonMarkdown reads objectives like the client (#451 review)', async () => {
+  const { validateLessonMarkdown, lessonObjectives } = await import('../../src/lib/lesson-markdown.js');
+  const md = (bullets, heading = '## Learning Objectives', eol = '\n') => ['# T', '', 'D', '', heading, '', ...bullets].join(eol);
+  it('counts every bullet, so a lesson can’t sneak in a fifth objective', () => {
+    assert.match(validateLessonMarkdown(md(['- Can a', '- Can b', '- Can c', '- Can d', '- Also e'])), /Too many objectives \(5\)/);
+  });
+  it('requires "Can …", accepts any heading case and CRLF', () => {
+    assert.match(validateLessonMarkdown(md(['- Can a', '- Know b'])), /starts with "Can/);
+    assert.equal(validateLessonMarkdown(md(['- Can a', '- Can b'], '## learning objectives', '\r\n')), null);
+    assert.deepEqual(lessonObjectives(md(['- Can a', '- Can b'])), ['Can a', 'Can b']);
+  });
+});

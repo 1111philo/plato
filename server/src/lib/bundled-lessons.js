@@ -104,6 +104,14 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
         continue;
       }
 
+      if (lesson && !lesson.data?.bundled && lesson.data?.createdBy === 'plato') {
+        // Ours, but an older release (a rollback to Beta-RC-232) saved it and
+        // dropped the marker. Take it back as an edited copy: never
+        // overwritten, and the admin gets "update available".
+        await db.putSyncData('_system', `lesson:${b.id}`, { ...lesson.data, bundled: { id: b.id, version: 'readopted' } }, lesson.version);
+        result.customized.push(b.id);
+        continue;
+      }
       if (!lesson || !lesson.data?.bundled) { result.skipped.push(b.id); continue; } // deleted, or not ours
       const current = lesson.data.bundled;
       if (current.version === version) continue;
@@ -111,14 +119,17 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
       await db.putSyncData('_system', `lesson:${b.id}`, {
         ...lesson.data,
         markdown,
-        name: titleOf(markdown, lesson.data.name || b.id),
+        // Keep a name the admin changed; follow the new title otherwise.
+        name: lesson.data.name && lesson.data.name !== titleOf(lesson.data.markdown, lesson.data.name)
+          ? lesson.data.name : titleOf(markdown, lesson.data.name || b.id),
         bundled: synced(current, version),
         updatedBy: 'plato', updatedByName: 'plato',
       }, lesson.version);
       result.updated.push(b.id);
     } catch (err) {
       result.skipped.push(b.id);
-      console.error(`Bundled lesson ${b.id} failed (non-fatal):`, err.message);
+      // Two containers starting at once: the other one did it. Not an error.
+      if (err.name !== 'ConditionalCheckFailedException') console.error(`Bundled lesson ${b.id} failed (non-fatal):`, err.message);
     }
   }
   return result;

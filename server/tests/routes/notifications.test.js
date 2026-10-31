@@ -35,6 +35,7 @@ beforeEach(() => {
   db.deleteSyncData = async (u, key) => { delete store[`${u}:${key}`]; };
   db.getUserById = async (id) => ({ userId: id, role, email: 'admin@x.com', username: 'admin', firstName: 'Ann', lastName: 'Admin' });
   db.getAllSyncData = async (u) => Object.entries(store).filter(([k]) => k.startsWith(`${u}:`)).map(([k, data]) => ({ dataKey: k.slice(u.length + 1), data, version: 1 }));
+  db.getSyncDataByPrefix = async (u, p) => (await db.getAllSyncData(u)).filter((i) => i.dataKey.startsWith(p));
   db.createSyncData = async (u, key, data) => { store[`${u}:${key}`] = structuredClone(data); };
   db.listAllUsers = async () => [
     { userId: 'usr_ada', role: 'learner', email: 'ada@x.com', firstName: 'Ada', userGroup: 'Cohort A', createdAt: '2026-01-01T00:00:00Z' },

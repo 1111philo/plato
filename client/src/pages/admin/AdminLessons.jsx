@@ -47,7 +47,7 @@ export default function AdminLessons() {
   const location = useLocation();
   const { lessonId: routeLessonId } = useParams();
   const { user } = useAuth();
-  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(LESSON_COLUMNS_KEY));
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const isNewRoute = location.pathname.endsWith('/lessons/new');
 
@@ -279,7 +279,7 @@ export default function AdminLessons() {
     } },
   ];
   const shownColumns = visibleColumns(allColumns, columnPrefs);
-  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(LESSON_COLUMNS_KEY, next); };
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
 
   // Lesson list
   if (loading) return spinner;
@@ -316,7 +316,7 @@ export default function AdminLessons() {
         <div
           className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
             message.type === 'error'
-              ? 'bg-destructive/10 text-destructive'
+              ? 'bg-destructive/10 text-red-800 dark:text-destructive'
               : 'bg-green-50 text-green-800'
           }`}
           role="alert"
@@ -672,7 +672,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       </div>
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert">
+        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-red-800 dark:text-destructive px-4 py-3 mb-4 text-sm" role="alert">
           <span>{error}</span>
           <button onClick={() => setError('')} aria-label="Dismiss error" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>

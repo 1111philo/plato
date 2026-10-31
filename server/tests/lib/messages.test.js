@@ -85,6 +85,17 @@ describe('in-app messages', () => {
   });
 });
 
+describe('idempotent compose (#451 review)', () => {
+  it('the same requestId returns the stored message instead of a second one', async () => {
+    const msg = m.validateMessage(draft()).message;
+    const first = await m.createMessage(msg, admin, db, { requestId: 'req-12345678' });
+    const again = await m.createMessage(msg, admin, db, { requestId: 'req-12345678' });
+    assert.equal(again.id, first.id);
+    assert.equal(again.duplicate, true);
+    assert.equal((await m.listMessages(db)).length, 1);
+  });
+});
+
 describe('send-message job', () => {
   it('emails recipients with an unsubscribe link, skips opt-outs, records counts, and runs once', async () => {
     await setOptOut('usr_bo', { messages: true }, db);

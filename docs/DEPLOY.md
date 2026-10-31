@@ -28,7 +28,7 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `Stage` | `prod` | `prod` or `playground` |
-| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. |
+| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. For the playground stack, the private deploy fork's workflow must pass it; until it does, playground sends no notification email. |
 
 ### Scheduled jobs
 

@@ -169,7 +169,7 @@ export default function AdminUsers() {
   // Combined filters (#362): { [facetKey]: [values] }; see lib/userFilters.js.
   const [filters, setFilters] = useState({});
   // Column layout (#385), saved in this browser; see lib/tableColumns.js.
-  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(USER_COLUMNS_KEY));
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
@@ -703,7 +703,7 @@ export default function AdminUsers() {
           <h1 className="text-2xl font-bold">Edit User</h1>
         </div>
         {message && (
-          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
+          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
             {message.text}
           </div>
         )}
@@ -823,7 +823,8 @@ export default function AdminUsers() {
         Linked
       </span>
     ) : DASH) }] : []),
-    // The immutable account id, for research and reporting (#386). Admin-only.
+    // The immutable account id, for research and reporting (#386). Staff only
+    // (admins, educators, testers: everyone with users.read); never learners.
     { id: 'userId', label: 'User ID', sortKey: 'userId', cell: (item) => (item._type === 'user' ? <code className="text-xs">{item._user.userId}</code> : DASH) },
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
@@ -849,7 +850,7 @@ export default function AdminUsers() {
     ) },
   ];
   const shownColumns = visibleColumns(allColumns, columnPrefs);
-  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(USER_COLUMNS_KEY, next); };
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`, next); };
 
   return (
     <div>
@@ -882,7 +883,7 @@ export default function AdminUsers() {
 
       {message && (
         <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
-          message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'
+          message.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'
         }`} role="alert">
           <span>{message.text}</span>
           <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>

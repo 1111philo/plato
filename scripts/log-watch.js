@@ -55,6 +55,8 @@ async function login(apiUrl) {
  */
 export function dataLossGroups(logs) {
   return (logs?.groups || []).filter((g) => {
+    // A record refused for size (#451 review M1) is lost learner work too.
+    if (g.code === 'sync_item_too_large') return true;
     if (g.code !== 'unhandled_error') return false;
     const m = g.sample?.meta || {};
     const method = String(m.method || '').toUpperCase();

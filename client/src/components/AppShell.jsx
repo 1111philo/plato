@@ -187,7 +187,7 @@ export default function AppShell({ children }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+              className="bg-destructive/10 text-red-800 dark:text-destructive hover:bg-destructive/20"
               onClick={handleSignOut}
             >
               Sign Out

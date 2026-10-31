@@ -56,7 +56,7 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
         <h1 className="text-2xl font-bold">Edit Wait List Entry</h1>
       </div>
       {message && (
-        <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
+        <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
           {message.text}
         </div>
       )}

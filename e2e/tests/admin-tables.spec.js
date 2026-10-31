@@ -77,5 +77,5 @@ test('Lessons: the Columns dialog shows the hidden Lesson ID column', async ({ p
   await page.getByRole('dialog', { name: 'Lessons table columns' }).getByRole('checkbox', { name: 'Lesson ID' }).check();
   await page.getByRole('dialog').getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('table', { name: 'Lessons' }).getByRole('cell', { name: 'getting-started' })).toBeVisible();
-  await page.evaluate(() => localStorage.removeItem('plato:columns:lessons:v1'));
+  await page.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('plato:columns:lessons:v1')) localStorage.removeItem(k); });
 });

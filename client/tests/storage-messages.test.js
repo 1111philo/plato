@@ -151,3 +151,21 @@ describe('saveLessonMessages', () => {
     assert.ok(typeof msgs[0].timestamp === 'number');
   });
 });
+
+describe('fitMessages (#451 review M1)', async () => {
+  const { fitMessages } = await import('../js/storage.js');
+  const agents = Array.from({ length: 4 }, () => ({ agent: 'coach', label: 'Coach', notes: ['x'.repeat(250)] }));
+  const convo = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `turn ${i}`, metadata: i % 2 ? { agents } : null }));
+  it('leaves a record under the budget alone', () => {
+    assert.equal(fitMessages(convo, 10_000_000), convo);
+  });
+  it('drops agent detail from the oldest replies until it fits, keeping every message and its text', () => {
+    const budget = JSON.stringify(convo).length - 20_000;
+    const out = fitMessages(convo, budget);
+    assert.equal(out.length, convo.length);
+    assert.deepEqual(out.map((m) => m.content), convo.map((m) => m.content));
+    assert.ok(JSON.stringify(out).length <= budget);
+    assert.equal(out[1].metadata, null, 'oldest reply trimmed');
+    assert.ok(out[out.length - 1].metadata.agents, 'newest reply keeps its detail');
+  });
+});

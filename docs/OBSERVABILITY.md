@@ -97,6 +97,8 @@ lost something?* Yes → A. No → B.
 | `schedule_check_failed` | error | B | the traffic-driven schedule check (`lib/schedule.js`) threw |
 | `learner_email_failed` | error | B | SES refused a reminder or digest; its claim was released for the next run |
 | `waitlist_confirmation_failed` | error | B | the wait-list confirmation didn't send (the join still succeeded) |
+| `ai_stream_failed` | error | B | an AI reply stream failed partway (Bedrock error or the 115 s timeout); the learner sees an error and the turn isn't saved |
+| `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |
 | `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
 
 ## How to add a check

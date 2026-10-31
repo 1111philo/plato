@@ -4,7 +4,7 @@
  */
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoInvite, onUserCreated, SIGNUP_WAIT_MS } from '../../../plugins/slack/server/auto-invite.js';
+import { autoInvite, onUserCreated } from '../../../plugins/slack/server/auto-invite.js';
 
 const SETTINGS = { botToken: 'xoxb-1', autoInviteEnabled: true, autoInviteChannelId: 'C1', autoInviteChannelName: 'cohort' };
 
@@ -55,11 +55,11 @@ describe('Slack auto-invite', () => {
     assert.equal(d.calls.lookup, 0);
   });
 
-  it('the userCreated hook never fails signup and never waits past its limit', async () => {
+  it('the userCreated hook never fails signup, and returns at once when off', async () => {
     const t = Date.now();
-    await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, { settings: { ...SETTINGS, botToken: null } });
-    await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, null);
+    const off = { readSettings: async () => ({ ...SETTINGS, botToken: null }) };
+    await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, { settings: SETTINGS }, off);
+    await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, null, { readSettings: async () => null });
     assert.ok(Date.now() - t < 100, 'returns at once when not configured');
-    assert.ok(SIGNUP_WAIT_MS <= 3000);
   });
 });

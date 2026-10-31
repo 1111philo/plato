@@ -56,6 +56,18 @@ describe('POST /v1/auth/signup', () => {
     assert.deepEqual([user.firstName, user.lastName, user.name], ['Mary', 'Ann Evans', 'Mary Ann Evans']);
   });
 
+  it('keeps only a group the classroom has', async () => {
+    let created;
+    db.createUser = async (u) => { created = u; };
+    db.getSyncData = async (_u, k) => (k === 'settings' ? { data: { userGroups: ['Cohort A'] } } : null);
+    const app = new Hono();
+    app.route('/', auth);
+    await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', firstName: 'A', password: 'password123', userGroup: 'Made Up' });
+    assert.equal(created.userGroup, null);
+    await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', firstName: 'A', password: 'password123', userGroup: 'Cohort A' });
+    assert.equal(created.userGroup, 'Cohort A');
+  });
+
   it('requires a first name', async () => {
     const app = new Hono();
     app.route('/', auth);

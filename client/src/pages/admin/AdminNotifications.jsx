@@ -60,7 +60,7 @@ export default function AdminNotifications() {
       <h1 className="text-2xl font-bold mb-4">Notifications</h1>
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{notice?.text || ''}</div>
       {notice && (
-        <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${notice.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`}>
+        <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${notice.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`}>
           <span>{notice.text}</span>
           <button onClick={() => setNotice(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
@@ -100,6 +100,8 @@ function Compose({ canWrite, onNotice, onSent }) {
   const [preview, setPreview] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
+  // One id per message: a retried send is recognized and not sent twice.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +139,8 @@ function Compose({ canWrite, onNotice, onSent }) {
     setConfirming(false);
     setSending(true);
     try {
-      await adminApi('POST', '/v1/admin/notifications/messages', { subject, body, inApp, email, important: inApp && important, audience });
+      await adminApi('POST', '/v1/admin/notifications/messages', { subject, body, inApp, email, important: inApp && important, audience, requestId });
+      setRequestId(crypto.randomUUID());
       onNotice({ text: email ? 'Sent. Emails are going out now; History shows the counts.' : 'Sent.', type: 'success' });
       setSubject(''); setBody(''); setSelected([]);
       await onSent();

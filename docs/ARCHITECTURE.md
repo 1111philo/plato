@@ -476,7 +476,7 @@ People ask to join; an admin invites them later. Integrator-facing API guide: [`
 - **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.
 - **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. A stored group that has since been renamed or deleted is ignored rather than assigned.
 - **Custom fields:** deleting a custom user field also erases its answers from wait-list entries and the invites made from them (`setInviteProfile`), and `GET /v1/admin/waitlist` only returns answers to fields that still exist.
-- **No rate limit.** Like the rest of the public API, `POST /v1/waitlist` has none; an open list accepts any number of entries. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
+- **Rate limit.** Unkeyed joins are limited to 5 per client IP per 10 minutes, per container (best-effort; `429` beyond that). Keyed requests from an outside form aren't limited. Once the wait-list confirmation is on, each join can send an email, so one source can't spray them. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
 
 ### Signup flow
 
@@ -668,6 +668,12 @@ stats.
 | Lesson | `_system:lesson:<id>` | `lesson.course` (the unit id) | `unit.lessonIds` |
 
 `server/src/lib/hierarchy.js` is the single place that reads it:
+- **The lesson PUT doesn't touch `unit.lessonIds`.** A lesson moved into an
+  ordered unit appears after the ordered ones, by name, until an admin
+  reorders the unit.
+- **An install with no units at upgrade gets no default Course** (m004 only
+  creates one to hold existing units). Units made later start outside any
+  course until an admin puts them in one.
 - **Order arrays only order.** `orderIds()` lists the ids an array names that
   are still members, then any members it's missing by name (the
   pre-hierarchy behavior). A stale or missing array can't hide or duplicate
@@ -1288,7 +1294,7 @@ change is announced.
 
 **User ID (#386).** The immutable account id (`usr_…`) is a Users column
 (sortable and searchable) and the last CSV column, as a stable key for
-research and reporting. Admin contexts only; learners never see it.
+research and reporting. It's shown to staff only (everyone with `users.read`: admins, educators, testers, including the CSV download); learners never see it.
 
 ## User groups (#434)
 
@@ -1470,6 +1476,10 @@ password-reset emails stay in `email.js`.
   - Compose shows the audience size first (`POST …/preview`) and asks for
     confirmation.
   - Each send writes a `message_sent` audit entry.
+- **Job events skip first-request setup.** The API handler routes a job event
+  straight to `runJob`, before the middleware that seeds content, runs
+  migrations, and boots plugins. Jobs must only need the database, which is
+  true of all of today's jobs.
 - **Background jobs** (`server/src/lib/jobs.js`): `dispatchJob(name, payload)`
   asynchronously invokes the **API function**, whose handler routes
   `{ __platoInternal: 'platoJob' }` events to `runJob`. Locally the job runs

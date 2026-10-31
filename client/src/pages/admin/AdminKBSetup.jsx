@@ -185,7 +185,7 @@ export default function AdminKBSetup() {
       </p>
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert" aria-live="assertive">
+        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-red-800 dark:text-destructive px-4 py-3 mb-4 text-sm" role="alert" aria-live="assertive">
           <span>{error}</span>
           <button onClick={() => setError('')} aria-label="Dismiss error" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>

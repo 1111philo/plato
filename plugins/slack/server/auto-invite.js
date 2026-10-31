@@ -7,13 +7,21 @@
  * `autoInvite: { status, channelId, channelName, at, error? }` with status
  * 'invited' | 'not_in_workspace' | 'failed'. A user already invited to the
  * current channel is skipped, so a retry never invites twice, and Slack's
- * `already_in_channel` counts as success. Signup waits at most
- * SIGNUP_WAIT_MS; slower work finishes and records its result afterwards.
+ * `already_in_channel` counts as success.
+ *
+ * The hook waits for the whole invite, including recording the result. On
+ * Lambda, work still running after the signup response is sent dies when the
+ * container freezes, so nothing is left in the background. Each Slack call
+ * gets one 4 s try (slack-client.js), and a timeout is recorded as a
+ * retryable failure.
  */
-import { getUserMeta, putUserMeta } from '../../../src/lib/plugins/sdk.js';
+import { db, getUserMeta, putUserMeta } from '../../../src/lib/plugins/sdk.js';
+
+async function freshSettings() {
+  return (await db.getSyncData('_system', 'plugins:activation'))?.data?.slack?.settings || null;
+}
 import { findSlackUserByEmail, inviteToSlackChannel } from './slack-client.js';
 
-export const SIGNUP_WAIT_MS = 3000;
 
 export function autoInviteConfigured(settings) {
   return !!(settings?.autoInviteEnabled && settings?.autoInviteChannelId && settings?.botToken);
@@ -47,11 +55,15 @@ export async function autoInvite({ userId, email }, settings, deps = {}) {
   return record;
 }
 
-/** The `userCreated` hook: never fails or holds up signup for long. */
-export async function onUserCreated(payload, ctx) {
-  if (!autoInviteConfigured(ctx?.settings)) return;
-  const work = autoInvite(payload, ctx.settings).catch((err) => {
+/**
+ * The `userCreated` hook: never fails signup; waits for the invite to finish.
+ * Settings are read fresh: `ctx.settings` is this container's startup
+ * snapshot and can miss a channel the admin just changed.
+ */
+export async function onUserCreated(payload, ctx, { readSettings = freshSettings } = {}) {
+  const settings = (await readSettings().catch(() => null)) || ctx?.settings;
+  if (!autoInviteConfigured(settings)) return;
+  await autoInvite(payload, settings).catch((err) => {
     ctx?.logger?.warn('slack_auto_invite_failed', { error: err?.message });
   });
-  await Promise.race([work, new Promise((r) => setTimeout(r, SIGNUP_WAIT_MS))]);
 }
