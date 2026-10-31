@@ -923,6 +923,28 @@ completion is still the progress score alone, and a completed lesson shows
 every objective as met. In real Qwen3-VL runs the coach reported met
 objectives in 4 of 4 runs once the prompt's example included the field.
 
+### Rewriting lessons in bulk (#261)
+
+Editing in plato is conversation-based, and that's too slow for an editorial
+pass over many lessons. Instead:
+1. **Export** (read-only): `server/scripts/export-lessons.js <dir>` writes
+   `<lessonId>.md` per lesson and a `manifest.json` with each lesson's hash
+   and objective count (`server/src/lib/lesson-rewrite.js`).
+2. **Edit and review** the `.md` files in a pull request (for prod lessons, in
+   the private deploy repo).
+3. **Apply**: `server/scripts/apply-lessons.js <dir>` is a dry run unless
+   `--apply`. It refuses any lesson changed in plato since the export
+   (`conflict`), any edit that fails the lesson checks
+   (`server/src/lib/lesson-markdown.js`, shared with the admin lesson PUT), and
+   any edit that changes the number of objectives. Each write is
+   version-checked and logs a `lesson_rewrite_applied` audit entry with the
+   before/after hashes. Status, unit, sharing, and learner progress stay.
+
+Only the first line after the title is the lesson's description (what
+`parseLessonPrompt` reads), so a rewrite puts "why this matters / how it follows
+the last lesson" there. Coaching notes, such as terms to define at first use,
+go in the optional `## Coach Directive`. No new lesson fields are needed.
+
 ## Pacing & completion philosophy
 
 Microlearning constraints live in `client/src/lib/constants.js`:
