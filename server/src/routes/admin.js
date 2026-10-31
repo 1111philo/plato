@@ -1144,6 +1144,14 @@ admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return c.json({ error: 'settings object required' }, 400);
   }
+  // writeOnly fields (e.g. a bot token) are never sent to the client, so a
+  // panel saving other settings can't include them. Keep the stored value
+  // when the body leaves one out; an explicit null still clears it.
+  const current = pluginRegistry.get(id);
+  const schemaProps = current?.manifest?.settingsSchema?.properties || {};
+  for (const [key, def] of Object.entries(schemaProps)) {
+    if (def?.writeOnly && !(key in body) && current.settings?.[key] !== undefined) body[key] = current.settings[key];
+  }
   try {
     const entry = await pluginRegistry.updateSettings(id, body);
     return c.json({ ...pluginRegistry.publicView(entry), settings: pluginRegistry.sanitizeSettings(entry) });

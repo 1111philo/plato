@@ -17,6 +17,26 @@ plato plugin that adds Slack DM invites for the learner-onboarding flow.
 | `botToken` | string (writeOnly) | Stored encrypted at rest in DynamoDB. |
 | `workspaceName` | string | Display name; populated on successful test. |
 | `connected` | boolean | True once auth.test succeeds. |
+| `autoInviteEnabled` | boolean | Add new plato accounts to a channel (#379). Off by default. |
+| `autoInviteChannelId` / `autoInviteChannelName` | string | The channel for auto-invite. |
+
+## Add new accounts to a channel (#379)
+
+When it's on, every new plato account (the `userCreated` hook) is looked up
+in the workspace **by email**. A member is added to the chosen channel with
+`conversations.invite`. plato doesn't send workspace invitations, so someone
+not in the workspace is recorded as "Not in the workspace".
+
+- **Scopes:** `users:read.email`, plus `channels:manage` for a public channel
+  or `groups:write` for a private one. The app must be in the channel.
+- **Results** are kept per user in `userMeta:slack.autoInvite`
+  (`invited` / `not_in_workspace` / `failed`, with Slack's error code). The
+  settings panel lists recent results with **Retry**, and **Retry everyone
+  not added** picks up people who joined the workspace later.
+- **Never twice:** someone already added to the current channel is skipped,
+  and Slack's `already_in_channel` counts as done.
+- **Signup waits at most 3 s**; slower work finishes and records its result
+  afterwards.
 
 ## Routes (admin-only)
 
@@ -25,6 +45,8 @@ plato plugin that adds Slack DM invites for the learner-onboarding flow.
 - `GET  /v1/plugins/slack/admin/channels` — list public channels
 - `GET  /v1/plugins/slack/admin/channels/:id/members` — list channel members
 - `POST /v1/plugins/slack/admin/invites` — send DMs (max 200 per batch)
+- `GET  /v1/plugins/slack/admin/auto-invite` — recent auto-invite results
+- `POST /v1/plugins/slack/admin/auto-invite/retry` — `{ userId }` or `{ all: true }`
 
 ## Disabling
 

@@ -13,7 +13,7 @@
  * exotic we'd add a real semver library.
  */
 
-export const PLUGIN_API_VERSION = '1.5.0';
+export const PLUGIN_API_VERSION = '1.5.1';
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?$/;
 
