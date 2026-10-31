@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
  * group, and custom field answers before inviting them. Deep-linked at
  * /plato/users/waitlist/:token, same shape as the Edit User view.
  */
-export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onRemove }) {
+export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, onSaved, onInvite, onApply, onRemove }) {
   const [form, setForm] = useState({
     name: entry.name || '',
     email: entry.email || '',
@@ -60,7 +60,9 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
       <Card>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Joined {new Date(entry.createdAt).toLocaleDateString()}. Invite sends the signup email, prefilled with these answers.
+            Joined {new Date(entry.createdAt).toLocaleDateString()}. {entry.alreadyRegistered === 'account'
+              ? 'This email already has an account. Copy to account adds the group and answers it doesn\u2019t have yet.'
+              : 'Invite sends the signup email, prefilled with these answers.'}
           </p>
           <div className="space-y-2">
             <Label htmlFor="wl-edit-name">Name</Label>
@@ -94,7 +96,9 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
           <div className="flex items-center gap-3 pt-2">
             <Button onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
             <Button variant="outline" onClick={onBack}>Cancel</Button>
-            <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>
+            {entry.alreadyRegistered === 'account'
+              ? <Button variant="outline" className="ml-auto" onClick={() => onApply(entry)} disabled={saving}>Copy to account</Button>
+              : <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
             <Button variant="destructive" onClick={() => onRemove(entry)} disabled={saving}>Remove</Button>
           </div>
         </CardContent>

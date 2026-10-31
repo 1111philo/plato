@@ -107,7 +107,9 @@ Unknown field ids are ignored. An empty string means "no answer".
 `202` is returned for every valid request, so the API never reveals whether
 someone is already registered. If the email already has an account or a
 pending invite, the submission is still kept: admins see it on the Wait List
-marked "Has an account" or "Invited". A repeat request for an email that's
+marked "Has an account" or "Invited". An entry for an existing account
+can't be invited; **Copy to account** adds its group and answers to the
+account (only ones it doesn't have yet) and removes the entry. A repeat request for an email that's
 already on the wait list stores nothing, and the existing entry isn't
 updated.
 
