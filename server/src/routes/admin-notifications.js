@@ -61,10 +61,12 @@ export function registerNotificationRoutes(admin) {
   // POST /v1/admin/notifications/messages — send now. In-app is visible at
   // once; email goes out in the background (`send-message` job).
   admin.post('/v1/admin/notifications/messages', async (c) => {
-    const checked = validateMessage(await c.req.json().catch(() => ({})), { groups: await groupsOf() });
+    const body = await c.req.json().catch(() => ({}));
+    const checked = validateMessage(body, { groups: await groupsOf() });
     if (checked.error) return c.json({ error: checked.error }, 400);
     const user = c.get('user');
-    const message = await createMessage(checked.message, user);
+    const message = await createMessage(checked.message, user, undefined, { requestId: body.requestId });
+    if (message.duplicate) return c.json({ message }, 200);
     if (message.email) await dispatchJob('send-message', { id: message.id });
     try {
       await db.createAuditLog({

@@ -119,6 +119,12 @@ a new entry gets one confirmation email, whether it came from your form or
 plato's. A repeat request for an email already on the wait list sends
 nothing, so retries are safe. If your own system already confirms sign-ups, leave it off.
 
+### Limits
+
+Requests **without** the key are limited to 5 per client IP address per 10
+minutes (`429 {"error":"Too many requests…"}` beyond that). Requests with the
+key aren't limited; send those from your server.
+
 ### From a browser (no key)
 
 With the list open, a form on any site can post directly (CORS is allowed

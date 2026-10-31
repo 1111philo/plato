@@ -100,6 +100,8 @@ function Compose({ canWrite, onNotice, onSent }) {
   const [preview, setPreview] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
+  // One id per message: a retried send is recognized and not sent twice.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +139,8 @@ function Compose({ canWrite, onNotice, onSent }) {
     setConfirming(false);
     setSending(true);
     try {
-      await adminApi('POST', '/v1/admin/notifications/messages', { subject, body, inApp, email, important: inApp && important, audience });
+      await adminApi('POST', '/v1/admin/notifications/messages', { subject, body, inApp, email, important: inApp && important, audience, requestId });
+      setRequestId(crypto.randomUUID());
       onNotice({ text: email ? 'Sent. Emails are going out now; History shows the counts.' : 'Sent.', type: 'success' });
       setSubject(''); setBody(''); setSelected([]);
       await onSent();

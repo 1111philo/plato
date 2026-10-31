@@ -47,7 +47,7 @@ export default function AdminLessons() {
   const location = useLocation();
   const { lessonId: routeLessonId } = useParams();
   const { user } = useAuth();
-  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(LESSON_COLUMNS_KEY));
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const isNewRoute = location.pathname.endsWith('/lessons/new');
 
@@ -279,7 +279,7 @@ export default function AdminLessons() {
     } },
   ];
   const shownColumns = visibleColumns(allColumns, columnPrefs);
-  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(LESSON_COLUMNS_KEY, next); };
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
 
   // Lesson list
   if (loading) return spinner;

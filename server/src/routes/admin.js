@@ -178,7 +178,8 @@ admin.post('/v1/admin/impersonation/end', async (c) => {
   }
   await db.createAuditLog({
     action: 'admin_view_as_user_ended',
-    userId: target?.userId || targetUserId || null,
+    // Only a real user id goes in the audit trail (the body is client input).
+    userId: target?.userId || null,
     email: target?.email || null,
     performedBy: adminUser.userId,
     details: target ? { targetUsername: target.username, targetName: target.name } : null,

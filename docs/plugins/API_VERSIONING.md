@@ -22,6 +22,9 @@ Defined in `server/src/lib/plugins/version.js`.
 - **Changed** the role values in `userCreated` / `userDeleted` payloads and the `AdminUser.role` type (#435): roles are now `admin`, `educator`, `learner`, `tester`, always normalized. New signups are stored as `learner`, and accounts stored as `user` before this version are reported as `learner`. A plugin comparing `role === 'user'` should compare `role === 'learner'`; none of the bundled plugins read the role.
 - Plugin admin routes guarded with the SDK's `requireAdmin` remain **admin-only**. Educators and testers don't pass it.
 
+### 1.3.0 (additive, #242)
+- **Added** the `lessonStarted` hook (`hook.lessonStarted`, emitted from `POST /v1/sync/lesson-started`) and the `lessonEnrichment` capability. A handler may return `{ label, context, reasoning, sources }`; the host stores the returns on `lessonKB.enrichments`, adds them to the coach's context, and shows them to the learner. Hook return values are now collected (`emit` returns them). Reference plugin: `plugins/wordpress-info`.
+
 ### 1.2.0 (additive)
 - **Added** `onUninstall(ctx)` lifecycle hook — optional. Runs when an admin uses the "Delete plugin data" flow on `/plato/plugins` and the plugin needs cleanup beyond its activation record (e.g., per-user `userMeta:<id>` records). The host clears the activation record (settings) automatically; plugins only implement `onUninstall` when they own data elsewhere. Plugin must be **disabled** first, and the admin must type the plugin id in a confirm dialog before the destructive button enables. Errors propagate so partial-cleanup failures are surfaced loudly.
 - **Added** `POST /v1/admin/plugins/:id/uninstall-data` endpoint. Body: `{ confirm: '<plugin id>' }`. Refuses unless the plugin is disabled. Audit-logged as `plugin_data_uninstalled`.

@@ -223,7 +223,8 @@ auth.post('/v1/auth/signup', async (c) => {
     username,
     passwordHash,
     ...nameInput.fields,
-    userGroup: userGroup || profileGroup || null,
+    // Only one of the classroom's groups: broadcasts target groups by name.
+    userGroup: (userGroup && (await db.getSyncData('_system', 'settings'))?.data?.userGroups?.includes(userGroup) ? userGroup : null) || profileGroup || null,
     role: 'learner',
     slackUserId: invite.slackUserId || null,
     customFields,

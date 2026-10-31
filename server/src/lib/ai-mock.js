@@ -113,6 +113,13 @@ const mockAi = {
     const lastUser = textOf([...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content);
     const delay = /MOCK_SLOW/.test(lastUser) ? 250 : 5;
     yield { type: 'message_start', message: { role: 'assistant' } };
+    // MOCK_TRUNCATE: the reply runs out of tokens halfway (stop_reason max_tokens).
+    if (/MOCK_TRUNCATE/.test(lastUser)) {
+      yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(0, Math.floor(text.length / 2)) } };
+      yield { type: 'message_delta', delta: { stop_reason: 'max_tokens' } };
+      yield { type: 'message_stop' };
+      return;
+    }
     for (let i = 0; i < text.length; i += 24) {
       await new Promise((r) => setTimeout(r, delay));
       yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 24) } };

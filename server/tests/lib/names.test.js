@@ -27,9 +27,14 @@ describe('joinName', () => {
 
 describe('nameFields', () => {
   it('reads stored parts', () => {
-    assert.deepEqual(nameFields({ name: 'stale', firstName: 'Ada', lastName: 'Lovelace', nameSource: 'user' }),
+    assert.deepEqual(nameFields({ name: 'Ada  Lovelace', firstName: 'Ada', lastName: 'Lovelace', nameSource: 'user' }),
       { name: 'Ada Lovelace', firstName: 'Ada', lastName: 'Lovelace', nameSource: 'user' });
   });
+  it('a name changed by an older release (rollback) wins over stale parts', () => {
+    assert.deepEqual(nameFields({ name: 'Ada King', firstName: 'Ada', lastName: 'Lovelace', nameSource: 'user' }),
+      { name: 'Ada King', firstName: 'Ada', lastName: 'King', nameSource: 'auto' });
+  });
+
   it('splits a record from before #402, as auto', () => {
     assert.deepEqual(nameFields({ name: 'Mary Ann Evans' }), { name: 'Mary Ann Evans', firstName: 'Mary', lastName: 'Ann Evans', nameSource: 'auto' });
     assert.deepEqual(nameFields(null), { name: '', firstName: '', lastName: '', nameSource: 'auto' });

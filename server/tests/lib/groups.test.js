@@ -63,6 +63,18 @@ describe('user groups', () => {
     assert.equal((await renameGroup('Nope', 'X', { db })).status, 404);
   });
 
+  it('renaming again finishes a rename whose membership writes partly failed', async () => {
+    const update = db.updateUser;
+    db.updateUser = async () => { throw new Error('throttled'); };
+    const r = await renameGroup('Cohort A', 'Spring', { db });
+    db.updateUser = update;
+    assert.equal(r.moved.failed, 1);
+    assert.equal((await db.getUserById('usr_a')).userGroup, 'Cohort A', 'left behind');
+    const retry = await renameGroup('Cohort A', 'Spring', { db });
+    assert.deepEqual([retry.moved.users, retry.moved.failed], [1, 0]);
+    assert.equal((await db.getUserById('usr_a')).userGroup, 'Spring');
+  });
+
   it('delete clears the group from members and invites', async () => {
     await db.createWaitlistEntry({ inviteToken: 'inv_wl_2', email: 'v@x.com', profile: { userGroup: 'Cohort B' } });
     const r = await deleteGroup('Cohort B', { db });

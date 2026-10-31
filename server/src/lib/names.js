@@ -35,7 +35,12 @@ export function splitName(full) {
  */
 export function nameFields(record) {
   if (!record) return { name: '', firstName: '', lastName: '', nameSource: 'auto' };
-  if (typeof record.firstName === 'string') {
+  // New code always keeps `name` equal to the joined parts. If they differ,
+  // an older release (a rollback to Beta-RC-232) changed `name` alone, so the
+  // parts are stale: split the current name instead.
+  const stale = typeof record.firstName === 'string' && typeof record.name === 'string'
+    && clean(record.name) && joinName(record.firstName, record.lastName) !== clean(record.name);
+  if (typeof record.firstName === 'string' && !stale) {
     return {
       name: joinName(record.firstName, record.lastName),
       firstName: record.firstName,

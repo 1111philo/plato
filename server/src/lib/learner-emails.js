@@ -117,10 +117,12 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now() } =
 export function digestContent({ items, lessons, now }) {
   const since = now - 7 * DAY;
   const kbs = items.filter((i) => i.dataKey.startsWith('lessonKB:'))
-    .map((i) => ({ lessonId: i.dataKey.slice('lessonKB:'.length), kb: i.data || {} }))
+    .map((i) => ({ lessonId: i.dataKey.slice('lessonKB:'.length), kb: i.data || {}, at: Date.parse(i.updatedAt || '') }))
     .filter((l) => lessons[l.lessonId]);
   const completed = kbs.filter((l) => l.kb.status === 'completed' && Date.parse(l.kb.completedAt || '') >= since);
-  const inProgress = kbs.filter((l) => l.kb.status && l.kb.status !== 'completed');
+  // Only lessons touched in the last 30 days: one abandoned lesson shouldn't
+  // earn a digest every Monday forever (the inactivity reminder covers it).
+  const inProgress = kbs.filter((l) => l.kb.status && l.kb.status !== 'completed' && Number.isFinite(l.at) && now - l.at <= 30 * DAY);
   const fresh = Object.entries(lessons).filter(([, l]) => l.publishedAt && Date.parse(l.publishedAt) >= since);
   if (!completed.length && !inProgress.length && !fresh.length) return null;
 

@@ -39,8 +39,13 @@ export async function seedDefaultContent() {
       const content = readFileSync(join(promptsDir, file), 'utf-8');
       const existing = await db.getSyncData('_system', `prompt:${name}`);
       if (!existing || existing.data.content !== content) {
-        await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, existing?.version || 0);
-        seeded++;
+        // Another container starting at the same time may have just written it.
+        try {
+          await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, existing?.version || 0);
+          seeded++;
+        } catch (err) {
+          if (err.name !== 'ConditionalCheckFailedException') throw err;
+        }
       }
     }
   }
@@ -67,8 +72,13 @@ export async function seedDefaultContent() {
         const key = `prompt:plugin:${pluginDirName}:${name}`;
         const existing = await db.getSyncData('_system', key);
         if (!existing || existing.data.content !== content) {
-          await db.putSyncData('_system', key, { content, updatedBy: `plugin:${pluginDirName}` }, existing?.version || 0);
-          seeded++;
+          // Another container starting at the same time may have just written it.
+          try {
+            await db.putSyncData('_system', key, { content, updatedBy: `plugin:${pluginDirName}` }, existing?.version || 0);
+            seeded++;
+          } catch (err) {
+            if (err.name !== 'ConditionalCheckFailedException') throw err;
+          }
         }
       }
     }

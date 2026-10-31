@@ -147,6 +147,7 @@ After the progress tag, include:
 
 - `insights`: 1-2 short observations that should inform future coaching. These accumulate.
 - `learnerPosition`: Replace the previous position summary. Be specific about what's been demonstrated and what's left.
+- **The learner can read all of these** (in "Your work" and under each of your replies), and the profile `observation` below too. Write them the way you'd say them to the learner: specific, fair, and kind. Never put suspicions there, such as guesses that they used AI or copied, or anything you wouldn't say to them directly.
 - `objectivesMet` (optional): the numbers of the objectives (1 = the first in `objectives`) that the learner has now clearly shown in their own work. The learner sees these as a checklist, and a checked objective stays checked, so only include one when the evidence is in the learner's own words or work, not yours. `objectivesMet` in your context lists the ones already checked; you don't need to repeat them. Leave the field out when nothing new was shown. It never decides completion: `[PROGRESS]` does.
 
 ## Profile update

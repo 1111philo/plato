@@ -118,3 +118,19 @@ test('"Your work" shows the objectives checked so far, a summary, and shared lin
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
 });
+
+// #451 review H1/M10: a reply cut off at max_tokens isn't saved; the draft comes back.
+test('a cut-off coach reply shows an error and gives the message back to retry', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[1].id}`);
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+  await composer.fill('MOCK_TRUNCATE my answer');
+  await composer.press(`${MOD}+Enter`);
+  await expect(page.getByRole('alert').filter({ hasText: 'The reply was cut off' })).toBeVisible({ timeout: 20_000 });
+  await expect(composer).toHaveValue('MOCK_TRUNCATE my answer');
+  await expect(page.locator('[data-chat-message="user"]', { hasText: 'MOCK_TRUNCATE' })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Your message' }).last()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('[data-chat-message="user"]', { hasText: 'MOCK_TRUNCATE' })).toHaveCount(0);
+});

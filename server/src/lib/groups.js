@@ -43,10 +43,10 @@ async function editGroups(db, change) {
       await db.putSyncData('_system', 'settings', { ...settings, userGroups }, current?.version || 0);
       return { userGroups };
     } catch (err) {
-      if (err.name !== 'ConditionalCheckFailedException' || attempt === 1) throw err;
+      if (err.name !== 'ConditionalCheckFailedException') throw err;
     }
   }
-  return { error: 'Try again', status: 409 };
+  return { error: 'The groups just changed. Try again.', status: 409 };
 }
 
 export function addGroup(name, { db = defaultDb } = {}) {
@@ -75,6 +75,13 @@ async function moveMembers(db, from, to) {
 }
 
 export async function renameGroup(oldName, name, { db = defaultDb } = {}) {
+  // Finishing an earlier rename: the list already has the new name and not
+  // the old one, but some memberships still carry the old name (a write
+  // failed). Just move them.
+  const listed = (await db.getSyncData('_system', 'settings'))?.data?.userGroups || [];
+  if (!listed.includes(oldName) && listed.includes(name.trim())) {
+    return { userGroups: listed, moved: await moveMembers(db, oldName, name.trim()) };
+  }
   const result = await editGroups(db, (groups) => {
     if (!groups.includes(oldName)) return { error: 'Group not found', status: 404 };
     const error = validateGroupName(name, groups, { except: oldName });

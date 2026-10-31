@@ -169,7 +169,7 @@ export default function AdminUsers() {
   // Combined filters (#362): { [facetKey]: [values] }; see lib/userFilters.js.
   const [filters, setFilters] = useState({});
   // Column layout (#385), saved in this browser; see lib/tableColumns.js.
-  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(USER_COLUMNS_KEY));
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
@@ -823,7 +823,8 @@ export default function AdminUsers() {
         Linked
       </span>
     ) : DASH) }] : []),
-    // The immutable account id, for research and reporting (#386). Admin-only.
+    // The immutable account id, for research and reporting (#386). Staff only
+    // (admins, educators, testers: everyone with users.read); never learners.
     { id: 'userId', label: 'User ID', sortKey: 'userId', cell: (item) => (item._type === 'user' ? <code className="text-xs">{item._user.userId}</code> : DASH) },
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
@@ -849,7 +850,7 @@ export default function AdminUsers() {
     ) },
   ];
   const shownColumns = visibleColumns(allColumns, columnPrefs);
-  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(USER_COLUMNS_KEY, next); };
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`, next); };
 
   return (
     <div>

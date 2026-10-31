@@ -173,6 +173,22 @@ describe('preferences.name no longer touches the user record (#402)', () => {
   });
 });
 
+describe('item size guard (#451 review M1)', () => {
+  it('refuses an oversized conversation record with 413 instead of a DynamoDB 500', async () => {
+    let wrote = false;
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => { wrote = true; return { version: 1 }; };
+    const app = new Hono();
+    app.route('/', sync);
+    const big = [{ role: 'user', content: 'x'.repeat(390 * 1024) }];
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:les-1', { data: big, version: 0 });
+    assert.equal(res.status, 413);
+    assert.equal((await res.json()).code, 'sync_item_too_large');
+    assert.equal(wrote, false);
+  });
+});
+
 describe('DELETE /v1/sync', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });

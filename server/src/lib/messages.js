@@ -15,7 +15,7 @@
  * Email goes out in the `send-message` background job (lib/jobs.js),
  * honoring the `messages` opt-out.
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import defaultDb from './db.js';
 import { normalizeRole } from './permissions.js';
 import { nameFields } from './names.js';
@@ -83,8 +83,15 @@ export async function previewAudience(audience, db = defaultDb) {
   return { count: people.length, emailOptedOut: optedOut, sample: people.slice(0, 5).map((u) => nameFields(u).name || u.email) };
 }
 
-export async function createMessage(message, actor, db = defaultDb) {
-  const id = newMessageId();
+/**
+ * Store a new message. A `requestId` (the compose form sends one per message)
+ * makes this idempotent: the same request again returns the stored message
+ * with `duplicate: true` instead of sending twice.
+ */
+export async function createMessage(message, actor, db = defaultDb, { requestId = null } = {}) {
+  const id = typeof requestId === 'string' && /^[\w-]{8,64}$/.test(requestId)
+    ? `msg_r${createHash('sha256').update(`${actor.userId}:${requestId}`).digest('hex').slice(0, 20)}`
+    : newMessageId();
   const record = {
     ...message,
     status: message.email ? 'sending' : 'sent',
@@ -93,13 +100,21 @@ export async function createMessage(message, actor, db = defaultDb) {
     createdBy: actor.userId,
     createdByName: nameFields(actor).name || actor.username || actor.email,
   };
-  await db.createSyncData('_system', `message:${id}`, record);
+  try {
+    await db.createSyncData('_system', `message:${id}`, record);
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+    const existing = await db.getSyncData('_system', `message:${id}`);
+    return { id, ...existing.data, duplicate: true };
+  }
   return { id, ...record };
 }
 
 export async function listMessages(db = defaultDb) {
-  const items = await db.getAllSyncData('_system');
-  return items.filter((i) => i.dataKey.startsWith('message:'))
+  // Prefix query: the bell calls this on every load, and _system also holds
+  // every lesson, prompt, and the knowledge base.
+  const items = await db.getSyncDataByPrefix('_system', 'message:');
+  return items
     .map((i) => ({ id: i.dataKey.slice('message:'.length), ...i.data }))
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 }

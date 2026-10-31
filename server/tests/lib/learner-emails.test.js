@@ -104,6 +104,14 @@ describe('weekly digest', () => {
     assert.equal((await runWeeklyDigest({ db, now: t })).sent, 1);
   });
 
+  it('an in-progress lesson untouched for 30+ days alone earns no digest', () => {
+    const now = Date.now();
+    const items = [{ dataKey: 'lessonKB:a', data: { status: 'active' }, updatedAt: new Date(now - 40 * DAY).toISOString() }];
+    assert.equal(digestContent({ items, lessons: { a: { name: 'A', publishedAt: null } }, now }), null);
+    items[0].updatedAt = new Date(now - 3 * DAY).toISOString();
+    assert.match(digestContent({ items, lessons: { a: { name: 'A', publishedAt: null } }, now }).progressSummary, /in progress: A/);
+  });
+
   it('skips a learner with nothing to say', () => {
     assert.equal(digestContent({ items: [], lessons: { a: { name: 'A', publishedAt: null } }, now: Date.now() }), null);
   });

@@ -6,6 +6,23 @@ import { logger } from '../lib/logger.js';
 
 const waitlist = new Hono();
 
+// Unkeyed joins per client IP: at most JOIN_LIMIT per JOIN_WINDOW_MS, per
+// container (best-effort; a keyed outside form is exempt). Once the
+// wait-list confirmation is on, each join can send an email, so one source
+// mustn't be able to spray them.
+export const JOIN_LIMIT = 5;
+export const JOIN_WINDOW_MS = 10 * 60 * 1000;
+const recentJoins = new Map(); // ip -> [timestamps]
+function overLimit(ip, now = Date.now()) {
+  if (!ip) return false;
+  const times = (recentJoins.get(ip) || []).filter((t) => now - t < JOIN_WINDOW_MS);
+  times.push(now);
+  recentJoins.set(ip, times);
+  if (recentJoins.size > 10_000) recentJoins.clear(); // bound memory
+  return times.length > JOIN_LIMIT;
+}
+export function _resetJoinLimit() { recentJoins.clear(); }
+
 // GET /v1/waitlist — public. Whether the "Join the wait list" form is open.
 waitlist.get('/v1/waitlist', async (c) => {
   const { config } = await readWaitlistConfig();
@@ -21,6 +38,11 @@ waitlist.post('/v1/waitlist', async (c) => {
   const keyed = hasValidApiKey(c.req.header('Authorization'), config);
   if (!config.open && !keyed) {
     return c.json({ error: 'The wait list is closed' }, 403);
+  }
+
+  if (!keyed) {
+    const ip = (c.req.header('x-forwarded-for') || '').split(',')[0].trim();
+    if (overLimit(ip)) return c.json({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   let body;

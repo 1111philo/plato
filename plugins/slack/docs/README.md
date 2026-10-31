@@ -35,8 +35,9 @@ not in the workspace is recorded as "Not in the workspace".
   not added** picks up people who joined the workspace later.
 - **Never twice:** someone already added to the current channel is skipped,
   and Slack's `already_in_channel` counts as done.
-- **Signup waits at most 3 s**; slower work finishes and records its result
-  afterwards.
+- **Signup waits for the invite** (each Slack call gets one 4 s try). On
+  Lambda nothing may run after the response is sent, so the result is always
+  recorded before signup finishes; a timeout shows as Failed, with Retry.
 
 ## Routes (admin-only)
 

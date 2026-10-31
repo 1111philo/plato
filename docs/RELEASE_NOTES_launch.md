@@ -95,13 +95,25 @@ migration with errors is retried on the next cold start. Then:
 - Admin → Users shows everyone's first and last name. Names split
   automatically carry a "Split automatically" hint until corrected.
 
-**5. If you need to roll back,** redeploy Beta-RC-232. The migrated data is
-compatible with it: the upgrade test serves migrated data with Beta-RC-232's
-own route handlers (`server/tests/migrations/upgrade-from-rc232.test.js`).
-Old code ignores the new fields and records, and treats `learner` like
-`user`. To undo the data changes as well, see "Reversible by" in the
-migrations table. Restoring the backup from step 1 is the last resort; it also
-loses anything learners did after the upgrade.
+**5. If you need to roll back,** redeploy Beta-RC-232. The migrated *data*
+is compatible with it: the upgrade test serves migrated data with
+Beta-RC-232's own route handlers
+(`server/tests/migrations/upgrade-from-rc232.test.js`). Old code ignores the
+new fields and records. But Beta-RC-232's **admin screens** expect the old
+role name, so do this right after redeploying:
+- **Put the role name back**, or Admin → Users shows "Active: 0" and the role
+  picker only knows user/admin. For each user whose role is `learner`, set it
+  back to `user` (DynamoDB: scan `<stack>-users` for `role = learner` and
+  update each one; SQLite: `UPDATE users SET role='user' WHERE role='learner'`).
+- **Educators and testers** become ordinary learners under Beta-RC-232 (it
+  knows only admin and user). Set them to `user` as well, or to `admin` if they
+  need admin access during the rollback.
+
+Edits made under Beta-RC-232 survive a later re-upgrade. A name changed
+there wins over the stored first and last name, and a Getting Started that it
+saved is taken back as an edited copy, with "update available". Restoring the
+backup from step 1 is the last resort; it also loses anything learners did
+after the upgrade.
 
 **New settings to know:**
 - `EmailAllowlist` stack parameter (`docs/DEPLOY.md`). Leave it empty on prod.

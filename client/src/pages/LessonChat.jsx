@@ -249,6 +249,7 @@ export default function LessonChat() {
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
       pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
+      if (result.saveFailed) setError('This reply couldn’t be saved, so it may be missing after you reload. Copy anything you need from it.');
       setStreamingText(null);
 
       const freshKB = await getLessonKB(lessonGroupId);
@@ -257,6 +258,15 @@ export default function LessonChat() {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
+      // Nothing was saved (the user message is written with the reply), so
+      // take the optimistic copy back out and return the draft to the
+      // composer to try again. A draft typed meanwhile is kept instead.
+      setMessages((prev) => prev.slice(0, -1));
+      setComposeText((cur) => (cur.trim() ? cur : (text || '')));
+      if (Array.isArray(imageDataUrls) && imageDataUrls.length) {
+        setComposeImages((cur) => (cur.length ? cur : imageDataUrls.map((dataUrl, i) => ({ dataUrl, name: `image-${i + 1}.png` }))));
+      }
+      if (Array.isArray(links) && links.length) setComposeLinks((cur) => (cur.length ? cur : links));
     }
   }, [lessonGroupId, lesson]);
 

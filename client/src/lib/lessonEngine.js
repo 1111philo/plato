@@ -385,13 +385,14 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   });
   const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
 
-  await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
+  // false = the server refused it (e.g. over the item size limit); tell the learner.
+  const saved = await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
   syncInBackground(`messages:${lessonId}`);
 
   const userMsg = imageDataUrls.length > 0
     ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }
     : persistedUserMsg;
-  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase };
+  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase, saveFailed: saved === false };
 }
 
 /**

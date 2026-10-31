@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { authenticate } from '../middleware/authenticate.js';
 import ai from '../lib/ai-provider.js';
+import { logger } from '../lib/logger.js';
 
 const aiRoute = new Hono();
 
@@ -43,7 +44,8 @@ aiRoute.post('/v1/ai/messages', async (c) => {
       }
       await s.write('data: [DONE]\n\n');
     } catch (err) {
-      console.error('Streaming error:', err);
+      // A coded event, so the logs endpoint can count failed AI turns (OBSERVABILITY.md).
+      logger.error('ai_stream_failed', { error: err?.message || String(err), name: err?.name });
       await s.write(`data: ${JSON.stringify({ type: 'error', error: { message: err.message } })}\n\n`);
     }
   });

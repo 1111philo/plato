@@ -158,17 +158,17 @@ sync.put('/v1/sync/batch', async (c) => {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
     // Size guard for screenshots (same defense-in-depth as single PUT)
-    if (item.dataKey.startsWith('screenshot:')) {
-      const size = estimateSyncDataSize(userId, item.dataKey, item.data);
-      if (size > MAX_ITEM_SIZE) {
-        return {
-          dataKey: item.dataKey,
-          status: 'error',
-          error: 'Screenshot too large',
-          size,
-          limit: MAX_ITEM_SIZE,
-        };
-      }
+    // Every key, not just screenshots: DynamoDB refuses items over 400 KB.
+    const size = estimateSyncDataSize(userId, item.dataKey, item.data);
+    if (size > MAX_ITEM_SIZE) {
+      if (!item.dataKey.startsWith('screenshot:')) logger.error('sync_item_too_large', { dataKey: item.dataKey.split(':')[0], size, limit: MAX_ITEM_SIZE });
+      return {
+        dataKey: item.dataKey,
+        status: 'error',
+        error: item.dataKey.startsWith('screenshot:') ? 'Screenshot too large' : 'Record too large',
+        size,
+        limit: MAX_ITEM_SIZE,
+      };
     }
     try {
       const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
@@ -210,16 +210,20 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   // 400 KB limit. Screenshots should be compressed client-side, but if
   // compression fails or is bypassed, reject here rather than letting the
   // write silently fail with an unhandled DynamoDB error.
-  if (dataKey.startsWith('screenshot:')) {
-    const size = estimateSyncDataSize(userId, dataKey, data);
-    if (size > MAX_ITEM_SIZE) {
-      return c.json({
-        error: 'Screenshot is too large',
-        details: 'Images must be compressed to under 380 KB. Please use a smaller image or reduce quality.',
-        size,
-        limit: MAX_ITEM_SIZE,
-      }, 413);
-    }
+  // Every key, not just screenshots: DynamoDB refuses items over 400 KB, and
+  // that used to surface as a 500 the client couldn't act on.
+  const size = estimateSyncDataSize(userId, dataKey, data);
+  if (size > MAX_ITEM_SIZE) {
+    const screenshot = dataKey.startsWith('screenshot:');
+    // A conversation or progress record that won't fit is lost learner work (Tier A).
+    if (!screenshot) logger.error('sync_item_too_large', { dataKey: dataKey.split(':')[0], size, limit: MAX_ITEM_SIZE });
+    return c.json({
+      error: screenshot ? 'Screenshot is too large' : 'This record is too large to save',
+      code: screenshot ? 'screenshot_too_large' : 'sync_item_too_large',
+      ...(screenshot ? { details: 'Images must be compressed to under 380 KB. Please use a smaller image or reduce quality.' } : {}),
+      size,
+      limit: MAX_ITEM_SIZE,
+    }, 413);
   }
 
   try {

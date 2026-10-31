@@ -140,10 +140,13 @@ routes.post('/admin/invites', async (c) => {
 
       const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
       // Compose so the fallback doesn't double-up "you" (was: "You've been invited you...").
+      // Escape Slack mrkdwn control characters, so a name like "<!channel>"
+      // is text, not a mention.
+      const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const opener = adminUser.name
-        ? `${adminUser.name} has invited you`
+        ? `${esc(adminUser.name)} has invited you`
         : `You've been invited`;
-      const message = `${opener} to join *${classroom}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
+      const message = `${opener} to join *${esc(classroom)}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
 
       await sendSlackDM(token, u.slackUserId, message);
       results.push({ email, slackUserId: u.slackUserId, status: 'sent' });
