@@ -50,7 +50,11 @@ export function classifyCache(cached) {
 }
 
 export async function kickoffAsyncRefresh() {
-  const fnName = process.env.AWS_LAMBDA_FUNCTION_NAME;
+  // The API function runs internal events. The stream function (all CloudFront
+  // traffic) can't: its streaming handler only takes HTTP events, so it points
+  // at the API function through JOBS_FUNCTION. Before this, prod logged 51
+  // refresh invokes and 0 completions over 14 days (see lib/jobs.js).
+  const fnName = process.env.JOBS_FUNCTION || process.env.AWS_LAMBDA_FUNCTION_NAME;
   if (!fnName) return; // local dev / tests
   try {
     await getLambdaClient().send(new InvokeCommand({

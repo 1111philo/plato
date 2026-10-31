@@ -1327,6 +1327,38 @@ password-reset emails stay in `email.js`.
   duplicate join (which finds the entry) never sends again. A failure logs
   `waitlist_confirmation_failed` and never fails the join. It's one-time mail,
   so it carries no unsubscribe link.
+- **Messages (#389):** Admin → Notifications → Compose sends a one-off
+  message to everyone, a group, or specific people, in the classroom and/or
+  by email (`server/src/lib/messages.js`).
+  - The record is `_system:message:<id>`.
+  - "Everyone" and a group mean **learners**, and only learners who had joined
+    when it was sent. Specific people can be anyone.
+  - In-app delivery is worked out when the learner reads (`GET /v1/me/messages`),
+    so nothing is written per recipient. Read state is `notify:state.read`
+    (`POST /v1/me/messages/read`). `important` messages also open as a pop-up.
+  - Email goes out in the `send-message` background job, five at a time,
+    honoring the `messages` opt-out with an unsubscribe link. It records
+    `counts` (emailed, opted out, not allowlisted, failed), and a re-run of a
+    finished job sends nothing.
+  - Lambda retries an async job that failed or timed out, so each recipient is
+    **claimed** in their `notify:state.emailed[messageId]` before the send,
+    and a retry skips them. An SES error releases the claim, so the retry
+    tries that person again. A run killed mid-send keeps its claims (at most
+    once, never twice).
+  - Compose shows the audience size first (`POST …/preview`) and asks for
+    confirmation.
+  - Each send writes a `message_sent` audit entry.
+- **Background jobs** (`server/src/lib/jobs.js`): `dispatchJob(name, payload)`
+  asynchronously invokes the **API function**, whose handler routes
+  `{ __platoInternal: 'platoJob' }` events to `runJob`. Locally the job runs
+  in-process.
+  - The stream function, which serves all CloudFront traffic, can't take
+    non-HTTP events. So it finds the API function in `JOBS_FUNCTION`. The API
+    function's timeout is 300 s, for jobs; HTTP stays capped at 29 s by API
+    Gateway.
+  - The dashboard's async stats refresh used to invoke the stream function
+    itself and never ran: prod logged 51 invokes and 0 completions in 14 days,
+    and the API function had no log group at all. It now uses the same target.
 - **Admin routes** (`server/src/routes/admin-notifications.js`) need
   `notifications.read` (admins, testers) or `notifications.write` (admins):
   - `GET /v1/admin/notifications`
@@ -1334,6 +1366,13 @@ password-reset emails stay in `email.js`.
   - `PUT` and `DELETE …/templates/:id`
   - `POST …/templates/:id/test`, which sends the saved or unsaved draft to the
     signed-in admin with sample values
+  - `POST …/preview`, `GET …/messages`, and `POST …/messages`
+- **Admin UI:** Admin → **Notifications** (`client/src/pages/admin/AdminNotifications.jsx`)
+  has three tabs. Compose: audience radios, a searchable people picker, the
+  channels, the subject and message, the audience count, and a confirm dialog.
+  Automations: each automation's on/off toggle and its email editor, with
+  save, a test send to yourself, and reset to default. History: sent messages
+  with delivery counts. Testers can see everything and send nothing.
 
 ## Admin "View as User"
 

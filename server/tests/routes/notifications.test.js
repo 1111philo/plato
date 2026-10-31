@@ -10,6 +10,7 @@ import me from '../../src/routes/me.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 import { setEmailTransport } from '../../src/lib/notifications.js';
+import { whenJobsIdle } from '../../src/lib/jobs.js';
 
 let store;
 let mails;
@@ -33,6 +34,14 @@ beforeEach(() => {
   db.putSyncData = async (u, key, data) => { store[`${u}:${key}`] = structuredClone(data); };
   db.deleteSyncData = async (u, key) => { delete store[`${u}:${key}`]; };
   db.getUserById = async (id) => ({ userId: id, role, email: 'admin@x.com', username: 'admin', firstName: 'Ann', lastName: 'Admin' });
+  db.getAllSyncData = async (u) => Object.entries(store).filter(([k]) => k.startsWith(`${u}:`)).map(([k, data]) => ({ dataKey: k.slice(u.length + 1), data, version: 1 }));
+  db.createSyncData = async (u, key, data) => { store[`${u}:${key}`] = structuredClone(data); };
+  db.listAllUsers = async () => [
+    { userId: 'usr_ada', role: 'learner', email: 'ada@x.com', firstName: 'Ada', userGroup: 'Cohort A', createdAt: '2026-01-01T00:00:00Z' },
+    { userId: 'usr_bo', role: 'learner', email: 'bo@x.com', firstName: 'Bo', userGroup: 'Cohort B', createdAt: '2026-01-01T00:00:00Z' },
+  ];
+  db.createAuditLog = async () => {};
+  store['_system:settings'] = { userGroups: ['Cohort A', 'Cohort B'] };
 });
 
 describe('admin notifications', () => {
@@ -86,5 +95,39 @@ describe('learner email settings (/v1/me/notifications)', () => {
     assert.deepEqual(await res.json(), { optOut: { digest: true } });
     assert.deepEqual(store['usr_ada:notify:state'].optOut, { digest: true });
     assert.equal((await req('PUT', '/v1/me/notifications', { optOut: { all: true } }, 'usr_ada')).status, 400);
+  });
+});
+
+describe('admin messages (#389)', () => {
+  it('previews the audience, sends, emails in the background, and lists history', async () => {
+    const preview = await (await req('POST', '/v1/admin/notifications/preview', { audience: { type: 'group', group: 'Cohort A' } })).json();
+    assert.deepEqual([preview.count, preview.emailOptedOut], [1, 0]);
+    assert.equal((await req('POST', '/v1/admin/notifications/preview', { audience: { type: 'group', group: 'Nope' } })).status, 400);
+
+    const res = await req('POST', '/v1/admin/notifications/messages', { subject: 'Hi {{firstName}}', body: 'News', inApp: true, email: true, important: true, audience: { type: 'all' } });
+    assert.equal(res.status, 201);
+    const { message } = await res.json();
+    assert.deepEqual([message.status, message.counts.recipients, message.important], ['sending', 2, true]);
+    await whenJobsIdle(); // the job runs in-process here
+    assert.equal(mails.length, 2);
+    const history = await (await req('GET', '/v1/admin/notifications/messages')).json();
+    assert.deepEqual([history.messages[0].status, history.messages[0].counts.emailed], ['sent', 2]);
+  });
+
+  it('testers can preview and read history, not send', async () => {
+    role = 'tester';
+    assert.equal((await req('GET', '/v1/admin/notifications/messages')).status, 200);
+    assert.equal((await req('POST', '/v1/admin/notifications/messages', { subject: 'x', body: 'y', inApp: true, audience: { type: 'all' } })).status, 403);
+  });
+
+  it('learners see their messages in the bell and mark them read', async () => {
+    store['_system:message:msg_1'] = { subject: 'Hi {{firstName}}', body: 'News', inApp: true, important: false, audience: { type: 'users', userIds: ['usr_ada'] }, createdAt: '2026-05-01T00:00:00Z', createdByName: 'Ann Admin' };
+    role = 'learner';
+    db.getUserById = async (id) => ({ userId: id, role, email: 'ada@x.com', firstName: 'Ada' });
+    const list = await (await req('GET', '/v1/me/messages', null, 'usr_ada')).json();
+    assert.deepEqual(list.messages.map((x) => [x.id, x.subject, x.read]), [['msg_1', 'Hi Ada', false]]);
+    assert.deepEqual(await (await req('POST', '/v1/me/messages/read', { ids: ['msg_1'] }, 'usr_ada')).json(), { read: 1 });
+    assert.equal((await (await req('GET', '/v1/me/messages', null, 'usr_ada')).json()).messages[0].read, true);
+    assert.equal((await (await req('GET', '/v1/me/messages', null, 'usr_bo')).json()).messages.length, 0);
   });
 });

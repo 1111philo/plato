@@ -6,6 +6,7 @@ import { hashPassword } from '../lib/password.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { readNotifyState, setOptOut } from '../lib/notifications.js';
+import { messagesFor, markRead } from '../lib/messages.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
@@ -135,6 +136,15 @@ me.put('/v1/me/notifications', async (c) => {
   const result = await setOptOut(c.get('userId'), body.optOut);
   if (result.error) return c.json({ error: result.error }, 400);
   return c.json(result);
+});
+
+// GET /v1/me/messages — announcements and messages for the bell (#389).
+me.get('/v1/me/messages', async (c) => c.json({ messages: await messagesFor(c.get('user')) }));
+
+// POST /v1/me/messages/read — body { ids }
+me.post('/v1/me/messages/read', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(await markRead(c.get('userId'), body.ids));
 });
 
 // GET /v1/me/export — download all user data as JSON.

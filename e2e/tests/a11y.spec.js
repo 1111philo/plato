@@ -77,7 +77,7 @@ test.describe('learner pages', () => {
 test.describe('admin pages', () => {
   test.beforeEach(async ({ page }) => { await login(page, ADMIN); });
 
-  for (const path of ['/plato', '/plato/lessons', '/plato/lessons/structure', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins']) {
+  for (const path of ['/plato', '/plato/lessons', '/plato/lessons/structure', `/plato/lessons/${LESSONS[0].id}/edit`, '/plato/users', '/plato/notifications', '/plato/customizer', '/plato/customizer/knowledge', '/plato/plugins']) {
     test(path, async ({ page }) => {
       await page.goto(path);
       await settle(page);

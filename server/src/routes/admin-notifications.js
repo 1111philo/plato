@@ -10,6 +10,9 @@ import {
 import { getClassroom } from '../lib/email.js';
 import { nameFields } from '../lib/names.js';
 import { APP_URL } from '../config.js';
+import db from '../lib/db.js';
+import { validateMessage, createMessage, listMessages, previewAudience } from '../lib/messages.js';
+import { dispatchJob } from '../lib/jobs.js';
 
 // Sample values for a test send, so every variable shows something.
 const SAMPLE = {
@@ -40,6 +43,36 @@ export function registerNotificationRoutes(admin) {
     const result = await putTemplate(c.req.param('id'), body, c.get('user'));
     if (result.error) return c.json({ error: result.error }, result.status);
     return c.json(result);
+  });
+
+  // ── Messages (#389) ──
+  const groupsOf = async () => (await db.getSyncData('_system', 'settings'))?.data?.userGroups || [];
+
+  // POST /v1/admin/notifications/preview — body { audience }: who'd get it.
+  admin.post('/v1/admin/notifications/preview', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const checked = validateMessage({ subject: 'x', body: 'x', inApp: true, audience: body.audience }, { groups: await groupsOf() });
+    if (checked.error) return c.json({ error: checked.error }, 400);
+    return c.json(await previewAudience(checked.message.audience));
+  });
+
+  admin.get('/v1/admin/notifications/messages', async (c) => c.json({ messages: await listMessages() }));
+
+  // POST /v1/admin/notifications/messages — send now. In-app is visible at
+  // once; email goes out in the background (`send-message` job).
+  admin.post('/v1/admin/notifications/messages', async (c) => {
+    const checked = validateMessage(await c.req.json().catch(() => ({})), { groups: await groupsOf() });
+    if (checked.error) return c.json({ error: checked.error }, 400);
+    const user = c.get('user');
+    const message = await createMessage(checked.message, user);
+    if (message.email) await dispatchJob('send-message', { id: message.id });
+    try {
+      await db.createAuditLog({
+        action: 'message_sent', userId: user.userId, performedBy: user.userId,
+        details: { messageId: message.id, audience: message.audience.type, inApp: message.inApp, email: message.email, recipients: message.counts.recipients },
+      });
+    } catch { /* best-effort */ }
+    return c.json({ message }, 201);
   });
 
   // Back to plato's default copy.

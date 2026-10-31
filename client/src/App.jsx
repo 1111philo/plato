@@ -24,6 +24,7 @@ const AdminLessons = lazy(() => import('./pages/admin/AdminLessons.jsx'));
 const CourseStructure = lazy(() => import('./pages/admin/CourseStructure.jsx'));
 const AdminCustomizer = lazy(() => import('./pages/admin/AdminCustomizer.jsx'));
 const AdminPlugins = lazy(() => import('./pages/admin/AdminPlugins.jsx'));
+const AdminNotifications = lazy(() => import('./pages/admin/AdminNotifications.jsx'));
 const AdminKBSetup = lazy(() => import('./pages/admin/AdminKBSetup.jsx'));
 
 function RequireAuth({ children }) {
@@ -135,6 +136,7 @@ export default function App() {
           <Route path="customizer" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
           <Route path="customizer/knowledge" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
           <Route path="customizer/knowledge/edit" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="notifications" element={<RequirePermission permission="notifications.read"><Suspense fallback={<AdminFallback />}><AdminNotifications /></Suspense></RequirePermission>} />
           <Route path="plugins" element={<RequirePermission permission="plugins.read"><Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense></RequirePermission>} />
           {/* Back-compat redirect from the old /plato/integrations URL */}
           <Route path="integrations" element={<Navigate to="/plato/plugins" replace />} />
