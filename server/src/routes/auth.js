@@ -107,7 +107,9 @@ auth.post('/v1/auth/setup', async (c) => {
 // invite: the email, and for a wait-list invite (#363) the person's answers.
 auth.get('/v1/auth/invite/:token', async (c) => {
   const invite = await db.getInvite(c.req.param('token'));
-  if (!invite || invite.status !== 'pending' || !invite.email
+  // An invite for an existing account (forUserId) is accepted in the
+  // classroom, never through signup.
+  if (!invite || invite.status !== 'pending' || !invite.email || invite.forUserId
     || (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000))) {
     return c.json({ error: 'Invalid or expired invite' }, 404);
   }
@@ -136,7 +138,7 @@ auth.post('/v1/auth/signup', async (c) => {
   }
 
   const invite = await db.getInvite(inviteToken);
-  if (!invite || invite.status !== 'pending') {
+  if (!invite || invite.status !== 'pending' || invite.forUserId) {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 

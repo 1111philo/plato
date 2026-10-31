@@ -387,50 +387,44 @@ describe('admin wait-list routes', () => {
     assert.deepEqual(deleted, ['inv_wl1']);
   });
 
-  it('copies an entry onto an existing account: only what it is missing, never the name', async () => {
-    const updates = [];
+  it('inviting an entry whose email has an account ties the invite to it (no signup link)', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    const invites = [];
     const deleted = [];
-    const audits = [];
-    store.settings.userFields = [...FIELDS, { id: 'fld_x', label: 'X', type: 'text', required: false }];
-    db.getInvite = async (t) => (t === 'inv_wl1'
-      ? { ...entry, profile: { ...entry.profile, customFields: { fld_org: 'UIC', fld_role: 'Staff', fld_x: 'new' } } }
-      : null);
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', name: 'Ada L', userGroup: null, customFields: { fld_x: 'kept' } });
-    db.updateUser = async (id, u) => { updates.push([id, u]); };
+    db.getInvite = async (t) => (t === 'inv_wl1' ? entry : null);
+    db.getUserByEmail = async () => ({ userId: 'usr_ada', email: 'ada@example.com' });
+    db.createInvite = async (inv) => { invites.push(inv); };
     db.deleteInvite = async (t) => { deleted.push(t); };
-    db.createAuditLog = async (a) => { audits.push(a); };
-    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply');
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { userId: 'usr_ada', userGroup: 'Cohort A', fields: ['fld_org', 'fld_role'] });
-    assert.deepEqual(updates, [['usr_ada', {
-      userGroup: 'Cohort A', customFields: { fld_x: 'kept', fld_org: 'UIC', fld_role: 'Staff' },
-    }]]);
+    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/invite');
+    delete process.env.SKIP_EMAIL;
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.existingAccount, true);
+    assert.equal(data.signupUrl, undefined, 'an account gets no signup link');
+    assert.equal(invites[0].forUserId, 'usr_ada');
+    assert.deepEqual(invites[0].profile, entry.profile);
     assert.deepEqual(deleted, ['inv_wl1']);
-    assert.equal(audits[0].action, 'waitlist_applied');
   });
 
-  it('keeps an account group, skips a deleted group and invalid answers', async () => {
-    const updates = [];
-    db.getInvite = async () => ({ ...entry, profile: { userGroup: 'Gone', customFields: { fld_role: 'Not an option' } } });
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', userGroup: null, customFields: {} });
-    db.updateUser = async (id, u) => { updates.push(u); };
+  it('resending an account invite keeps it tied to the account', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    const invites = [];
+    db.getInviteByEmail = async () => ({ inviteToken: 'inv_old', email: 'ada@example.com', status: 'pending', profile: entry.profile, forUserId: 'usr_ada' });
+    db.createInvite = async (inv) => { invites.push(inv); };
     db.deleteInvite = async () => {};
-    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply');
-    assert.deepEqual(await res.json(), { userId: 'usr_ada', userGroup: null, fields: [] });
-    assert.deepEqual(updates, [], 'nothing to write');
-
-    db.getInvite = async () => entry;
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', userGroup: 'Cohort B', customFields: { fld_org: 'Mine' } });
-    assert.deepEqual(await (await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply')).json(),
-      { userId: 'usr_ada', userGroup: null, fields: [] });
-    assert.deepEqual(updates, []);
+    const res = await adminReq(makeApp(), 'POST', '/v1/admin/invites/resend', { email: 'ada@example.com' });
+    delete process.env.SKIP_EMAIL;
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).signupUrl, undefined);
+    assert.equal(invites[0].forUserId, 'usr_ada');
   });
 
-  it('will not copy when there is no account, and refuses to invite an account', async () => {
-    db.getInvite = async () => entry;
-    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply')).status, 404);
-    db.getUserByEmail = async () => ({ userId: 'usr_ada' });
-    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/invite')).status, 409);
+  it('an account invite can’t be used to sign up', async () => {
+    const inv = { inviteToken: 'inv_acct', email: 'ada@example.com', status: 'pending', forUserId: 'usr_ada', profile: entry.profile };
+    db.getInvite = async () => inv;
+    assert.equal((await makeApp().request('/v1/auth/invite/inv_acct')).status, 404);
+    const res = await post(makeApp(), '/v1/auth/signup', { inviteToken: 'inv_acct', firstName: 'Ada', username: 'ada', password: 'longenough123' });
+    assert.equal(res.status, 400);
   });
 
   it('will not invite a pending invite or an unknown token', async () => {

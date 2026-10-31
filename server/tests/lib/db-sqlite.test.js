@@ -215,6 +215,16 @@ describe('db-sqlite', () => {
       await db.createInvite({ inviteToken: inv, email: 'p@test.com', invitedBy: 'usr_admin', profile });
       assert.deepEqual((await db.getInvite(inv)).profile, profile);
       assert.deepEqual((await db.listInvites()).find(i => i.inviteToken === inv).profile, profile);
+      // By email too: resend and account invites read it this way.
+      assert.deepEqual((await db.getInviteByEmail('p@test.com')).profile, profile);
+      await db.deleteInvite(inv);
+    });
+
+    it('stores the account an invite is for (forUserId)', async () => {
+      const inv = `inv_acct_${Date.now()}`;
+      await db.createInvite({ inviteToken: inv, email: 'acct@test.com', invitedBy: 'usr_admin', profile, forUserId: 'usr_acct' });
+      assert.equal((await db.getInvite(inv)).forUserId, 'usr_acct');
+      assert.equal((await db.getInviteByEmail('acct@test.com')).forUserId, 'usr_acct');
       await db.deleteInvite(inv);
     });
   });

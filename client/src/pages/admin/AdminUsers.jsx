@@ -469,21 +469,13 @@ export default function AdminUsers() {
 
   async function inviteFromWaitlist(token, email) {
     try {
-      await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
-      setMessage({ text: `Invite sent to ${email}.`, type: 'success' });
-      loadData();
-      return true;
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
-  }
-
-  // The email already has an account: copy the entry's group and answers onto
-  // it (only what the account is missing), then the entry is removed.
-  async function applyFromWaitlist(token, email) {
-    if (!confirm(`Copy ${email}'s wait-list answers to their account and remove the entry? Nothing already on the account is replaced.`)) return false;
-    try {
-      const r = await adminApi('POST', `/v1/admin/waitlist/${token}/apply`);
-      const copied = [r.userGroup && 'group', r.fields.length && `${r.fields.length} ${r.fields.length === 1 ? 'field' : 'fields'}`].filter(Boolean);
-      setMessage({ text: copied.length ? `Copied ${copied.join(' and ')} to ${email}'s account.` : `Nothing new to copy; removed ${email} from the wait list.`, type: 'success' });
+      const r = await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
+      setMessage({
+        text: r.existingAccount
+          ? `Invite sent to ${email}. They already have an account, so they’ll accept it in the classroom.`
+          : `Invite sent to ${email}.`,
+        type: 'success',
+      });
       loadData();
       return true;
     } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
@@ -698,11 +690,9 @@ export default function AdminUsers() {
         onBack={back}
         onSaved={(text) => { setMessage({ text, type: 'success' }); back(); loadData(); }}
         onInvite={async (e) => { if (await inviteFromWaitlist(e.inviteToken, e.email)) back(); }}
-        onApply={async (e) => { if (await applyFromWaitlist(e.inviteToken, e.email)) back(); }}
         onRemove={async (e) => { if (await removeFromWaitlist(e.inviteToken, e.email)) back(); }}
         canEdit={shows('waitlist.write')}
         canInvite={shows('waitlist.invite')}
-        canApply={shows('users.write')}
       />
     );
   }
@@ -816,7 +806,12 @@ export default function AdminUsers() {
           )}
         </>
       )
-        : item._type === 'invite' ? <Badge variant="outline">Invited</Badge>
+        : item._type === 'invite' ? (
+          <>
+            <Badge variant="outline">Invited</Badge>
+            {item._invite.existingAccount && <span className="block text-xs text-muted-foreground mt-1">Has an account</span>}
+          </>
+        )
           : <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>{roleLabel(item.role)}</Badge>
     ) },
     { id: 'completed', label: 'Completed', sortKey: 'completed', align: 'center', cellClass: 'text-center', cell: (item) => (
@@ -844,10 +839,8 @@ export default function AdminUsers() {
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
         <div className="flex gap-1">
-          {/* An account gets Copy to account; an account or a pending invite can't be invited (the server refuses it). */}
-          {item._entry.alreadyRegistered === 'account'
-            ? shows('users.write') && <Button variant="outline" size="xs" aria-label={`Copy ${item.email}'s wait-list answers to their account`} onClick={(e) => { e.stopPropagation(); applyFromWaitlist(item._key, item.email); }}>Copy to account</Button>
-            : !item._entry.alreadyRegistered && shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+          {/* A pending invite already exists: the server refuses another (resend it from the Invited row). */}
+          {item._entry.alreadyRegistered !== 'invite' && shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
           {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
         </div>
       ) : item._type === 'invite' ? (

@@ -2,7 +2,7 @@
 // learner account): a course, lessons in it, custom user fields, a group.
 import { execFileSync } from 'node:child_process';
 import { BASE_URL, DB_PATH } from './playwright.config.js';
-import { ADMIN, LEARNER, EDUCATOR, TESTER, LESSONS, COURSE, PROGRAM } from './fixtures.js';
+import { ADMIN, LEARNER, EDUCATOR, TESTER, INVITEE, LESSONS, COURSE, PROGRAM } from './fixtures.js';
 
 async function api(method, path, token, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -23,7 +23,7 @@ export default async function globalSetup() {
   }
   await api('PUT', '/v1/admin/groups', admin, { name: 'Cohort A' });
   await api('POST', '/v1/admin/user-fields', admin, { label: 'Organization', type: 'text', required: false });
-  for (const u of [LEARNER, EDUCATOR, TESTER]) {
+  for (const u of [LEARNER, EDUCATOR, TESTER, INVITEE]) {
     execFileSync(process.execPath, ['scripts/create-dev-user.js', u.email, u.password, u.name], {
       cwd: new URL('../server/', import.meta.url),
       env: { ...process.env, DB_BACKEND: 'sqlite', SQLITE_PATH: DB_PATH },

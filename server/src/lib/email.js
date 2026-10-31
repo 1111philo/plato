@@ -86,6 +86,45 @@ export function inviteEmailHtml(classroom, signupUrl, invitedByName) {
   `);
 }
 
+// For someone who already has an account (#363): the invite waits for them
+// in the classroom, so the link is the classroom, not signup.
+export function accountInviteEmailHtml(classroom, lessonsUrl, invitedByName) {
+  const name = escapeHtml(classroom.name);
+  const primary = safeColor(classroom.primary);
+  return emailWrapper(classroom, `
+    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
+      ${invitedByName ? `${escapeHtml(invitedByName)} has invited you` : 'You\'ve been invited'} to join <strong>${name}</strong> with the details you gave when you joined the wait list.
+    </p>
+    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 20px;">
+      You already have an account. Sign in to see the invite and accept it.
+    </p>
+    <a href="${escapeHtml(lessonsUrl)}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+      Sign in to accept
+    </a>
+    <p style="color: #555; font-size: 13px; line-height: 1.5; margin: 20px 0 0;">
+      This invite expires in 7 days. If you didn't expect this, you can ignore it.
+    </p>
+  `);
+}
+
+export async function sendAccountInviteEmail(toEmail, invitedByName) {
+  const lessonsUrl = `${APP_URL}/lessons`;
+  if (process.env.SKIP_EMAIL === 'true') {
+    console.log(`[SKIP_EMAIL] Account invite for ${toEmail}: ${lessonsUrl}`);
+    return { skipped: true };
+  }
+  const classroom = await getClassroom();
+  await ses.send(new SendEmailCommand({
+    Source: fromHeader(classroom.name),
+    Destination: { ToAddresses: [toEmail] },
+    Message: {
+      Subject: { Data: `You're invited to ${classroom.name}` },
+      Body: { Html: { Data: accountInviteEmailHtml(classroom, lessonsUrl, invitedByName) } },
+    },
+  }));
+  return { sent: true };
+}
+
 export function resetEmailHtml(classroom, resetUrl) {
   const primary = safeColor(classroom.primary);
   return emailWrapper(classroom, `

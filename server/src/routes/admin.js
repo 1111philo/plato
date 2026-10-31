@@ -8,7 +8,7 @@ import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.
 import { registerNotificationRoutes } from './admin-notifications.js';
 import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
-import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
+import { sendInviteEmail, sendAccountInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
@@ -280,6 +280,7 @@ admin.get('/v1/admin/invites', async (c) => {
     email: inv.email,
     status: inv.status,
     isLink: !!inv.isLink,
+    existingAccount: !!inv.forUserId,
     createdAt: inv.createdAt,
   })));
 });
@@ -303,9 +304,12 @@ admin.post('/v1/admin/invites/resend', async (c) => {
     email: email.toLowerCase(),
     invitedBy: adminUser.userId,
     profile: pendingInvite.profile || null, // keep a wait-list entry's details
+    ...(pendingInvite.forUserId ? { forUserId: pendingInvite.forUserId } : {}),
   });
 
-  const result = await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
+  const result = pendingInvite.forUserId
+    ? await sendAccountInviteEmail(email.toLowerCase(), adminUser.name)
+    : await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
   return c.json({ inviteToken, email: email.toLowerCase(), ...result }, 201);
 });
 
@@ -451,58 +455,31 @@ admin.delete('/v1/admin/waitlist/key', async (c) => {
 });
 
 // POST /v1/admin/waitlist/:token/invite — send the invite email. The new invite
-// carries the entry's name, group and fields so signup can fill them in.
+// carries the entry's name, group and fields so signup can fill them in. When
+// the email already has an account, the invite is tied to it (`forUserId`):
+// the person sees it in the classroom and by email, and accepting merges the
+// answers into their account (lib/account-invites.js).
 admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
   const entry = await db.getInvite(c.req.param('token'));
   if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
 
-  if (await db.getUserByEmail(entry.email)) {
-    return c.json({ error: 'User with this email already exists' }, 409);
-  }
   if (await db.getInviteByEmail(entry.email)) {
     return c.json({ error: 'A pending invite already exists for this email' }, 409);
   }
+  const account = await db.getUserByEmail(entry.email);
 
   const adminUser = c.get('user');
   const inviteToken = generateInviteToken();
-  await db.createInvite({ inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null });
-  await db.deleteInvite(entry.inviteToken);
-
-  const result = await sendInviteEmail(entry.email, inviteToken, adminUser.name);
-  return c.json({ inviteToken, email: entry.email, ...result }, 201);
-});
-
-// POST /v1/admin/waitlist/:token/apply — the entry's email already has an
-// account: copy the entry's answers onto it, then remove the entry. Only
-// fills what the account is missing (no group yet, blank fields), so nothing
-// the person or an admin already set is overwritten. The name is never copied.
-admin.post('/v1/admin/waitlist/:token/apply', async (c) => {
-  const entry = await db.getInvite(c.req.param('token'));
-  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
-  const user = await db.getUserByEmail(entry.email);
-  if (!user) return c.json({ error: 'No account has this email' }, 404);
-
-  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
-  const profile = entry.profile || {};
-  const updates = {};
-  const group = profile.userGroup;
-  if (group && !user.userGroup && (settings.userGroups || []).includes(group)) updates.userGroup = group;
-  const fields = [];
-  const current = user.customFields || {};
-  for (const def of getFieldDefinitions(settings)) {
-    const value = typeof profile.customFields?.[def.id] === 'string' ? profile.customFields[def.id].trim() : '';
-    if (!value || current[def.id] || validateValue(def, value)) continue;
-    fields.push(def.id);
-    (updates.customFields ||= { ...current })[def.id] = value;
-  }
-
-  if (Object.keys(updates).length) await db.updateUser(user.userId, updates);
-  await db.deleteInvite(entry.inviteToken);
-  await db.createAuditLog({
-    action: 'waitlist_applied', userId: user.userId, performedBy: c.get('user').userId,
-    details: { userGroup: updates.userGroup || null, fields },
+  await db.createInvite({
+    inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null,
+    ...(account ? { forUserId: account.userId } : {}),
   });
-  return c.json({ userId: user.userId, userGroup: updates.userGroup || null, fields });
+  await db.deleteInvite(entry.inviteToken);
+
+  const result = account
+    ? await sendAccountInviteEmail(entry.email, adminUser.name)
+    : await sendInviteEmail(entry.email, inviteToken, adminUser.name);
+  return c.json({ inviteToken, email: entry.email, existingAccount: !!account, ...result }, 201);
 });
 
 // PUT /v1/admin/waitlist/:token — edit an entry's name, email, group, and
