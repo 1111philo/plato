@@ -1359,6 +1359,24 @@ password-reset emails stay in `email.js`.
   - The dashboard's async stats refresh used to invoke the stream function
     itself and never ran: prod logged 51 invokes and 0 completions in 14 days,
     and the API function had no log group at all. It now uses the same target.
+- **Scheduled learner emails (#400)** live in `server/src/lib/learner-emails.js`
+  and run on SAM `Schedule` events on the API function. Each does nothing
+  while its automation is off.
+  - `inactivity-nudge` (daily, 15:00 UTC): a learner whose started lesson has
+    gone 7 days untouched (its `lessonKB` record's `updatedAt`) gets one
+    reminder, for the most recently active such lesson. The same lesson isn't
+    nudged again for 14 days, and a learner gets at most one a day.
+  - `weekly-digest` (Mondays, 15:00 UTC): lessons completed this week,
+    lessons in progress, and lessons **published** this week (`publishedAt`,
+    set by the admin lesson PUT the first time a lesson goes public). Skipped
+    when there's nothing to say, and at most once every 6 days.
+  - Both cover learners only and only lessons the learner can see, honor
+    `optOut.nudge` / `optOut.digest`, and write their bookkeeping
+    (`nudges`, `lastNudgeAt`, `lastDigestAt` in `notify:state`) before
+    sending, so a retried run never emails twice.
+  - Run one by hand with `aws lambda invoke --function-name <PlatoApiFunction>
+    --invocation-type Event --payload
+    '{"__platoInternal":"platoJob","job":"inactivity-nudge"}'`.
 - **Admin routes** (`server/src/routes/admin-notifications.js`) need
   `notifications.read` (admins, testers) or `notifications.write` (admins):
   - `GET /v1/admin/notifications`

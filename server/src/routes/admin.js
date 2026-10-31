@@ -967,6 +967,9 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     createdBy: current?.data?.createdBy || adminUser.userId,
     createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
+    // When it first went public, for "new lessons" in the weekly digest (#400).
+    ...(current?.data?.publishedAt ? { publishedAt: current.data.publishedAt }
+      : isGoingPublic ? { publishedAt: new Date().toISOString() } : {}),
     // Bundled lessons (#443) keep their marker, so an edit makes the copy
     // "customized" instead of detaching it from upstream updates.
     ...(current?.data?.bundled ? { bundled: current.data.bundled } : {}),

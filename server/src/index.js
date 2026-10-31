@@ -19,6 +19,8 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
 import { runMigrationsBounded } from './lib/migrations.js';
 import { isJobEvent, runJob } from './lib/jobs.js';
+import './lib/learner-emails.js'; // registers the scheduled email jobs (#400)
+import './lib/messages.js'; // registers send-message (#389)
 import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';

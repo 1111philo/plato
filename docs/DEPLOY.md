@@ -30,6 +30,19 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `Stage` | `prod` | `prod` or `playground` |
 | `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. |
 
+### Scheduled jobs
+
+The stack creates two EventBridge schedules on the API function for learner
+emails (#400): the inactivity reminder runs daily at 15:00 UTC, and the
+weekly digest runs Mondays at 15:00 UTC. Both do nothing until an admin turns
+them on in Admin → Notifications → Automations. To run one now:
+
+```bash
+aws lambda invoke --function-name <stack>-PlatoApiFunction-<id> --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"__platoInternal":"platoJob","job":"weekly-digest"}' /dev/null
+```
+
 ## 2. Configure SAM
 
 Copy the example config and customize it for your AWS account:
