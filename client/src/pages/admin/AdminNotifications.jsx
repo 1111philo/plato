@@ -18,8 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
  * routes/admin-notifications.js, lib/notifications.js, lib/messages.js.
  */
 
-// Automations this release runs. The reminder and digest jobs join in their own PR.
-const AVAILABLE = ['waitlistConfirmation'];
+// In the order the Automations tab lists them.
+const AVAILABLE = ['waitlistConfirmation', 'inactivityNudge', 'weeklyDigest'];
 const AUTOMATION_TEMPLATE = { waitlistConfirmation: 'waitlist-confirmation', inactivityNudge: 'inactivity-nudge', weeklyDigest: 'weekly-digest' };
 const MESSAGE_VARIABLES = ['firstName', 'classroomName'];
 

@@ -35,20 +35,24 @@ test('automations start off; the wait list email is editable and validated', asy
   await expect(toggle).not.toBeChecked();
   await expectAccessible(page, { label: 'notifications automations' });
 
-  const subject = page.getByLabel('Subject');
+  const card = page.locator('[data-slot=card]', { has: page.getByText('Wait list confirmation', { exact: true }) });
+  const subject = card.getByLabel('Subject');
   await subject.fill('Thanks {{lessonName}}');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await card.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText(/Unknown variable: \{\{lessonName\}\}/).first()).toBeVisible();
   await subject.fill('Thanks for joining, {{firstName}}');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await card.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Email saved.').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Use the default' }).click();
+  await card.getByRole('button', { name: 'Use the default' }).click();
   await expect(subject).toHaveValue("You're on the wait list for {{classroomName}}");
 
   await toggle.check();
   await expect(page.getByText('Wait list confirmation is on.').first()).toBeVisible();
   await toggle.uncheck();
   await expect(page.getByText('Wait list confirmation is off.').first()).toBeVisible();
+  // The scheduled ones are listed too, also off.
+  await expect(page.getByLabel('Send the inactivity reminder email')).not.toBeChecked();
+  await expect(page.getByLabel('Send the weekly digest email')).not.toBeChecked();
 });
 
 test('testers can look at Notifications but not send', async ({ page }) => {

@@ -80,7 +80,7 @@ export const TEMPLATES = Object.freeze({
   },
   'inactivity-nudge': {
     label: 'Inactivity reminder',
-    description: 'Sent when a learner hasn’t worked on a lesson they started for 7 days.',
+    description: 'Checked every day: a learner who hasn’t worked on a lesson they started for 7 days gets one reminder. The same lesson isn’t mentioned again for 14 days.',
     variables: ['firstName', 'classroomName', 'lessonName', 'progress', 'link'],
     linkLabel: 'Continue the lesson',
     subject: 'Pick up where you left off: {{lessonName}}',
@@ -88,7 +88,7 @@ export const TEMPLATES = Object.freeze({
   },
   'weekly-digest': {
     label: 'Weekly digest',
-    description: 'A weekly summary of the learner’s progress and new lessons. Skipped when there’s nothing to say.',
+    description: 'Mondays: each learner’s past week and the lessons published that week. Skipped when there’s nothing to say.',
     variables: ['firstName', 'classroomName', 'progressSummary', 'newLessons', 'link'],
     linkLabel: 'Open {{classroomName}}',
     subject: 'Your week in {{classroomName}}',
