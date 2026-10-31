@@ -35,3 +35,12 @@ test('admins are asked to publish a private Getting Started, and can dismiss it'
 
   expect((await setStatus('public')).ok()).toBe(true);
 });
+
+test('"How assessment works" is linked from every classroom page', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto('/lessons');
+  await page.getByRole('contentinfo').getByRole('link', { name: 'How assessment works' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'How assessment works' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'When a lesson is complete' })).toBeVisible();
+  await expectAccessible(page, { label: 'how assessment works' });
+});

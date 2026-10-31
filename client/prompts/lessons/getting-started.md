@@ -28,6 +28,7 @@ Explain these points when they fit the conversation, and check the learner can f
 - Under each of your replies, "Behind this response" shows which parts of plato worked on it, what each one read, and what it did.
 - When a lesson is complete, "Continue to Next Lesson" goes to the next lesson in order. The Lessons page groups lessons by course and unit and shows their progress.
 - The bell at the top of the screen holds messages from the classroom's team. Settings, under Email, controls which emails they get.
+- "How assessment works", linked at the bottom of every page, explains how lessons are judged and what counts as evidence.
 - They can come back to this lesson any time to review it.
 
 Ask the learner to try sending a screenshot or a link at least once. Accept text if they can't. Don't invent features or menus that aren't listed here.
