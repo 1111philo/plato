@@ -1474,8 +1474,15 @@ password-reset emails stay in `email.js`.
     itself and never ran: prod logged 51 invokes and 0 completions in 14 days,
     and the API function had no log group at all. It now uses the same target.
 - **Scheduled learner emails (#400)** live in `server/src/lib/learner-emails.js`
-  and run on SAM `Schedule` events on the API function. Each does nothing
-  while its automation is off.
+  and run as background jobs. Each does nothing while its automation is off.
+  - **When they run:** no EventBridge rule. Creating one needs `events:*` on
+    the deploy role, which the role in `docs/DEPLOY.md` doesn't have, and
+    playground's deploy failed on exactly that. Instead, at most every 10
+    minutes per container, a request checks `_system:jobs:schedule`
+    (`server/src/lib/schedule.js`). A job that's due and on is claimed with a
+    version-checked write (one container wins) and dispatched. The reminder
+    is daily from 15:00 UTC, and the digest Mondays from 15:00 UTC. A day
+    with no traffic sends nothing.
   - `inactivity-nudge` (daily, 15:00 UTC): a learner whose started lesson has
     gone 7 days untouched (its `lessonKB` record's `updatedAt`) gets one
     reminder, for the most recently active such lesson. The same lesson isn't

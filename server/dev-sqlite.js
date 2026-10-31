@@ -85,6 +85,15 @@ try {
 }
 await runMigrationsBounded();
 
+// Scheduled learner emails, as on Lambda (src/lib/schedule.js); jobs run in-process here.
+const { runDueJobs } = await import('./src/lib/schedule.js');
+await import('./src/lib/learner-emails.js');
+await import('./src/lib/messages.js');
+server.use('*', async (c, next) => {
+  runDueJobs().catch((err) => console.error('Schedule check failed:', err.message));
+  await next();
+});
+
 server.use('*', viewAsReadOnly);
 
 server.route('/', health);

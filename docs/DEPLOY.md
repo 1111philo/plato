@@ -32,10 +32,11 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 
 ### Scheduled jobs
 
-The stack creates two EventBridge schedules on the API function for learner
-emails (#400): the inactivity reminder runs daily at 15:00 UTC, and the
-weekly digest runs Mondays at 15:00 UTC. Both do nothing until an admin turns
-them on in Admin → Notifications → Automations. To run one now:
+Learner emails (#400) need no scheduler resource and no extra deploy
+permissions. The first request after 15:00 UTC dispatches the day's
+inactivity reminder, and on Mondays the weekly digest (`server/src/lib/schedule.js`;
+one container claims each run). Both do nothing until an admin turns them on
+in Admin → Notifications → Automations. To run one now:
 
 ```bash
 aws lambda invoke --function-name <stack>-PlatoApiFunction-<id> --invocation-type Event \
