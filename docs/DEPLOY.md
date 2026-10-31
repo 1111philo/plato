@@ -23,6 +23,27 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
+### Stack parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `Stage` | `prod` | `prod` or `playground` |
+| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. For the playground stack, the private deploy fork's workflow must pass it; until it does, playground sends no notification email. |
+
+### Scheduled jobs
+
+Learner emails (#400) need no scheduler resource and no extra deploy
+permissions. The first request after 15:00 UTC dispatches the day's
+inactivity reminder, and on Mondays the weekly digest (`server/src/lib/schedule.js`;
+one container claims each run). Both do nothing until an admin turns them on
+in Admin → Notifications → Automations. To run one now:
+
+```bash
+aws lambda invoke --function-name <stack>-PlatoApiFunction-<id> --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"__platoInternal":"platoJob","job":"weekly-digest"}' /dev/null
+```
+
 ## 2. Configure SAM
 
 Copy the example config and customize it for your AWS account:
@@ -138,9 +159,12 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - run: cd server && npm ci && npm test
 
   deploy:
@@ -155,9 +179,12 @@ jobs:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0  # need history + tags so we can read the latest Beta-RC-* tag
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true

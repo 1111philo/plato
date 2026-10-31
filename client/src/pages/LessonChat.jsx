@@ -19,6 +19,9 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
+import AgentActivity from '../components/chat/AgentActivity.jsx';
+import LessonWork from '../components/chat/LessonWork.jsx';
+import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
@@ -70,6 +73,8 @@ export default function LessonChat() {
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
   const [showObjectives, setShowObjectives] = useState(false);
+  // "Your work" (#438); `?view=work` opens it (from the lessons page).
+  const [showWork, setShowWork] = useState(() => new URLSearchParams(window.location.search).get('view') === 'work');
   const objectivesTitleRef = useRef(null);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
@@ -244,39 +249,38 @@ export default function LessonChat() {
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
       pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
+      if (result.saveFailed === 'too_long') setError('This conversation is too long to save any more of it. Your progress is still saved; copy anything you need from new replies.');
+      else if (result.saveFailed) setError('This reply couldn’t be saved, so it may be missing after you reload. Copy anything you need from it.');
       setStreamingText(null);
-
-      const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
     } catch (e) {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
+      // Nothing was saved (the user message is written with the reply), so
+      // take the optimistic copy back out and return the message to the
+      // composer to try again, ahead of anything typed meanwhile.
+      setMessages((prev) => prev.slice(0, -1));
+      setComposeText((cur) => [text || '', cur].filter((t) => t.trim()).join('\n\n'));
+      if (Array.isArray(imageDataUrls) && imageDataUrls.length) {
+        setComposeImages((cur) => [...imageDataUrls.map((dataUrl, i) => ({ dataUrl, name: `image-${i + 1}.png` })), ...cur].slice(0, 4));
+      }
+      if (Array.isArray(links) && links.length) {
+        setComposeLinks((cur) => [...links, ...cur.filter((l) => !links.some((m) => m.url === l.url))].slice(0, 3)); // ComposeBar's caps
+      }
+      return;
     }
+    // Outside the try: the turn is saved, so a failed refresh must not hand
+    // the message back (that would invite sending it twice).
+    try {
+      setLessonKB(await getLessonKB(lessonGroupId));
+    } catch { /* the next turn refreshes it */ }
   }, [lessonGroupId, lesson]);
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
-  // Find the next lesson in the same course
-  const nextLesson = (() => {
-    if (!lesson || !lessons.length) return null;
-    if (!lesson.course?.id) return null; // No next lesson for uncategorized lessons
-
-    // Get lessons in the same course, sorted by name
-    const sameCourse = lessons
-      .filter(l => l.course?.id === lesson.course?.id)
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-    // Find current lesson index in the sorted list
-    const currentIndex = sameCourse.findIndex(l => l.lessonId === lessonGroupId);
-
-    // Return next lesson in the course (if any)
-    if (currentIndex >= 0 && currentIndex < sameCourse.length - 1) {
-      return sameCourse[currentIndex + 1];
-    }
-
-    return null;
-  })();
+  // The next lesson in the admin-defined order: the rest of this unit, then
+  // the next unit of the same course (#408).
+  const nextLesson = lesson ? nextLessonAfter(lessons, lessonGroupId) : null;
 
   const handleExport = useCallback(async () => {
     const markdown = await getUserLessonMarkdown(lessonGroupId);
@@ -324,7 +328,12 @@ export default function LessonChat() {
   const renderMessage = (msg, idx) => {
     switch (msg.msgType) {
       case MSG_TYPES.GUIDE:
-        return <AssistantMessage key={idx} content={msg.content} />;
+        return (
+          <div key={idx}>
+            <AgentActivity agents={msg.metadata?.agents} />
+            <AssistantMessage content={msg.content} />
+          </div>
+        );
       case MSG_TYPES.USER:
         return (
           <div key={idx}>
@@ -387,8 +396,8 @@ export default function LessonChat() {
               &larr;
             </Button>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowObjectives(true)}
@@ -397,6 +406,16 @@ export default function LessonChat() {
                 >
                   Lesson Overview ({lesson.learningObjectives.length} Objectives)
                 </button>
+                {phase && (
+                  <button
+                    className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+                    onClick={() => setShowWork(true)}
+                    aria-expanded={showWork}
+                    aria-controls="lesson-work-dialog"
+                  >
+                    Your work
+                  </button>
+                )}
               </div>
               <ProgressBar lessonKB={lessonKB} />
             </div>
@@ -426,17 +445,26 @@ export default function LessonChat() {
             &larr;
           </Button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowObjectives(true)}
-                aria-label={`View ${lesson.learningObjectives.length} objectives`}
                 aria-expanded={showObjectives}
                 aria-controls="lesson-objectives-dialog"
               >
                 Lesson Overview ({lesson.learningObjectives.length} Objectives)
               </button>
+              {phase && (
+                <button
+                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
+                  onClick={() => setShowWork(true)}
+                  aria-expanded={showWork}
+                  aria-controls="lesson-work-dialog"
+                >
+                  Your work
+                </button>
+              )}
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
@@ -502,7 +530,8 @@ export default function LessonChat() {
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={busy}
             allowImages
             allowLinks
             text={composeText}
@@ -521,7 +550,8 @@ export default function LessonChat() {
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={busy}
             allowImages
             allowLinks
             elevated
@@ -535,6 +565,8 @@ export default function LessonChat() {
         </div>
       )}
 
+      <LessonWork open={showWork} onOpenChange={setShowWork} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+
       {/* Objectives dialog */}
       <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
         <DialogContent id="lesson-objectives-dialog" className="max-h-[85vh] flex flex-col">
@@ -542,7 +574,9 @@ export default function LessonChat() {
             <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
             {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
           </DialogHeader>
-          <div className="overflow-y-auto flex-1 space-y-4 pr-2">
+          {/* Focusable so keyboard users can scroll it: its content is all
+              text, nothing inside takes focus (axe scrollable-region-focusable). */}
+          <div className="overflow-y-auto flex-1 space-y-4 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Lesson overview">
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Exemplar</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>

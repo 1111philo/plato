@@ -10,6 +10,13 @@ Parameters:
       - prod
       - playground
     Description: Deployment stage (prod or playground)
+  EmailAllowlist:
+    Type: String
+    Default: ''
+    Description: >-
+      Comma-separated addresses and @domains that notification emails may go to
+      (automations, messages). Empty means anyone on prod and no one on other
+      stages. Invite and password-reset emails aren't affected.
 
 Conditions:
   IsProd: !Equals [!Ref Stage, prod]
@@ -17,7 +24,7 @@ Conditions:
 Globals:
   Function:
     Timeout: 60
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     MemorySize: 1024
     Tags:
       Application: plato
@@ -28,7 +35,9 @@ Resources:
   PlatoApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Timeout: 120
+      # HTTP requests are capped by API Gateway (29 s) regardless; the longer
+      # timeout is for background jobs (lib/jobs.js), which run here.
+      Timeout: 300
       Handler: src/index.handler
       CodeUri: .
       Environment:
@@ -44,6 +53,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -57,7 +67,11 @@ Resources:
             TableName: !Ref AuditLogTable
         - Statement:
             - Effect: Allow
-              Action: ses:SendEmail
+              # SendRawEmail: notification mail is raw MIME (multipart +
+              # List-Unsubscribe headers, lib/notifications.js).
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
               Resource: '*'
         - Statement:
             - Effect: Allow
@@ -97,10 +111,16 @@ Resources:
   PlatoStreamFunction:
     Type: AWS::Serverless::Function
     Properties:
+      # Must exceed BEDROCK_TIMEOUT_MS (115s, src/lib/ai-provider.js) so a slow
+      # generation fails with a clean SSE error event instead of the Lambda
+      # being killed mid-stream (Globals default is 60s). Prod's slowest
+      # stream over 30 days was 58.0s — 2s under the old limit.
+      Timeout: 120
       Handler: src/index.streamHandler
       CodeUri: .
       Environment:
         Variables:
+          JOBS_FUNCTION: !Ref PlatoApiFunction
           USERS_TABLE: !Ref UsersTable
           INVITES_TABLE: !Ref InvitesTable
           REFRESH_TOKENS_TABLE: !Ref RefreshTokensTable
@@ -112,6 +132,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
@@ -125,7 +146,11 @@ Resources:
             TableName: !Ref AuditLogTable
         - Statement:
             - Effect: Allow
-              Action: ses:SendEmail
+              # SendRawEmail: notification mail is raw MIME (multipart +
+              # List-Unsubscribe headers, lib/notifications.js).
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
               Resource: '*'
         - Statement:
             - Effect: Allow

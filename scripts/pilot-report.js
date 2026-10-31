@@ -221,6 +221,8 @@ function formatGroups(logs) {
 // learner data loss with no named author to file an issue for it (#195).
 function formatDataLossWatch(logs) {
   const hits = (logs.groups || []).filter((g) => {
+    // A record refused for size (#451 review M1) is lost learner work too.
+    if (g.code === 'sync_item_too_large') return true;
     if (g.code !== 'unhandled_error') return false;
     const m = g.sample?.meta || {};
     const method = String(m.method || '').toUpperCase();

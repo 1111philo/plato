@@ -180,6 +180,24 @@ describe('PUT /v1/admin/plugins/:id/settings', () => {
     assert.equal(data.settings.workspaceName, 'NewSpace');
   });
 
+  it('keeps a stored writeOnly value the body leaves out; an explicit null clears it', async () => {
+    const schema = { type: 'object', properties: { botToken: { type: 'string', writeOnly: true }, autoInviteEnabled: { type: 'boolean' } } };
+    const realGet = pluginRegistry.get;
+    pluginRegistry.get = () => makeEntry({ id: 'slack', settings: { botToken: 'xoxb-OLD', autoInviteEnabled: false }, schema });
+    let saved = null;
+    pluginRegistry.updateSettings = async (id, settings) => { saved = settings; return makeEntry({ id, settings, schema }); };
+    try {
+      const app = new Hono();
+      app.route('/', admin);
+      await adminReq(app, 'PUT', '/v1/admin/plugins/slack/settings', { autoInviteEnabled: true });
+      assert.deepEqual(saved, { autoInviteEnabled: true, botToken: 'xoxb-OLD' });
+      await adminReq(app, 'PUT', '/v1/admin/plugins/slack/settings', { botToken: null, autoInviteEnabled: false });
+      assert.deepEqual(saved, { botToken: null, autoInviteEnabled: false });
+    } finally {
+      pluginRegistry.get = realGet;
+    }
+  });
+
   it('rejects missing body', async () => {
     pluginRegistry.updateSettings = async () => { throw new Error('should not be called'); };
     const app = new Hono();

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
+import NameFields from '../components/NameFields.jsx';
 import { missingRequired } from '../lib/userFields.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +15,7 @@ import {
 
 export default function Signup() {
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState({ firstName: '', lastName: '' });
   const [username, setUsername] = useState('');
   const [group, setGroup] = useState('');
   const [password, setPassword] = useState('');
@@ -51,7 +52,7 @@ export default function Signup() {
       .then(d => {
         if (!d) return;
         if (d.email) setEmail(prev => prev || d.email);
-        if (d.name) setName(prev => prev || d.name);
+        if (d.firstName) setName(prev => (prev.firstName || prev.lastName ? prev : { firstName: d.firstName, lastName: d.lastName || '' }));
         if (d.userGroup) setGroup(prev => prev || d.userGroup);
         if (d.customFields) setFieldValues(prev => ({ ...d.customFields, ...prev }));
       })
@@ -63,8 +64,8 @@ export default function Signup() {
     // - Email-specific invites: backend uses invite.email if not provided
     // - Link invites: backend will reject with "Email is required" error
     // This prevents breaking in-flight email invite URLs sent before deployment.
-    if (!name.trim() || !password) {
-      setError('Name and password are required.');
+    if (!name.firstName.trim() || !password) {
+      setError('First name and password are required.');
       return;
     }
     if (password.length < 8) {
@@ -90,7 +91,8 @@ export default function Signup() {
         body: JSON.stringify({
           inviteToken: token,
           email: email.trim() || undefined, // Send undefined if empty (backend handles it)
-          name: name.trim(),
+          firstName: name.firstName.trim(),
+          lastName: name.lastName.trim(),
           username: username.trim() || undefined,
           password,
           userGroup: group || undefined,
@@ -121,7 +123,7 @@ export default function Signup() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
+            <div className="bg-destructive/10 text-red-800 dark:text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
               {error}
             </div>
           )}
@@ -136,17 +138,7 @@ export default function Signup() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="signup-name">Name</Label>
-            <Input
-              id="signup-name"
-              type="text"
-              placeholder="Your name"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+          <NameFields idPrefix="signup" value={name} onChange={setName} />
           <div className="space-y-2">
             <Label htmlFor="signup-username">
               Username <span className="text-muted-foreground text-xs">(optional)</span>
@@ -216,10 +208,10 @@ export default function Signup() {
           </Button>
         </CardFooter>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white/80">Privacy</a>
+      <p className="mt-4 text-xs text-white/90">
+        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
       </p>
     </main>
   );

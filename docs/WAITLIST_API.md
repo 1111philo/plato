@@ -65,7 +65,8 @@ curl -X POST https://plato.courses/v1/waitlist \
   -H "Authorization: Bearer $PLATO_WAITLIST_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Ada Lovelace",
+    "firstName": "Ada",
+    "lastName": "Lovelace",
     "email": "ada@example.com",
     "userGroup": "University of Illinois Chicago",
     "customFields": {
@@ -79,7 +80,9 @@ curl -X POST https://plato.courses/v1/waitlist \
 
 | Field | Required | Rules |
 | --- | --- | --- |
-| `name` | yes | 1–200 characters |
+| `firstName` | yes | up to 100 characters |
+| `lastName` | no | up to 100 characters; leave out for people with one name |
+| `name` | instead of the two above | still accepted from older integrations: split at the first space ("Mary Ann Evans" → "Mary" / "Ann Evans"), and an admin can correct the split |
 | `email` | yes | a valid address, up to 254 characters; stored lowercase |
 | `userGroup` | no | must exactly match one of `GET /v1/groups` |
 | `customFields` | if any field is required | object of `{ "<field id>": "<value>" }`; every required field must be present and non-empty |
@@ -107,11 +110,25 @@ Unknown field ids are ignored. An empty string means "no answer".
 `202` is returned for every valid request, so the API never reveals whether
 someone is already registered. If the email already has an account or a
 pending invite, the submission is still kept: admins see it on the Wait List
-marked "Has an account" or "Invited". An entry for an existing account
-can't be invited; **Copy to account** adds its group and answers to the
-account (only ones it doesn't have yet) and removes the entry. A repeat request for an email that's
-already on the wait list stores nothing, and the existing entry isn't
+marked "Has an account" or "Invited", and no confirmation email is sent to
+them. Someone with an account can still be invited: they get an email and a
+notice in the classroom, and accepting adds the entry's group and answers to
+their account (only ones it doesn't have yet). A repeat request for an email
+that's already on the wait list stores nothing, and the existing entry isn't
 updated.
+
+If an admin has turned on **Wait list confirmation** (Admin → Notifications),
+a new entry gets one confirmation email, whether it came from your form or
+plato's. A repeat request for an email already on the wait list sends
+nothing, so retries are safe. If your own system already confirms sign-ups, leave it off.
+
+### Limits
+
+Requests **without** the key are limited to 5 per client IP address per 10
+minutes (`429 {"error":"Too many requests…"}` beyond that). The address is
+the one plato's CDN saw, so a sender going through plato's address can't get
+around the limit by setting its own `X-Forwarded-For`. Requests with the
+key aren't limited; send those from your server.
 
 ### From a browser (no key)
 
@@ -120,7 +137,8 @@ from any origin):
 
 ```html
 <form id="join">
-  <input name="name" required>
+  <input name="firstName" required>
+  <input name="lastName">
   <input name="email" type="email" required>
   <button>Join</button>
 </form>
@@ -131,7 +149,7 @@ from any origin):
     const res = await fetch('https://plato.courses/v1/waitlist', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: f.get('name'), email: f.get('email') }),
+      body: JSON.stringify({ firstName: f.get('firstName'), lastName: f.get('lastName'), email: f.get('email') }),
     });
     const data = await res.json();
     alert(res.ok ? "You're on the wait list." : data.error);

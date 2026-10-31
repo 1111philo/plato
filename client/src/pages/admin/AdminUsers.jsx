@@ -18,18 +18,34 @@ import { PluginSlot } from '@/lib/plugins/Slot.jsx';
 import UserStatsPanel from './UserStatsPanel.jsx';
 import CompletionRing from './CompletionRing.jsx';
 import UserFieldsDialog from './UserFieldsDialog.jsx';
+import { can, isTester, normalizeRole, roleLabel, ROLES, ROLE_LABELS } from '../../lib/permissions.js';
+
+// Shown under the role picker so the choice is informed (matrix: lib/permissions.js).
+const ROLE_HELP = {
+  admin: 'Full access, including settings, plugins, and roles.',
+  educator: 'Creates and edits lessons, courses, and units; views learners and invites them.',
+  learner: 'Takes lessons in the classroom. No dashboard access.',
+  tester: 'Can open every classroom and dashboard page, but can’t change anything.',
+};
 import WaitlistDialog from './WaitlistDialog.jsx';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
-import { customFieldsMatch, matchesFieldFilter, missingRequired } from '../../lib/userFields.js';
+import { customFieldsMatch, missingRequired } from '../../lib/userFields.js';
 import { toCsv, usersCsvRows } from '../../lib/csv.js';
+import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilters.js';
+import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
+import FiltersMenu from './FiltersMenu.jsx';
+import ColumnsDialog from './ColumnsDialog.jsx';
+import GroupsDialog from './GroupsDialog.jsx';
+import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
+const USER_COLUMNS_KEY = 'plato:columns:users:v1';
 
 const SORT_LABELS = {
-  name: 'name', email: 'email', username: 'username',
+  name: 'last name', email: 'email', username: 'username',
   group: 'group', role: 'role', completed: 'completion',
-  lastActive: 'last active', date: 'join date',
+  lastActive: 'last active', date: 'join date', userId: 'user ID',
 };
 
 // Module-level so the function references are stable across renders, which
@@ -37,7 +53,8 @@ const SORT_LABELS = {
 // eslint-disable on exhaustive-deps). Items are the wrapper rows from
 // combinedList — see _user for the underlying user record.
 const SORT_KEY_FNS = {
-  name: (i) => i.name || i.email || '',
+  // Last name, then first (#402); people with one name sort by it.
+  name: (i) => (i.name ? [i.lastName, i.firstName].filter(Boolean).join(' ') || i.name : i.email || ''),
   email: (i) => i.email || '',
   username: (i) => i.username || '',
   group: (i) => i.userGroup || '',
@@ -49,8 +66,27 @@ const SORT_KEY_FNS = {
     return c / a;
   },
   lastActive: (i) => i._user?.lastActiveAt || null,
+  userId: (i) => i._user?.userId || null,
   date: (i) => i.createdAt || '',
 };
+
+/**
+ * The keyboard/screen-reader way into a table row's edit view: a real button
+ * in the first cell, whose name starts with the visible text. The row itself
+ * stays clickable for the mouse. The button stops propagation so the click
+ * doesn't fire twice.
+ */
+function RowOpenButton({ onClick, srPrefix, children }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="text-left font-medium hover:underline cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    >
+      <span className="sr-only">{srPrefix}</span>{children}
+    </button>
+  );
+}
 
 function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
   const active = sortBy.key === sortKey;
@@ -100,6 +136,10 @@ export default function AdminUsers() {
   const navigate = useNavigate();
   const { userId: paramUserId, waitlistToken } = useParams();
   const { user: currentUser } = useAuth();
+  // Controls render if the role can use them, or for testers (who explore
+  // everything; their writes are refused with a clear message). Educators
+  // don't see what they can't use.
+  const shows = (permission) => can(currentUser, permission) || isTester(currentUser);
   const [users, setUsers] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [waitlistEntries, setWaitlistEntries] = useState([]);
@@ -115,7 +155,7 @@ export default function AdminUsers() {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [userFields, setUserFields] = useState([]);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ name: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
 
   // Invite modal state
   const [inviteInput, setInviteInput] = useState('');
@@ -126,15 +166,15 @@ export default function AdminUsers() {
 
   // Search, filter, pagination
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
-  // Custom-field filter (#364): { fieldId, value } — value is '__set', '__empty', or a dropdown option.
-  const [fieldFilter, setFieldFilter] = useState({ fieldId: '', value: '' });
+  // Combined filters (#362): { [facetKey]: [values] }; see lib/userFilters.js.
+  const [filters, setFilters] = useState({});
+  // Column layout (#385), saved in this browser; see lib/tableColumns.js.
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`));
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
   const [sortAnnouncement, setSortAnnouncement] = useState('');
 
-  // Groups form
-  const [newGroupName, setNewGroupName] = useState('');
 
   // Slack integration state
   const [slackConnected, setSlackConnected] = useState(false);
@@ -152,8 +192,9 @@ export default function AdminUsers() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkGenerating, setLinkGenerating] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  // `quiet` refreshes without the page spinner, which would unmount an open dialog.
+  const loadData = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     try {
       const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users?include=stats'),
@@ -428,21 +469,13 @@ export default function AdminUsers() {
 
   async function inviteFromWaitlist(token, email) {
     try {
-      await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
-      setMessage({ text: `Invite sent to ${email}.`, type: 'success' });
-      loadData();
-      return true;
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
-  }
-
-  // The email already has an account: copy the entry's group and answers onto
-  // it (only what the account is missing), then the entry is removed.
-  async function applyFromWaitlist(token, email) {
-    if (!confirm(`Copy ${email}'s wait-list answers to their account and remove the entry? Nothing already on the account is replaced.`)) return false;
-    try {
-      const r = await adminApi('POST', `/v1/admin/waitlist/${token}/apply`);
-      const copied = [r.userGroup && 'group', r.fields.length && `${r.fields.length} ${r.fields.length === 1 ? 'field' : 'fields'}`].filter(Boolean);
-      setMessage({ text: copied.length ? `Copied ${copied.join(' and ')} to ${email}'s account.` : `Nothing new to copy; removed ${email} from the wait list.`, type: 'success' });
+      const r = await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
+      setMessage({
+        text: r.existingAccount
+          ? `Invite sent to ${email}. They already have an account, so they’ll accept it in the classroom.`
+          : `Invite sent to ${email}.`,
+        type: 'success',
+      });
       loadData();
       return true;
     } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
@@ -484,23 +517,6 @@ export default function AdminUsers() {
 
   // -- Groups --
 
-  async function addGroup() {
-    const name = newGroupName.trim();
-    if (!name) return;
-    try {
-      const data = await adminApi('PUT', '/v1/admin/groups', { name });
-      setGroups(data.userGroups || []);
-      setNewGroupName('');
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
-
-  async function deleteGroup(name) {
-    try {
-      const data = await adminApi('DELETE', `/v1/admin/groups/${encodeURIComponent(name)}`);
-      setGroups(data.userGroups || []);
-    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
-  }
-
   // -- Edit user --
   // editUser is driven by the URL (/plato/users/:userId) so deep-linking and
   // browser refresh / back-button preserve the selection. openEditUser only
@@ -528,7 +544,7 @@ export default function AdminUsers() {
       return;
     }
     setEditUser(u);
-    setEditForm({ name: u.name || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
+    setEditForm({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
   }, [paramUserId, users, navigate]);
 
   async function saveEditUser() {
@@ -541,14 +557,15 @@ export default function AdminUsers() {
     }
     try {
       await adminApi('PATCH', `/v1/admin/users/${editUser.userId}`, {
-        name: editForm.name,
+        firstName: editForm.firstName,
+        lastName: editForm.lastName,
         email: editForm.email,
         username: editForm.username,
         userGroup: editForm.userGroup || null,
         // Send every defined field so cleared inputs clear the stored value.
         customFields: Object.fromEntries(userFields.map((f) => [f.id, editForm.customFields[f.id] ?? ''])),
       });
-      if (editForm.role !== editUser.role) {
+      if (normalizeRole(editForm.role) !== normalizeRole(editUser.role)) {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
       }
       setMessage({ text: 'User updated.', type: 'success' });
@@ -565,40 +582,29 @@ export default function AdminUsers() {
     const items = [];
     for (const inv of pendingInvites) {
       if (!inv.isLink) {
-        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
+        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, firstName: null, lastName: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
       }
     }
     for (const w of waitlistEntries) {
-      items.push({ _type: 'waitlist', _key: w.inviteToken, email: w.email, name: w.name, username: null, userGroup: w.userGroup, role: null, customFields: w.customFields || {}, createdAt: w.createdAt, _entry: w });
+      items.push({ _type: 'waitlist', _key: w.inviteToken, email: w.email, name: w.name, firstName: w.firstName, lastName: w.lastName, username: null, userGroup: w.userGroup, role: null, customFields: w.customFields || {}, createdAt: w.createdAt, _entry: w });
     }
     for (const u of users) {
-      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
+      items.push({ _type: 'user', _key: u.userId, email: u.email, name: u.name, firstName: u.firstName, lastName: u.lastName, username: u.username, userGroup: u.userGroup, role: u.role, customFields: u.customFields || {}, createdAt: u.createdAt, _user: u });
     }
     return items;
   }, [users, pendingInvites, waitlistEntries]);
 
-  const filterCounts = useMemo(() => ({
-    all: combinedList.length,
-    active: combinedList.filter(i => i._type === 'user' && i.role === 'user').length,
-    admins: combinedList.filter(i => i._type === 'user' && i.role === 'admin').length,
-    invited: combinedList.filter(i => i._type === 'invite').length,
-    waitlist: combinedList.filter(i => i._type === 'waitlist').length,
-  }), [combinedList]);
+  // People (and wait-list entries) per group, for the User Groups dialog.
+  const groupCounts = useMemo(() => {
+    const counts = {};
+    for (const i of combinedList) if (i._type !== 'invite' && i.userGroup) counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
+    return counts;
+  }, [combinedList]);
+  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields }), [combinedList, groups, userFields]);
+  const filterChips = describeFilters(filters, facets);
 
   const filteredList = useMemo(() => {
-    let list = combinedList;
-
-    // Apply filter
-    if (filter === 'active') list = list.filter(i => i._type === 'user' && i.role === 'user');
-    else if (filter === 'admins') list = list.filter(i => i._type === 'user' && i.role === 'admin');
-    else if (filter === 'invited') list = list.filter(i => i._type === 'invite');
-    else if (filter === 'waitlist') list = list.filter(i => i._type === 'waitlist');
-
-    // Apply custom-field filter (invites have no field values, so they drop out)
-    const filterDef = userFields.find(f => f.id === fieldFilter.fieldId);
-    if (filterDef && fieldFilter.value) {
-      list = list.filter(i => i._type !== 'invite' && matchesFieldFilter(i.customFields, filterDef, fieldFilter.value));
-    }
+    let list = combinedList.filter((i) => matchesFilters(i, filters, facets));
 
     // Apply search (custom field values are searchable too)
     if (search.trim()) {
@@ -607,14 +613,13 @@ export default function AdminUsers() {
         (i.email && i.email.toLowerCase().includes(q)) ||
         (i.name && i.name.toLowerCase().includes(q)) ||
         (i.username && i.username.toLowerCase().includes(q)) ||
+        (i._user?.userId && i._user.userId.toLowerCase().includes(q)) ||
         customFieldsMatch(i.customFields, q)
       );
     }
 
     return list;
-  }, [combinedList, filter, search, userFields, fieldFilter]);
-
-  const filterField = userFields.find(f => f.id === fieldFilter.fieldId) || null;
+  }, [combinedList, filters, facets, search]);
 
   // Sort comparators live at module level (SORT_KEY_FNS) so their references
   // are stable; nullish values always sort last regardless of direction so
@@ -670,7 +675,7 @@ export default function AdminUsers() {
 
 
   // Reset page when filter/search/sort changes
-  useEffect(() => { setPage(1); }, [filter, search, sortBy, fieldFilter]);
+  useEffect(() => { setPage(1); }, [filters, search, sortBy]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
 
@@ -685,8 +690,9 @@ export default function AdminUsers() {
         onBack={back}
         onSaved={(text) => { setMessage({ text, type: 'success' }); back(); loadData(); }}
         onInvite={async (e) => { if (await inviteFromWaitlist(e.inviteToken, e.email)) back(); }}
-        onApply={async (e) => { if (await applyFromWaitlist(e.inviteToken, e.email)) back(); }}
         onRemove={async (e) => { if (await removeFromWaitlist(e.inviteToken, e.email)) back(); }}
+        canEdit={shows('waitlist.write')}
+        canInvite={shows('waitlist.invite')}
       />
     );
   }
@@ -694,6 +700,7 @@ export default function AdminUsers() {
   // Edit user view
   if (editUser) {
     const isSelf = editUser.userId === currentUser?.userId;
+    const canEditUser = shows('users.write');
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -701,27 +708,30 @@ export default function AdminUsers() {
           <h1 className="text-2xl font-bold">Edit User</h1>
         </div>
         {message && (
-          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
+          <div className={`rounded-lg px-4 py-3 mb-4 text-sm ${message.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`} role="alert">
             {message.text}
           </div>
         )}
         <Card>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-            </div>
+            <NameFields
+              idPrefix="edit"
+              disabled={!canEditUser}
+              inferred={editUser.nameSource === 'auto'}
+              value={{ firstName: editForm.firstName, lastName: editForm.lastName }}
+              onChange={(n) => setEditForm({ ...editForm, ...n })}
+            />
             <div className="space-y-2">
               <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+              <Input id="edit-email" disabled={!canEditUser} type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-username">Username</Label>
-              <Input id="edit-username" type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} />
+              <Input id="edit-username" disabled={!canEditUser} type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-group">User Group</Label>
-              <select id="edit-group" value={editForm.userGroup}
+              <select id="edit-group" value={editForm.userGroup} disabled={!canEditUser}
                 onChange={e => setEditForm({ ...editForm, userGroup: e.target.value })}
                 className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
                 <option value="">None</option>
@@ -735,23 +745,25 @@ export default function AdminUsers() {
                 idPrefix="edit-field"
                 value={editForm.customFields[f.id]}
                 onChange={(v) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [f.id]: v } }))}
+                disabled={!canEditUser}
               />
             ))}
-            {!isSelf && (
+            {!isSelf && shows('users.role') && (
               <div className="space-y-2">
                 <Label htmlFor="edit-role">Role</Label>
-                <select id="edit-role" value={editForm.role}
+                <select id="edit-role" value={normalizeRole(editForm.role)}
                   onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                  aria-describedby="edit-role-help"
                   className="h-10 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
+                <p id="edit-role-help" className="text-xs text-muted-foreground">{ROLE_HELP[normalizeRole(editForm.role)]}</p>
               </div>
             )}
             <div className="flex items-center gap-3 pt-2">
-              <Button onClick={saveEditUser}>Save</Button>
-              <Button variant="outline" onClick={closeEditUser}>Cancel</Button>
-              {!isSelf && (
+              {canEditUser && <Button onClick={saveEditUser}>Save</Button>}
+              <Button variant="outline" onClick={closeEditUser}>{canEditUser ? 'Cancel' : 'Back'}</Button>
+              {!isSelf && canEditUser && (
                 <>
                   <Button variant="outline" className="ml-auto" onClick={() => resetUserPassword(editUser.userId, editUser.email)}>
                     Reset Password
@@ -772,36 +784,107 @@ export default function AdminUsers() {
     );
   }
 
-  const filterButtons = [
-    { key: 'all', label: 'All' },
-    { key: 'active', label: 'Active' },
-    { key: 'admins', label: 'Admins' },
-    { key: 'invited', label: 'Invited' },
-    { key: 'waitlist', label: 'Wait List' },
+  // Table columns (#385). `fixed` ones always show, at the ends; the rest
+  // follow the admin's saved layout (Columns dialog). Every custom field is a
+  // column too, hidden until chosen.
+  const DASH = <span className="text-muted-foreground">&mdash;</span>;
+  const allColumns = [
+    { id: 'name', label: 'Name', fixed: true, sortKey: 'name', cell: (item) => (
+      item._type === 'waitlist' ? <RowOpenButton onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} srPrefix="Edit wait list entry: ">{item.name || item.email}</RowOpenButton>
+        : item._type === 'user' ? <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">{item.name || item.email}</RowOpenButton>
+          : DASH
+    ) },
+    { id: 'email', label: 'Email', sortKey: 'email', cell: (item) => item.email },
+    { id: 'username', label: 'Username', sortKey: 'username', cell: (item) => (item._type === 'user' && item.username) || DASH },
+    { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => (item._type !== 'invite' && item.userGroup) || DASH },
+    { id: 'role', label: 'Role', sortKey: 'role', cell: (item) => (
+      item._type === 'waitlist' ? (
+        <>
+          <Badge variant="outline">Wait List</Badge>
+          {item._entry.alreadyRegistered && (
+            <span className="block text-xs text-muted-foreground mt-1">{item._entry.alreadyRegistered === 'account' ? 'Has an account' : 'Invited'}</span>
+          )}
+        </>
+      )
+        : item._type === 'invite' ? (
+          <>
+            <Badge variant="outline">Invited</Badge>
+            {item._invite.existingAccount && <span className="block text-xs text-muted-foreground mt-1">Has an account</span>}
+          </>
+        )
+          : <Badge variant={normalizeRole(item.role) === 'learner' ? 'secondary' : 'default'}>{roleLabel(item.role)}</Badge>
+    ) },
+    { id: 'completed', label: 'Completed', sortKey: 'completed', align: 'center', cellClass: 'text-center', cell: (item) => (
+      item._type === 'user' && typeof item._user.lessonsCompleted === 'number'
+        ? <div className="inline-flex"><CompletionRing completed={item._user.lessonsCompleted} available={item._user.lessonsAvailable} size={40} strokeWidth={5} compact /></div>
+        : DASH
+    ) },
+    { id: 'lastActive', label: 'Last active', sortKey: 'lastActive', cell: (item) => (item._type === 'user' && item._user.lastActiveAt ? new Date(item._user.lastActiveAt).toLocaleDateString() : DASH) },
+    { id: 'date', label: 'Date added', sortKey: 'date', cell: (item) => (item._type === 'waitlist' ? new Date(item.createdAt).toLocaleString() : new Date(item.createdAt).toLocaleDateString()) },
+    ...userFields.map((f) => ({
+      id: `field:${f.id}`, label: f.label, defaultHidden: true, cellClass: 'max-w-48 truncate',
+      cell: (item) => (item._type !== 'invite' && item.customFields?.[f.id]) || DASH,
+    })),
+    ...(slackConnected ? [{ id: 'slack', label: 'Slack', cell: (item) => (item._type === 'user' && item._user.slackUserId ? (
+      <span title={item._user.slackUserId} className="text-xs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">
+                              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
+                            </svg>
+        Linked
+      </span>
+    ) : DASH) }] : []),
+    // The immutable account id, for research and reporting (#386). Staff only
+    // (admins, educators, testers: everyone with users.read); never learners.
+    { id: 'userId', label: 'User ID', sortKey: 'userId', cell: (item) => (item._type === 'user' ? <code className="text-xs">{item._user.userId}</code> : DASH) },
+    { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
+      item._type === 'waitlist' ? (
+        <div className="flex gap-1">
+          {/* A pending invite already exists: the server refuses another (resend it from the Invited row). */}
+          {item._entry.alreadyRegistered !== 'invite' && shows('waitlist.invite') && <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }}>Invite</Button>}
+          {shows('waitlist.write') && <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }}>&#10005;</Button>}
+        </div>
+      ) : item._type === 'invite' ? (
+        <div className="flex gap-1">
+          <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
+          <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
+        </div>
+      ) : (
+        // Keep clicks on these buttons from also opening the row.
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
+          {item._user.userId !== currentUser?.userId && shows('users.write') && (
+            <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
+          )}
+        </div>
+      )
+    ) },
   ];
+  const shownColumns = visibleColumns(allColumns, columnPrefs);
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`, next); };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      {/* Wraps on narrow screens; without it the trailing buttons ran off-screen on phones. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Users</h1>
-        <div className="flex gap-2">
-          <Button onClick={() => setInviteOpen(true)}>
+        <div className="flex flex-wrap gap-2">
+          {shows('invites.write') && <Button onClick={() => setInviteOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Invite Users
-          </Button>
-          <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+          </Button>}
+          {shows('groups.write') && <Button variant="outline" onClick={() => setGroupsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
             User Groups
-          </Button>
-          <Button variant="outline" onClick={() => setFieldsOpen(true)}>
+          </Button>}
+          {shows('fields.write') && <Button variant="outline" onClick={() => setFieldsOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             User Fields
-          </Button>
-          <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
+          </Button>}
+          {shows('waitlist.write') && <Button variant="outline" onClick={() => setWaitlistOpen(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Wait List
-          </Button>
-          <Button variant="outline" onClick={downloadCsv} aria-label="Download user list as CSV">
+          </Button>}
+          <Button variant="outline" onClick={downloadCsv}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download CSV
           </Button>
@@ -810,7 +893,7 @@ export default function AdminUsers() {
 
       {message && (
         <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
-          message.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'
+          message.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'
         }`} role="alert">
           <span>{message.text}</span>
           <button onClick={() => setMessage(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
@@ -827,45 +910,24 @@ export default function AdminUsers() {
           className="max-w-xs"
           aria-label="Search users"
         />
-        <div className="flex gap-1" role="group" aria-label="Filter users">
-          {filterButtons.map(f => (
-            <Button
-              key={f.key}
-              variant={filter === f.key ? 'default' : 'outline'}
-              size="default"
-              onClick={() => setFilter(f.key)}
-              aria-pressed={filter === f.key}
-            >
-              {f.label} <span className="ml-1 opacity-60">{filterCounts[f.key]}</span>
-            </Button>
-          ))}
-        </div>
-        {userFields.length > 0 && (
-          <div className="flex gap-2" role="group" aria-label="Filter by custom field">
-            <select
-              aria-label="Custom field"
-              value={fieldFilter.fieldId}
-              onChange={e => setFieldFilter({ fieldId: e.target.value, value: e.target.value ? '__set' : '' })}
-              className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
-            >
-              <option value="">Any field</option>
-              {userFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
-            {filterField && (
-              <select
-                aria-label={`${filterField.label} value`}
-                value={fieldFilter.value}
-                onChange={e => setFieldFilter(prev => ({ ...prev, value: e.target.value }))}
-                className="h-9 rounded-lg border border-input bg-transparent px-3 text-sm"
-              >
-                <option value="__set">Has a value</option>
-                <option value="__empty">Empty</option>
-                {filterField.type === 'dropdown' && (filterField.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            )}
-          </div>
-        )}
+        <FiltersMenu facets={facets} filters={filters} onChange={setFilters} />
+        <Button variant="outline" onClick={() => setColumnsOpen(true)}>Columns</Button>
+        <span className="text-sm text-muted-foreground" role="status" aria-live="polite">
+          {filteredList.length === combinedList.length ? `${combinedList.length} people` : `${filteredList.length} of ${combinedList.length} people`}
+        </span>
       </div>
+      {filterChips.length > 0 && (
+        <ul className="flex flex-wrap items-center gap-2 mb-4" aria-label="Filters on">
+          {filterChips.map((chip) => (
+            <li key={chip.key} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-3 py-1 text-xs">
+              <span><span className="font-medium">{chip.label}:</span> {chip.values.join(', ')}</span>
+              <button type="button" className="ml-1 leading-none hover:opacity-70" aria-label={`Remove the ${chip.label} filter`}
+                onClick={() => setFilters((prev) => ({ ...prev, [chip.key]: [] }))}>&times;</button>
+            </li>
+          ))}
+          <li><Button variant="ghost" size="xs" onClick={() => setFilters({})}>Clear all</Button></li>
+        </ul>
+      )}
 
       {/* Polite live region announces sort changes for screen-reader users
           (aria-sort attribute changes aren't reliably announced by NVDA/JAWS). */}
@@ -877,128 +939,24 @@ export default function AdminUsers() {
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
-                  <SortHeader sortKey="name" sortBy={sortBy} onSort={handleSort}>Name</SortHeader>
-                  <SortHeader sortKey="email" sortBy={sortBy} onSort={handleSort}>Email</SortHeader>
-                  <SortHeader sortKey="username" sortBy={sortBy} onSort={handleSort}>Username</SortHeader>
-                  <SortHeader sortKey="group" sortBy={sortBy} onSort={handleSort}>Group</SortHeader>
-                  <SortHeader sortKey="role" sortBy={sortBy} onSort={handleSort}>Role</SortHeader>
-                  <SortHeader sortKey="completed" sortBy={sortBy} onSort={handleSort} align="center">Completed</SortHeader>
-                  <SortHeader sortKey="lastActive" sortBy={sortBy} onSort={handleSort}>Last active</SortHeader>
-                  <SortHeader sortKey="date" sortBy={sortBy} onSort={handleSort}>Date added</SortHeader>
-                  {filterField && <TableHead>{filterField.label}</TableHead>}
-                  {slackConnected && <TableHead>Slack</TableHead>}
-                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                  {shownColumns.map((col) => (col.sortKey
+                    ? <SortHeader key={col.id} sortKey={col.sortKey} sortBy={sortBy} onSort={handleSort} align={col.align}>{col.label}</SortHeader>
+                    : <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>))}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pageItems.map(item => item._type === 'waitlist' ? (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} role="button" tabIndex={0} aria-label={`Edit wait list entry for ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/plato/users/waitlist/${item._key}`); } }}>
-                    <TableCell>{item.name || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">Wait List</Badge>
-                      {item._entry.alreadyRegistered && (
-                        <span className="block text-xs text-muted-foreground mt-1">{item._entry.alreadyRegistered === 'account' ? 'Has an account' : 'Invited'}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleString()}</TableCell>
-                    {filterField && (
-                      <TableCell className="max-w-48 truncate">
-                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        {/* Someone who already has an account can't be invited again. */}
-                        {item._entry.alreadyRegistered === 'account'
-                          ? <Button variant="outline" size="xs" aria-label={`Copy ${item.email}'s wait-list answers to their account`} onClick={(e) => { e.stopPropagation(); applyFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Copy to account</Button>
-                          : <Button variant="outline" size="xs" aria-label={`Invite ${item.email}`} onClick={(e) => { e.stopPropagation(); inviteFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>Invite</Button>}
-                        <Button variant="ghost" size="icon-xs" title="Remove" aria-label={`Remove ${item.email} from the wait list`} onClick={(e) => { e.stopPropagation(); removeFromWaitlist(item._key, item.email); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>&#10005;</Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : item._type === 'invite' ? (
-                  <TableRow key={item._key}>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>&mdash;</TableCell>
-                    <TableCell><Badge variant="outline">Invited</Badge></TableCell>
-                    <TableCell className="text-muted-foreground text-center">&mdash;</TableCell>
-                    <TableCell className="text-muted-foreground">&mdash;</TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
-                    {filterField && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    {slackConnected && <TableCell className="text-muted-foreground">&mdash;</TableCell>}
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
-                        <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow key={item._key} className="cursor-pointer hover:bg-muted/50" onClick={() => openEditUser(item._user)} role="button" tabIndex={0} aria-label={`Edit ${item.name || item.email}`} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openEditUser(item._user); } }}>
-                    <TableCell>{item.name}</TableCell>
-                    <TableCell>{item.email}</TableCell>
-                    <TableCell>{item.username || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>{item.userGroup || <span className="text-muted-foreground">&mdash;</span>}</TableCell>
-                    <TableCell>
-                      <Badge variant={item.role === 'admin' ? 'default' : 'secondary'}>
-                        {item.role === 'admin' ? 'Admin' : 'User'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      {typeof item._user.lessonsCompleted === 'number' ? (
-                        <div className="inline-flex">
-                          <CompletionRing
-                            completed={item._user.lessonsCompleted}
-                            available={item._user.lessonsAvailable}
-                            size={40}
-                            strokeWidth={5}
-                            compact
-                          />
-                        </div>
-                      ) : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                    <TableCell>
-                      {item._user.lastActiveAt
-                        ? new Date(item._user.lastActiveAt).toLocaleDateString()
-                        : <span className="text-muted-foreground">&mdash;</span>}
-                    </TableCell>
-                    <TableCell>{new Date(item.createdAt).toLocaleDateString()}</TableCell>
-                    {filterField && (
-                      <TableCell className="max-w-48 truncate">
-                        {item.customFields[filterField.id] || <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    {slackConnected && (
-                      <TableCell>
-                        {item._user.slackUserId ? (
-                          <span title={item._user.slackUserId} className="text-xs">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">
-                              <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z" fill="currentColor"/>
-                            </svg>
-                            Linked
-                          </span>
-                        ) : <span className="text-muted-foreground">&mdash;</span>}
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      {/* Keep clicks and Enter/Space on these buttons from also activating the row. */}
-                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }}>
-                        <PluginSlot name="adminUserRowAction" context={{ user: item._user }} />
-                        {item._user.userId !== currentUser?.userId && (
-                          <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete ${item.name || item.email}`} onClick={(e) => { e.stopPropagation(); deleteUser(item._user.userId, item.name || item.email); }}>&#128465;</Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {pageItems.map((item) => {
+                  // Clicking anywhere on a user or wait-list row is a mouse
+                  // convenience; the name button is the keyboard/SR path. (A
+                  // role="button" row can't contain the row's own buttons.)
+                  const open = item._type === 'waitlist' ? () => navigate(`/plato/users/waitlist/${item._key}`)
+                    : item._type === 'user' ? () => openEditUser(item._user) : null;
+                  return (
+                    <TableRow key={item._key} className={open ? 'cursor-pointer hover:bg-muted/50' : undefined} onClick={open || undefined}>
+                      {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(item)}</TableCell>)}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -1020,9 +978,19 @@ export default function AdminUsers() {
         </>
       ) : (
         <p className="text-muted-foreground py-8 text-center">
-          {search || filter !== 'all' ? 'No matching users.' : 'No users yet. Click "Invite Users" to get started.'}
+          {search || filterChips.length ? 'No matching users.' : 'No users yet. Click "Invite Users" to get started.'}
         </p>
       )}
+
+      <ColumnsDialog
+        open={columnsOpen}
+        onOpenChange={setColumnsOpen}
+        title="Users table columns"
+        columns={arrangeable(allColumns, columnPrefs)}
+        onToggle={(id, show) => updateColumns(toggleColumn(allColumns, columnPrefs, id, show))}
+        onMove={(id, delta) => updateColumns(moveColumn(allColumns, columnPrefs, id, delta))}
+        onReset={() => updateColumns(defaultPrefs(allColumns))}
+      />
 
       {/* Invite Users Modal */}
       <Dialog open={inviteOpen} onOpenChange={handleInviteClose}>
@@ -1253,7 +1221,8 @@ export default function AdminUsers() {
         onChange={(next) => {
           setUserFields(next);
           // Reset a filter pointing at a deleted field.
-          if (fieldFilter.fieldId && !next.some(f => f.id === fieldFilter.fieldId)) setFieldFilter({ fieldId: '', value: '' });
+          // Drop filters on a deleted field.
+          setFilters((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith('field:') || next.some((f) => `field:${f.id}` === k))));
           // Values for deleted fields were erased server-side; refresh rows.
           if (next.length < userFields.length) loadData();
         }}
@@ -1266,35 +1235,13 @@ export default function AdminUsers() {
         onChange={setWaitlistSettings}
       />
 
-      <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>User Groups</DialogTitle>
-            <DialogDescription>Groups are available for users to select during signup.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex gap-2">
-              <Label htmlFor="new-group-name" className="sr-only">Group name</Label>
-              <Input id="new-group-name" type="text" placeholder="Group name" value={newGroupName}
-                onChange={e => setNewGroupName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addGroup(); }} className="flex-1" />
-              <Button onClick={addGroup}>Add</Button>
-            </div>
-            {groups.length > 0 ? (
-              <ul className="space-y-1">
-                {groups.map(g => (
-                  <li key={g} className="flex items-center justify-between rounded-md px-3 py-2 bg-muted/50">
-                    <span className="text-sm">{g}</span>
-                    <Button variant="ghost" size="icon-xs" title="Delete" aria-label={`Delete group ${g}`} onClick={() => deleteGroup(g)}>&#10005;</Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">No user groups yet.</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <GroupsDialog
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        groups={groups}
+        memberCounts={groupCounts}
+        onChanged={(next) => { setGroups(next); loadData({ quiet: true }); }}
+      />
     </div>
   );
 }

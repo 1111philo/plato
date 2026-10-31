@@ -13,6 +13,8 @@ import { parseResponse, cleanStream, buildConversationText } from '../../lib/les
 import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
+import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
+import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
@@ -355,7 +357,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
         );
         if (cancelled) return;
         const { text, readiness: r } = parseResponse(raw);
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: null, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
         pendingRef.current = { msgs: [msg], r: r ?? (isEditing ? 8 : 1) };
         setStreamingText(null);
       } catch (e) {
@@ -387,7 +389,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
         512
       );
       const { text: respText, readiness: r } = parseResponse(raw);
-      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: readinessRef.current, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
       pendingRef.current = { msgs: [assistantMsg], r };
       setStreamingText(null);
     } catch (e) {
@@ -443,7 +445,12 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
 
   const renderMessage = (msg, idx) => {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
-    return <AssistantMessage key={idx} content={msg.content} />;
+    return (
+      <div key={idx}>
+        <AgentActivity agents={msg.metadata?.agents} />
+        <AssistantMessage content={msg.content} />
+      </div>
+    );
   };
 
   return (
@@ -454,7 +461,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
       </div>
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert" aria-live="assertive">
+        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-red-800 dark:text-destructive px-4 py-3 mb-4 text-sm" role="alert" aria-live="assertive">
           <span>{error}</span>
           <button onClick={() => setError('')} aria-label="Dismiss error" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
@@ -514,7 +521,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
             <ComposeBar
               placeholder="Tell me about your program..."
               onSend={handleSend}
-              disabled={isBusy}
+              sendDisabled={isBusy}
             />
           </div>
         </div>

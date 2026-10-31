@@ -10,12 +10,19 @@ import ai from './routes/ai.js';
 import content from './routes/content.js';
 import links from './routes/links.js';
 import waitlist from './routes/waitlist.js';
+import unsubscribe from './routes/unsubscribe.js';
 import app from './routes/app.js';
 import db from './lib/db.js';
 import { generateUserId } from './lib/crypto.js';
 import { hashPassword } from './lib/password.js';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './config.js';
 import { seedDefaultContent } from './lib/seed.js';
+import { runMigrationsBounded } from './lib/migrations.js';
+import { isJobEvent, runJob } from './lib/jobs.js';
+import { runDueJobs } from './lib/schedule.js';
+import './lib/learner-emails.js'; // registers the scheduled email jobs (#400)
+import './lib/messages.js'; // registers send-message (#389)
+import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
 import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
@@ -26,7 +33,7 @@ const server = new Hono();
 server.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Plato-View-As'],
 }));
 
 // First-request initialization: admin bootstrap, content seeding
@@ -61,6 +68,10 @@ server.use('*', async (c, next) => {
     } catch (err) {
       console.error('Seed failed (non-fatal):', err.message);
     }
+    // Data migrations (once per install; see lib/migrations.js). Bounded so a
+    // slow or stuck migration never holds the first request hostage — code
+    // must tolerate unmigrated data anyway (another container may be mid-run).
+    await runMigrationsBounded();
     // Plugin registry: discover and activate plugins. Routes are NOT mounted here —
     // Hono throws "Can not add a route since the matcher is already built" if you
     // call server.route() mid-request. Instead we register a static catch-all (below)
@@ -71,8 +82,19 @@ server.use('*', async (c, next) => {
       logger.error('plugin_registry_boot_failed', { error: err?.message, stack: err?.stack });
     }
   }
+  // Scheduled learner emails (#400): traffic checks whether one is due, at
+  // most every 10 minutes per container (lib/schedule.js). Never fails or
+  // slows the request beyond a quick read.
+  try {
+    await runDueJobs();
+  } catch (err) {
+    logger.error('schedule_check_failed', { error: err?.message });
+  }
   await next();
 });
+
+// View-as-User is read-only for every route (middleware/viewAsReadOnly.js).
+server.use('*', viewAsReadOnly);
 
 server.route('/', health);
 server.route('/', auth);
@@ -83,6 +105,7 @@ server.route('/', ai);
 server.route('/', content);
 server.route('/', links);
 server.route('/', waitlist);
+server.route('/', unsubscribe);
 
 // Plugin catch-all + legacy shim. See server/src/lib/plugins/dispatcher.js for
 // the handler logic. Registered BEFORE `app` because app.js has a global SPA
@@ -109,6 +132,7 @@ server.onError((err, c) => {
 // Wrapped to also handle self-invoke events for async dashboard-stats refresh.
 const _httpHandler = handle(server);
 export const handler = async (event, context) => {
+  if (isJobEvent(event)) return runJob(event.job, event.payload);
   if (isSelfInvokeEvent(event)) {
     try {
       await recomputeAndCacheLessonStats();

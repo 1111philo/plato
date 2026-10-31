@@ -19,13 +19,14 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const item = {
       userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
       userGroup: userGroup || null,
       role, createdAt: now, updatedAt: now,
     };
+    if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
     await doc.send(new PutCommand({
@@ -127,21 +128,43 @@ const db = {
     });
   },
 
-  async listUsers() {
-    const items = [];
-    let lastKey;
-    do {
-      const result = await doc.send(new ScanCommand({
+  // Migration helper: change a user's role only if it still holds `from`.
+  // Deliberately leaves updatedAt alone (a data migration, not a profile
+  // edit). Returns true if it changed the record.
+  async setUserRoleIf(userId, from, to) {
+    try {
+      await doc.send(new UpdateCommand({
         TableName: USERS_TABLE,
-        FilterExpression: '#r = :role',
+        Key: { userId },
+        UpdateExpression: 'SET #r = :to',
+        ConditionExpression: '#r = :from',
         ExpressionAttributeNames: { '#r': 'role' },
-        ExpressionAttributeValues: { ':role': 'user' },
-        ExclusiveStartKey: lastKey,
+        ExpressionAttributeValues: { ':from': from, ':to': to },
       }));
-      items.push(...result.Items);
-      lastKey = result.LastEvaluatedKey;
-    } while (lastKey);
-    return items;
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  },
+
+  // Migration helper: set the inferred name split (#402) only while `name` is
+  // still `expectedName` and no split exists yet. Leaves updatedAt alone.
+  async setUserNameSplitIf(userId, expectedName, { firstName, lastName, nameSource }) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET #f = :f, #l = :l, #s = :s',
+        ConditionExpression: '#n = :n AND attribute_not_exists(#f)',
+        ExpressionAttributeNames: { '#f': 'firstName', '#l': 'lastName', '#s': 'nameSource', '#n': 'name' },
+        ExpressionAttributeValues: { ':f': firstName, ':l': lastName, ':s': nameSource, ':n': expectedName },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
   },
 
   async listAllUsers() {
@@ -175,7 +198,7 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
@@ -191,6 +214,7 @@ const db = {
     if (slackUserId) item.slackUserId = slackUserId;
     if (maxUsages !== null) item.maxUsages = maxUsages;
     if (profile) item.profile = profile;
+    if (forUserId) item.forUserId = forUserId;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
@@ -209,6 +233,9 @@ const db = {
         createdAt: new Date().toISOString(),
         profile,
       },
+      // Create-only: the route derives the token from the email, so a second
+      // concurrent join for the same address fails here instead of duplicating.
+      ConditionExpression: 'attribute_not_exists(inviteToken)',
     }));
   },
 
@@ -444,6 +471,20 @@ const db = {
     }
     await doc.send(new PutCommand(params));
     return { version: newVersion, updatedAt: now };
+  },
+
+  // Create-only write: throws ConditionalCheckFailedException if the record
+  // already exists. putSyncData with expectedVersion 0/undefined is an
+  // unconditional overwrite, so it can't be used for "create if absent"
+  // (migration state, bundled content) where concurrent cold starts race.
+  async createSyncData(userId, dataKey, data) {
+    const now = new Date().toISOString();
+    await doc.send(new PutCommand({
+      TableName: SYNC_DATA_TABLE,
+      Item: { userId, dataKey, data, updatedAt: now, version: 1 },
+      ConditionExpression: 'attribute_not_exists(dataKey)',
+    }));
+    return { version: 1, updatedAt: now };
   },
 
   async deleteSyncData(userId, dataKey) {

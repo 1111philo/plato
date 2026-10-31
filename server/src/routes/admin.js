@@ -1,11 +1,18 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { requireAdmin } from '../middleware/requireAdmin.js';
+import { authorize } from '../middleware/authorize.js';
+import { ROLES, normalizeRole } from '../lib/permissions.js';
+import { registerHierarchyRoutes } from './admin-hierarchy.js';
+import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.js';
+import { registerNotificationRoutes } from './admin-notifications.js';
+import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
-import { sendInviteEmail, sendResetEmail } from '../lib/email.js';
+import { sendInviteEmail, sendAccountInviteEmail, sendResetEmail } from '../lib/email.js';
 import { validateUsername } from './auth.js';
-import { MIN_OBJECTIVES, MAX_OBJECTIVES, MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
+import { nameFields, readNameInput } from '../lib/names.js';
+import { MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
+import { validateLessonMarkdown } from '../lib/lesson-markdown.js';
 import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
@@ -21,27 +28,14 @@ import {
 
 const admin = new Hono();
 
-/** Validate lesson markdown for microlearning constraints. Returns error string or null. */
-function validateLessonMarkdown(markdown) {
-  const objSection = markdown.split(/^## Learning Objectives$/m)[1];
-  if (!objSection) return 'Lesson must have a "## Learning Objectives" section.';
-  const lines = objSection.split('\n');
-  const objectives = [];
-  for (const line of lines) {
-    if (/^## /.test(line)) break;
-    if (/^- Can .+/.test(line)) objectives.push(line);
-  }
-  if (objectives.length < MIN_OBJECTIVES) return `Too few objectives (${objectives.length}). Lessons need at least ${MIN_OBJECTIVES}.`;
-  if (objectives.length > MAX_OBJECTIVES) return `Too many objectives (${objectives.length}). Microlearning lessons need ${MIN_OBJECTIVES}-${MAX_OBJECTIVES} objectives.`;
-  return null;
-}
 
 // Dashboard stats count ONLY published (public) lessons — drafts, privates
 // (even when shared to a learner), and user-created custom lessons are excluded
 // from every KPI (numerator AND denominator). `normalizeStatus` /
 // `publicLessonIds` are the single source of that rule (lesson-visibility.js).
 
-admin.use('/v1/admin/*', authenticate, requireAdmin);
+// Per-route permissions (lib/permissions.js); unmapped routes are admin-only.
+admin.use('/v1/admin/*', authenticate, authorize);
 
 // GET /v1/admin/users
 // Pass `?include=stats` to enrich each row with `lessonsCompleted`,
@@ -61,9 +55,9 @@ admin.get('/v1/admin/users', async (c) => {
     userId: p.userId,
     email: p.email,
     username: p.username,
-    name: p.name,
+    ...nameFields(p),
     userGroup: p.userGroup,
-    role: p.role,
+    role: normalizeRole(p.role),
     slackUserId: p.slackUserId || null,
     customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
@@ -130,9 +124,10 @@ admin.get('/v1/admin/users/:userId', async (c) => {
   return c.json({
     userId: user.userId,
     email: user.email,
-    name: user.name,
+    username: user.username,
+    ...nameFields(user),
     userGroup: user.userGroup,
-    role: user.role,
+    role: normalizeRole(user.role),
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), user.customFields),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -167,6 +162,7 @@ admin.post('/v1/admin/impersonation/start', async (c) => {
     email: target.email,
     username: target.username,
     name: target.name,
+    role: normalizeRole(target.role),
   });
 });
 
@@ -182,7 +178,8 @@ admin.post('/v1/admin/impersonation/end', async (c) => {
   }
   await db.createAuditLog({
     action: 'admin_view_as_user_ended',
-    userId: target?.userId || targetUserId || null,
+    // Only a real user id goes in the audit trail (the body is client input).
+    userId: target?.userId || null,
     email: target?.email || null,
     performedBy: adminUser.userId,
     details: target ? { targetUsername: target.username, targetName: target.name } : null,
@@ -283,6 +280,7 @@ admin.get('/v1/admin/invites', async (c) => {
     email: inv.email,
     status: inv.status,
     isLink: !!inv.isLink,
+    existingAccount: !!inv.forUserId,
     createdAt: inv.createdAt,
   })));
 });
@@ -306,9 +304,12 @@ admin.post('/v1/admin/invites/resend', async (c) => {
     email: email.toLowerCase(),
     invitedBy: adminUser.userId,
     profile: pendingInvite.profile || null, // keep a wait-list entry's details
+    ...(pendingInvite.forUserId ? { forUserId: pendingInvite.forUserId } : {}),
   });
 
-  const result = await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
+  const result = pendingInvite.forUserId
+    ? await sendAccountInviteEmail(email.toLowerCase(), adminUser.name)
+    : await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
   return c.json({ inviteToken, email: email.toLowerCase(), ...result }, 201);
 });
 
@@ -418,7 +419,7 @@ admin.get('/v1/admin/waitlist', async (c) => {
       inviteToken: inv.inviteToken,
       email: inv.email,
       alreadyRegistered: accounts.has(inv.email.toLowerCase()) ? 'account' : invited.has(inv.email.toLowerCase()) ? 'invite' : null,
-      name: inv.profile?.name || null,
+      ...nameFields(inv.profile),
       userGroup: inv.profile?.userGroup || null,
       customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
       createdAt: inv.createdAt,
@@ -454,58 +455,31 @@ admin.delete('/v1/admin/waitlist/key', async (c) => {
 });
 
 // POST /v1/admin/waitlist/:token/invite — send the invite email. The new invite
-// carries the entry's name, group and fields so signup can fill them in.
+// carries the entry's name, group and fields so signup can fill them in. When
+// the email already has an account, the invite is tied to it (`forUserId`):
+// the person sees it in the classroom and by email, and accepting merges the
+// answers into their account (lib/account-invites.js).
 admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
   const entry = await db.getInvite(c.req.param('token'));
   if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
 
-  if (await db.getUserByEmail(entry.email)) {
-    return c.json({ error: 'User with this email already exists' }, 409);
-  }
   if (await db.getInviteByEmail(entry.email)) {
     return c.json({ error: 'A pending invite already exists for this email' }, 409);
   }
+  const account = await db.getUserByEmail(entry.email);
 
   const adminUser = c.get('user');
   const inviteToken = generateInviteToken();
-  await db.createInvite({ inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null });
-  await db.deleteInvite(entry.inviteToken);
-
-  const result = await sendInviteEmail(entry.email, inviteToken, adminUser.name);
-  return c.json({ inviteToken, email: entry.email, ...result }, 201);
-});
-
-// POST /v1/admin/waitlist/:token/apply — the entry's email already has an
-// account: copy the entry's answers onto it, then remove the entry. Only
-// fills what the account is missing (no group yet, blank fields), so nothing
-// the person or an admin already set is overwritten. The name is never copied.
-admin.post('/v1/admin/waitlist/:token/apply', async (c) => {
-  const entry = await db.getInvite(c.req.param('token'));
-  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
-  const user = await db.getUserByEmail(entry.email);
-  if (!user) return c.json({ error: 'No account has this email' }, 404);
-
-  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
-  const profile = entry.profile || {};
-  const updates = {};
-  const group = profile.userGroup;
-  if (group && !user.userGroup && (settings.userGroups || []).includes(group)) updates.userGroup = group;
-  const fields = [];
-  const current = user.customFields || {};
-  for (const def of getFieldDefinitions(settings)) {
-    const value = typeof profile.customFields?.[def.id] === 'string' ? profile.customFields[def.id].trim() : '';
-    if (!value || current[def.id] || validateValue(def, value)) continue;
-    fields.push(def.id);
-    (updates.customFields ||= { ...current })[def.id] = value;
-  }
-
-  if (Object.keys(updates).length) await db.updateUser(user.userId, updates);
-  await db.deleteInvite(entry.inviteToken);
-  await db.createAuditLog({
-    action: 'waitlist_applied', userId: user.userId, performedBy: c.get('user').userId,
-    details: { userGroup: updates.userGroup || null, fields },
+  await db.createInvite({
+    inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null,
+    ...(account ? { forUserId: account.userId } : {}),
   });
-  return c.json({ userId: user.userId, userGroup: updates.userGroup || null, fields });
+  await db.deleteInvite(entry.inviteToken);
+
+  const result = account
+    ? await sendAccountInviteEmail(entry.email, adminUser.name)
+    : await sendInviteEmail(entry.email, inviteToken, adminUser.name);
+  return c.json({ inviteToken, email: entry.email, existingAccount: !!account, ...result }, 201);
 });
 
 // PUT /v1/admin/waitlist/:token — edit an entry's name, email, group, and
@@ -536,7 +510,7 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   return c.json({
     inviteToken: entry.inviteToken,
     email: result.email,
-    name: result.profile.name,
+    ...nameFields(result.profile),
     userGroup: result.profile.userGroup,
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), result.profile.customFields),
     createdAt: entry.createdAt,
@@ -558,8 +532,18 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   if (!user) return c.json({ error: 'User not found' }, 404);
   const body = await c.req.json();
   const updates = {};
-  if (body.name !== undefined) updates.name = body.name;
-  if (body.email !== undefined) updates.email = body.email.toLowerCase();
+  const nameInput = readNameInput(body, { current: user });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
+  if (nameInput.fields) Object.assign(updates, nameInput.fields);
+  if (body.email !== undefined) {
+    const email = String(body.email).trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: 'A valid email is required' }, 400);
+    // Same rule as PATCH /v1/me: two accounts sharing an email would make
+    // login (getUserByEmail) ambiguous.
+    const existing = await db.getUserByEmail(email);
+    if (existing && existing.userId !== userId) return c.json({ error: 'Email already in use' }, 409);
+    updates.email = email;
+  }
   if (body.username !== undefined) {
     const usernameErr = validateUsername(body.username);
     if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -595,11 +579,39 @@ admin.put('/v1/admin/users/:userId/role', async (c) => {
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
   }
-  const { role } = await c.req.json();
-  if (role !== 'admin' && role !== 'user') {
-    return c.json({ error: 'Role must be admin or user' }, 400);
+  const body = await c.req.json();
+  // Accept the legacy name for learner from older clients.
+  const role = body.role === 'user' ? 'learner' : body.role;
+  if (!ROLES.includes(role)) {
+    return c.json({ error: `Role must be one of: ${ROLES.join(', ')}` }, 400);
   }
-  await db.updateUser(userId, { role });
+  const from = normalizeRole(user.role);
+  if (from === role) return c.json({ ok: true, role });
+  const countAdmins = async () => (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin').length;
+  // Never leave the classroom without an admin.
+  if (from === 'admin' && (await countAdmins()) <= 1) {
+    return c.json({ error: 'Cannot change the role of the only admin' }, 400);
+  }
+  // Conditional on the role we read, so a concurrent change to this user
+  // isn't overwritten.
+  if (!(await db.setUserRoleIf(userId, user.role, role))) {
+    return c.json({ error: 'This user’s role just changed. Reload and try again.' }, 409);
+  }
+  // The check above is read-then-write: two admins demoting each other at
+  // the same moment could both pass it. Re-count after writing, and if no
+  // admin is left, undo this change. For any interleaving, at least one
+  // admin remains.
+  if (from === 'admin' && (await countAdmins()) === 0) {
+    await db.setUserRoleIf(userId, role, user.role);
+    return c.json({ error: 'Cannot remove the last admin' }, 409);
+  }
+  await db.createAuditLog({
+    action: 'role_changed',
+    userId,
+    email: user.email,
+    performedBy: adminUser.userId,
+    details: { from, to: role },
+  });
   return c.json({ ok: true, role });
 });
 
@@ -634,60 +646,24 @@ admin.put('/v1/admin/settings', async (c) => {
 
 // PUT /v1/admin/groups — add or rename an group
 admin.put('/v1/admin/groups', async (c) => {
-  const { name, oldName } = await c.req.json();
-  if (!name || !name.trim()) {
-    return c.json({ error: 'Group name is required' }, 400);
+  const { name, oldName } = await c.req.json().catch(() => ({}));
+  const user = c.get('user');
+  const result = oldName ? await renameGroup(oldName, name) : await addGroup(name);
+  if (result.error) return c.json({ error: result.error }, result.status);
+  if (oldName && oldName !== name.trim()) {
+    try {
+      await db.createAuditLog({ action: 'group_renamed', userId: user.userId, performedBy: user.userId, details: { from: oldName, to: name.trim(), ...result.moved } });
+    } catch { /* best-effort */ }
   }
-  const trimmed = name.trim();
-  const current = await db.getSyncData('_system', 'settings');
-  const settings = current?.data || {};
-  const groups = settings.userGroups || [];
-
-  if (oldName) {
-    // Rename
-    const idx = groups.indexOf(oldName);
-    if (idx === -1) return c.json({ error: 'Group not found' }, 404);
-    groups[idx] = trimmed;
-    // Update all users with the old group
-    const users = await db.listAllUsers();
-    await Promise.all(
-      users.filter((u) => u.userGroup === oldName)
-        .map((u) => db.updateUser(u.userId, { userGroup: trimmed }))
-    );
-  } else {
-    // Add
-    if (groups.includes(trimmed)) {
-      return c.json({ error: 'Group already exists' }, 409);
-    }
-    groups.push(trimmed);
-  }
-
-  settings.userGroups = groups;
-  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-  return c.json({ userGroups: groups });
+  return c.json(result);
 });
 
-// DELETE /v1/admin/groups/:name — remove an group and clear from all users
+// DELETE /v1/admin/groups/:name — remove a group; its members, invites, and
+// wait-list entries lose it.
 admin.delete('/v1/admin/groups/:name', async (c) => {
-  const name = decodeURIComponent(c.req.param('name'));
-  const current = await db.getSyncData('_system', 'settings');
-  const settings = current?.data || {};
-  const groups = settings.userGroups || [];
-  const idx = groups.indexOf(name);
-  if (idx === -1) return c.json({ error: 'Group not found' }, 404);
-
-  groups.splice(idx, 1);
-  settings.userGroups = groups;
-  await db.putSyncData('_system', 'settings', settings, current?.version || 0);
-
-  // Clear group from all users who had it
-  const users = await db.listAllUsers();
-  await Promise.all(
-    users.filter((u) => u.userGroup === name)
-      .map((u) => db.updateUser(u.userId, { userGroup: null }))
-  );
-
-  return c.json({ userGroups: groups });
+  const result = await deleteGroup(decodeURIComponent(c.req.param('name')));
+  if (result.error) return c.json({ error: result.error }, result.status);
+  return c.json(result);
 });
 
 // ── Custom user fields (#364) ──
@@ -836,7 +812,7 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
 
   // Emit userDeleted BEFORE the cascade — plugins can react with the user's data
   // still in place. Hook errors are caught by emit() and don't block deletion.
-  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+  await emitHook('userDeleted', { userId, email: user.email, role: normalizeRole(user.role) });
 
   // Delete all sync data for this user (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);
@@ -959,6 +935,12 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
     createdBy: current?.data?.createdBy || adminUser.userId,
     createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
     createdAt: current?.data?.createdAt || new Date().toISOString(),
+    // When it first went public, for "new lessons" in the weekly digest (#400).
+    ...(current?.data?.publishedAt ? { publishedAt: current.data.publishedAt }
+      : isGoingPublic ? { publishedAt: new Date().toISOString() } : {}),
+    // Bundled lessons (#443) keep their marker, so an edit makes the copy
+    // "customized" instead of detaching it from upstream updates.
+    ...(current?.data?.bundled ? { bundled: current.data.bundled } : {}),
   };
   await db.putSyncData('_system', `lesson:${lessonId}`, data, current?.version || 0);
   return c.json({ lessonId, ok: true });
@@ -986,128 +968,31 @@ admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   return c.json({ ok: true });
 });
 
-// ── Courses ──
-//
-// Courses are an optional taxonomy for grouping lessons. Each course is a first-class
-// _system:course:<id> sync-data record with { name }. Each lesson optionally carries
-// a `course` field (the course's id). Courses are pure organization — they don't carry
-// their own visibility/ACL; lesson visibility (public/private/draft + sharedWith) is
-// unchanged. Coach receives course { name } in its context JSON when a lesson belongs
-// to one.
+// ── Bundled lessons (#443): Getting Started; see lib/bundled-lessons.js ──
+admin.get('/v1/admin/bundled-lessons', async (c) => c.json({ lessons: await bundledLessonStatus() }));
 
-const COURSE_NAME_MAX = 80;
-
-function validateCourseBody(body) {
-  if (!body || typeof body !== 'object') return 'Request body is required';
-  const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (!name) return 'Course name is required';
-  if (name.length > COURSE_NAME_MAX) return `Course name must be ${COURSE_NAME_MAX} characters or fewer`;
-  return null;
-}
-
-// GET /v1/admin/courses — list all courses with a per-course lesson count
-admin.get('/v1/admin/courses', async (c) => {
-  const items = await db.getAllSyncData('_system');
-  const lessonCounts = new Map();
-  for (const i of items) {
-    if (!i.dataKey.startsWith('lesson:')) continue;
-    const cid = i.data?.course;
-    if (cid) lessonCounts.set(cid, (lessonCounts.get(cid) || 0) + 1);
+// POST /v1/admin/bundled-lessons/:lessonId — body { action: 'apply' | 'dismiss' | 'dismiss-publish' }
+admin.post('/v1/admin/bundled-lessons/:lessonId', async (c) => {
+  const lessonId = c.req.param('lessonId');
+  const { action } = await c.req.json().catch(() => ({}));
+  const user = c.get('user');
+  const result = await actOnBundledLesson(lessonId, action, user);
+  if (result.error) return c.json({ error: result.error }, result.status);
+  if (action === 'apply') {
+    try {
+      await db.createAuditLog({ action: 'bundled_lesson_updated', userId: user.userId, performedBy: user.userId, details: { lessonId, version: result.version } });
+    } catch { /* best-effort */ }
   }
-  const courses = items
-    .filter(i => i.dataKey.startsWith('course:'))
-    .map(i => {
-      const courseId = i.dataKey.slice('course:'.length);
-      return {
-        courseId,
-        name: i.data.name || courseId,
-        createdByName: i.data.createdByName || null,
-        updatedByName: i.data.updatedByName || null,
-        updatedAt: i.updatedAt,
-        lessonCount: lessonCounts.get(courseId) || 0,
-      };
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-  return c.json(courses);
+  return c.json(result);
 });
 
-// GET /v1/admin/courses/:courseId
-admin.get('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-  return c.json({ courseId, ...item.data, updatedAt: item.updatedAt });
-});
+// ── Notifications (#388, #389, #400): routes/admin-notifications.js ──
+registerNotificationRoutes(admin);
 
-// PUT /v1/admin/courses/:courseId — create or update
-admin.put('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const body = await c.req.json();
-  const adminUser = c.get('user');
-  const err = validateCourseBody(body);
-  if (err) return c.json({ error: err }, 400);
-  const trimmedName = body.name.trim();
-
-  // Reject duplicate names (case-insensitive) across other courses. Lookups are
-  // cheap — we already iterate _system syncdata for the list endpoint and
-  // there's typically only a handful of courses.
-  const items = await db.getAllSyncData('_system');
-  for (const i of items) {
-    if (!i.dataKey.startsWith('course:')) continue;
-    const otherId = i.dataKey.slice('course:'.length);
-    if (otherId === courseId) continue;
-    if ((i.data?.name || '').trim().toLowerCase() === trimmedName.toLowerCase()) {
-      return c.json({ error: 'A course with that name already exists' }, 409);
-    }
-  }
-
-  const current = await db.getSyncData('_system', `course:${courseId}`);
-  const now = new Date().toISOString();
-  const data = {
-    name: trimmedName,
-    createdBy: current?.data?.createdBy || adminUser.userId,
-    createdByName: current?.data?.createdByName || adminUser.username || adminUser.email,
-    createdAt: current?.data?.createdAt || now,
-    updatedBy: adminUser.userId,
-    updatedByName: adminUser.username || adminUser.email,
-  };
-  await db.putSyncData('_system', `course:${courseId}`, data, current?.version || 0);
-  return c.json({ courseId, ok: true });
-});
-
-// DELETE /v1/admin/courses/:courseId — delete + cascade-clear `course` on lessons
-admin.delete('/v1/admin/courses/:courseId', async (c) => {
-  const courseId = c.req.param('courseId');
-  const item = await db.getSyncData('_system', `course:${courseId}`);
-  if (!item) return c.json({ error: 'Course not found' }, 404);
-
-  // Snapshot the affected lesson keys *before* the delete, so a concurrent
-  // /v1/lessons fetch in the gap can't see stale course refs without the
-  // course record existing — the inlining logic on the read path tolerates
-  // a missing course (returns course: null) but it still helps to keep the
-  // happy path tight.
-  const items = await db.getAllSyncData('_system');
-  const affectedKeys = items
-    .filter(i => i.dataKey.startsWith('lesson:') && i.data?.course === courseId)
-    .map(i => i.dataKey);
-
-  await db.deleteSyncData('_system', `course:${courseId}`);
-
-  // Cascade with per-lesson re-read so a concurrent admin edit on one of
-  // these lessons doesn't trigger a ConditionalCheckFailedException — we
-  // pick up the latest version and any new field values, then override
-  // just `course`. Skip the PUT if the lesson no longer references this
-  // course (another admin already moved it), so we don't clobber an
-  // intentional re-assignment.
-  for (const dataKey of affectedKeys) {
-    const fresh = await db.getSyncData('_system', dataKey);
-    if (!fresh) continue;
-    if (fresh.data?.course !== courseId) continue;
-    await db.putSyncData('_system', dataKey, { ...fresh.data, course: null }, fresh.version || 0);
-  }
-
-  return c.json({ ok: true });
-});
+// ── Courses, units, lessons order (#408) ──
+// Units are stored as _system:course:<id>, courses as _system:program:<id>.
+// Routes and rules live in routes/admin-hierarchy.js and lib/hierarchy.js.
+registerHierarchyRoutes(admin);
 
 // GET /v1/admin/knowledge-base
 admin.get('/v1/admin/knowledge-base', async (c) => {
@@ -1262,6 +1147,14 @@ admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return c.json({ error: 'settings object required' }, 400);
   }
+  // writeOnly fields (e.g. a bot token) are never sent to the client, so a
+  // panel saving other settings can't include them. Keep the stored value
+  // when the body leaves one out; an explicit null still clears it.
+  const current = pluginRegistry.get(id);
+  const schemaProps = current?.manifest?.settingsSchema?.properties || {};
+  for (const [key, def] of Object.entries(schemaProps)) {
+    if (def?.writeOnly && !(key in body) && current.settings?.[key] !== undefined) body[key] = current.settings[key];
+  }
   try {
     const entry = await pluginRegistry.updateSettings(id, body);
     return c.json({ ...pluginRegistry.publicView(entry), settings: pluginRegistry.sanitizeSettings(entry) });
@@ -1323,7 +1216,7 @@ export async function computeLessonStats() {
   let learnersCompletedHalf = 0; // completed > 50% of lessons available to them
 
   for (const user of users) {
-    const isLearner = user.role !== 'admin';
+    const isLearner = normalizeRole(user.role) === 'learner';
     // Only `lessonKB:*` (counts/pacing) and `messages:*` (duration fallback for
     // legacy KBs without startedAt/completedAt) are needed — skip the large
     // screenshot:* records entirely.
@@ -1417,7 +1310,9 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
       return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
     }
     if (status === 'stale') {
-      kickoffAsyncRefresh(); // fire and forget
+      // Awaited: an Event invoke returns in tens of ms, and a pending call
+      // would die when the container freezes after the response.
+      await kickoffAsyncRefresh();
       return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
     }
   }

@@ -40,26 +40,26 @@ describe('toCsv', () => {
 describe('usersCsvRows', () => {
   const fields = [{ id: 'fld_org', label: 'Org, Name' }, { id: 'fld_ph', label: 'Phone' }];
   const items = [
-    { _type: 'user', email: 'a@x.com', name: 'A', username: 'a', userGroup: 'G', role: 'admin', createdAt: '2026-10-01T23:30:00Z', customFields: { fld_org: 'UIC' } },
-    { _type: 'waitlist', email: 'w@x.com', name: 'W', username: null, userGroup: null, role: null, createdAt: '2026-10-02T01:00:00Z', customFields: { fld_ph: '+1 555 0100' } },
+    { _type: 'user', _user: { userId: 'usr_a1' }, email: 'a@x.com', name: 'Ada King', firstName: 'Ada', lastName: 'King', username: 'a', userGroup: 'G', role: 'admin', createdAt: '2026-10-01T23:30:00Z', customFields: { fld_org: 'UIC' } },
+    { _type: 'waitlist', email: 'w@x.com', name: 'W', firstName: 'W', lastName: '', username: null, userGroup: null, role: null, createdAt: '2026-10-02T01:00:00Z', customFields: { fld_ph: '+1 555 0100' } },
     { _type: 'invite', email: 'i@x.com', name: null, username: null, userGroup: null, role: null, createdAt: '2026-10-03T00:00:00Z', customFields: null },
   ];
 
   it('has one column per custom field, in order', () => {
     const [header] = usersCsvRows(items, fields);
-    assert.deepEqual(header, ['Email', 'Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', 'Org, Name', 'Phone']);
+    assert.deepEqual(header, ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', 'Org, Name', 'Phone', 'User ID']);
   });
 
   it('maps statuses, ISO dates, and blanks missing values', () => {
     const [, user, wl, inv] = usersCsvRows(items, fields);
-    assert.deepEqual(user, ['a@x.com', 'A', 'a', 'G', 'admin', 'User', '2026-10-01', 'UIC', '']);
-    assert.deepEqual(wl.slice(5), ['Wait List', '2026-10-02', '', '+1 555 0100']);
-    assert.deepEqual(inv.slice(5), ['Invited', '2026-10-03', '', '']);
+    assert.deepEqual(user, ['a@x.com', 'Ada', 'King', 'a', 'G', 'admin', 'User', '2026-10-01', 'UIC', '', 'usr_a1']);
+    assert.deepEqual(wl.slice(6), ['Wait List', '2026-10-02', '', '+1 555 0100', '']);
+    assert.deepEqual(inv.slice(6), ['Invited', '2026-10-03', '', '', '']);
   });
 
   it('round-trips through toCsv with labels escaped', () => {
     const csv = toCsv(usersCsvRows(items, fields));
-    assert.ok(csv.startsWith('Email,Name,Username,Group,Role,Status,Date Added,"Org, Name",Phone\r\n'));
+    assert.ok(csv.startsWith('Email,First Name,Last Name,Username,Group,Role,Status,Date Added,"Org, Name",Phone,User ID\r\n'));
     assert.ok(csv.includes(",'+1 555 0100"));
   });
 });

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
+import { can } from './lib/permissions.js';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
@@ -9,6 +10,7 @@ import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import Privacy from './pages/Privacy.jsx';
+import HowAssessmentWorks from './pages/HowAssessmentWorks.jsx';
 import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
@@ -20,8 +22,10 @@ const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
 const AdminHome = lazy(() => import('./pages/admin/AdminHome.jsx'));
 const AdminUsers = lazy(() => import('./pages/admin/AdminUsers.jsx'));
 const AdminLessons = lazy(() => import('./pages/admin/AdminLessons.jsx'));
+const CourseStructure = lazy(() => import('./pages/admin/CourseStructure.jsx'));
 const AdminCustomizer = lazy(() => import('./pages/admin/AdminCustomizer.jsx'));
 const AdminPlugins = lazy(() => import('./pages/admin/AdminPlugins.jsx'));
+const AdminNotifications = lazy(() => import('./pages/admin/AdminNotifications.jsx'));
 const AdminKBSetup = lazy(() => import('./pages/admin/AdminKBSetup.jsx'));
 
 function RequireAuth({ children }) {
@@ -40,7 +44,16 @@ function RequireAuth({ children }) {
 
 function RequireAdmin({ children }) {
   const { user } = useAuth();
-  if (user?.role !== 'admin') return <Navigate to="/lessons" replace />;
+  // Admins, educators, and testers (lib/permissions.js).
+  if (!can(user, 'admin.access')) return <Navigate to="/lessons" replace />;
+  return children;
+}
+
+// Per-page gate inside /plato (#435): a direct link to a page the role can't
+// use goes to the dashboard instead of rendering a page whose data 403s.
+function RequirePermission({ permission, children }) {
+  const { user } = useAuth();
+  if (!can(user, permission)) return <Navigate to="/plato" replace />;
   return children;
 }
 
@@ -99,6 +112,7 @@ export default function App() {
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/how-assessment-works" element={<HowAssessmentWorks />} />
 
         <Route path="/plato/*" element={
           <RequireAuth>
@@ -114,19 +128,21 @@ export default function App() {
           <Route path="users/:userId" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="users/waitlist/:waitlistToken" element={<Suspense fallback={<AdminFallback />}><AdminUsers /></Suspense>} />
           <Route path="lessons" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
+          <Route path="lessons/structure" element={<RequirePermission permission="content.read"><Suspense fallback={<AdminFallback />}><CourseStructure /></Suspense></RequirePermission>} />
           <Route path="lessons/new" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           <Route path="lessons/:lessonId/edit" element={<Suspense fallback={<AdminFallback />}><AdminLessons /></Suspense>} />
           {/* Course management lives inside Admin → Lessons (a "Courses" button
               opens a modal). Keep this route as a redirect for any bookmarked
               link from the prior standalone-page iteration. */}
           <Route path="courses" element={<Navigate to="/plato/lessons" replace />} />
-          <Route path="customizer" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="customizer/knowledge" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="customizer/knowledge/edit" element={<Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense>} />
-          <Route path="plugins" element={<Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense>} />
+          <Route path="customizer" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="customizer/knowledge" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="customizer/knowledge/edit" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminCustomizer /></Suspense></RequirePermission>} />
+          <Route path="notifications" element={<RequirePermission permission="notifications.read"><Suspense fallback={<AdminFallback />}><AdminNotifications /></Suspense></RequirePermission>} />
+          <Route path="plugins" element={<RequirePermission permission="plugins.read"><Suspense fallback={<AdminFallback />}><AdminPlugins /></Suspense></RequirePermission>} />
           {/* Back-compat redirect from the old /plato/integrations URL */}
           <Route path="integrations" element={<Navigate to="/plato/plugins" replace />} />
-          <Route path="setup-kb" element={<Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense>} />
+          <Route path="setup-kb" element={<RequirePermission permission="kb.read"><Suspense fallback={<AdminFallback />}><AdminKBSetup /></Suspense></RequirePermission>} />
         </Route>
 
         {/* Classroom routes — custom theme/branding applied here */}

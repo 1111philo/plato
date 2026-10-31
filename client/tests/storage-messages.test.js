@@ -151,3 +151,34 @@ describe('saveLessonMessages', () => {
     assert.ok(typeof msgs[0].timestamp === 'number');
   });
 });
+
+describe('fitMessages (#451 review M1)', async () => {
+  const { fitMessages } = await import('../js/storage.js');
+  const agents = Array.from({ length: 4 }, () => ({ agent: 'coach', label: 'Coach', notes: ['x'.repeat(250)] }));
+  const convo = Array.from({ length: 40 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `turn ${i}`, metadata: i % 2 ? { agents } : null }));
+  it('leaves a record under the budget alone', () => {
+    assert.equal(fitMessages(convo, 10_000_000), convo);
+  });
+  it('drops agent detail from the oldest replies until it fits, keeping every message and its text', () => {
+    const budget = JSON.stringify(convo).length - 20_000;
+    const out = fitMessages(convo, budget);
+    assert.equal(out.length, convo.length);
+    assert.deepEqual(out.map((m) => m.content), convo.map((m) => m.content));
+    assert.ok(JSON.stringify(out).length <= budget);
+    assert.equal(out[1].metadata, null, 'oldest reply trimmed');
+    assert.ok(out[out.length - 1].metadata.agents, 'newest reply keeps its detail');
+  });
+});
+
+describe('conversationTooLong (#451 second review N4)', async () => {
+  const { conversationTooLong, MESSAGES_BUDGET } = await import('../js/storage.js');
+  it('is true only when the text alone is past the budget, counted in UTF-8 bytes', async () => {
+    clearCache();
+    await saveLessonMessages('long-1', [{ role: 'user', content: 'short' }]);
+    assert.equal(conversationTooLong('long-1'), false);
+    // Under the budget in characters, over it in bytes (3 bytes each).
+    await saveLessonMessages('long-1', [{ role: 'user', content: '学'.repeat(Math.ceil(MESSAGES_BUDGET / 2.5)) }]);
+    assert.equal(conversationTooLong('long-1'), true);
+    assert.equal(conversationTooLong('never-loaded'), false);
+  });
+});

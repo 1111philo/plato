@@ -11,7 +11,6 @@ import {
 
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
-import CoursesModal from './CoursesModal.jsx';
 import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
@@ -19,12 +18,19 @@ import { parseResponse, cleanStream, buildConversationText } from '../../lib/les
 import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
+import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
+import AgentActivity from '../../components/chat/AgentActivity.jsx';
+import BundledLessonNotices from './BundledLessonNotices.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
 import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
+import ColumnsDialog from './ColumnsDialog.jsx';
+import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
+
+const LESSON_COLUMNS_KEY = 'plato:columns:lessons:v1';
 
 // A draft id minted by /plato/lessons/new looks like `admin-<13-digit ms>`.
 // Within a few minutes of minting, a 404 means "not auto-saved yet" rather
@@ -41,11 +47,13 @@ export default function AdminLessons() {
   const location = useLocation();
   const { lessonId: routeLessonId } = useParams();
   const { user } = useAuth();
+  const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`));
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const isNewRoute = location.pathname.endsWith('/lessons/new');
 
   const [lessons, setLessons] = useState([]);
-  const [courses, setCourses] = useState([]);
-  const [coursesOpen, setCoursesOpen] = useState(false);
+  const [courses, setCourses] = useState([]); // units (stored course:*)
+  const [programNames, setProgramNames] = useState(new Map());
   // Editor data for the lesson open at /plato/lessons/:lessonId/edit.
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft, initialCourse, markdown }
   const [editorLoading, setEditorLoading] = useState(false);
@@ -69,8 +77,12 @@ export default function AdminLessons() {
     }
   }, [isNewRoute, navigate]);
 
-  // Map courseId -> name for rendering tags on lesson rows.
-  const courseNamesById = new Map(courses.map((c) => [c.courseId, c.name]));
+  // Unit id → "Course › Unit" for the lessons table (#408; units are stored
+  // as course:* and keep the lesson's `course` field).
+  const unitLabelById = new Map(courses.map((u) => {
+    const courseName = programNames.get(u.programId);
+    return [u.unitId || u.courseId, courseName ? `${courseName} › ${u.name}` : u.name];
+  }));
 
   useEffect(() => {
     document.title = 'Lessons — Admin';
@@ -80,8 +92,12 @@ export default function AdminLessons() {
 
   async function loadCourses() {
     try {
-      const data = await adminApi('GET', '/v1/admin/courses');
-      setCourses(Array.isArray(data) ? data : []);
+      const [units, programs] = await Promise.all([
+        adminApi('GET', '/v1/admin/units'),
+        adminApi('GET', '/v1/admin/programs'),
+      ]);
+      setCourses(Array.isArray(units) ? units : []);
+      setProgramNames(new Map((programs.programs || []).map((p) => [p.programId, p.name])));
     } catch { /* non-blocking — list still renders */ }
   }
 
@@ -227,22 +243,62 @@ export default function AdminLessons() {
     );
   }
 
+  // Table columns (#385): Name and Actions always show; the rest follow the
+  // admin's saved layout (Columns dialog, lib/tableColumns.js).
+  const allColumns = [
+    { id: 'name', label: 'Name', fixed: true, cell: (c) => (
+      <span className="flex items-center gap-2">
+        {c.name || c.lessonId}
+        {c.status === 'draft'
+          ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
+          : c.status === 'public'
+            ? <Badge variant="outline" className="text-xs">Public</Badge>
+            : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>}
+      </span>
+    ) },
+    { id: 'unit', label: 'Course › Unit', cellClass: 'text-muted-foreground', cell: (c) => (c.course && unitLabelById.get(c.course)) || '\u2014' },
+    { id: 'createdBy', label: 'Created by', cellClass: 'text-muted-foreground', cell: (c) => c.createdByName || '\u2014' },
+    { id: 'updatedBy', label: 'Updated by', cellClass: 'text-muted-foreground', cell: (c) => c.updatedByName || '\u2014' },
+    { id: 'updated', label: 'Updated', cell: (c) => (c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014') },
+    { id: 'lessonId', label: 'Lesson ID', defaultHidden: true, cell: (c) => <code className="text-xs">{c.lessonId}</code> },
+    { id: 'actions', label: 'Actions', fixed: true, cell: (c) => {
+      const isDraft = c.status === 'draft';
+      return (
+        <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
+          {!isDraft && (
+            <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+            </Button>
+          )}
+          <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => openLessonEditor(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
+          <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </Button>
+        </div>
+      );
+    } },
+  ];
+  const shownColumns = visibleColumns(allColumns, columnPrefs);
+  const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
+
   // Lesson list
   if (loading) return spinner;
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      {/* Wraps on narrow screens; without it the trailing buttons ran off-screen on phones. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold">Lessons</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => navigate('/plato/lessons/new')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add Lesson
           </Button>
-          <Button variant="outline" onClick={() => setCoursesOpen(true)}>
+          <Button variant="outline" onClick={() => navigate('/plato/lessons/structure')}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-            Courses
+            Courses &amp; Units
           </Button>
+          <Button variant="outline" onClick={() => setColumnsOpen(true)}>Columns</Button>
         </div>
       </div>
 
@@ -260,7 +316,7 @@ export default function AdminLessons() {
         <div
           className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${
             message.type === 'error'
-              ? 'bg-destructive/10 text-destructive'
+              ? 'bg-destructive/10 text-red-800 dark:text-destructive'
               : 'bg-green-50 text-green-800'
           }`}
           role="alert"
@@ -270,64 +326,41 @@ export default function AdminLessons() {
         </div>
       )}
 
+      <BundledLessonNotices onChanged={loadLessons} onMessage={setMessage} />
+
       <Card className="p-0 overflow-hidden">
         <Table aria-label="Lessons">
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Course</TableHead>
-              <TableHead>Created by</TableHead>
-              <TableHead>Updated by</TableHead>
-              <TableHead>Updated</TableHead>
-              <TableHead><span className="sr-only">Actions</span></TableHead>
+              {shownColumns.map((col) => (
+                <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {lessons.map(c => {
-              const isDraft = c.status === 'draft';
-              const isPublic = c.status === 'public';
-              const courseName = c.course ? (courseNamesById.get(c.course) || null) : null;
-              return (
-                <TableRow key={c.lessonId}>
-                  <TableCell>
-                    <span className="flex items-center gap-2">
-                      {c.name || c.lessonId}
-                      {isDraft
-                        ? <Badge variant="outline" className="text-xs border-amber-300 bg-amber-50 text-amber-800">Draft</Badge>
-                        : isPublic
-                          ? <Badge variant="outline" className="text-xs">Public</Badge>
-                          : <Badge variant="outline" className="text-xs border-violet-300 bg-violet-50 text-violet-800">Private{c.sharedWith?.length ? ` (${c.sharedWith.length})` : ''}</Badge>
-                      }
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{courseName || '\u2014'}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.createdByName || '\u2014'}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.updatedByName || '\u2014'}</TableCell>
-                  <TableCell>{c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : '\u2014'}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1" role="group" aria-label={`Actions for ${c.name}`}>
-                      {!isDraft && (
-                        <Button variant="ghost" size="icon-xs" title="Visibility &amp; sharing" onClick={() => openShareModal(c.lessonId, c.name, c.sharedWith, c.status)} aria-label={`Visibility and sharing for ${c.name}`}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="icon-xs" title={isDraft ? 'Resume draft' : 'Edit'} onClick={() => openLessonEditor(c.lessonId)} aria-label={isDraft ? `Resume draft ${c.name}` : `Edit ${c.name}`}>&#9998;</Button>
-                      <Button variant="ghost" size="icon-xs" title="Delete" onClick={() => deleteLesson(c.lessonId)} aria-label={`Delete ${c.name}`}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {lessons.map((c) => (
+              <TableRow key={c.lessonId}>
+                {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(c)}</TableCell>)}
+              </TableRow>
+            ))}
             {lessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
+                <TableCell colSpan={shownColumns.length} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+
+      <ColumnsDialog
+        open={columnsOpen}
+        onOpenChange={setColumnsOpen}
+        title="Lessons table columns"
+        columns={arrangeable(allColumns, columnPrefs)}
+        onToggle={(id, show) => updateColumns(toggleColumn(allColumns, columnPrefs, id, show))}
+        onMove={(id, delta) => updateColumns(moveColumn(allColumns, columnPrefs, id, delta))}
+        onReset={() => updateColumns(defaultPrefs(allColumns))}
+      />
 
       {confirmModal && (
         <ConfirmModal
@@ -341,11 +374,6 @@ export default function AdminLessons() {
         />
       )}
 
-      <CoursesModal
-        open={coursesOpen}
-        onOpenChange={setCoursesOpen}
-        onMutated={() => { loadCourses(); loadLessons(); }}
-      />
 
       {shareModal && (
         <ShareLessonModal
@@ -375,8 +403,9 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [key, setKey] = useState(0); // increment to restart conversation
-  const [courses, setCourses] = useState([]);
-  const [course, setCourse] = useState(initialCourse || '');
+  const [courses, setCourses] = useState([]); // units (stored course:*)
+  const [unitGroups, setUnitGroups] = useState([]); // courses (programs), each with ordered unitIds
+  const [course, setCourse] = useState(initialCourse || ''); // the lesson's unit id
 
   // Markdown preview pane. Refreshed manually via the lesson-extractor agent;
   // never persisted until the admin clicks Create/Update Lesson.
@@ -390,14 +419,19 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     initialMarkdown ? (initialMessages?.length || 0) : 0
   );
 
-  // Load course list once on mount so the dropdown can populate.
+  // Load units and courses once so the Unit picker can group units by course.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await adminApi('GET', '/v1/admin/courses');
-        if (!cancelled && Array.isArray(data)) setCourses(data);
-      } catch { /* dropdown stays empty; admin can still create the lesson */ }
+        const [units, programs] = await Promise.all([
+          adminApi('GET', '/v1/admin/units'),
+          adminApi('GET', '/v1/admin/programs'),
+        ]);
+        if (cancelled) return;
+        if (Array.isArray(units)) setCourses(units);
+        setUnitGroups(programs.programs || []);
+      } catch { /* picker stays empty; admin can still create the lesson */ }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -449,7 +483,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       }
       await adminApi('PUT', `/v1/admin/lessons/${encodeURIComponent(lessonId)}`, body);
     } catch (e) {
-      setError(e.message || 'Failed to update course.');
+      setError(e.message || 'Failed to update unit.');
     }
   }
 
@@ -505,7 +539,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
         );
         if (cancelled) return;
         const { text, readiness: r } = parseResponse(raw);
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('lesson-creator', { before: null, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
         pendingRef.current = { msgs: [msg], r: r ?? readiness };
         setStreamingText(null);
       } catch (e) {
@@ -540,7 +574,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       );
 
       const { text: respText, readiness: r } = parseResponse(raw);
-      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() };
+      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('lesson-creator', { before: readinessRef.current, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
       pendingRef.current = { msgs: [assistantMsg], r };
       setStreamingText(null);
     } catch (e) {
@@ -622,7 +656,12 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
 
   const renderMessage = (msg, idx) => {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
-    return <AssistantMessage key={idx} content={msg.content} />;
+    return (
+      <div key={idx}>
+        <AgentActivity agents={msg.metadata?.agents} />
+        <AssistantMessage content={msg.content} />
+      </div>
+    );
   };
 
   return (
@@ -633,26 +672,37 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       </div>
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-destructive px-4 py-3 mb-4 text-sm" role="alert">
+        <div className="flex items-center justify-between rounded-lg bg-destructive/10 text-red-800 dark:text-destructive px-4 py-3 mb-4 text-sm" role="alert">
           <span>{error}</span>
           <button onClick={() => setError('')} aria-label="Dismiss error" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
 
-      {/* Lesson metadata — course assignment.
-          Visible during creation and editing; admins can re-assign at any time. */}
+      {/* The lesson's unit (#408), grouped by course. Stored in the lesson's
+          `course` field (units are course:* records). Admins can re-assign
+          at any time; order within a unit is set in Courses & Units. */}
       <div className="flex items-center gap-3 mb-4">
-        <label htmlFor="lesson-course" className="text-sm text-muted-foreground">Course</label>
+        <label htmlFor="lesson-course" className="text-sm text-muted-foreground">Unit</label>
         <select
           id="lesson-course"
           value={course}
           onChange={(e) => changeCourse(e.target.value)}
           className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <option value="">No course</option>
-          {courses.map((c) => (
-            <option key={c.courseId} value={c.courseId}>{c.name}</option>
+          <option value="">No unit</option>
+          {unitGroups.map((g) => (
+            <optgroup key={g.programId} label={g.name}>
+              {g.unitIds.map((id) => {
+                const u = courses.find((x) => x.unitId === id);
+                return u ? <option key={id} value={id}>{u.name}</option> : null;
+              })}
+            </optgroup>
           ))}
+          {courses.some((u) => !u.programId) && (
+            <optgroup label="Not in a course">
+              {courses.filter((u) => !u.programId).map((u) => <option key={u.unitId} value={u.unitId}>{u.name}</option>)}
+            </optgroup>
+          )}
         </select>
       </div>
 
@@ -723,7 +773,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
             <ComposeBar
               placeholder="Describe what you want to teach..."
               onSend={handleSend}
-              disabled={isBusy}
+              sendDisabled={isBusy}
             />
           </div>
         </div>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useApp } from '../contexts/AppContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
@@ -7,9 +6,12 @@ import {
   getLearnerProfileSummary,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
-import { updateProfile, getMyFields } from '../../js/auth.js';
+import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
+import { useApp } from '../contexts/AppContext.jsx';
+import { SEND_KEYS, sendKeyOf, isMacLike, prefersReducedMotion } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
+import NameFields from '../components/NameFields.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile } from '../lib/profileQueue.js';
@@ -25,9 +27,8 @@ import {
 } from '@/components/ui/dialog';
 
 export default function Settings() {
-  const { state, dispatch } = useApp();
   const { user, refreshUser } = useAuth();
-  const [name, setName] = useState(user?.name || state.preferences?.name || '');
+  const [name, setName] = useState({ firstName: user?.firstName || '', lastName: user?.lastName || '' });
   const [username, setUsername] = useState(user?.username || '');
   const [profileSummary, setProfileSummary] = useState('');
 
@@ -94,14 +95,14 @@ export default function Settings() {
 
   const handleSaveName = async (e) => {
     e.preventDefault();
-    const trimmed = name.trim();
-    const prefs = { ...state.preferences, name: trimmed };
-    await savePreferences(prefs);
-    dispatch({ type: 'SET_PREFERENCES', preferences: prefs });
-    syncInBackground('preferences');
-
+    // Names live on the account (#402), not in preferences.
+    const next = { firstName: name.firstName.trim(), lastName: name.lastName.trim() };
+    if (!next.firstName) {
+      setNameFeedback('First name is required.');
+      return;
+    }
     try {
-      await updateProfile({ name: trimmed });
+      await updateProfile(next);
       await refreshUser();
       setNameFeedback('Saved!');
     } catch (err) {
@@ -163,12 +164,9 @@ export default function Settings() {
           <Separator />
 
           <form className="space-y-3" onSubmit={handleSaveName}>
-            <div className="space-y-1.5">
-              <Label htmlFor="account-name">Name</Label>
-              <Input id="account-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
+            <NameFields idPrefix="account" value={name} onChange={setName} inferred={user?.nameSource === 'auto'} />
             <Button type="submit">Save</Button>
-            {nameFeedback && <p className="text-sm text-green-600" role="status" aria-live="polite">{nameFeedback}</p>}
+            {nameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{nameFeedback}</p>}
           </form>
 
           <Separator />
@@ -228,6 +226,10 @@ export default function Settings() {
           </CardContent>
         </Card>
       )}
+
+      <ChatPreferences />
+
+      <EmailPreferences />
 
       <Card>
         <CardHeader>
@@ -310,5 +312,125 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// How messages are sent and how coach replies appear, in every chat (#247).
+// Saved to the preferences record as soon as an option changes.
+function ChatPreferences() {
+  const { state, dispatch } = useApp();
+  const [feedback, setFeedback] = useState('');
+  const prefs = state.preferences || {};
+  const sendKey = sendKeyOf(prefs);
+  const mod = isMacLike() ? '⌘' : 'Ctrl';
+  const reducedMotion = prefersReducedMotion();
+  const instant = prefs.instantText ?? reducedMotion;
+
+  async function update(patch) {
+    const next = { ...prefs, ...patch };
+    dispatch({ type: 'SET_PREFERENCES', preferences: next });
+    try {
+      await savePreferences(next);
+      syncInBackground('preferences');
+      setFeedback('Saved.');
+    } catch {
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  const option = 'flex items-start gap-2 text-sm';
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Chat</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium mb-1">Send a message with</legend>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.MOD_ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.MOD_ENTER })} />
+            <span>{mod}+Enter <span className="text-muted-foreground">(Enter adds a new line)</span></span>
+          </label>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.ENTER })} />
+            <span>Enter <span className="text-muted-foreground">(Shift+Enter adds a new line)</span></span>
+          </label>
+        </fieldset>
+        <label className={option}>
+          <input type="checkbox" className="mt-0.5 accent-primary" checked={instant}
+            aria-describedby="instant-text-hint"
+            onChange={(e) => update({ instantText: e.target.checked })} />
+          <span>
+            Show coach replies instantly
+            <span id="instant-text-hint" className="block text-muted-foreground">
+              {reducedMotion ? 'On by default because your device asks for reduced motion.' : 'Skips the typing animation.'}
+            </span>
+          </span>
+        </label>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Which optional emails the learner gets (#400). Saved on change to the
+// server-only notify:state record through /v1/me/notifications. Checked
+// means "send it"; the server stores opt-outs.
+const EMAIL_KINDS = [
+  { key: 'nudge', label: 'Reminders to finish a lesson I started' },
+  { key: 'digest', label: 'A weekly summary of my progress and new lessons' },
+  { key: 'messages', label: 'Messages from my classroom' },
+];
+
+function EmailPreferences() {
+  const [optOut, setOptOut] = useState(null);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    authenticatedFetch('/v1/me/notifications')
+      .then((r) => (r.ok ? r.json() : { optOut: {} }))
+      .then((d) => { if (!cancelled) setOptOut(d.optOut || {}); })
+      .catch(() => { if (!cancelled) setOptOut({}); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function update(key, receive) {
+    const before = optOut;
+    setOptOut({ ...optOut, [key]: !receive });
+    try {
+      const res = await authenticatedFetch('/v1/me/notifications', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ optOut: { [key]: !receive } }),
+      });
+      if (!res.ok) throw new Error();
+      setFeedback('Saved.');
+    } catch {
+      setOptOut(before);
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Email</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <fieldset className="space-y-2" disabled={!optOut}>
+          <legend className="text-sm font-medium mb-1">Email me</legend>
+          {EMAIL_KINDS.map((k) => (
+            <label key={k.key} className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 accent-primary" checked={!optOut?.[k.key]} onChange={(e) => update(k.key, e.target.checked)} />
+              <span>{k.label}</span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
   );
 }

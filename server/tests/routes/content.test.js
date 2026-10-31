@@ -292,6 +292,18 @@ describe('?asUserId= (admin View as User)', () => {
     db.getUserById = async (id) => ({ userId: id, role: id === 'usr_admin' ? 'admin' : 'user', name: 'X' });
   });
 
+  it('refuses _system and unknown users as the View as User target', async () => {
+    db.getUserById = async (id) => (id === 'usr_admin' ? { userId: id, role: 'admin' } : null);
+    let reads = 0;
+    db.getAllSyncData = async () => { reads++; return []; };
+    const app = new Hono();
+    app.route('/', content);
+    for (const t of ['_system', 'usr_nobody']) {
+      assert.equal((await adminReq(app, 'GET', `/v1/lessons?asUserId=${t}`)).status, 404, t);
+    }
+    assert.equal(reads, 0);
+  });
+
   it('GET /v1/lessons honors the impersonated learners sharedWith ACL', async () => {
     // Private lesson shared only with usr_target. Admin (usr_admin) should NOT
     // see it without ?asUserId=, but SHOULD see it when impersonating the target.

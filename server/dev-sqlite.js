@@ -34,12 +34,16 @@ const { default: sync } = await import('./src/routes/sync.js');
 const { default: ai } = await import('./src/routes/ai.js');
 const { default: content } = await import('./src/routes/content.js');
 const { default: waitlist } = await import('./src/routes/waitlist.js');
+const { default: unsubscribe } = await import('./src/routes/unsubscribe.js');
+const { default: links } = await import('./src/routes/links.js');
+const { viewAsReadOnly } = await import('./src/middleware/viewAsReadOnly.js');
 const { default: app } = await import('./src/routes/app.js');
 const { default: db } = await import('./src/lib/db.js');
 const { generateUserId } = await import('./src/lib/crypto.js');
 const { hashPassword } = await import('./src/lib/password.js');
 const { ADMIN_EMAIL, ADMIN_PASSWORD } = await import('./src/config.js');
 const { seedDefaultContent } = await import('./src/lib/seed.js');
+const { runMigrationsBounded } = await import('./src/lib/migrations.js');
 const { pluginRegistry } = await import('./src/lib/plugins/registry.js');
 const { makePluginDispatcher, makeSlackLegacyShim } = await import('./src/lib/plugins/dispatcher.js');
 
@@ -48,7 +52,7 @@ const server = new Hono();
 server.use('*', cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Plato-View-As'],
 }));
 
 // Admin bootstrap
@@ -79,6 +83,18 @@ try {
 } catch (err) {
   console.error('Seed failed:', err.message);
 }
+await runMigrationsBounded();
+
+// Scheduled learner emails, as on Lambda (src/lib/schedule.js); jobs run in-process here.
+const { runDueJobs } = await import('./src/lib/schedule.js');
+await import('./src/lib/learner-emails.js');
+await import('./src/lib/messages.js');
+server.use('*', async (c, next) => {
+  runDueJobs().catch((err) => console.error('Schedule check failed:', err.message));
+  await next();
+});
+
+server.use('*', viewAsReadOnly);
 
 server.route('/', health);
 server.route('/', auth);
@@ -87,7 +103,9 @@ server.route('/', admin);
 server.route('/', sync);
 server.route('/', ai);
 server.route('/', content);
+server.route('/', links);
 server.route('/', waitlist);
+server.route('/', unsubscribe);
 // `app` (SPA fallback `app.get('*')`) is mounted LAST — see plugin catch-all below.
 
 // Plugin registry: discover and activate plugins. Same catch-all pattern as

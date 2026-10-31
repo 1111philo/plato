@@ -5,6 +5,7 @@ import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { logger } from '../lib/logger.js';
+import { resolveReadUserId } from '../lib/view-as.js';
 
 const sync = new Hono();
 
@@ -12,13 +13,6 @@ sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
 const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseProgress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete)$/;
-
-// Keep user record name in sync with extension preferences
-async function syncNameIfNeeded(userId, dataKey, data) {
-  if (dataKey === 'preferences' && data?.name) {
-    await db.updateUser(userId, { name: data.name });
-  }
-}
 
 function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
@@ -79,15 +73,6 @@ async function readOldLessonKBStatus(userId, dataKey) {
  * own JWT-derived userId. Writes never honor `asUserId` — callers must
  * reject the request before reaching the DB.
  */
-function resolveReadUserId(c) {
-  const url = new URL(c.req.url);
-  const asUserId = url.searchParams.get('asUserId');
-  if (!asUserId) return { userId: c.get('userId'), impersonating: false };
-  if (c.get('role') !== 'admin') {
-    return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
-  }
-  return { userId: asUserId, impersonating: true };
-}
 
 function rejectWriteIfImpersonating(c) {
   const url = new URL(c.req.url);
@@ -100,11 +85,13 @@ function rejectWriteIfImpersonating(c) {
 /**
  * Estimate the size of a sync-data item as it will be stored in DynamoDB.
  * DynamoDB caps items at 400 KB; screenshots can exceed this if the client-side
- * compression fails or is bypassed. Returns the approximate byte size.
+ * compression fails or is bypassed. Returns the approximate size in bytes.
  */
 function estimateSyncDataSize(userId, dataKey, data) {
   const item = { userId, dataKey, data, updatedAt: new Date().toISOString(), version: 1 };
-  return JSON.stringify(item).length;
+  // UTF-8 bytes, as DynamoDB counts them: a CJK character is 3 bytes but 1
+  // string-length unit, so .length let non-Latin records past the guard.
+  return Buffer.byteLength(JSON.stringify(item), 'utf8');
 }
 
 const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB limit for safety
@@ -117,11 +104,12 @@ const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB
 //     every login *and* every tab refocus) would be wasteful; they're
 //     fetched on demand by key via GET /v1/sync/:dataKey instead.
 sync.get('/v1/sync', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const items = await db.getAllSyncData(resolved.userId);
   return c.json(items
-    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:'))
+    // notify:* is server-only bookkeeping (opt-outs come from /v1/me/notifications).
+    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:') && !item.dataKey?.startsWith('notify:'))
     .map((item) => ({
       dataKey: item.dataKey,
       data: item.data,
@@ -132,7 +120,7 @@ sync.get('/v1/sync', async (c) => {
 
 // GET /v1/sync/:dataKey — get specific item
 sync.get('/v1/sync/:dataKey', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const dataKey = c.req.param('dataKey');
 
@@ -172,22 +160,21 @@ sync.put('/v1/sync/batch', async (c) => {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
     // Size guard for screenshots (same defense-in-depth as single PUT)
-    if (item.dataKey.startsWith('screenshot:')) {
-      const size = estimateSyncDataSize(userId, item.dataKey, item.data);
-      if (size > MAX_ITEM_SIZE) {
-        return {
-          dataKey: item.dataKey,
-          status: 'error',
-          error: 'Screenshot too large',
-          size,
-          limit: MAX_ITEM_SIZE,
-        };
-      }
+    // Every key, not just screenshots: DynamoDB refuses items over 400 KB.
+    const size = estimateSyncDataSize(userId, item.dataKey, item.data);
+    if (size > MAX_ITEM_SIZE) {
+      if (!item.dataKey.startsWith('screenshot:')) logger.error('sync_item_too_large', { dataKey: item.dataKey.split(':')[0], size, limit: MAX_ITEM_SIZE });
+      return {
+        dataKey: item.dataKey,
+        status: 'error',
+        error: item.dataKey.startsWith('screenshot:') ? 'Screenshot too large' : 'Record too large',
+        size,
+        limit: MAX_ITEM_SIZE,
+      };
     }
     try {
       const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
-      await syncNameIfNeeded(userId, item.dataKey, item.data);
       await applyActivityEffects(userId, item.dataKey, oldStatus, item.data);
       return { dataKey: item.dataKey, status: 'ok', version: result.version };
     } catch (err) {
@@ -225,22 +212,25 @@ sync.put('/v1/sync/:dataKey', async (c) => {
   // 400 KB limit. Screenshots should be compressed client-side, but if
   // compression fails or is bypassed, reject here rather than letting the
   // write silently fail with an unhandled DynamoDB error.
-  if (dataKey.startsWith('screenshot:')) {
-    const size = estimateSyncDataSize(userId, dataKey, data);
-    if (size > MAX_ITEM_SIZE) {
-      return c.json({
-        error: 'Screenshot is too large',
-        details: 'Images must be compressed to under 380 KB. Please use a smaller image or reduce quality.',
-        size,
-        limit: MAX_ITEM_SIZE,
-      }, 413);
-    }
+  // Every key, not just screenshots: DynamoDB refuses items over 400 KB, and
+  // that used to surface as a 500 the client couldn't act on.
+  const size = estimateSyncDataSize(userId, dataKey, data);
+  if (size > MAX_ITEM_SIZE) {
+    const screenshot = dataKey.startsWith('screenshot:');
+    // A conversation or progress record that won't fit is lost learner work (Tier A).
+    if (!screenshot) logger.error('sync_item_too_large', { dataKey: dataKey.split(':')[0], size, limit: MAX_ITEM_SIZE });
+    return c.json({
+      error: screenshot ? 'Screenshot is too large' : 'This record is too large to save',
+      code: screenshot ? 'screenshot_too_large' : 'sync_item_too_large',
+      ...(screenshot ? { details: 'Images must be compressed to under 380 KB. Please use a smaller image or reduce quality.' } : {}),
+      size,
+      limit: MAX_ITEM_SIZE,
+    }, 413);
   }
 
   try {
     const oldStatus = await readOldLessonKBStatus(userId, dataKey);
     const result = await db.putSyncData(userId, dataKey, data, version || 0);
-    await syncNameIfNeeded(userId, dataKey, data);
     await applyActivityEffects(userId, dataKey, oldStatus, data);
     return c.json({ dataKey, version: result.version, updatedAt: result.updatedAt });
   } catch (err) {
@@ -265,7 +255,9 @@ sync.delete('/v1/sync', async (c) => {
   if (reject) return reject;
   const userId = c.get('userId');
   const items = await db.getAllSyncData(userId);
-  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:'));
+  // userMeta:* is admin-owned; notify:* holds email opt-outs (#400), which a
+  // progress reset shouldn't undo.
+  const deletable = items.filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('notify:'));
   await Promise.all(deletable.map((item) => db.deleteSyncData(userId, item.dataKey)));
   return c.json({ ok: true, deleted: deletable.length });
 });

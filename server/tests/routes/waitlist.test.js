@@ -6,12 +6,15 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import waitlist from '../../src/routes/waitlist.js';
+import waitlist, { _resetJoinLimit, JOIN_LIMIT } from '../../src/routes/waitlist.js';
 import admin from '../../src/routes/admin.js';
 import auth from '../../src/routes/auth.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 import { hashToken } from '../../src/lib/crypto.js';
+import { setEmailTransport } from '../../src/lib/notifications.js';
+import unsubscribe from '../../src/routes/unsubscribe.js';
+import { unsubscribeToken } from '../../src/lib/notifications.js';
 
 const FIELDS = [
   { id: 'fld_org', label: 'Organization', type: 'text', required: true },
@@ -49,6 +52,7 @@ async function adminReq(app, method, path, body) {
 }
 
 beforeEach(() => {
+  _resetJoinLimit();
   // Fresh copy each test — admin routes mutate settings in place.
   store = { settings: structuredClone(SETTINGS), waitlist: { open: true, apiKeyHash: null } };
   created = [];
@@ -62,6 +66,108 @@ beforeEach(() => {
   db.createWaitlistEntry = async (entry) => { created.push(entry); };
   db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
   db.createAuditLog = async () => {};
+});
+
+// #388: the confirmation email, sent once, never failing the join.
+describe('wait list confirmation email (#388)', () => {
+  let mails;
+  beforeEach(() => { mails = []; setEmailTransport(async (raw) => { mails.push(raw); }); });
+  const subjectOf = (raw) => raw.match(/^Subject: (.*)$/m)[1];
+
+  it('is off by default', async () => {
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 0);
+  });
+
+  it('sends once when on, to the new entry only', async () => {
+    store.automations = { waitlistConfirmation: true };
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 1);
+    assert.match(mails[0], /^To: ada@example\.com$/m);
+    assert.equal(subjectOf(mails[0]), "You're on the wait list for plato");
+    // A retry finds the entry: same reply, no second email.
+    db.getWaitlistEntryByEmail = async () => ({ inviteToken: 'inv_wl_x', status: 'waitlist' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 1);
+  });
+
+  it('a concurrent duplicate that loses the create-only write sends nothing', async () => {
+    store.automations = { waitlistConfirmation: true };
+    db.createWaitlistEntry = async () => { throw Object.assign(new Error('exists'), { name: 'ConditionalCheckFailedException' }); };
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(mails.length, 0);
+  });
+
+  it('is not sent to someone who already has an account or an invite (stored all the same)', async () => {
+    store.automations = { waitlistConfirmation: true };
+    db.getUserByEmail = async () => ({ userId: 'usr_ada' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    db.getUserByEmail = async () => null;
+    db.getInviteByEmail = async () => ({ inviteToken: 'inv_p', status: 'pending' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', { ...VALID, email: 'b@example.com' })).status, 202);
+    assert.equal(created.length, 2);
+    assert.equal(mails.length, 0);
+  });
+
+  it('uses the admin’s edited copy', async () => {
+    store.automations = { waitlistConfirmation: true };
+    store['emailTemplate:waitlist-confirmation'] = { subject: 'Welcome aboard, {{firstName}}', body: 'Hi {{firstName}}' };
+    await post(makeApp(), '/v1/waitlist', VALID);
+    assert.equal(subjectOf(mails[0]), 'Welcome aboard, Ada');
+  });
+
+  it('a send failure is logged and the join still succeeds', async () => {
+    store.automations = { waitlistConfirmation: true };
+    setEmailTransport(async () => { throw new Error('SES down'); });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(created.length, 1);
+  });
+});
+
+describe('unsubscribe (#400)', () => {
+  const app = () => { const a = new Hono(); a.route('/', unsubscribe); return a; };
+  it('GET asks to confirm (no change); POST unsubscribes; a bad token changes nothing', async () => {
+    const writes = [];
+    db.putSyncData = async (u, key, data) => { writes.push({ u, key, data }); };
+    const token = unsubscribeToken('usr_ada', 'digest');
+    const get = await app().request(`/v1/unsubscribe?token=${token}`);
+    assert.equal(get.status, 200);
+    assert.match(await get.text(), /Unsubscribe from the weekly digest\?/);
+    assert.equal(writes.length, 0, 'GET never unsubscribes (link scanners)');
+    const res = await app().request(`/v1/unsubscribe?token=${token}`, { method: 'POST', body: 'List-Unsubscribe=One-Click' });
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /You’re unsubscribed/);
+    assert.deepEqual(writes.map((w) => [w.u, w.key, w.data.optOut]), [['usr_ada', 'notify:state', { digest: true }]]);
+    assert.equal((await app().request('/v1/unsubscribe?token=bad.token', { method: 'POST' })).status, 400);
+    assert.equal(writes.length, 1);
+  });
+});
+
+describe('join rate limit (#451 review M11)', () => {
+  it('limits unkeyed joins per IP; other IPs and keyed requests are unaffected', async () => {
+    const from = (ip, extra = {}) => post(makeApp(), '/v1/waitlist', { ...VALID, email: `p${Math.random()}@x.com` }, { 'X-Forwarded-For': ip, ...extra });
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from('1.2.3.4')).status, 202);
+    assert.equal((await from('1.2.3.4')).status, 429);
+    assert.equal((await from('5.6.7.8')).status, 202);
+  });
+
+  it('keys on the address CloudFront appended, not the one the sender wrote (second review N3)', async () => {
+    const env = { requestContext: { http: { sourceIp: '130.176.0.1' } } }; // CloudFront's address
+    const from = (xff) => makeApp().request('/v1/waitlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(xff ? { 'X-Forwarded-For': xff } : {}) },
+      body: JSON.stringify({ ...VALID, email: `p${Math.random()}@x.com` }),
+    }, env);
+    // A fresh spoofed first entry each time, the same real viewer after it.
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from(`10.0.0.${i}, 9.9.9.9`)).status, 202);
+    assert.equal((await from('10.0.0.99, 9.9.9.9')).status, 429);
+    // The Function URL appending CloudFront's address doesn't change who it is.
+    assert.equal((await from('10.0.0.98, 9.9.9.9, 130.176.0.1')).status, 429);
+    // No header: the source address is the key, not "no limit".
+    _resetJoinLimit();
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from('')).status, 202);
+    assert.equal((await from('')).status, 429);
+  });
 });
 
 describe('GET /v1/waitlist', () => {
@@ -85,7 +191,26 @@ describe('POST /v1/waitlist', () => {
     assert.equal(created.length, 1);
     assert.equal(created[0].email, 'ada@example.com');
     assert.ok(created[0].inviteToken.startsWith('inv_'));
-    assert.deepEqual(created[0].profile, { name: 'Ada', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' } });
+    // A lone `name` (the public API's original field) is split, marked 'auto' (#402).
+    assert.deepEqual(created[0].profile, {
+      firstName: 'Ada', lastName: '', name: 'Ada', nameSource: 'auto', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
+    });
+  });
+
+  it('accepts firstName / lastName (#402)', async () => {
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, name: undefined, firstName: ' Mary ', lastName: 'Ann  Evans' });
+    assert.equal(res.status, 202);
+    assert.deepEqual(
+      [created[0].profile.firstName, created[0].profile.lastName, created[0].profile.name, created[0].profile.nameSource],
+      ['Mary', 'Ann Evans', 'Mary Ann Evans', 'user'],
+    );
+  });
+
+  it('requires a first name', async () => {
+    const res = await post(makeApp(), '/v1/waitlist', { ...VALID, name: undefined, firstName: '  ', lastName: 'Evans' });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /first name is required/i);
+    assert.equal(created.length, 0);
   });
 
   it('refuses when closed and no key is given', async () => {
@@ -145,14 +270,27 @@ describe('POST /v1/waitlist', () => {
     assert.equal(res.status, 202);
     assert.deepEqual(await res.json(), { ok: true });
     assert.equal(created.length, 1, 'stored so admins can see what they sent');
-    assert.deepEqual(created[0].profile.customFields, { fld_org: 'UIC' });
   });
 
   it('a repeat join for an email already on the wait list stores nothing', async () => {
     db.getWaitlistEntryByEmail = async () => ({ inviteToken: 'inv_wl', status: 'waitlist' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    assert.equal(created.length, 0);
+  });
+
+  it('derives the entry key from the email, so the same address always maps to one entry', async () => {
+    await post(makeApp(), '/v1/waitlist', VALID);
+    await post(makeApp(), '/v1/waitlist', { ...VALID, email: '  ADA@example.com ' });
+    assert.equal(created.length, 2);
+    assert.equal(created[0].inviteToken, created[1].inviteToken);
+    assert.match(created[0].inviteToken, /^inv_wl_[A-Za-z0-9_-]{32}$/);
+  });
+
+  it('a concurrent join that loses the create-only write still gets 202', async () => {
+    db.createWaitlistEntry = async () => { const e = new Error('exists'); e.name = 'ConditionalCheckFailedException'; throw e; };
     const res = await post(makeApp(), '/v1/waitlist', VALID);
     assert.equal(res.status, 202);
-    assert.equal(created.length, 0);
+    assert.deepEqual(await res.json(), { ok: true });
   });
 });
 
@@ -175,15 +313,11 @@ describe('admin wait-list routes', () => {
   });
 
   it('marks entries whose email already has an account or a pending invite', async () => {
-    db.listInvites = async () => [
-      entry,
-      { ...entry, inviteToken: 'inv_wl2', email: 'Bo@X.com' },
-      { ...entry, inviteToken: 'inv_wl3', email: 'cy@x.com' },
-      { inviteToken: 'inv_p', email: 'cy@x.com', status: 'pending' },
-    ];
+    const e = { inviteToken: 'inv_wl1', email: 'ada@example.com', status: 'waitlist', createdAt: '2026-10-01', profile: { name: 'Ada' } };
+    db.listInvites = async () => [e, { ...e, inviteToken: 'inv_wl2', email: 'Bo@X.com' }, { ...e, inviteToken: 'inv_wl3', email: 'cy@x.com' }, { inviteToken: 'inv_p', email: 'cy@x.com', status: 'pending' }];
     db.listAllUsers = async () => [{ userId: 'usr_bo', email: 'bo@x.com' }];
     const data = await (await adminReq(makeApp(), 'GET', '/v1/admin/waitlist')).json();
-    assert.deepEqual(data.entries.map((e) => [e.email, e.alreadyRegistered]), [['ada@example.com', null], ['Bo@X.com', 'account'], ['cy@x.com', 'invite']]);
+    assert.deepEqual(data.entries.map((x) => [x.email, x.alreadyRegistered]), [['ada@example.com', null], ['Bo@X.com', 'account'], ['cy@x.com', 'invite']]);
   });
 
   it('hides answers to fields that no longer exist', async () => {
@@ -253,50 +387,44 @@ describe('admin wait-list routes', () => {
     assert.deepEqual(deleted, ['inv_wl1']);
   });
 
-  it('copies an entry onto an existing account: only what it is missing, never the name', async () => {
-    const updates = [];
+  it('inviting an entry whose email has an account ties the invite to it (no signup link)', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    const invites = [];
     const deleted = [];
-    const audits = [];
-    store.settings.userFields = [...FIELDS, { id: 'fld_x', label: 'X', type: 'text', required: false }];
-    db.getInvite = async (t) => (t === 'inv_wl1'
-      ? { ...entry, profile: { ...entry.profile, customFields: { fld_org: 'UIC', fld_role: 'Staff', fld_x: 'new' } } }
-      : null);
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', name: 'Ada L', userGroup: null, customFields: { fld_x: 'kept' } });
-    db.updateUser = async (id, u) => { updates.push([id, u]); };
+    db.getInvite = async (t) => (t === 'inv_wl1' ? entry : null);
+    db.getUserByEmail = async () => ({ userId: 'usr_ada', email: 'ada@example.com' });
+    db.createInvite = async (inv) => { invites.push(inv); };
     db.deleteInvite = async (t) => { deleted.push(t); };
-    db.createAuditLog = async (a) => { audits.push(a); };
-    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply');
-    assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { userId: 'usr_ada', userGroup: 'Cohort A', fields: ['fld_org', 'fld_role'] });
-    assert.deepEqual(updates, [['usr_ada', {
-      userGroup: 'Cohort A', customFields: { fld_x: 'kept', fld_org: 'UIC', fld_role: 'Staff' },
-    }]]);
+    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/invite');
+    delete process.env.SKIP_EMAIL;
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.existingAccount, true);
+    assert.equal(data.signupUrl, undefined, 'an account gets no signup link');
+    assert.equal(invites[0].forUserId, 'usr_ada');
+    assert.deepEqual(invites[0].profile, entry.profile);
     assert.deepEqual(deleted, ['inv_wl1']);
-    assert.equal(audits[0].action, 'waitlist_applied');
   });
 
-  it('keeps an account group, skips a deleted group and invalid answers', async () => {
-    const updates = [];
-    db.getInvite = async () => ({ ...entry, profile: { userGroup: 'Gone', customFields: { fld_role: 'Not an option' } } });
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', userGroup: null, customFields: {} });
-    db.updateUser = async (id, u) => { updates.push(u); };
+  it('resending an account invite keeps it tied to the account', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    const invites = [];
+    db.getInviteByEmail = async () => ({ inviteToken: 'inv_old', email: 'ada@example.com', status: 'pending', profile: entry.profile, forUserId: 'usr_ada' });
+    db.createInvite = async (inv) => { invites.push(inv); };
     db.deleteInvite = async () => {};
-    const res = await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply');
-    assert.deepEqual(await res.json(), { userId: 'usr_ada', userGroup: null, fields: [] });
-    assert.deepEqual(updates, [], 'nothing to write');
-
-    db.getInvite = async () => entry;
-    db.getUserByEmail = async () => ({ userId: 'usr_ada', userGroup: 'Cohort B', customFields: { fld_org: 'Mine' } });
-    assert.deepEqual(await (await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply')).json(),
-      { userId: 'usr_ada', userGroup: null, fields: [] });
-    assert.deepEqual(updates, []);
+    const res = await adminReq(makeApp(), 'POST', '/v1/admin/invites/resend', { email: 'ada@example.com' });
+    delete process.env.SKIP_EMAIL;
+    assert.equal(res.status, 201);
+    assert.equal((await res.json()).signupUrl, undefined);
+    assert.equal(invites[0].forUserId, 'usr_ada');
   });
 
-  it('will not copy when there is no account, and refuses to invite an account', async () => {
-    db.getInvite = async () => entry;
-    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/apply')).status, 404);
-    db.getUserByEmail = async () => ({ userId: 'usr_ada' });
-    assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/invite')).status, 409);
+  it('an account invite can’t be used to sign up', async () => {
+    const inv = { inviteToken: 'inv_acct', email: 'ada@example.com', status: 'pending', forUserId: 'usr_ada', profile: entry.profile };
+    db.getInvite = async () => inv;
+    assert.equal((await makeApp().request('/v1/auth/invite/inv_acct')).status, 404);
+    const res = await post(makeApp(), '/v1/auth/signup', { inviteToken: 'inv_acct', firstName: 'Ada', username: 'ada', password: 'longenough123' });
+    assert.equal(res.status, 400);
   });
 
   it('will not invite a pending invite or an unknown token', async () => {
@@ -311,16 +439,19 @@ describe('admin wait-list routes', () => {
     db.getInvite = async () => entry;
     db.updateWaitlistEntry = async (token, patch) => { updated = { token, ...patch }; };
     const res = await adminReq(makeApp(), 'PUT', '/v1/admin/waitlist/inv_wl1', {
-      name: ' Ada L. ', email: 'ADA.L@example.com', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
+      firstName: ' Ada ', lastName: 'L.', email: 'ADA.L@example.com', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
     });
     assert.equal(res.status, 200);
     assert.deepEqual(updated, {
       token: 'inv_wl1', email: 'ada.l@example.com',
-      profile: { name: 'Ada L.', userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' } },
+      profile: {
+        firstName: 'Ada', lastName: 'L.', name: 'Ada L.', nameSource: 'user',
+        userGroup: 'Cohort A', customFields: { fld_org: 'MIT', fld_role: 'Staff' },
+      },
     });
     const data = await res.json();
     assert.equal(data.email, 'ada.l@example.com');
-    assert.equal(data.name, 'Ada L.');
+    assert.deepEqual([data.name, data.firstName, data.lastName], ['Ada L.', 'Ada', 'L.']);
   });
 
   it('edit validates like joining', async () => {
@@ -384,8 +515,10 @@ describe('signup from a wait-list invite', () => {
 
   it('GET /v1/auth/invite/:token returns the answers to fill in', async () => {
     const res = await makeApp().request('/v1/auth/invite/inv_x');
+    // This entry predates #402 (profile.name only): split on read.
     assert.deepEqual(await res.json(), {
-      email: 'ada@example.com', name: 'Ada', userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
+      email: 'ada@example.com', name: 'Ada', firstName: 'Ada', lastName: '', nameSource: 'auto',
+      userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
     });
     assert.equal((await makeApp().request('/v1/auth/invite/inv_none')).status, 404);
   });

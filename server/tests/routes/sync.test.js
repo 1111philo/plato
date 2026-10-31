@@ -157,6 +157,51 @@ describe('PUT /v1/sync/batch', () => {
   });
 });
 
+// #402: names live on the account (PATCH /v1/me). A preferences record that
+// still carries an old `name` must not write it back over a corrected one.
+describe('preferences.name no longer touches the user record (#402)', () => {
+  it('saves preferences without updating the user', async () => {
+    const updates = [];
+    db.putSyncData = async () => ({ version: 2, updatedAt: '2024-01-01T00:00:00Z' });
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'learner', name: 'Ada King', firstName: 'Ada', lastName: 'King' });
+    db.updateUser = async (id, u) => { updates.push(u); };
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'PUT', '/v1/sync/preferences', { data: { name: 'Ada Lovelace' }, version: 1 });
+    assert.equal(res.status, 200);
+    assert.deepEqual(updates, []);
+  });
+});
+
+describe('item size guard (#451 review M1)', () => {
+  it('refuses an oversized conversation record with 413 instead of a DynamoDB 500', async () => {
+    let wrote = false;
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => { wrote = true; return { version: 1 }; };
+    const app = new Hono();
+    app.route('/', sync);
+    const big = [{ role: 'user', content: 'x'.repeat(390 * 1024) }];
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:les-1', { data: big, version: 0 });
+    assert.equal(res.status, 413);
+    assert.equal((await res.json()).code, 'sync_item_too_large');
+    assert.equal(wrote, false);
+  });
+
+  it('counts UTF-8 bytes, so a non-Latin record under the limit in characters is still refused', async () => {
+    let wrote = false;
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => { wrote = true; return { version: 1 }; };
+    const app = new Hono();
+    app.route('/', sync);
+    const big = [{ role: 'user', content: '学'.repeat(180 * 1024) }]; // 180 K characters, 540 KB
+    const res = await authedReq(app, 'PUT', '/v1/sync/messages:les-1', { data: big, version: 0 });
+    assert.equal(res.status, 413);
+    assert.equal(wrote, false);
+  });
+});
+
 describe('DELETE /v1/sync', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
@@ -168,6 +213,7 @@ describe('DELETE /v1/sync', () => {
       { dataKey: 'profile' },
       { dataKey: 'work' },
       { dataKey: 'preferences' },
+      { dataKey: 'notify:state' }, // email opt-outs survive a reset (#400)
     ];
     db.deleteSyncData = async (_uid, key) => { deleted.push(key); };
     const app = new Hono();
@@ -273,6 +319,34 @@ describe('?asUserId= (admin View as User)', () => {
     const res = await adminReq(app, 'GET', '/v1/sync/profile?asUserId=usr_target');
     assert.equal(res.status, 200);
     assert.equal(queriedUserId, 'usr_target');
+  });
+
+  it('refuses _system and ids that are not real users, for admins and testers alike', async () => {
+    let reads = 0;
+    db.getAllSyncData = async () => { reads++; return [{ dataKey: 'plugins:activation', data: { slack: { settings: { botToken: 'xoxb-secret' } } } }]; };
+    db.getSyncData = async () => { reads++; return null; };
+    const app = new Hono();
+    app.route('/', sync);
+    for (const role of ['admin', 'tester']) {
+      db.getUserById = async (id) => (id === 'usr_real' || id === 'usr_admin' ? { userId: id, role } : null);
+      const token = await signAccessToken('usr_admin', role);
+      for (const target of ['_system', 'usr_nobody', 'whatever']) {
+        const res = await app.request(`/v1/sync?asUserId=${target}`, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal(res.status, 404, `${role} → ${target}`);
+        const one = await app.request(`/v1/sync/settings?asUserId=${target}`, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal(one.status, 404);
+      }
+    }
+    assert.equal(reads, 0, 'nothing read');
+  });
+
+  it('GET /v1/sync hides server-only notify:* bookkeeping', async () => {
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getAllSyncData = async () => [{ dataKey: 'profile', data: {} }, { dataKey: 'notify:state', data: { optOut: {} } }];
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await userReq(app, 'GET', '/v1/sync');
+    assert.deepEqual((await res.json()).map((i) => i.dataKey), ['profile']);
   });
 
   it('GET /v1/sync as non-admin with ?asUserId= returns 403', async () => {

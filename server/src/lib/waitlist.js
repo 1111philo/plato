@@ -7,13 +7,13 @@
  * bring back a revoked key.
  */
 
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import db from './db.js';
 import { hashToken } from './crypto.js';
 import { getFieldDefinitions, mergeFieldValues } from './user-fields.js';
+import { readNameInput } from './names.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const MAX_NAME_LENGTH = 200;
 const MAX_EMAIL_LENGTH = 254;
 
 export async function readWaitlistConfig() {
@@ -23,6 +23,17 @@ export async function readWaitlistConfig() {
 
 export async function writeWaitlistConfig(item, config) {
   await db.putSyncData('_system', 'waitlist', config, item?.version || 0);
+}
+
+/**
+ * A wait-list entry's key is derived from its email, so the create-only write
+ * in db.createWaitlistEntry dedupes concurrent joins (the lookup-then-insert
+ * in POST /v1/waitlist alone can't). Entries are only ever seen by admins and
+ * can't be used to sign up (signup requires status 'pending'); an invite made
+ * from an entry gets a fresh random token.
+ */
+export function waitlistTokenFor(email) {
+  return 'inv_wl_' + createHash('sha256').update(String(email).trim().toLowerCase()).digest('base64url').slice(0, 32);
 }
 
 export function generateWaitlistApiKey() {
@@ -40,14 +51,15 @@ export function hasValidApiKey(authHeader, config) {
 }
 
 /**
- * Check a join request. Name, email, every required custom field, and the
- * group (if given, it must be one of the classroom's groups).
+ * Check a join request. First name (or a full `name`, split at the first
+ * space, #402), email, every required custom field, and the group (if given,
+ * it must be one of the classroom's groups).
  * Returns `{ email, profile }` or `{ error }`.
  */
 export function validateWaitlistEntry(body, settings) {
-  const { name, email, userGroup, customFields } = body || {};
-  if (typeof name !== 'string' || !name.trim()) return { error: 'Name is required' };
-  if (name.trim().length > MAX_NAME_LENGTH) return { error: `Name must be at most ${MAX_NAME_LENGTH} characters` };
+  const { email, userGroup, customFields } = body || {};
+  const nameInput = readNameInput(body, { required: true });
+  if (nameInput.error) return { error: nameInput.error };
   if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) return { error: 'A valid email is required' };
   if (email.trim().length > MAX_EMAIL_LENGTH) return { error: 'Email is too long' };
 
@@ -63,6 +75,6 @@ export function validateWaitlistEntry(body, settings) {
 
   return {
     email: email.trim().toLowerCase(),
-    profile: { name: name.trim(), userGroup: group, customFields: merged.values },
+    profile: { ...nameInput.fields, userGroup: group, customFields: merged.values },
   };
 }

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import { authenticate } from '../middleware/authenticate.js';
 import ai from '../lib/ai-provider.js';
+import { logger } from '../lib/logger.js';
 
 const aiRoute = new Hono();
 
@@ -28,8 +29,14 @@ aiRoute.post('/v1/ai/messages', async (c) => {
   };
 
   if (!isStream) {
-    const responseBody = await ai.invoke(model, aiBody);
-    return c.json(responseBody);
+    try {
+      return c.json(await ai.invoke(model, aiBody));
+    } catch (err) {
+      // Coded like the stream path, so background agents' failures (profile,
+      // unit notes, lesson creation, extractors) aren't bare unhandled_errors.
+      logger.error('ai_invoke_failed', { error: err?.message || String(err), name: err?.name });
+      return c.json({ error: 'Internal server error' }, 500);
+    }
   }
 
   c.header('Content-Type', 'text/event-stream');
@@ -43,7 +50,8 @@ aiRoute.post('/v1/ai/messages', async (c) => {
       }
       await s.write('data: [DONE]\n\n');
     } catch (err) {
-      console.error('Streaming error:', err);
+      // A coded event, so the logs endpoint can count failed AI turns (OBSERVABILITY.md).
+      logger.error('ai_stream_failed', { error: err?.message || String(err), name: err?.name });
       await s.write(`data: ${JSON.stringify({ type: 'error', error: { message: err.message } })}\n\n`);
     }
   });

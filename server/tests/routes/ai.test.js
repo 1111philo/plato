@@ -53,6 +53,23 @@ describe('POST /v1/ai/messages', () => {
     assert.equal(data.content[0].text, 'Hello!');
   });
 
+  it('a failed non-stream call is logged as ai_invoke_failed, not unhandled_error', async () => {
+    aiProvider.invoke = async () => { throw new Error('ThrottlingException'); };
+    const { logger } = await import('../../src/lib/logger.js');
+    const codes = [];
+    const orig = logger.error;
+    logger.error = (code, meta) => { codes.push([code, meta?.error]); };
+    try {
+      const app = new Hono();
+      app.route('/', ai);
+      const res = await authedReq(app, 'POST', '/v1/ai/messages', { model: 'm', messages: [{ role: 'user', content: 'Hi' }] });
+      assert.equal(res.status, 500);
+      assert.deepEqual(codes, [['ai_invoke_failed', 'ThrottlingException']]);
+    } finally {
+      logger.error = orig;
+    }
+  });
+
   it('passes model ID through to provider', async () => {
     let receivedModel;
     aiProvider.invoke = async (model) => {

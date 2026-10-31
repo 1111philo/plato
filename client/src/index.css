@@ -139,9 +139,11 @@
     @apply font-sans;
   }
 
-  /* WCAG 2.4.7: Visible focus indicator for keyboard navigation */
+  /* WCAG 2.4.7: Visible focus indicator for keyboard navigation. --ring is
+     an oklch() color, so use it directly: hsl(var(--ring)) was invalid and
+     the browser dropped the whole rule, leaving no focus ring at all. */
   *:focus-visible {
-    outline: 3px solid hsl(var(--ring));
+    outline: 3px solid var(--ring);
     outline-offset: 2px;
   }
 }

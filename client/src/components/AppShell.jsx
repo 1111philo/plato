@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { can } from '../lib/permissions.js';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useBranding } from '../contexts/BrandingContext.jsx';
@@ -10,6 +11,7 @@ import {
   AlertDialogAction, AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import ViewAsUserModal from './modals/ViewAsUserModal.jsx';
+import NotificationsBell from './NotificationsBell.jsx';
 
 export default function AppShell({ children }) {
   const navigate = useNavigate();
@@ -18,7 +20,8 @@ export default function AppShell({ children }) {
   const animClass = useViewTransition();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [viewAsOpen, setViewAsOpen] = useState(false);
-  const isAdmin = user?.role === 'admin';
+  const isStaff = can(user, 'admin.access');
+  const canViewAs = can(user, 'impersonation.use');
   const impersonating = !!impersonatedUser;
 
   useEffect(() => {
@@ -50,14 +53,14 @@ export default function AppShell({ children }) {
       </a>
 
       {/* Admin bar — plato branding, quick links to dashboard */}
-      {isAdmin && (
+      {isStaff && (
         <div className="px-4 py-1.5 text-xs text-white" style={{ backgroundColor: '#470d99' }}>
           <div className="mx-auto max-w-5xl flex items-center gap-2">
             <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }} className="flex items-center gap-1.5 opacity-90 hover:opacity-100">
               <img src="/assets/logo-white.svg" alt="plato" className="h-3 w-auto" />
             </a>
             <div className="flex-1" />
-            {!impersonating && (
+            {!impersonating && canViewAs && (
               <button
                 type="button"
                 onClick={() => setViewAsOpen(true)}
@@ -110,22 +113,27 @@ export default function AppShell({ children }) {
         role="banner"
       >
         <nav className="mx-auto max-w-5xl flex items-center gap-2" aria-label="Main navigation">
-          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0" aria-label="Go to lessons list">
+          {/* Accessible name starts with the visible classroom name (WCAG 2.5.3
+              label-in-name); "lessons" says where it goes. */}
+          <a href="/lessons" onClick={e => { e.preventDefault(); navigate('/lessons'); }} className="shrink-0">
             {classroomLogo ? (
-              <img src={classroomLogo} alt="" className="h-8 w-auto" />
+              <img src={classroomLogo} alt={`${classroomName}: lessons`} className="h-8 w-auto" />
             ) : (
-              <span className="text-sm font-semibold">{classroomName}</span>
+              <span className="text-sm font-semibold">{classroomName}<span className="sr-only">: lessons</span></span>
             )}
           </a>
           <div className="flex-1" />
-          <DropdownMenuRadix.Root>
+          {/* View as User reads the learner's data, not their inbox. */}
+          {!impersonating && <NotificationsBell />}
+          {/* Non-modal for the same reason as the bell (NotificationsBell.jsx). */}
+          <DropdownMenuRadix.Root modal={false}>
             <DropdownMenuRadix.Trigger asChild>
               <button
                 type="button"
-                className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none"
-                aria-label={`Account: ${user?.username || user?.email || 'signed in'}`}
+                className="text-inherit opacity-80 hover:opacity-100 hover:bg-white/10 cursor-pointer bg-transparent border-none rounded-md px-3 py-1.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-white/70"
               >
                 {user?.name || user?.username || user?.email || 'Account'}
+                <span className="sr-only">, account menu</span>
               </button>
             </DropdownMenuRadix.Trigger>
             <DropdownMenuRadix.Portal>
@@ -163,6 +171,8 @@ export default function AppShell({ children }) {
       <footer className="shrink-0 border-t px-4 py-2 text-center text-xs text-muted-foreground">
         <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-foreground">Privacy</a>
         {' · '}
+        <a href="/how-assessment-works" onClick={e => { e.preventDefault(); navigate('/how-assessment-works'); }} className="underline hover:text-foreground">How assessment works</a>
+        {' · '}
         Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">plato</a>.
       </footer>
 
@@ -177,7 +187,7 @@ export default function AppShell({ children }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+              className="bg-destructive/10 text-red-800 dark:text-destructive hover:bg-destructive/20"
               onClick={handleSignOut}
             >
               Sign Out

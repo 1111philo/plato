@@ -3,17 +3,23 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { can, isTester } from '../../lib/permissions.js';
 
+// `permission`: who sees the link (lib/permissions.js). Educators don't get
+// Customizer or Plugins; testers see everything read-only.
 const NAV_LINKS = [
-  { to: '/plato', label: 'Home', end: true },
-  { to: '/plato/lessons', label: 'Lessons' },
-  { to: '/plato/users', label: 'Users' },
-  { to: '/plato/customizer', label: 'Customizer' },
-  { to: '/plato/plugins', label: 'Plugins' },
+  { to: '/plato', label: 'Home', end: true, permission: 'admin.access' },
+  { to: '/plato/lessons', label: 'Lessons', permission: 'content.read' },
+  { to: '/plato/users', label: 'Users', permission: 'users.read' },
+  { to: '/plato/notifications', label: 'Notifications', permission: 'notifications.read' },
+  { to: '/plato/customizer', label: 'Customizer', permission: 'kb.read' },
+  { to: '/plato/plugins', label: 'Plugins', permission: 'plugins.read' },
 ];
 
-function NavItems({ onClick }) {
-  return NAV_LINKS.map(({ to, label, end }) => (
+const WIDE_PAGES = new Set(['/plato/users', '/plato/lessons']);
+
+function NavItems({ onClick, user }) {
+  return NAV_LINKS.filter((l) => can(user, l.permission)).map(({ to, label, end }) => (
     <NavLink
       key={to}
       to={to}
@@ -52,8 +58,15 @@ export default function AdminLayout() {
     navigate('/login', { replace: true });
   };
 
+  // List pages hold wide tables, so they get the full width; forms and
+  // editors keep the readable max-width.
+  const wide = WIDE_PAGES.has(location.pathname.replace(/\/$/, ''));
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-2 focus:bg-primary focus:text-primary-foreground">
+        Skip to main content
+      </a>
       {/* Mobile: top bar with hamburger */}
       <header className="md:hidden bg-primary text-primary-foreground flex items-center justify-between px-4 py-3">
         <a href="/plato" onClick={e => { e.preventDefault(); navigate('/plato'); }}>
@@ -100,7 +113,7 @@ export default function AdminLayout() {
             </div>
 
             <nav className="flex flex-col flex-1 gap-0.5 px-2" aria-label="Admin navigation">
-              <NavItems onClick={() => setMenuOpen(false)} />
+              <NavItems user={user} onClick={() => setMenuOpen(false)} />
             </nav>
 
             <div className="flex flex-col gap-2 px-4 py-3 mt-auto">
@@ -149,7 +162,7 @@ export default function AdminLayout() {
         </div>
 
         <nav className="flex flex-col flex-1 gap-0.5 px-2" aria-label="Admin navigation">
-          <NavItems />
+          <NavItems user={user} />
         </nav>
 
         <div className="flex flex-col gap-2 px-4 py-3 mt-auto">
@@ -186,8 +199,13 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 p-6 md:ml-56">
-        <div className="max-w-4xl pb-4">
+      <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 p-6 md:ml-56">
+        <div className={`${wide ? 'max-w-none' : 'max-w-4xl'} pb-4`}>
+          {isTester(user) && (
+            <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              <strong>Tester (read-only):</strong> you can open everything, but changes aren’t saved.
+            </p>
+          )}
           <Outlet />
         </div>
       </main>

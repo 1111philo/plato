@@ -5,7 +5,8 @@
 
 import {
   getAuthTokens, saveAuthTokens, clearAuth,
-  saveAuthUser
+  saveAuthUser,
+  getAuthUser,
 } from './storage.js';
 
 // When served from the same origin (Lambda), use relative paths.
@@ -126,6 +127,25 @@ export async function isLoggedIn() {
 export { getAuthUser as getCurrentUser } from './storage.js';
 
 /**
+ * Re-read the signed-in user from the server and update the cached copy. The
+ * cache is written at login, so without this a role change (#435) would only
+ * show up after the next login. Best-effort: returns null on any failure.
+ */
+export async function refreshCurrentUser() {
+  try {
+    const res = await authenticatedFetch('/v1/me');
+    if (!res.ok) return null;
+    const fresh = await res.json();
+    const cached = (await getAuthUser()) || {};
+    const merged = { ...cached, ...fresh };
+    await saveAuthUser(merged);
+    return merged;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Refresh the access token using the stored refresh token.
  * Returns true on success, false on failure (user must re-login).
  */
@@ -160,19 +180,23 @@ export async function authenticatedFetch(path, options = {}) {
   const tokens = await getAuthTokens();
   if (!tokens?.accessToken) throw new Error('Not logged in');
 
-  // GET-only impersonation: if an admin is "viewing as" a learner, attach
-  // ?asUserId=<id> to reads. Writes never carry it — both as a client guard
-  // and to match the server-side write rejection in /v1/sync.
+  // "View as User": reads carry ?asUserId=<id> so the server returns the
+  // learner's data. Every request also carries X-Plato-View-As, and the
+  // server rejects any write that has it (server/src/middleware/
+  // viewAsReadOnly.js), so a stray write can't land on the admin's own
+  // records mid-session.
   const method = (options.method || 'GET').toUpperCase();
+  const asUserId = readImpersonatedUserId();
   let effectivePath = path;
-  if (method === 'GET') {
-    const asUserId = readImpersonatedUserId();
-    if (asUserId) effectivePath = appendQueryParam(path, 'asUserId', asUserId);
-  }
+  if (method === 'GET' && asUserId) effectivePath = appendQueryParam(path, 'asUserId', asUserId);
 
   const doFetch = (token) => fetch(`${SERVICE_URL}${effectivePath}`, {
     ...options,
-    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${token}`,
+      ...(asUserId ? { 'X-Plato-View-As': asUserId } : {}),
+    },
   });
 
   let res = await doFetch(tokens.accessToken);

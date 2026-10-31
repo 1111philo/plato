@@ -37,6 +37,7 @@ describe('GET /v1/me', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.name, 'Test');
+    assert.deepEqual([data.firstName, data.lastName, data.nameSource], ['Test', '', 'auto'], 'split on read before m005 runs');
     assert.equal(data.email, 'test@example.com');
     assert.equal(data.passwordHash, undefined);
   });
@@ -67,6 +68,47 @@ describe('PATCH /v1/me', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.name, 'Updated');
+  });
+
+  // #402: first/last name. Parts the body leaves out keep their value; a lone
+  // `name` from an older client is split; a first name is required.
+  describe('first and last name (#402)', () => {
+    let user;
+    let writes;
+    beforeEach(() => {
+      user = { userId: 'usr_test', email: 'test@example.com', username: 'testuser', name: 'Mary Ann Evans',
+        firstName: 'Mary', lastName: 'Ann Evans', nameSource: 'auto', role: 'learner' };
+      writes = [];
+      db.getUserById = async () => ({ ...user });
+      db.updateUser = async (id, fields) => { writes.push(fields); Object.assign(user, fields); };
+    });
+    const patch = (body) => { const app = new Hono(); app.route('/', me); return authedReq(app, 'PATCH', '/v1/me', body); };
+
+    it('changes only the part sent, and re-derives name', async () => {
+      const res = await patch({ lastName: 'Evans' });
+      assert.equal(res.status, 200);
+      assert.deepEqual(writes, [{ firstName: 'Mary', lastName: 'Evans', name: 'Mary Evans', nameSource: 'user' }]);
+      const data = await res.json();
+      assert.deepEqual([data.firstName, data.lastName, data.name, data.nameSource], ['Mary', 'Evans', 'Mary Evans', 'user']);
+    });
+
+    it('splits a lone name from an older client', async () => {
+      await patch({ name: '  Ada   Lovelace ' });
+      assert.deepEqual(writes, [{ firstName: 'Ada', lastName: 'Lovelace', name: 'Ada Lovelace', nameSource: 'auto' }]);
+    });
+
+    it('allows no last name, and refuses an empty first name', async () => {
+      assert.equal((await patch({ firstName: 'Cher', lastName: '' })).status, 200);
+      assert.equal(user.name, 'Cher');
+      const res = await patch({ firstName: '  ' });
+      assert.equal(res.status, 400);
+      assert.match((await res.json()).error, /first name is required/i);
+      assert.equal(writes.length, 1);
+    });
+
+    it('refuses an over-long part', async () => {
+      assert.equal((await patch({ firstName: 'x'.repeat(101) })).status, 400);
+    });
   });
 
   it('updates username', async () => {
@@ -175,6 +217,18 @@ describe('DELETE /v1/me', () => {
     assert.deepEqual(deletedSync, ['profile', 'work']);
     assert.equal(auditCreated.action, 'user_deleted');
     assert.equal(auditCreated.details.selfDelete, true);
+  });
+
+  it('the only admin cannot delete their own account; one of two can', async () => {
+    db.getUserById = async () => ({ userId: 'usr_test', email: 'a@x.com', role: 'admin' });
+    db.listAllUsers = async () => [{ userId: 'usr_test', role: 'admin' }, { userId: 'usr_l', role: 'learner' }];
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'DELETE', '/v1/me', { confirm: 'DELETE' });
+    assert.equal(res.status, 409);
+    assert.equal(deletedUser, false);
+    db.listAllUsers = async () => [{ userId: 'usr_test', role: 'admin' }, { userId: 'usr_b', role: 'admin' }];
+    assert.equal((await authedReq(app, 'DELETE', '/v1/me', { confirm: 'DELETE' })).status, 200);
   });
 
   it('rejects without confirmation', async () => {

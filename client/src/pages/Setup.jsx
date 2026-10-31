@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import PasswordField from '../components/PasswordField.jsx';
 import { saveAuthTokens, saveAuthUser } from '../../js/storage.js';
 import { Button } from '@/components/ui/button';
+import NameFields from '../components/NameFields.jsx';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -11,7 +12,7 @@ import {
 export default function Setup() {
   const [classroomName, setClassroomName] = useState('');
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState({ firstName: '', lastName: '' });
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -22,8 +23,8 @@ export default function Setup() {
   }, []);
 
   async function handleSetup() {
-    if (!email.trim() || !name.trim() || !password) {
-      setError('All fields are required.');
+    if (!email.trim() || !name.firstName.trim() || !password) {
+      setError('First name, email, and password are required.');
       return;
     }
     if (password.length < 8) {
@@ -40,7 +41,7 @@ export default function Setup() {
       const res = await fetch('/v1/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: name.trim(), password, classroomName: classroomName.trim() }),
+        body: JSON.stringify({ email: email.trim(), firstName: name.firstName.trim(), lastName: name.lastName.trim(), password, classroomName: classroomName.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Setup failed');
@@ -64,7 +65,7 @@ export default function Setup() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
+            <div className="bg-destructive/10 text-red-800 dark:text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
               {error}
             </div>
           )}
@@ -75,11 +76,7 @@ export default function Setup() {
             <p className="text-xs text-muted-foreground">This appears in the header and on login pages. You can change it later.</p>
           </div>
           <hr className="border-border" />
-          <div className="space-y-2">
-            <Label htmlFor="setup-name">Your Name</Label>
-            <Input id="setup-name" type="text" placeholder="Your name" autoComplete="name"
-              value={name} onChange={e => setName(e.target.value)} />
-          </div>
+          <NameFields idPrefix="setup" value={name} onChange={setName} />
           <div className="space-y-2">
             <Label htmlFor="setup-email">Email</Label>
             <Input id="setup-email" type="email" placeholder="admin@example.com" autoComplete="email"
@@ -101,8 +98,8 @@ export default function Setup() {
           </Button>
         </CardContent>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>
+      <p className="mt-4 text-xs text-white/90">
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>
       </p>
     </main>
   );
