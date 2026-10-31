@@ -56,6 +56,8 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #477 | Port of prod hotfix #476: wait-list submissions from people who already have an account are kept | #363 |
 | #478 | Adversarial review blockers: SES SendRawEmail IAM, View-as `_system` refused, m004 retry, coach truncation, job reads/dispatch | review |
 | #479 | Adversarial review follow-ups: group rename retry, Slack invite awaited, record size guard, rollback edge cases, rate limit, contrast, focus guard | review |
+| #483 | Port of prod hotfix #482: Copy to account for wait-list entries whose email already has an account | #363 |
+| #484 | Second adversarial review: Slack 429 at signup, failed-turn restore, wait-list IP, refused-save resend, UTF-8 size guard, group rename finish, roles rollback script | review |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
@@ -135,6 +137,7 @@ after the upgrade.
 
 ## Hotfix shipped to prod during the sprint
 - **#476** (2026-10-31, deployed to plato.courses): `POST /v1/waitlist` dropped submissions from emails that already had an account or invite. They're kept now and marked "Has an account" / "Invited" on the Wait List. Submissions lost before the fix weren't stored and can't be recovered.
+- **#482** (2026-10-31, deployed to plato.courses): a wait-list entry whose email already has an account offered Invite on its edit page (which always failed), and the person's answers couldn't reach their account. **Copy to account** now fills in the group and blank custom fields the account is missing (never the name, never overwriting) and removes the entry.
 
 ## Prod rehearsal (2026-10-31)
 
