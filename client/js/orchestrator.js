@@ -151,7 +151,7 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   const contentType = resp.headers.get('content-type') || '';
   if (resp.ok && contentType.includes('text/event-stream')) {
     let full = '';
-    for await (const chunk of parseSSEStream(resp.body)) { full += chunk; onChunk(full); }
+    for await (const chunk of parseSSEStream(resp.body, undefined, { failOnTruncation: promptName === 'coach' })) { full += chunk; onChunk(full); }
     return full;
   }
   // Non-streaming response (proxy returned JSON)

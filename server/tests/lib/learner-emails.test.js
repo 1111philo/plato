@@ -57,6 +57,15 @@ describe('inactivity nudge', () => {
     assert.equal((await runInactivityNudges({ db, now: t + 15 * DAY })).nudged, 1);
   });
 
+  it('an SES failure releases the claim, so the next run tries again', async () => {
+    await writeAutomations({ inactivityNudge: true }, db);
+    setEmailTransport(async () => { throw Object.assign(new Error('AccessDenied'), { name: 'AccessDeniedException' }); });
+    const t = Date.now() + 8 * DAY;
+    assert.deepEqual([(await runInactivityNudges({ db, now: t })).nudged], [0]);
+    setEmailTransport(async (raw) => { mails.push(raw); });
+    assert.equal((await runInactivityNudges({ db, now: t })).nudged, 1, 'not stuck for 14 days');
+  });
+
   it('skips completed lessons, lessons they can’t see, and opted-out learners', async () => {
     await writeAutomations({ inactivityNudge: true }, db);
     await db.putSyncData('usr_ada', 'lessonKB:les-a', { status: 'completed', progress: 10 }, 1);
@@ -84,6 +93,15 @@ describe('weekly digest', () => {
     assert.equal((await runWeeklyDigest({ db, now: t + DAY })).sent, 0, 'not twice in a week');
     await setOptOut('usr_ada', { digest: true }, db);
     assert.equal((await runWeeklyDigest({ db, now: t + 8 * DAY })).optedOut, 1);
+  });
+
+  it('a failed digest send can go out on the next run', async () => {
+    await writeAutomations({ weeklyDigest: true }, db);
+    setEmailTransport(async () => { throw new Error('SES down'); });
+    const t = Date.now() + DAY;
+    assert.equal((await runWeeklyDigest({ db, now: t })).sent, 0);
+    setEmailTransport(async (raw) => { mails.push(raw); });
+    assert.equal((await runWeeklyDigest({ db, now: t })).sent, 1);
   });
 
   it('skips a learner with nothing to say', () => {

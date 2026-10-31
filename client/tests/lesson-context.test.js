@@ -19,7 +19,7 @@ globalThis.localStorage = {
 };
 globalThis.fetch = async () => ({ ok: false, status: 404 });
 
-const { buildContext, applyCoachResponseToKB } = await import('../src/lib/lessonEngine.js');
+const { buildContext, applyCoachResponseToKB, openingProgress } = await import('../src/lib/lessonEngine.js');
 const { LESSON_PHASES } = await import('../src/lib/constants.js');
 
 function sampleLesson() {
@@ -348,5 +348,15 @@ describe('applyCoachResponseToKB', () => {
     assert.equal(result.achieved, false);
     assert.equal(result.phase, LESSON_PHASES.LEARNING);
     assert.equal(result.lessonKB.activitiesCompleted, 9);
+  });
+});
+
+describe('openingProgress', () => {
+  it('clamps the opener and never lets it complete a lesson', () => {
+    assert.equal(openingProgress(1), 1);
+    assert.equal(openingProgress(10), 9);
+    assert.equal(openingProgress(999), 9);
+    assert.equal(openingProgress(-3), 0);
+    assert.equal(openingProgress(null), null);
   });
 });

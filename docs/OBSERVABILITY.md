@@ -86,6 +86,19 @@ You have a new error or failure condition. Ask, in order:
 When unsure between A and B, ask: *if this fires once, has someone definitely
 lost something?* Yes → A. No → B.
 
+## Codes added in the launch release
+
+| Code | Level | Tier | Means |
+|---|---|---|---|
+| `migration_applied` | warn | — | a data migration ran (`{ scanned, updated, skipped, errors }`); `errors > 0` is retried next cold start |
+| `migrations_failed`, `migrations_startup_budget_exceeded` | error / warn | B | the runner failed or ran past its 20 s startup budget |
+| `job_completed` | warn | — | a background job finished, with its counts |
+| `job_failed`, `job_unknown`, `job_dispatch_failed` | error | B | a background job threw, wasn't registered, or couldn't be invoked |
+| `schedule_check_failed` | error | B | the traffic-driven schedule check (`lib/schedule.js`) threw |
+| `learner_email_failed` | error | B | SES refused a reminder or digest; its claim was released for the next run |
+| `waitlist_confirmation_failed` | error | B | the wait-list confirmation didn't send (the join still succeeded) |
+| `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
+
 ## How to add a check
 
 ### Step 0 — always: give the error a meaningful `code`

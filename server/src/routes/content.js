@@ -3,10 +3,10 @@ import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import db from '../lib/db.js';
-import { can } from '../lib/permissions.js';
 import { buildHierarchy } from '../lib/hierarchy.js';
 import { isStartHere } from '../lib/bundled-lessons.js';
 import { authenticate } from '../middleware/authenticate.js';
+import { resolveReadUserId } from '../lib/view-as.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -36,16 +36,6 @@ content.use('/v1/knowledge-base', authenticate);
  * passing the param get a 403; everyone else falls back to their own
  * JWT-derived userId.
  */
-function resolveReadUserId(c) {
-  const url = new URL(c.req.url);
-  const asUserId = url.searchParams.get('asUserId');
-  if (!asUserId) return { userId: c.get('userId') };
-  // View as User: admins and testers (lib/permissions.js).
-  if (!can(c.get('role'), 'impersonation.use')) {
-    return { error: c.json({ error: 'Admin access required to read as another user' }, 403) };
-  }
-  return { userId: asUserId };
-}
 
 // GET /v1/version — public
 content.get('/v1/version', (c) => {
@@ -109,7 +99,7 @@ function placementOf(h, lessonId, unitId) {
 }
 
 content.get('/v1/lessons', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const userId = resolved.userId;
   const items = await db.getAllSyncData('_system');
@@ -188,7 +178,7 @@ async function computeAllLessonTimeStats() {
 export function _resetTimeStatsCache() { _timeStatsCache = null; }
 
 content.get('/v1/lessons/time-stats', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const userId = resolved.userId;
   const [systemItems, allStats] = await Promise.all([
@@ -215,7 +205,7 @@ content.get('/v1/lessons/time-stats', async (c) => {
 // When a lesson has a `course` field, the response inlines `course: { id, name }`.
 // If the referenced course was deleted (transient drift between cascade and read), `course` is null.
 content.get('/v1/lessons/:lessonId', async (c) => {
-  const resolved = resolveReadUserId(c);
+  const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);

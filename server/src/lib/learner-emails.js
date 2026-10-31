@@ -24,6 +24,7 @@ import { normalizeStatus } from './lesson-visibility.js';
 import { nameFields } from './names.js';
 import { readAutomations, readNotifyState, updateNotifyState, sendTemplated } from './notifications.js';
 import { registerJob } from './jobs.js';
+import { logger } from './logger.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 export const NUDGE_AFTER_DAYS = 7;
@@ -69,7 +70,8 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now() } =
   for (const u of await learners(db)) {
     counts.learners++;
     const lessons = visibleLessons(system, u.userId);
-    const items = await db.getAllSyncData(u.userId);
+    // Only lesson progress: the whole partition holds screenshots and conversations.
+    const items = await db.getSyncDataByPrefix(u.userId, 'lessonKB:');
     const state = await readNotifyState(u.userId, db);
     if (state.optOut?.nudge) { counts.optedOut++; continue; }
     if (state.lastNudgeAt && now - Date.parse(state.lastNudgeAt) < DAY - 60 * 60 * 1000) continue;
@@ -96,7 +98,16 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now() } =
         progress: `${Math.max(0, Math.min(10, Number(pick.kb.progress) || 0)) * 10}%`,
         link: `${APP_URL}/lessons/${encodeURIComponent(pick.lessonId)}`,
       },
-    }, { db }).catch(() => ({ failed: true }));
+    }, { db }).catch(async (err) => {
+      // SES refused: release the claim so the next run tries again.
+      logger.error('learner_email_failed', { job: 'inactivity-nudge', error: err?.message || String(err) });
+      await claimFor(u.userId, (st) => {
+        if (st.nudges?.[pick.lessonId] !== stamp) return null;
+        const { [pick.lessonId]: _drop, ...nudges } = st.nudges;
+        return { ...st, nudges, lastNudgeAt: null };
+      }, db).catch(() => {});
+      return { failed: true };
+    });
     if (r.sent) counts.nudged++; else counts.notSent++;
   }
   return counts;
@@ -131,7 +142,7 @@ export async function runWeeklyDigest({ db = defaultDb, now = Date.now() } = {})
     const state = await readNotifyState(u.userId, db);
     if (state.optOut?.digest) { counts.optedOut++; continue; }
     if (state.lastDigestAt && now - Date.parse(state.lastDigestAt) < DIGEST_EVERY_DAYS * DAY) continue;
-    const content = digestContent({ items: await db.getAllSyncData(u.userId), lessons: visibleLessons(system, u.userId), now });
+    const content = digestContent({ items: await db.getSyncDataByPrefix(u.userId, 'lessonKB:'), lessons: visibleLessons(system, u.userId), now });
     if (!content) { counts.nothingToSay++; continue; }
     const stamp = new Date(now).toISOString();
     const claimed = await claimFor(u.userId, (st) => (
@@ -141,7 +152,11 @@ export async function runWeeklyDigest({ db = defaultDb, now = Date.now() } = {})
     const r = await sendTemplated('weekly-digest', {
       to: u.email, userId: u.userId, kind: 'digest',
       vars: { firstName: nameFields(u).firstName, ...content, link: `${APP_URL}/lessons` },
-    }, { db }).catch(() => ({ failed: true }));
+    }, { db }).catch(async (err) => {
+      logger.error('learner_email_failed', { job: 'weekly-digest', error: err?.message || String(err) });
+      await claimFor(u.userId, (st) => (st.lastDigestAt === stamp ? { ...st, lastDigestAt: null } : null), db).catch(() => {});
+      return { failed: true };
+    });
     if (r.sent) counts.sent++; else counts.notSent++;
   }
   return counts;

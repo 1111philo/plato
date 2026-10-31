@@ -292,6 +292,34 @@ describe('?asUserId= (admin View as User)', () => {
     assert.equal(queriedUserId, 'usr_target');
   });
 
+  it('refuses _system and ids that are not real users, for admins and testers alike', async () => {
+    let reads = 0;
+    db.getAllSyncData = async () => { reads++; return [{ dataKey: 'plugins:activation', data: { slack: { settings: { botToken: 'xoxb-secret' } } } }]; };
+    db.getSyncData = async () => { reads++; return null; };
+    const app = new Hono();
+    app.route('/', sync);
+    for (const role of ['admin', 'tester']) {
+      db.getUserById = async (id) => (id === 'usr_real' || id === 'usr_admin' ? { userId: id, role } : null);
+      const token = await signAccessToken('usr_admin', role);
+      for (const target of ['_system', 'usr_nobody', 'whatever']) {
+        const res = await app.request(`/v1/sync?asUserId=${target}`, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal(res.status, 404, `${role} → ${target}`);
+        const one = await app.request(`/v1/sync/settings?asUserId=${target}`, { headers: { Authorization: `Bearer ${token}` } });
+        assert.equal(one.status, 404);
+      }
+    }
+    assert.equal(reads, 0, 'nothing read');
+  });
+
+  it('GET /v1/sync hides server-only notify:* bookkeeping', async () => {
+    db.getUserById = async (id) => ({ userId: id, role: 'learner' });
+    db.getAllSyncData = async () => [{ dataKey: 'profile', data: {} }, { dataKey: 'notify:state', data: { optOut: {} } }];
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await userReq(app, 'GET', '/v1/sync');
+    assert.deepEqual((await res.json()).map((i) => i.dataKey), ['profile']);
+  });
+
   it('GET /v1/sync as non-admin with ?asUserId= returns 403', async () => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
     const app = new Hono();

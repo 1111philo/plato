@@ -68,6 +68,19 @@ export async function runDueJobs({ db = defaultDb, now = new Date(), dispatch = 
     if (err.name === 'ConditionalCheckFailedException') return []; // another container claimed it
     throw err;
   }
-  for (const s of toRun) await dispatch(s.job, {});
-  return toRun.map((s) => s.job);
+  // A dispatch that failed (throttled invoke, network) hands its period back,
+  // so a later request tries again instead of losing the day.
+  const ran = [];
+  const failed = [];
+  for (const s of toRun) {
+    const r = await dispatch(s.job, {}).catch((err) => ({ error: err?.message || 'dispatch failed' }));
+    (r?.error ? failed : ran).push(s);
+  }
+  if (failed.length) {
+    const cur = await db.getSyncData('_system', 'jobs:schedule');
+    const lr = { ...(cur?.data?.lastRun || {}) };
+    for (const s of failed) if (lr[s.job] === s.key) lr[s.job] = lastRun[s.job] ?? null;
+    await db.putSyncData('_system', 'jobs:schedule', { lastRun: lr }, cur?.version || 0).catch(() => {});
+  }
+  return ran.map((s) => s.job);
 }

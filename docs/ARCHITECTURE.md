@@ -403,7 +403,7 @@ characters, at most 5 per agent.
 
 Storage: the assistant message carries `metadata.agents` =
 `[{ agent, label, read?, did?, notes? }]`. In lessons it's persisted in
-`messages:<lessonId>` (a few hundred bytes a turn). Messages from before #411
+`messages:<lessonId>` (about 1 KB a turn, up to ~3.5 KB). Messages from before #411
 simply have no disclosure. The admin chats (lesson editor, KB editor, KB
 setup) keep it in session only; their saved conversations store just role and
 content.
@@ -718,6 +718,14 @@ pure helpers (tested in `client/tests/lessonOrder.test.js`):
   another course. A unit outside any course stays within itself.
 - `groupForDisplay` and `completionBy('program' | 'unit')` drive the lessons
   page (see [Learner classroom](#learner-classroom)).
+
+**Coach Directive is a trusted-author channel.** Anyone with
+`content.write` (admins and educators) can put instructions in front of every
+learner's coach. The coach is told the directive never overrides completion,
+but that's prose. The code guarantees are only these: completion happens only
+in `applyCoachResponseToKB`, scores are clamped 0–10, and the lesson opener can
+never score 10 (`openingProgress`). Grant `content.write` only to people you'd
+trust to write the coach's instructions.
 
 **Coach context:** `buildContext` sends `unit: { name, progress? }` (the
 cross-lesson note is per unit) and `course: { name }` (the course above it).
@@ -1530,8 +1538,12 @@ button in the purple admin bar in the classroom (`AppShell`); a yellow status
 strip with an "Exit" button surfaces underneath while impersonation is active.
 
 - Read-only `?asUserId=<id>` query param threaded onto GET `/v1/sync*` and GET
-  `/v1/lessons*` from `client/js/auth.js`'s `authenticatedFetch`; admin-gated
-  server-side.
+  `/v1/lessons*` from `client/js/auth.js`'s `authenticatedFetch`; gated
+  server-side by `impersonation.use` (admins, testers) in
+  `server/src/lib/view-as.js`. **The target must be a real user** (`usr_…`
+  that exists). `_system` and made-up ids get a 404, so View as User can't
+  read plugin secrets, the wait-list key hash, drafts, or email templates
+  (adversarial review B2 on #451).
 - **Read-only on the server for every route.** While a session is active,
   `authenticatedFetch` sends `X-Plato-View-As: <targetUserId>` on *every*
   request, and the global `viewAsReadOnly` middleware

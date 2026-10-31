@@ -216,8 +216,12 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
 
   const { text, progress } = parseCoachResponse(coachMsg);
 
-  if (progress != null) {
-    lessonKB.progress = progress;
+  // The opener is scored like any turn (clamped 0–10), but it can't finish
+  // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
+  // completes lessons. A lesson's Coach Directive can't change that.
+  const opening = openingProgress(progress);
+  if (opening != null) {
+    lessonKB.progress = opening;
     await saveLessonKB(lessonId, lessonKB);
   }
 
@@ -492,6 +496,12 @@ export async function resumeLesson(lessonId) {
 
 /** Progress is a 0–10 signal; a lesson completes at MAX_PROGRESS. */
 const MAX_PROGRESS = 10;
+
+/** The lesson opener's score: clamped 0–10 and never 10 (it can't complete a lesson). */
+export function openingProgress(progress) {
+  const p = clampProgress(progress);
+  return p == null ? null : Math.min(p, MAX_PROGRESS - 1);
+}
 
 /**
  * Coerce a coach-reported progress score into the 0–10 range.

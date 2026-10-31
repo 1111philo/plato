@@ -219,6 +219,18 @@ describe('DELETE /v1/me', () => {
     assert.equal(auditCreated.details.selfDelete, true);
   });
 
+  it('the only admin cannot delete their own account; one of two can', async () => {
+    db.getUserById = async () => ({ userId: 'usr_test', email: 'a@x.com', role: 'admin' });
+    db.listAllUsers = async () => [{ userId: 'usr_test', role: 'admin' }, { userId: 'usr_l', role: 'learner' }];
+    const app = new Hono();
+    app.route('/', me);
+    const res = await authedReq(app, 'DELETE', '/v1/me', { confirm: 'DELETE' });
+    assert.equal(res.status, 409);
+    assert.equal(deletedUser, false);
+    db.listAllUsers = async () => [{ userId: 'usr_test', role: 'admin' }, { userId: 'usr_b', role: 'admin' }];
+    assert.equal((await authedReq(app, 'DELETE', '/v1/me', { confirm: 'DELETE' })).status, 200);
+  });
+
   it('rejects without confirmation', async () => {
     const app = new Hono();
     app.route('/', me);
