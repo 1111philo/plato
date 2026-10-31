@@ -169,3 +169,16 @@ describe('fitMessages (#451 review M1)', async () => {
     assert.ok(out[out.length - 1].metadata.agents, 'newest reply keeps its detail');
   });
 });
+
+describe('conversationTooLong (#451 second review N4)', async () => {
+  const { conversationTooLong, MESSAGES_BUDGET } = await import('../js/storage.js');
+  it('is true only when the text alone is past the budget, counted in UTF-8 bytes', async () => {
+    clearCache();
+    await saveLessonMessages('long-1', [{ role: 'user', content: 'short' }]);
+    assert.equal(conversationTooLong('long-1'), false);
+    // Under the budget in characters, over it in bytes (3 bytes each).
+    await saveLessonMessages('long-1', [{ role: 'user', content: '学'.repeat(Math.ceil(MESSAGES_BUDGET / 2.5)) }]);
+    assert.equal(conversationTooLong('long-1'), true);
+    assert.equal(conversationTooLong('never-loaded'), false);
+  });
+});

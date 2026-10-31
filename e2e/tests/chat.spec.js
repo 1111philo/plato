@@ -134,3 +134,15 @@ test('a cut-off coach reply shows an error and gives the message back to retry',
   await expect(page.getByRole('textbox', { name: 'Your message' }).last()).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('[data-chat-message="user"]', { hasText: 'MOCK_TRUNCATE' })).toHaveCount(0);
 });
+
+test('a failed turn comes back ahead of a draft typed meanwhile', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[1].id}`);
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+  await composer.fill('MOCK_SLOW MOCK_TRUNCATE my long answer');
+  await composer.press(`${MOD}+Enter`);
+  await composer.fill('ok');
+  await expect(page.getByRole('alert').filter({ hasText: 'The reply was cut off' })).toBeVisible({ timeout: 20_000 });
+  await expect(composer).toHaveValue('MOCK_SLOW MOCK_TRUNCATE my long answer\n\nok');
+});

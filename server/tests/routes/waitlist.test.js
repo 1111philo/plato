@@ -98,6 +98,17 @@ describe('wait list confirmation email (#388)', () => {
     assert.equal(mails.length, 0);
   });
 
+  it('is not sent to someone who already has an account or an invite (stored all the same)', async () => {
+    store.automations = { waitlistConfirmation: true };
+    db.getUserByEmail = async () => ({ userId: 'usr_ada' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', VALID)).status, 202);
+    db.getUserByEmail = async () => null;
+    db.getInviteByEmail = async () => ({ inviteToken: 'inv_p', status: 'pending' });
+    assert.equal((await post(makeApp(), '/v1/waitlist', { ...VALID, email: 'b@example.com' })).status, 202);
+    assert.equal(created.length, 2);
+    assert.equal(mails.length, 0);
+  });
+
   it('uses the admin’s edited copy', async () => {
     store.automations = { waitlistConfirmation: true };
     store['emailTemplate:waitlist-confirmation'] = { subject: 'Welcome aboard, {{firstName}}', body: 'Hi {{firstName}}' };
@@ -138,6 +149,24 @@ describe('join rate limit (#451 review M11)', () => {
     for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from('1.2.3.4')).status, 202);
     assert.equal((await from('1.2.3.4')).status, 429);
     assert.equal((await from('5.6.7.8')).status, 202);
+  });
+
+  it('keys on the address CloudFront appended, not the one the sender wrote (second review N3)', async () => {
+    const env = { requestContext: { http: { sourceIp: '130.176.0.1' } } }; // CloudFront's address
+    const from = (xff) => makeApp().request('/v1/waitlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(xff ? { 'X-Forwarded-For': xff } : {}) },
+      body: JSON.stringify({ ...VALID, email: `p${Math.random()}@x.com` }),
+    }, env);
+    // A fresh spoofed first entry each time, the same real viewer after it.
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from(`10.0.0.${i}, 9.9.9.9`)).status, 202);
+    assert.equal((await from('10.0.0.99, 9.9.9.9')).status, 429);
+    // The Function URL appending CloudFront's address doesn't change who it is.
+    assert.equal((await from('10.0.0.98, 9.9.9.9, 130.176.0.1')).status, 429);
+    // No header: the source address is the key, not "no limit".
+    _resetJoinLimit();
+    for (let i = 0; i < JOIN_LIMIT; i++) assert.equal((await from('')).status, 202);
+    assert.equal((await from('')).status, 429);
   });
 });
 

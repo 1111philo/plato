@@ -85,11 +85,13 @@ function rejectWriteIfImpersonating(c) {
 /**
  * Estimate the size of a sync-data item as it will be stored in DynamoDB.
  * DynamoDB caps items at 400 KB; screenshots can exceed this if the client-side
- * compression fails or is bypassed. Returns the approximate byte size.
+ * compression fails or is bypassed. Returns the approximate size in bytes.
  */
 function estimateSyncDataSize(userId, dataKey, data) {
   const item = { userId, dataKey, data, updatedAt: new Date().toISOString(), version: 1 };
-  return JSON.stringify(item).length;
+  // UTF-8 bytes, as DynamoDB counts them: a CJK character is 3 bytes but 1
+  // string-length unit, so .length let non-Latin records past the guard.
+  return Buffer.byteLength(JSON.stringify(item), 'utf8');
 }
 
 const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB limit for safety

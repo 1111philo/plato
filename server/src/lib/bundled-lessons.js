@@ -106,10 +106,13 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
 
       if (lesson && !lesson.data?.bundled && lesson.data?.createdBy === 'plato') {
         // Ours, but an older release (a rollback to Beta-RC-232) saved it and
-        // dropped the marker. Take it back as an edited copy: never
-        // overwritten, and the admin gets "update available".
-        await db.putSyncData('_system', `lesson:${b.id}`, { ...lesson.data, bundled: { id: b.id, version: 'readopted' } }, lesson.version);
-        result.customized.push(b.id);
+        // dropped the marker. If the markdown is still today's canonical copy
+        // (it only changed status, say), it's unedited. Otherwise take it back
+        // as an edited copy: never overwritten, and the admin gets "update
+        // available".
+        const unedited = versionOf(lesson.data.markdown) === version;
+        await db.putSyncData('_system', `lesson:${b.id}`, { ...lesson.data, bundled: { id: b.id, version: unedited ? version : 'readopted' } }, lesson.version);
+        if (!unedited) result.customized.push(b.id);
         continue;
       }
       if (!lesson || !lesson.data?.bundled) { result.skipped.push(b.id); continue; } // deleted, or not ours

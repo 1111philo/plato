@@ -104,13 +104,20 @@ Beta-RC-232's own route handlers
 (`server/tests/migrations/upgrade-from-rc232.test.js`). Old code ignores the
 new fields and records. But Beta-RC-232's **admin screens** expect the old
 role name, so do this right after redeploying:
-- **Put the role name back**, or Admin → Users shows "Active: 0" and the role
-  picker only knows user/admin. For each user whose role is `learner`, set it
-  back to `user` (DynamoDB: scan `<stack>-users` for `role = learner` and
-  update each one; SQLite: `UPDATE users SET role='user' WHERE role='learner'`).
-- **Educators and testers** become ordinary learners under Beta-RC-232 (it
-  knows only admin and user). Set them to `user` as well, or to `admin` if they
-  need admin access during the rollback.
+- **Put the role names back**, or Admin → Users shows "Active: 0" and the role
+  picker only knows user/admin. From `server/`, see what would change, then
+  apply it:
+  ```bash
+  AWS_PROFILE=<profile> AWS_REGION=us-east-2 node scripts/rollback-roles.js           # dry run
+  AWS_PROFILE=<profile> AWS_REGION=us-east-2 node scripts/rollback-roles.js --apply
+  ```
+  (Another stack: set `USERS_TABLE=<stack>-users`. SQLite: `DB_BACKEND=sqlite
+  SQLITE_PATH=<path>`.) Every `learner`, `educator`, and `tester` becomes
+  `user`; admins are untouched. Each write is conditional, so running it twice
+  is safe. Tested in `server/tests/lib/rollback-roles.test.js`.
+- **Educators and testers** become ordinary users under Beta-RC-232 (it knows
+  only admin and user). Make any who need admin access during the rollback
+  admins in Admin → Users.
 
 Edits made under Beta-RC-232 survive a later re-upgrade. A name changed
 there wins over the stored first and last name, and a Getting Started that it

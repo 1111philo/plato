@@ -249,25 +249,31 @@ export default function LessonChat() {
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
       pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
-      if (result.saveFailed) setError('This reply couldn’t be saved, so it may be missing after you reload. Copy anything you need from it.');
+      if (result.saveFailed === 'too_long') setError('This conversation is too long to save any more of it. Your progress is still saved; copy anything you need from new replies.');
+      else if (result.saveFailed) setError('This reply couldn’t be saved, so it may be missing after you reload. Copy anything you need from it.');
       setStreamingText(null);
-
-      const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
     } catch (e) {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
       // Nothing was saved (the user message is written with the reply), so
-      // take the optimistic copy back out and return the draft to the
-      // composer to try again. A draft typed meanwhile is kept instead.
+      // take the optimistic copy back out and return the message to the
+      // composer to try again, ahead of anything typed meanwhile.
       setMessages((prev) => prev.slice(0, -1));
-      setComposeText((cur) => (cur.trim() ? cur : (text || '')));
+      setComposeText((cur) => [text || '', cur].filter((t) => t.trim()).join('\n\n'));
       if (Array.isArray(imageDataUrls) && imageDataUrls.length) {
-        setComposeImages((cur) => (cur.length ? cur : imageDataUrls.map((dataUrl, i) => ({ dataUrl, name: `image-${i + 1}.png` }))));
+        setComposeImages((cur) => [...imageDataUrls.map((dataUrl, i) => ({ dataUrl, name: `image-${i + 1}.png` })), ...cur].slice(0, 4));
       }
-      if (Array.isArray(links) && links.length) setComposeLinks((cur) => (cur.length ? cur : links));
+      if (Array.isArray(links) && links.length) {
+        setComposeLinks((cur) => [...links, ...cur.filter((l) => !links.some((m) => m.url === l.url))].slice(0, 3)); // ComposeBar's caps
+      }
+      return;
     }
+    // Outside the try: the turn is saved, so a failed refresh must not hand
+    // the message back (that would invite sending it twice).
+    try {
+      setLessonKB(await getLessonKB(lessonGroupId));
+    } catch { /* the next turn refreshes it */ }
   }, [lessonGroupId, lesson]);
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');

@@ -23,6 +23,11 @@ async function freshSettings() {
 import { findSlackUserByEmail, inviteToSlackChannel } from './slack-client.js';
 
 
+/** Whether "Retry all" picks this user up: a recorded result that isn't 'invited'. */
+export function needsRetry(meta) {
+  return !!meta?.autoInvite && meta.autoInvite.status !== 'invited';
+}
+
 export function autoInviteConfigured(settings) {
   return !!(settings?.autoInviteEnabled && settings?.autoInviteChannelId && settings?.botToken);
 }

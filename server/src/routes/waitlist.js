@@ -23,6 +23,23 @@ function overLimit(ip, now = Date.now()) {
 }
 export function _resetJoinLimit() { recentJoins.clear(); }
 
+/**
+ * The caller's IP for the limiter. CloudFront *appends* the viewer's address
+ * to any X-Forwarded-For the sender wrote, so only the rightmost entry is
+ * trustworthy; the leftmost is whatever the sender chose. The Lambda's own
+ * source address (CloudFront's, behind it) is dropped from the end in case
+ * the Function URL appended it, and used when there's no header at all.
+ * A request sent straight to the Function URL, skipping CloudFront, can still
+ * choose its entry; the limit is best-effort.
+ */
+export function clientIp(c) {
+  const rc = c.env?.requestContext || c.env?.event?.requestContext;
+  const source = rc?.http?.sourceIp || rc?.identity?.sourceIp || '';
+  const hops = (c.req.header('x-forwarded-for') || '').split(',').map((s) => s.trim()).filter(Boolean);
+  while (hops.length > 1 && hops[hops.length - 1] === source) hops.pop();
+  return hops[hops.length - 1] || source;
+}
+
 // GET /v1/waitlist — public. Whether the "Join the wait list" form is open.
 waitlist.get('/v1/waitlist', async (c) => {
   const { config } = await readWaitlistConfig();
@@ -41,8 +58,7 @@ waitlist.post('/v1/waitlist', async (c) => {
   }
 
   if (!keyed) {
-    const ip = (c.req.header('x-forwarded-for') || '').split(',')[0].trim();
-    if (overLimit(ip)) return c.json({ error: 'Too many requests. Please try again later.' }, 429);
+    if (overLimit(clientIp(c))) return c.json({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   let body;
@@ -76,10 +92,12 @@ waitlist.post('/v1/waitlist', async (c) => {
     }
     // #388: confirm once. Only the request that created the entry sends, so a
     // retry or a duplicate join (which finds the entry) never sends again.
-    // A failure is logged and never fails the join.
+    // A failure is logged and never fails the join. Someone who already has
+    // an account or an invite isn't told they're waiting for one.
     if (created) {
       try {
-        if ((await readAutomations()).waitlistConfirmation) {
+        if ((await readAutomations()).waitlistConfirmation
+          && !(await db.getUserByEmail(result.email)) && !(await db.getInviteByEmail(result.email))) {
           await sendTemplated('waitlist-confirmation', { to: result.email, vars: { firstName: result.profile.firstName } });
         }
       } catch (err) {

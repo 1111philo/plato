@@ -299,6 +299,21 @@ is its own `screenshot:<key>` record, and the message stores only
   land on the admin's own account).
 - `putSyncData` returns a durability boolean and logs rejected/failed writes
   instead of swallowing them.
+- **Size guard (#451 reviews).** The server refuses any sync record over
+  380 KB with `413` (`sync_item_too_large`, Tier A), counting **UTF-8 bytes**
+  as DynamoDB does (`Buffer.byteLength`, not `.length`: a CJK character is 3
+  bytes). The client keeps `messages:` under 340 KB by dropping the oldest
+  replies' `metadata.agents` (`fitMessages`); the text is never trimmed. A
+  refused save is not retried in the background (it would resend the same
+  record); the turn stays in the cache, so the next save tries it again. If
+  the text alone is past the budget (`conversationTooLong`), LessonChat says
+  the conversation is too long to save more of; progress (`lessonKB`) still
+  saves.
+- **A failed turn goes back to the composer** (LessonChat): the optimistic
+  message is removed and its text, images, and links are put back, *ahead of*
+  anything typed while waiting (joined with a blank line), within ComposeBar's
+  caps. Only a failed send does this; a failed KB refresh after a saved turn
+  doesn't.
 - The `LessonChat` resume effect keys on stable values (`lessonGroupId`, lesson
   presence) — **never the `lesson` object identity**, which changes on every tab
   refocus and used to re-run the effect and reset the conversation mid-lesson.
@@ -472,11 +487,11 @@ People ask to join; an admin invites them later. Integrator-facing API guide: [`
 - **API:** `POST /v1/waitlist` (public) takes `{ name, email, userGroup, customFields }`. It works when the list is open, or with `Authorization: Bearer <key>` from an outside form, even when closed. Send the key from a server, not a web page. The reply is `202 { ok: true }` for any valid input, including an email that already has an account, invite, or entry, so it never reveals who is registered. A submission from someone who already has an account or a pending invite is still stored; `GET /v1/admin/waitlist` marks it `alreadyRegistered: 'account' | 'invite'` (worked out at read time) and the Users page shows "Has an account" / "Invited". An account's entry can't be invited (409); instead `POST /v1/admin/waitlist/:token/apply` ("Copy to account", `users.write`) fills in what the account is missing (a group if it has none and the group still exists; blank custom fields with valid answers), never the name, removes the entry, and writes a `waitlist_applied` audit entry. Only a repeat join for an email already on the wait list stores nothing. `GET /v1/waitlist` returns `{ open }`.
 - **Storage:** rows in the `invites` table with `status: 'waitlist'`, no `ttl` (they never expire), and a `profile` of `{ name, userGroup, customFields }`. Pending-only lookups skip them, so a wait-list token can't sign up. New entries are keyed `inv_wl_<sha256(email)>` (`waitlistTokenFor`) and written create-only, so two concurrent joins for one address can't both insert; the lookup before the insert stays for older, randomly-keyed entries.
 - **Config:** `_system:waitlist` = `{ open, apiKeyHash }`, kept out of `_system:settings` so a stale settings save can't bring back a revoked key. The key is shown once; only its SHA-256 is stored.
-- **Admin:** Users → **Wait List** filter, with Invite and Remove per row; click a row to edit the entry (`/plato/users/waitlist/:token`: name, email, group, custom fields — same validation as joining, and a new email must not belong to a user, pending invite, or other entry). Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `PUT /v1/admin/waitlist/:token` (edit; conditional on the row still being an entry, so it can't race an Invite), `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
+- **Admin:** Users → **Wait List** filter, with Invite (or Copy to account for an existing account; neither for an email with a pending invite) and Remove per row; click a row to edit the entry (`/plato/users/waitlist/:token`: name, email, group, custom fields — same validation as joining, and a new email must not belong to a user, pending invite, or other entry). Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `PUT /v1/admin/waitlist/:token` (edit; conditional on the row still being an entry, so it can't race an Invite), `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
 - **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.
 - **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. A stored group that has since been renamed or deleted is ignored rather than assigned.
 - **Custom fields:** deleting a custom user field also erases its answers from wait-list entries and the invites made from them (`setInviteProfile`), and `GET /v1/admin/waitlist` only returns answers to fields that still exist.
-- **Rate limit.** Unkeyed joins are limited to 5 per client IP per 10 minutes, per container (best-effort; `429` beyond that). Keyed requests from an outside form aren't limited. Once the wait-list confirmation is on, each join can send an email, so one source can't spray them. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
+- **Rate limit.** Unkeyed joins are limited to 5 per client IP per 10 minutes, per container (best-effort; `429` beyond that). The IP is the **rightmost** `X-Forwarded-For` entry (CloudFront appends the viewer's address; the leftmost is whatever the sender wrote), after dropping the Lambda's own source address from the end, or that source address when there's no header (`clientIp` in `routes/waitlist.js`). A request sent straight to the Function URL can still pick its entry. Keyed requests from an outside form aren't limited. Once the wait-list confirmation is on, each join can send an email, so one source can't spray them. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
 
 ### Signup flow
 
@@ -1309,8 +1324,10 @@ owns them:
   first, version-checked. Then it moves every membership: users, wait-list
   entries, pending invites, and group messages, so the bell keeps showing them
   to the group. It returns `moved: { users, invites, messages, failed }` and
-  writes a `group_renamed` audit entry. A failed membership write is retried by
-  renaming again.
+  writes a `group_renamed` audit entry. If some membership writes fail, the
+  dialog offers **Finish moving people from X to Y**, which sends the same
+  rename again; with the new name listed and the old one gone, the server
+  only moves the remaining members.
 - **Delete** clears the group from users and invites. Messages already sent
   keep their audience.
 
@@ -1453,7 +1470,8 @@ password-reset emails stay in `email.js`.
 - **Wait list confirmation (#388):** sent by `POST /v1/waitlist` only when
   *that request* created the entry. The create-only insert means a retry or a
   duplicate join (which finds the entry) never sends again. A failure logs
-  `waitlist_confirmation_failed` and never fails the join. It's one-time mail,
+  `waitlist_confirmation_failed` and never fails the join. Not sent when the
+  email already has an account or a pending invite. It's one-time mail,
   so it carries no unsubscribe link.
 - **Messages (#389):** Admin → Notifications → Compose sends a one-off
   message to everyone, a group, or specific people, in the classroom and/or

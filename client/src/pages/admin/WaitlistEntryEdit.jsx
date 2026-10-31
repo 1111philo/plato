@@ -65,7 +65,9 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
           <p className="text-sm text-muted-foreground">
             Joined {new Date(entry.createdAt).toLocaleDateString()}. {entry.alreadyRegistered === 'account'
               ? 'This email already has an account. Copy to account adds the group and answers it doesn\u2019t have yet.'
-              : 'Invite sends the signup email, prefilled with these answers.'}
+              : entry.alreadyRegistered === 'invite'
+                ? 'This email already has a pending invite; resend it from the Invited row.'
+                : 'Invite sends the signup email, prefilled with these answers.'}
           </p>
           <NameFields
             idPrefix="wl-edit"
@@ -104,7 +106,7 @@ export default function WaitlistEntryEdit({ entry, groups, userFields, onBack, o
             <Button variant="outline" onClick={onBack}>{canEdit ? 'Cancel' : 'Back'}</Button>
             {entry.alreadyRegistered === 'account'
               ? canApply && <Button variant="outline" className="ml-auto" onClick={() => onApply(entry)} disabled={saving}>Copy to account</Button>
-              : canInvite && <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
+              : canInvite && !entry.alreadyRegistered && <Button variant="outline" className="ml-auto" onClick={() => onInvite(entry)} disabled={saving}>Invite</Button>}
             {canEdit && <Button variant="destructive" onClick={() => onRemove(entry)} disabled={saving}>Remove</Button>}
           </div>
         </CardContent>

@@ -11,7 +11,7 @@ import {
   getLearnerProfileSummary, getPreferences, getAuthUser,
   getLessonKB, saveLessonKB, getCourseProgress,
   saveScreenshot, getScreenshot,
-  saveLessonMessages, getLessonMessages, replaceLessonMessages,
+  saveLessonMessages, getLessonMessages, replaceLessonMessages, conversationTooLong,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
@@ -385,14 +385,18 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   });
   const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
 
-  // false = the server refused it (e.g. over the item size limit); tell the learner.
+  // false = the server refused it (e.g. over the item size limit); tell the
+  // learner. No background retry then: it would send the same refused record.
+  // (The cache keeps the turn, so the next save tries it again.)
   const saved = await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
-  syncInBackground(`messages:${lessonId}`);
+  if (saved !== false) syncInBackground(`messages:${lessonId}`);
 
   const userMsg = imageDataUrls.length > 0
     ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }
     : persistedUserMsg;
-  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase, saveFailed: saved === false };
+  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase,
+    // 'too_long': the conversation itself is past the size limit, so later turns won't save either.
+    saveFailed: saved === false && (conversationTooLong(lessonId) ? 'too_long' : true) };
 }
 
 /**

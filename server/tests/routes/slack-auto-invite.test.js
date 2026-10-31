@@ -4,7 +4,7 @@
  */
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { autoInvite, onUserCreated } from '../../../plugins/slack/server/auto-invite.js';
+import { autoInvite, onUserCreated, needsRetry } from '../../../plugins/slack/server/auto-invite.js';
 
 const SETTINGS = { botToken: 'xoxb-1', autoInviteEnabled: true, autoInviteChannelId: 'C1', autoInviteChannelName: 'cohort' };
 
@@ -48,6 +48,19 @@ describe('Slack auto-invite', () => {
     assert.equal((await autoInvite({ userId: 'usr_3', email: 'in@x.com' }, SETTINGS, { ...failing, invite: async () => {} })).status, 'invited');
   });
 
+  it('a Slack timeout during signup is recorded as failed, and Retry all picks it up', async () => {
+    const timedOut = deps({ lookup: async () => { throw Object.assign(new Error('A request error occurred: timeout of 4000ms exceeded'), { code: 'slack_webapi_request_error' }); } });
+    const r = await autoInvite({ userId: 'usr_4', email: 'in@x.com' }, SETTINGS, timedOut);
+    assert.equal(r.status, 'failed');
+    assert.match(r.error, /timeout/);
+    const meta = timedOut.meta.get('usr_4');
+    assert.equal(needsRetry(meta), true);
+    assert.equal(needsRetry({ autoInvite: { status: 'invited' } }), false);
+    assert.equal(needsRetry(null), false, 'no attempt recorded: not part of Retry all');
+    // The retry then goes through.
+    assert.equal((await autoInvite({ userId: 'usr_4', email: 'in@x.com' }, SETTINGS, { ...timedOut, lookup: async () => 'U1' })).status, 'invited');
+  });
+
   it('does nothing while off, without a channel, or without a token', async () => {
     for (const s of [{ ...SETTINGS, autoInviteEnabled: false }, { ...SETTINGS, autoInviteChannelId: '' }, { ...SETTINGS, botToken: null }]) {
       assert.equal(await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, s, d), null);
@@ -61,5 +74,26 @@ describe('Slack auto-invite', () => {
     await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, { settings: SETTINGS }, off);
     await onUserCreated({ userId: 'usr_9', email: 'in@x.com' }, null, { readSettings: async () => null });
     assert.ok(Date.now() - t < 100, 'returns at once when not configured');
+  });
+});
+
+describe('Slack calls made during signup', () => {
+  it('fail at once on a 429 instead of waiting out retry-after', async () => {
+    const { createServer } = await import('node:http');
+    const { WebClient } = await import('@slack/web-api');
+    const { SIGNUP_CALL } = await import('../../../plugins/slack/server/slack-client.js');
+    const server = createServer((_req, res) => {
+      res.writeHead(429, { 'retry-after': '30', 'content-type': 'application/json' });
+      res.end('{"ok":false,"error":"ratelimited"}');
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const client = new WebClient('xoxb-1', { ...SIGNUP_CALL, slackApiUrl: `http://127.0.0.1:${server.address().port}/api/` });
+    const started = Date.now();
+    try {
+      await assert.rejects(client.users.lookupByEmail({ email: 'a@x.com' }));
+      assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+    } finally {
+      server.close();
+    }
   });
 });

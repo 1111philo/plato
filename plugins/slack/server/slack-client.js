@@ -7,8 +7,10 @@ export function getSlackClient(token, options) {
   return new WebClient(token, options);
 }
 
-// Auto-invite runs inside signup: one bounded try per call, no retries.
-const SIGNUP_CALL = { timeout: 4000, retryConfig: { retries: 0 } };
+// Auto-invite runs inside signup: one bounded try per call, no retries. A
+// rate-limited call fails at once instead of waiting out Slack's retry-after
+// (often 30-60 s, past API Gateway's 29 s), which `retries: 0` alone still does.
+export const SIGNUP_CALL = { timeout: 4000, retryConfig: { retries: 0 }, rejectRateLimitedCalls: true };
 
 /**
  * Validate a bot token by calling auth.test. Returns workspace info on success.
