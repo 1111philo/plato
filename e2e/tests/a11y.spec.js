@@ -19,6 +19,15 @@ test.describe('public pages', () => {
   }
 });
 
+test('error banner (failed sign-in) has readable contrast', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel(/email or username/i).fill('nobody@example.com');
+  await page.locator('input[type=password]').fill('wrong-password');
+  await page.getByRole('button', { name: /sign in/i }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expectAccessible(page, { label: 'login error banner' });
+});
+
 test.describe('learner pages', () => {
   test.beforeEach(async ({ page }) => { await login(page, LEARNER); });
 

@@ -123,7 +123,7 @@ export default function Signup() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
+            <div className="bg-destructive/10 text-red-800 dark:text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
               {error}
             </div>
           )}

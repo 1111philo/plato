@@ -60,7 +60,7 @@ export default function AdminNotifications() {
       <h1 className="text-2xl font-bold mb-4">Notifications</h1>
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{notice?.text || ''}</div>
       {notice && (
-        <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${notice.type === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-800'}`}>
+        <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${notice.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`}>
           <span>{notice.text}</span>
           <button onClick={() => setNotice(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
