@@ -316,7 +316,7 @@ Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activa
 
 ### `GET /v1/plugins`
 
-Authenticated. Returns enabled plugins with sanitized settings (writeOnly fields stripped). Used by the client loader.
+Authenticated. Returns enabled plugins with sanitized settings (writeOnly fields stripped). Used by the client loader. Because writeOnly values never reach the client, `PUT /v1/admin/plugins/:id/settings` keeps a stored writeOnly value when the body leaves it out; send `null` to clear it (API 1.5.1).
 
 ### `GET /v1/plugins/extension-points`
 

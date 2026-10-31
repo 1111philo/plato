@@ -5,12 +5,15 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.5.0'
+PLUGIN_API_VERSION = '1.5.1'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.5.1 (fix)
+- **Changed** `PUT /v1/admin/plugins/:id/settings` keeps a stored **writeOnly** value (e.g. a bot token) when the body leaves that key out. Clients never receive writeOnly values, so a settings panel that saved its other fields used to erase them. Send `null` to clear one.
 
 ### 1.5.0 (additive)
 - **Added** `firstName`, `lastName`, and `nameSource` (`'user' | 'auto'`) to `AdminUser` (#402). `name` stays, always derived as `firstName lastName`. `'auto'` means the parts were inferred from an older single name (split at the first space) and haven't been confirmed.

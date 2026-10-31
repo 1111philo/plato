@@ -117,3 +117,31 @@ export async function sendSlackDM(token, slackUserId, text) {
   const { channel } = await client.conversations.open({ users: slackUserId });
   await client.chat.postMessage({ channel: channel.id, text });
 }
+
+/**
+ * The workspace member with this email, or null if there's none (Slack's
+ * `users_not_found`). Needs the `users:read.email` scope.
+ */
+export async function findSlackUserByEmail(token, email) {
+  try {
+    const { user } = await getSlackClient(token).users.lookupByEmail({ email });
+    return user && !user.deleted ? user.id : null;
+  } catch (err) {
+    if (err?.data?.error === 'users_not_found') return null;
+    throw err;
+  }
+}
+
+/**
+ * Add a workspace member to a channel. Someone already in it counts as done.
+ * Needs `channels:manage` (public) or `groups:write` (private), and the bot
+ * must be in the channel.
+ */
+export async function inviteToSlackChannel(token, channelId, slackUserId) {
+  try {
+    await getSlackClient(token).conversations.invite({ channel: channelId, users: slackUserId });
+  } catch (err) {
+    if (err?.data?.error === 'already_in_channel') return;
+    throw err;
+  }
+}
