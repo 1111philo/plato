@@ -24,6 +24,8 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [draggedIdx, setDraggedIdx] = useState(null);
+  const [dropTargetIdx, setDropTargetIdx] = useState(null);
 
   function resetForm() {
     setForm(EMPTY_FORM);
@@ -92,6 +94,43 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
     run(() => adminApi('PUT', '/v1/admin/user-fields/order', { ids }));
   }
 
+  function handleDragStart(e, idx) {
+    setDraggedIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', idx.toString());
+  }
+
+  function handleDragOver(e, idx) {
+    e.preventDefault();
+    if (draggedIdx !== null && draggedIdx !== idx) {
+      setDropTargetIdx(idx);
+    }
+  }
+
+  function handleDragLeave() {
+    setDropTargetIdx(null);
+  }
+
+  function handleDrop(e, targetIdx) {
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === targetIdx) {
+      setDraggedIdx(null);
+      setDropTargetIdx(null);
+      return;
+    }
+    const ids = fields.map((f) => f.id);
+    const [moved] = ids.splice(draggedIdx, 1);
+    ids.splice(targetIdx, 0, moved);
+    run(() => adminApi('PUT', '/v1/admin/user-fields/order', { ids }));
+    setDraggedIdx(null);
+    setDropTargetIdx(null);
+  }
+
+  function handleDragEnd() {
+    setDraggedIdx(null);
+    setDropTargetIdx(null);
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) resetForm(); onOpenChange(o); }}>
       <DialogContent className="sm:max-w-lg">
@@ -105,7 +144,22 @@ export default function UserFieldsDialog({ open, onOpenChange, fields, onChange 
           {fields.length > 0 ? (
             <ul className="space-y-1" aria-label="Custom user fields">
               {fields.map((f, idx) => (
-                <li key={f.id} className="flex items-center gap-2 rounded-md px-3 py-2 bg-muted/50">
+                <li
+                  key={f.id}
+                  draggable={!saving}
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 rounded-md px-3 py-2 transition-colors ${
+                    draggedIdx === idx ? 'opacity-50 bg-muted' :
+                    dropTargetIdx === idx ? 'bg-primary/10 border-2 border-primary border-dashed' :
+                    'bg-muted/50'
+                  } ${!saving ? 'cursor-move' : ''}`}
+                  role="button"
+                  aria-label={`${f.label} field. Draggable. Use arrow buttons or drag to reorder.`}
+                >
                   <span className="text-sm flex-1 min-w-0 truncate">{f.label}</span>
                   <Badge variant="outline">{fieldTypeLabel(f.type)}</Badge>
                   {f.required && <Badge variant="secondary">Required</Badge>}
