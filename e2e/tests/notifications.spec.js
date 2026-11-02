@@ -55,6 +55,45 @@ test('automations start off; the wait list email is editable and validated', asy
   await expect(page.getByLabel('Send the weekly digest email')).not.toBeChecked();
 });
 
+// Blake's review on #451: everyone means every role, and messages can go by role.
+test('a message can go to chosen roles; the count follows', async ({ page }) => {
+  await login(page, ADMIN);
+  await page.goto('/plato/notifications');
+  const count = page.getByRole('status').filter({ hasText: /^Goes to \d+ (person|people)/ });
+  await expect(count).toBeVisible();
+  const everyone = Number((await count.textContent()).match(/\d+/)[0]);
+
+  await page.getByLabel('By role').check();
+  const roles = page.getByRole('group', { name: 'Roles' });
+  await expect(roles).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled(); // no role chosen yet
+  await roles.getByLabel('Admins').check();
+  await expect(count).toHaveText(/^Goes to 1 person/);
+  await expectAccessible(page, { label: 'notifications compose by role' });
+  await roles.getByLabel('Learners').check();
+  await expect(count).not.toHaveText(/^Goes to 1 person/);
+  const some = Number((await count.textContent()).match(/\d+/)[0]);
+  expect(some).toBeLessThan(everyone); // educators and testers aren't included
+});
+
+test('invitations are always on and editable; removal from the wait list starts off', async ({ page }) => {
+  await login(page, ADMIN);
+  await page.goto('/plato/notifications');
+  await page.getByRole('tab', { name: 'Automations' }).click();
+  for (const title of ['Invitation', 'Invitation (existing account)']) {
+    const card = page.locator('[data-slot=card]', { has: page.getByText(title, { exact: true }) });
+    await expect(card.getByText('Always on')).toBeVisible();
+    await expect(card.getByRole('checkbox')).toHaveCount(0);
+    await expect(card.getByLabel('Subject')).not.toHaveValue('');
+  }
+  const removed = page.getByLabel('Send the removed from the wait list email');
+  await expect(removed).not.toBeChecked();
+  await removed.check();
+  await expect(page.getByText('Removed from the wait list is on.').first()).toBeVisible();
+  await removed.uncheck();
+  await expect(page.getByText('Removed from the wait list is off.').first()).toBeVisible();
+});
+
 test('testers can look at Notifications but not send', async ({ page }) => {
   await login(page, TESTER);
   await page.goto('/plato/notifications');

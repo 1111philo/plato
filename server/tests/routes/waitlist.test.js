@@ -498,6 +498,49 @@ describe('admin wait-list routes', () => {
     assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_wl1')).status, 200);
     assert.deepEqual(deleted, ['inv_wl1']);
   });
+
+  describe('"Removed from the wait list" email (Blake’s review, #451)', () => {
+    let mails;
+    beforeEach(() => {
+      mails = [];
+      setEmailTransport(async (raw) => { mails.push(raw); });
+      db.getInvite = async () => entry;
+      db.deleteInvite = async () => {};
+    });
+
+    it('is off by default', async () => {
+      assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_wl1')).status, 200);
+      assert.equal(mails.length, 0);
+    });
+
+    it('when on, goes once to the person removed', async () => {
+      store.automations = { waitlistRemoved: true };
+      assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_wl1')).status, 200);
+      assert.equal(mails.length, 1);
+      assert.match(mails[0], /^To: ada@example\.com$/m);
+      assert.match(mails[0], /^Subject: About the plato wait list$/m);
+      // The entry is gone now: a second removal is a 404 and sends nothing.
+      db.getInvite = async () => null;
+      assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_wl1')).status, 404);
+      assert.equal(mails.length, 1);
+    });
+
+    it('isn’t sent when the entry is invited (that removes it too)', async () => {
+      store.automations = { waitlistRemoved: true };
+      db.createInvite = async () => {};
+      assert.equal((await adminReq(makeApp(), 'POST', '/v1/admin/waitlist/inv_wl1/invite')).status, 201);
+      assert.equal(mails.length, 1, 'only the invitation');
+      assert.doesNotMatch(mails[0], /^Subject: About the plato wait list$/m);
+      const text = Buffer.from(mails[0].match(/Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/)[1].replace(/\r\n/g, ''), 'base64').toString('utf8');
+      assert.match(text, /signup\?token=/, 'the invitation, with its signup link');
+    });
+
+    it('a send failure is logged and the removal still succeeds', async () => {
+      store.automations = { waitlistRemoved: true };
+      setEmailTransport(async () => { throw new Error('SES down'); });
+      assert.equal((await adminReq(makeApp(), 'DELETE', '/v1/admin/waitlist/inv_wl1')).status, 200);
+    });
+  });
 });
 
 describe('signup from a wait-list invite', () => {

@@ -75,7 +75,7 @@ describe('templates storage', () => {
 
 describe('automations', () => {
   it('are all off by default, and refuse unknown keys or non-booleans', async () => {
-    assert.deepEqual(await n.readAutomations(db), { waitlistConfirmation: false, inactivityNudge: false, weeklyDigest: false });
+    assert.deepEqual(await n.readAutomations(db), { waitlistConfirmation: false, waitlistRemoved: false, inactivityNudge: false, weeklyDigest: false });
     assert.deepEqual((await n.writeAutomations({ waitlistConfirmation: true }, db)).automations.waitlistConfirmation, true);
     assert.ok((await n.writeAutomations({ spam: true }, db)).error);
     assert.ok((await n.writeAutomations({ weeklyDigest: 'yes' }, db)).error);
@@ -151,5 +151,54 @@ describe('sendTemplated', () => {
   });
   it('setOptOut refuses unknown kinds', async () => {
     assert.ok((await n.setOptOut('usr_ada', { all: true }, db)).error);
+  });
+});
+
+describe('invitations (always on, editable)', () => {
+  const STAGE = process.env.STAGE;
+  after(() => { if (STAGE === undefined) delete process.env.STAGE; else process.env.STAGE = STAGE; });
+
+  it('are templates with no switch', () => {
+    assert.deepEqual(n.ALWAYS_ON, ['invite', 'account-invite']);
+    for (const id of n.ALWAYS_ON) assert.ok(n.TEMPLATES[id], id);
+    for (const a of Object.values(n.AUTOMATIONS)) assert.ok(!n.ALWAYS_ON.includes(a.template));
+  });
+
+  it('send the signup link, escaped, and ignore the allowlist (an admin chose the address)', async () => {
+    process.env.STAGE = 'playground'; // empty allowlist off prod = no one, for automations
+    await db.putSyncData('_system', 'settings', { classroomName: 'AI <Leaders>' }, 0);
+    const r = await n.sendInviteEmail('new@x.com', 'inv_abc', '<img src=x onerror=1>');
+    assert.equal(r.sent, true);
+    assert.match(r.signupUrl, /\/signup\?token=inv_abc$/);
+    const [text, html] = decodeParts(sent[0]);
+    assert.match(sent[0], /^To: new@x\.com$/m);
+    assert.match(text, /^Hi there,/);
+    assert.match(text, /<img src=x onerror=1> has invited you to join AI <Leaders>/);
+    assert.ok(html.includes('&lt;img src=x onerror=1&gt; has invited you') && !html.includes('<img src=x'));
+    assert.ok(html.includes('signup?token=inv_abc') && html.includes('>Create your account</a>'));
+  });
+
+  it('use the admin’s copy, a known first name, and a stand-in when there’s no inviter', async () => {
+    await db.putSyncData('_system', 'settings', { classroomName: 'C' }, 0);
+    await n.putTemplate('invite', { subject: 'Come in, {{firstName}}', body: '{{inviterName}} says hi.\n\n{{link}}' }, { userId: 'usr_admin', username: 'admin' }, db);
+    await n.sendInviteEmail('ada@x.com', 'inv_1', null, { firstName: 'Ada' });
+    assert.match(sent[0], /^Subject: Come in, Ada$/m);
+    assert.match(decodeParts(sent[0])[0], /^The C team says hi\./);
+  });
+
+  it('the existing-account invite links to the classroom', async () => {
+    const r = await n.sendAccountInviteEmail('ada@x.com', 'Ann', { firstName: 'Ada' });
+    assert.deepEqual(r, { sent: true });
+    const [text, html] = decodeParts(sent[0]);
+    assert.match(text, /Ann has invited you/);
+    assert.ok(html.includes('/lessons"') && html.includes('>Sign in to accept</a>'));
+  });
+
+  it('SKIP_EMAIL sends nothing and still returns the signup link', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    const r = await n.sendInviteEmail('new@x.com', 'inv_s', 'Ann');
+    assert.equal(r.skipped, true);
+    assert.match(r.signupUrl, /signup\?token=inv_s$/);
+    assert.equal(sent.length, 0);
   });
 });

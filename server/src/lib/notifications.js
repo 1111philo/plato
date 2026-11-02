@@ -1,7 +1,10 @@
 /**
  * Notifications (#388, #389, #400): the email side. One place for
  * - **automations**: `_system:automations` = `{ waitlistConfirmation,
- *   inactivityNudge, weeklyDigest }`, every one OFF until an admin turns it on;
+ *   waitlistRemoved, inactivityNudge, weeklyDigest }`, every one OFF until an
+ *   admin turns it on. The two invitation emails (`invite`, `account-invite`)
+ *   are always sent and have no switch (an invite nobody hears about is no
+ *   invite), but their copy is editable like the rest;
  * - **templates**: defaults below, admin overrides in
  *   `_system:emailTemplate:<id>` (`{ subject, body }`). A body is plain text:
  *   paragraphs separated by blank lines, `{{variables}}` filled in (and
@@ -36,9 +39,13 @@ export function setEmailTransport(fn) {
 
 export const AUTOMATIONS = Object.freeze({
   waitlistConfirmation: { label: 'Wait list confirmation', template: 'waitlist-confirmation' },
+  waitlistRemoved: { label: 'Removed from the wait list', template: 'waitlist-removed' },
   inactivityNudge: { label: 'Inactivity reminder', template: 'inactivity-nudge' },
   weeklyDigest: { label: 'Weekly digest', template: 'weekly-digest' },
 });
+
+// Sent every time, no switch. Listed in Automations so admins can edit them.
+export const ALWAYS_ON = Object.freeze(['invite', 'account-invite']);
 
 export async function readAutomations(db = defaultDb) {
   const item = await db.getSyncData('_system', 'automations');
@@ -77,6 +84,29 @@ export const TEMPLATES = Object.freeze({
     variables: ['firstName', 'classroomName'],
     subject: "You're on the wait list for {{classroomName}}",
     body: "Hi {{firstName}},\n\nThanks for joining the wait list for {{classroomName}}. We'll email you again when there's a place for you, with a link to create your account.\n\nYou don't need to do anything until then.",
+  },
+  'waitlist-removed': {
+    label: 'Removed from the wait list',
+    description: 'Sent once, when an admin removes someone from the wait list. Not sent when they’re invited.',
+    variables: ['firstName', 'classroomName'],
+    subject: 'About the {{classroomName}} wait list',
+    body: "Hi {{firstName}},\n\nThanks for your interest in {{classroomName}}. You've been taken off the wait list, so we won't be in touch about a place.\n\nIf you'd still like to join, you're welcome to sign up for the wait list again.",
+  },
+  invite: {
+    label: 'Invitation',
+    description: 'Always sent when someone is invited: from Users → Invite, a bulk invite, a resend, or the wait list. The link creates their account and expires in 7 days.',
+    variables: ['firstName', 'classroomName', 'inviterName', 'link'],
+    linkLabel: 'Create your account',
+    subject: 'Welcome to {{classroomName}} — Your AI-Powered Learning Journey',
+    body: "Hi {{firstName}},\n\n{{inviterName}} has invited you to join {{classroomName}}, an AI-powered microlearning platform where you'll work through focused lessons in conversation with an AI coach.\n\nWhat to expect:\n- Chat with an AI coach who guides you through each lesson\n- Upload screenshots and create artifacts as you learn\n- Work through courses organized into focused lessons, each designed for ~20 minutes\n\nReady to get started? Create your account and begin your first lesson.\n\n{{link}}\n\nThis invite expires in 7 days. If you didn't expect this, you can ignore it.",
+  },
+  'account-invite': {
+    label: 'Invitation (existing account)',
+    description: 'Always sent when someone who already has an account is invited from the wait list. The link opens the classroom, where they accept; it expires in 7 days.',
+    variables: ['firstName', 'classroomName', 'inviterName', 'link'],
+    linkLabel: 'Sign in to accept',
+    subject: "You're invited to {{classroomName}}",
+    body: "Hi {{firstName}},\n\n{{inviterName}} has invited you to join {{classroomName}} with the details you gave when you joined the wait list.\n\nYou already have an account. Sign in to see the invite and accept it.\n\n{{link}}\n\nThis invite expires in 7 days. If you didn't expect this, you can ignore it.",
   },
   'inactivity-nudge': {
     label: 'Inactivity reminder',
@@ -290,10 +320,11 @@ export function buildMime({ fromName, fromAddress, to, subject, text, html, head
 
 /**
  * Send one notification email. Returns `{ sent | skipped | blocked: true }`.
- * `unsubscribe` (a URL) adds the List-Unsubscribe headers.
+ * `unsubscribe` (a URL) adds the List-Unsubscribe headers. `allowlist: false`
+ * skips EMAIL_ALLOWLIST, for invitations only: an admin chose that address.
  */
-export async function sendNotificationEmail({ to, subject, text, html, classroom, unsubscribe = null, send = transport }) {
-  if (!emailAllowed(to)) {
+export async function sendNotificationEmail({ to, subject, text, html, classroom, unsubscribe = null, send = transport, allowlist = true }) {
+  if (allowlist && !emailAllowed(to)) {
     logger.warn('email_not_allowlisted', { to: String(to).replace(/^[^@]*/, '***') });
     return { blocked: true };
   }
@@ -313,7 +344,7 @@ export async function sendNotificationEmail({ to, subject, text, html, classroom
  * UNSUBSCRIBE_KINDS key) adds an unsubscribe link and honors the user's
  * opt-out; leave it out for one-time transactional mail.
  */
-export async function sendTemplated(id, { to, userId = null, kind = null, vars = {} }, { db = defaultDb, send } = {}) {
+export async function sendTemplated(id, { to, userId = null, kind = null, vars = {} }, { db = defaultDb, send, allowlist = true } = {}) {
   if (kind && userId) {
     const state = await readNotifyState(userId, db);
     if (state.optOut?.[kind]) return { optedOut: true };
@@ -330,5 +361,33 @@ export async function sendTemplated(id, { to, userId = null, kind = null, vars =
       footerHtml: `<p style="color: #777; font-size: 12px; line-height: 1.5; margin: 16px 0 0;">Don’t want the ${escapeHtml(label)}? <a href="${escapeHtml(unsubscribe)}" style="color: #777;">Unsubscribe</a>.</p>`,
     } : {}),
   });
-  return sendNotificationEmail({ to, ...rendered, classroom, unsubscribe, send });
+  return sendNotificationEmail({ to, ...rendered, classroom, unsubscribe, send, allowlist });
+}
+
+// ── Invitations ──────────────────────────────────────────────────────────
+//
+// Always sent (ALWAYS_ON), from the editable `invite` / `account-invite`
+// templates. Like the hand-built emails they replaced, they ignore
+// EMAIL_ALLOWLIST: an admin typed the address, so an invite on playground
+// still reaches the person invited. SKIP_EMAIL logs the link instead.
+
+async function sendInvitation(id, to, link, inviterName, firstName, opts) {
+  if (process.env.SKIP_EMAIL === 'true') console.log(`[SKIP_EMAIL] ${id} for ${to}: ${link}`);
+  const classroom = await getClassroom();
+  return sendTemplated(id, {
+    to,
+    vars: { firstName: firstName || 'there', inviterName: inviterName || `The ${classroom.name} team`, link },
+  }, { ...opts, allowlist: false });
+}
+
+/** The signup invite. Returns `{ sent | skipped, signupUrl }`. */
+export async function sendInviteEmail(to, inviteToken, inviterName, { firstName = null, ...opts } = {}) {
+  const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
+  const r = await sendInvitation('invite', to, signupUrl, inviterName, firstName, opts);
+  return { ...r, signupUrl };
+}
+
+/** The invite for someone who already has an account (#486): links to the classroom. */
+export async function sendAccountInviteEmail(to, inviterName, { firstName = null, ...opts } = {}) {
+  return sendInvitation('account-invite', to, `${APP_URL}/lessons`, inviterName, firstName, opts);
 }

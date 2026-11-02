@@ -98,6 +98,7 @@ lost something?* Yes → A. No → B.
 | `schedule_check_failed` | error | B | the traffic-driven schedule check (`lib/schedule.js`) threw |
 | `learner_email_failed` | error | B | SES refused a reminder or digest; its claim was released for the next run |
 | `waitlist_confirmation_failed` | error | B | the wait-list confirmation didn't send (the join still succeeded) |
+| `waitlist_removed_email_failed` | error | B | the "removed from the wait list" email didn't send (the entry was still removed) |
 | `ai_stream_failed` | error | B | an AI reply stream failed partway (Bedrock error or the 115 s timeout); the learner sees an error and the turn isn't saved |
 | `ai_invoke_failed` | error | B | a non-streamed AI call failed (background agents: learner profile, unit notes, lesson creation, extractors); the caller gets a 500 |
 | `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |

@@ -5,7 +5,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { escapeHtml, safeColor, fromHeader, inviteEmailHtml, resetEmailHtml } from '../../src/lib/email.js';
+import { escapeHtml, safeColor, fromHeader, resetEmailHtml } from '../../src/lib/email.js';
 
 describe('email escaping', () => {
   it('escapes HTML metacharacters', () => {
@@ -26,18 +26,7 @@ describe('email escaping', () => {
     assert.equal(fromHeader('', 'no-reply@x.org'), '"plato" <no-reply@x.org>');
   });
 
-  it('invite email escapes the classroom and inviter names', () => {
-    const html = inviteEmailHtml({ name: '<script>x</script>', primary: 'red;}' }, 'https://app/signup?token=inv_1', '<img src=x onerror=1>');
-    assert.ok(!html.includes('<script>'));
-    assert.ok(!html.includes('<img src=x'));
-    assert.ok(html.includes('&lt;img src=x onerror=1&gt; has invited you'));
-    assert.ok(html.includes('background: #470d99'), 'unsafe color replaced');
-    assert.ok(html.includes('href="https://app/signup?token=inv_1"'));
-  });
-
-  it('invite email without an inviter name', () => {
-    assert.match(inviteEmailHtml({ name: 'C', primary: '#123456' }, 'u', null), /You've been invited/);
-  });
+  // Invitation emails are editable templates now: tests/lib/notifications.test.js.
 
   it('reset email escapes the classroom name', () => {
     const html = resetEmailHtml({ name: 'A & B', primary: '#123' }, 'https://app/reset?reset=rst_1');

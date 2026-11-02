@@ -1437,13 +1437,30 @@ the CSV has First Name and Last Name columns.
 
 ## Notifications (#388, #389, #400)
 
-Everything plato emails on its own (automations) or on an admin's behalf
-(messages) goes through `server/src/lib/notifications.js`. Invite and
-password-reset emails stay in `email.js`.
+Everything plato emails on its own (automations, invitations) or on an
+admin's behalf (messages) goes through `server/src/lib/notifications.js`.
+Only the password-reset email stays in `email.js`.
 
 - **Automations** live in `_system:automations` = `{ waitlistConfirmation,
-  inactivityNudge, weeklyDigest }`. Every one is **off** until an admin turns it
-  on, including on an upgraded install.
+  waitlistRemoved, inactivityNudge, weeklyDigest }`. Every one is **off** until
+  an admin turns it on, including on an upgraded install.
+- **Invitations are always on** (`ALWAYS_ON`): `invite` (the signup link, from
+  Users → Invite, a bulk invite, a resend, or the wait list) and
+  `account-invite` (#486, for someone who already has an account; links to the
+  classroom). Admin → Notifications → Automations lists them as "Always on",
+  with no switch, and their copy is editable like any template (variables
+  `firstName`, `classroomName`, `inviterName`, `link`; `firstName` falls back
+  to "there" and `inviterName` to "The <classroom> team"). They're sent with
+  `sendTemplated(..., { allowlist: false })`: like the hand-built emails they
+  replaced, they **ignore `EMAIL_ALLOWLIST`**, because an admin typed the
+  address. `SKIP_EMAIL` logs the link instead, and `sendInviteEmail` still
+  returns `{ sent | skipped, signupUrl }`.
+- **Removed from the wait list** (`waitlistRemoved`, template
+  `waitlist-removed`): when on, `DELETE /v1/admin/waitlist/:token` emails the
+  person once (the entry is gone afterwards, so a second DELETE is a 404). Not
+  sent when an entry is consumed by an invite. A failure logs
+  `waitlist_removed_email_failed` and never fails the removal. One-time mail,
+  no unsubscribe link; the allowlist applies.
 - **Templates** come with a default copy in code (`TEMPLATES`); an admin's
   version is stored in `_system:emailTemplate:<id>` (`{ subject, body }`) and
   can be reset back to the default.
@@ -1475,11 +1492,21 @@ password-reset emails stay in `email.js`.
   email already has an account or a pending invite. It's one-time mail,
   so it carries no unsubscribe link.
 - **Messages (#389):** Admin → Notifications → Compose sends a one-off
-  message to everyone, a group, or specific people, in the classroom and/or
-  by email (`server/src/lib/messages.js`).
+  message to everyone, chosen roles, a group, or specific people, in the
+  classroom and/or by email (`server/src/lib/messages.js`).
   - The record is `_system:message:<id>`.
-  - "Everyone" and a group mean **learners**, and only learners who had joined
-    when it was sent. Specific people can be anyone.
+  - "Everyone" (`{ type: 'all', allRoles: true }`) is every user of any role;
+    "By role" (`{ type: 'role', roles }`) is learners, educators, admins,
+    and/or testers; a group (`allRoles: true`) is its members of any role.
+    These broadcasts reach only people who had joined when it was sent.
+    Specific people can be anyone.
+  - **Older messages keep their meaning.** Before Blake's review on #451,
+    "everyone" and groups meant learners only, and those records have no
+    `allRoles`. Because the bell is worked out at read time, treating them as
+    every role would suddenly show old learner announcements to staff, so a
+    message without `allRoles` still reaches learners only (History labels it
+    "All learners" / "Group: X (learners)"). No migration: stored records
+    aren't changed.
   - In-app delivery is worked out when the learner reads (`GET /v1/me/messages`),
     so nothing is written per recipient. Read state is `notify:state.read`
     (`POST /v1/me/messages/read`). `important` messages also open as a pop-up.

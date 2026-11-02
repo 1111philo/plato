@@ -59,72 +59,6 @@ export function emailWrapper(classroom, body, footer = '') {
   `;
 }
 
-export function inviteEmailHtml(classroom, signupUrl, invitedByName) {
-  const name = escapeHtml(classroom.name);
-  const primary = safeColor(classroom.primary);
-  return emailWrapper(classroom, `
-    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-      ${invitedByName ? `${escapeHtml(invitedByName)} has invited you` : 'You\'ve been invited'} to join <strong>${name}</strong>, an AI-powered microlearning platform where you'll work through focused lessons in conversation with an AI coach.
-    </p>
-    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-      <strong>What to expect:</strong>
-    </p>
-    <ul style="color: #1a1a1a; line-height: 1.6; margin: 0 0 16px; padding-left: 24px;">
-      <li>Chat with an AI coach who guides you through each lesson</li>
-      <li>Upload screenshots and create artifacts as you learn</li>
-      <li>Work through courses organized into focused lessons, each designed for ~20 minutes</li>
-    </ul>
-    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 20px;">
-      Ready to get started? Create your account and begin your first lesson.
-    </p>
-    <a href="${escapeHtml(signupUrl)}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-      Create your account
-    </a>
-    <p style="color: #555; font-size: 13px; line-height: 1.5; margin: 20px 0 0;">
-      This invite expires in 7 days. If you didn't expect this, you can ignore it.
-    </p>
-  `);
-}
-
-// For someone who already has an account (#363): the invite waits for them
-// in the classroom, so the link is the classroom, not signup.
-export function accountInviteEmailHtml(classroom, lessonsUrl, invitedByName) {
-  const name = escapeHtml(classroom.name);
-  const primary = safeColor(classroom.primary);
-  return emailWrapper(classroom, `
-    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 16px;">
-      ${invitedByName ? `${escapeHtml(invitedByName)} has invited you` : 'You\'ve been invited'} to join <strong>${name}</strong> with the details you gave when you joined the wait list.
-    </p>
-    <p style="color: #1a1a1a; line-height: 1.5; margin: 0 0 20px;">
-      You already have an account. Sign in to see the invite and accept it.
-    </p>
-    <a href="${escapeHtml(lessonsUrl)}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-      Sign in to accept
-    </a>
-    <p style="color: #555; font-size: 13px; line-height: 1.5; margin: 20px 0 0;">
-      This invite expires in 7 days. If you didn't expect this, you can ignore it.
-    </p>
-  `);
-}
-
-export async function sendAccountInviteEmail(toEmail, invitedByName) {
-  const lessonsUrl = `${APP_URL}/lessons`;
-  if (process.env.SKIP_EMAIL === 'true') {
-    console.log(`[SKIP_EMAIL] Account invite for ${toEmail}: ${lessonsUrl}`);
-    return { skipped: true };
-  }
-  const classroom = await getClassroom();
-  await ses.send(new SendEmailCommand({
-    Source: fromHeader(classroom.name),
-    Destination: { ToAddresses: [toEmail] },
-    Message: {
-      Subject: { Data: `You're invited to ${classroom.name}` },
-      Body: { Html: { Data: accountInviteEmailHtml(classroom, lessonsUrl, invitedByName) } },
-    },
-  }));
-  return { sent: true };
-}
-
 export function resetEmailHtml(classroom, resetUrl) {
   const primary = safeColor(classroom.primary);
   return emailWrapper(classroom, `
@@ -138,30 +72,6 @@ export function resetEmailHtml(classroom, resetUrl) {
       This link expires in 1 hour. If you didn't request this, you can ignore it.
     </p>
   `);
-}
-
-export async function sendInviteEmail(toEmail, inviteToken, invitedByName) {
-  const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
-
-  if (process.env.SKIP_EMAIL === 'true') {
-    console.log(`[SKIP_EMAIL] Invite for ${toEmail}: ${signupUrl}`);
-    return { skipped: true, signupUrl };
-  }
-
-  const classroom = await getClassroom();
-  const subject = `Welcome to ${classroom.name} — Your AI-Powered Learning Journey`;
-  const html = inviteEmailHtml(classroom, signupUrl, invitedByName);
-
-  await ses.send(new SendEmailCommand({
-    Source: fromHeader(classroom.name),
-    Destination: { ToAddresses: [toEmail] },
-    Message: {
-      Subject: { Data: subject },
-      Body: { Html: { Data: html } },
-    },
-  }));
-
-  return { sent: true, signupUrl };
 }
 
 export async function sendResetEmail(toEmail, resetToken) {

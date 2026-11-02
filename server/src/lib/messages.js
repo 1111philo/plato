@@ -1,23 +1,31 @@
 /**
- * Admin messages (#389): one-off announcements to everyone, a group, or
- * specific people, shown in the classroom (the bell, and optionally a pop-up
- * at sign-in) and/or emailed.
+ * Admin messages (#389): one-off announcements to everyone, people with
+ * certain roles, a group, or specific people, shown in the classroom (the
+ * bell, and optionally a pop-up at sign-in) and/or emailed.
  *
  * A message is `_system:message:<id>` =
- *   { subject, body, audience: { type: 'all' | 'group' | 'users', group?, userIds? },
+ *   { subject, body,
+ *     audience: { type: 'all' | 'role' | 'group' | 'users', roles?, group?, userIds?, allRoles? },
  *     inApp, email, important, status: 'sending' | 'sent', counts?, createdAt, createdBy, createdByName }
  *
- * "Everyone" and a group mean **learners** (participants); specific people
- * can be anyone. In-app delivery is computed at read time from the audience
- * (and, for everyone/group messages, only learners who joined before it was
- * sent), so nothing is written per recipient. Read state lives in the
- * learner's server-only `notify:state` (`read: { [messageId]: iso }`).
- * Email goes out in the `send-message` background job (lib/jobs.js),
- * honoring the `messages` opt-out.
+ * Who it reaches:
+ * - `all` — everyone, any role. `group` — the group's members, any role.
+ *   Both carry `allRoles: true`. Messages sent before that flag existed
+ *   (stored without it) meant **learners only**, and keep meaning that: the
+ *   bell is worked out at read time, so changing them would suddenly show old
+ *   learner announcements to staff.
+ * - `role` — people whose role is in `roles` (learner, educator, admin, tester).
+ * - `users` — the people chosen, any role.
+ * Broadcasts (all, role, group) reach only people who joined before the
+ * message was sent. In-app delivery is computed at read time from the
+ * audience, so nothing is written per recipient. Read state lives in the
+ * user's server-only `notify:state` (`read: { [messageId]: iso }`). Email
+ * goes out in the `send-message` background job (lib/jobs.js), honoring the
+ * `messages` opt-out.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import defaultDb from './db.js';
-import { normalizeRole } from './permissions.js';
+import { normalizeRole, ROLES } from './permissions.js';
 import { nameFields } from './names.js';
 import { APP_URL } from '../config.js';
 import { getClassroom, escapeHtml } from './email.js';
@@ -44,10 +52,14 @@ export function validateMessage(body, { groups = [] } = {}) {
   if (!inApp && !email) return { error: 'Choose in-app, email, or both' };
   const a = body.audience || {};
   let audience;
-  if (a.type === 'all') audience = { type: 'all' };
-  else if (a.type === 'group') {
+  if (a.type === 'all') audience = { type: 'all', allRoles: true };
+  else if (a.type === 'role') {
+    const roles = ROLES.filter((r) => Array.isArray(a.roles) && a.roles.includes(r));
+    if (!roles.length) return { error: 'Choose at least one role' };
+    audience = { type: 'role', roles };
+  } else if (a.type === 'group') {
     if (!groups.includes(a.group)) return { error: 'Choose one of the classroom’s groups' };
-    audience = { type: 'group', group: a.group };
+    audience = { type: 'group', group: a.group, allRoles: true };
   } else if (a.type === 'users') {
     const ids = [...new Set((Array.isArray(a.userIds) ? a.userIds : []).filter((x) => typeof x === 'string'))];
     if (!ids.length) return { error: 'Choose at least one person' };
@@ -63,9 +75,12 @@ export function validateMessage(body, { groups = [] } = {}) {
 export function isRecipient(message, user) {
   const a = message.audience || {};
   if (a.type === 'users') return a.userIds.includes(user.userId);
-  if (normalizeRole(user.role) !== 'learner') return false;
-  // Learners who joined later don't get older broadcasts.
+  // People who joined later don't get older broadcasts.
   if (user.createdAt && message.createdAt && user.createdAt > message.createdAt) return false;
+  const role = normalizeRole(user.role);
+  if (a.type === 'role') return Array.isArray(a.roles) && a.roles.includes(role);
+  // Without allRoles (sent before it existed), everyone and groups meant learners.
+  if (!a.allRoles && role !== 'learner') return false;
   return a.type === 'all' || (a.type === 'group' && user.userGroup === a.group);
 }
 

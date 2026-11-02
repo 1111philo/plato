@@ -19,8 +19,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
  */
 
 // In the order the Automations tab lists them.
-const AVAILABLE = ['waitlistConfirmation', 'inactivityNudge', 'weeklyDigest'];
-const AUTOMATION_TEMPLATE = { waitlistConfirmation: 'waitlist-confirmation', inactivityNudge: 'inactivity-nudge', weeklyDigest: 'weekly-digest' };
+const AVAILABLE = ['waitlistConfirmation', 'waitlistRemoved', 'inactivityNudge', 'weeklyDigest'];
+const AUTOMATION_TEMPLATE = {
+  waitlistConfirmation: 'waitlist-confirmation', waitlistRemoved: 'waitlist-removed',
+  inactivityNudge: 'inactivity-nudge', weeklyDigest: 'weekly-digest',
+};
+// Invitation emails: always sent, no switch, editable (server: ALWAYS_ON).
+const ALWAYS_ON = ['invite', 'account-invite'];
+// A message's "By role" choices, in the order shown.
+const ROLE_OPTIONS = [['learner', 'Learners'], ['educator', 'Educators'], ['admin', 'Admins'], ['tester', 'Testers']];
 const MESSAGE_VARIABLES = ['firstName', 'classroomName'];
 
 const vars = (list) => list.map((v) => `{{${v}}}`).join(', ');
@@ -90,6 +97,7 @@ function Compose({ canWrite, onNotice, onSent }) {
   const [people, setPeople] = useState([]);
   const [type, setType] = useState('all');
   const [group, setGroup] = useState('');
+  const [roles, setRoles] = useState([]);
   const [selected, setSelected] = useState([]);
   const [query, setQuery] = useState('');
   const [inApp, setInApp] = useState(true);
@@ -111,9 +119,11 @@ function Compose({ canWrite, onNotice, onSent }) {
   }, []);
 
   const audience = useMemo(() => (
-    type === 'group' ? { type, group } : type === 'users' ? { type, userIds: selected } : { type: 'all' }
-  ), [type, group, selected]);
-  const audienceReady = type === 'all' || (type === 'group' && group) || (type === 'users' && selected.length > 0);
+    type === 'group' ? { type, group } : type === 'users' ? { type, userIds: selected }
+      : type === 'role' ? { type, roles } : { type: 'all' }
+  ), [type, group, selected, roles]);
+  const audienceReady = type === 'all' || (type === 'role' && roles.length > 0) || (type === 'group' && group) || (type === 'users' && selected.length > 0);
+  const toggleRole = (r) => setRoles((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
 
   useEffect(() => {
     if (!audienceReady) return undefined;
@@ -160,7 +170,18 @@ function Compose({ canWrite, onNotice, onSent }) {
       <CardContent className="space-y-5">
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium mb-1">To</legend>
-          <label className={radio}><input type="radio" name="audience" className="accent-primary" checked={type === 'all'} onChange={() => setType('all')} /> Everyone (all learners)</label>
+          <label className={radio}><input type="radio" name="audience" className="accent-primary" checked={type === 'all'} onChange={() => setType('all')} /> Everyone</label>
+          <label className={radio}><input type="radio" name="audience" className="accent-primary" checked={type === 'role'} onChange={() => setType('role')} /> By role</label>
+          {type === 'role' && (
+            <fieldset className="pl-6 space-y-1">
+              <legend className="sr-only">Roles</legend>
+              {ROLE_OPTIONS.map(([r, label]) => (
+                <label key={r} className={radio}>
+                  <input type="checkbox" className="h-4 w-4" checked={roles.includes(r)} onChange={() => toggleRole(r)} /> {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <label className={radio}><input type="radio" name="audience" className="accent-primary" checked={type === 'group'} onChange={() => setType('group')} disabled={!groups.length} /> A group</label>
           {type === 'group' && (
             <div className="pl-6">
@@ -258,7 +279,18 @@ function Automations({ data, canWrite, onNotice, onChange }) {
   }
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Emails plato sends on its own. Each one is off until you turn it on.</p>
+      <p className="text-sm text-muted-foreground">Emails plato sends on its own. Invitations always go out; each of the others is off until you turn it on.</p>
+      {(data.alwaysOn || ALWAYS_ON).map((id) => templates[id]).filter(Boolean).map((t) => (
+        <Card key={t.id}>
+          <CardHeader><CardTitle>{t.label}</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">{t.description}</p>
+            <p className="text-sm font-medium">Always on</p>
+            <TemplateEditor key={`${t.id}-${t.updatedAt || 'default'}`} template={t} canWrite={canWrite} onNotice={onNotice}
+              onSaved={(next) => onChange({ ...data, templates: data.templates.map((x) => (x.id === next.id ? next : x)) })} />
+          </CardContent>
+        </Card>
+      ))}
       {AVAILABLE.map((key) => {
         const t = templates[AUTOMATION_TEMPLATE[key]];
         return (
@@ -328,7 +360,15 @@ function TemplateEditor({ template, canWrite, onNotice, onSaved }) {
   );
 }
 
-const AUDIENCE_LABEL = { all: 'Everyone', group: 'Group', users: 'People' };
+const ROLE_LABEL = Object.fromEntries(ROLE_OPTIONS);
+// Older "everyone" and group messages (no allRoles) went to learners only.
+function audienceLabel(a = {}) {
+  if (a.type === 'all') return a.allRoles ? 'Everyone' : 'All learners';
+  if (a.type === 'role') return `Roles: ${(a.roles || []).map((r) => ROLE_LABEL[r] || r).join(', ')}`;
+  if (a.type === 'group') return `Group: ${a.group}${a.allRoles ? '' : ' (learners)'}`;
+  if (a.type === 'users') return `People (${(a.userIds || []).length})`;
+  return '';
+}
 
 function History({ messages }) {
   if (!messages.length) return <p className="text-sm text-muted-foreground">Nothing sent yet.</p>;
@@ -354,7 +394,7 @@ function History({ messages }) {
               <TableRow key={m.id}>
                 <TableCell className="whitespace-nowrap">{new Date(m.createdAt).toLocaleString()}<span className="block text-xs text-muted-foreground">{m.createdByName}</span></TableCell>
                 <TableCell>{m.subject}{m.important && <span className="block text-xs text-muted-foreground">Pop-up</span>}</TableCell>
-                <TableCell>{AUDIENCE_LABEL[m.audience?.type]}{m.audience?.type === 'group' ? `: ${m.audience.group}` : m.audience?.type === 'users' ? ` (${m.audience.userIds.length})` : ''}</TableCell>
+                <TableCell>{audienceLabel(m.audience)}</TableCell>
                 <TableCell>{[m.inApp && 'Classroom', m.email && 'Email'].filter(Boolean).join(', ')}</TableCell>
                 <TableCell>{peopleCount(c.recipients ?? 0)}{emailLine && <span className="block text-xs text-muted-foreground">{emailLine}</span>}</TableCell>
               </TableRow>

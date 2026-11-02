@@ -122,6 +122,11 @@ a new entry gets one confirmation email, whether it came from your form or
 plato's. A repeat request for an email already on the wait list sends
 nothing, so retries are safe. If your own system already confirms sign-ups, leave it off.
 
+The other emails a person on the wait list can get are the **invitation**
+(always sent when an admin invites them; its copy is editable in Admin →
+Notifications → Automations) and, if an admin turns it on, one **"removed
+from the wait list"** email when an admin removes their entry.
+
 ### Limits
 
 Requests **without** the key are limited to 5 per client IP address per 10
