@@ -1,6 +1,6 @@
 // Getting Started ships with plato (#443) as a course of three lessons. On a
-// new classroom it's public and shown first; each course heading links to
-// "How assessment works".
+// new classroom it's public and shown first. "How assessment works" is linked
+// from the lesson overview.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
 import { ADMIN, LEARNER } from '../fixtures.js';
@@ -22,7 +22,7 @@ test('learners find the Getting Started course first, in order, and the coach op
 
   await lessons.nth(0).click();
   await expect(page).toHaveURL(/\/lessons\/getting-started$/);
-  await expect(page.getByRole('button', { name: /^Lesson overview: \d of 3 objectives met$/ }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: /^Progress \(\d of 3 Objectives\): lesson overview$/ }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
 });
 
@@ -47,11 +47,14 @@ test('admins are asked to publish a private Getting Started course, and can publ
   for (const id of LESSON_IDS) expect(rows.find((l) => l.lessonId === id).status).toBe('public');
 });
 
-test('"How assessment works" is part of each course’s overview, not the footer', async ({ page }) => {
+test('"How assessment works" is in the lesson overview, next to Close', async ({ page }) => {
   await login(page, LEARNER);
-  await page.goto('/lessons');
-  await expect(page.getByRole('contentinfo').getByRole('link', { name: 'How assessment works' })).toHaveCount(0);
-  await page.getByRole('link', { name: `How assessment works in ${COURSE}` }).click();
+  await page.goto('/lessons/getting-started');
+  await page.getByRole('button', { name: /^Progress \(\d of 3 Objectives\): lesson overview$/ }).first().click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('link', { name: 'How assessment works' })).toBeVisible();
+  await expectAccessible(page, { include: '[role=dialog]', label: 'lesson overview with assessment link' });
+  await dialog.getByRole('link', { name: 'How assessment works' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'How assessment works' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'When a lesson is complete' })).toBeVisible();
   await expectAccessible(page, { label: 'how assessment works' });

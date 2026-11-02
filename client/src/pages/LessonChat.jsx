@@ -20,7 +20,7 @@ import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import AgentActivity from '../components/chat/AgentActivity.jsx';
 import LessonOverview from '../components/chat/LessonOverview.jsx';
-import { objectivesMetLabel } from '../lib/lessonWork.js';
+import { progressLabel } from '../lib/lessonWork.js';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
@@ -297,8 +297,8 @@ export default function LessonChat() {
 
   if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
-  // The header button opening the lesson overview: "N of M objectives met".
-  const metLabel = objectivesMetLabel(lessonKB, lesson.learningObjectives);
+  // The header button opening the lesson overview: "Progress (N of M Objectives)".
+  const metLabel = progressLabel(lessonKB, lesson.learningObjectives);
   const busy = !!loading;
   const composePlaceholder = phase === LESSON_PHASES.COMPLETED
     ? 'Share feedback about this lesson...'
@@ -380,7 +380,7 @@ export default function LessonChat() {
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowOverview(true)}
-                  aria-label={`Lesson overview: ${metLabel}`}
+                  aria-label={`${metLabel}: lesson overview`}
                   aria-expanded={showOverview}
                   aria-controls="lesson-overview-dialog"
                 >
@@ -420,7 +420,7 @@ export default function LessonChat() {
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                 onClick={() => setShowOverview(true)}
-                aria-label={`Lesson overview: ${metLabel}`}
+                aria-label={`${metLabel}: lesson overview`}
                 aria-expanded={showOverview}
                 aria-controls="lesson-overview-dialog"
               >

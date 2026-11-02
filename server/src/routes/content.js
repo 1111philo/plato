@@ -94,7 +94,7 @@ function placementOf(h, lessonId, unitId) {
   return {
     course: { id: unit.id, name: unit.name },
     unit: { id: unit.id, name: unit.name, position: where?.unitPosition ?? null, lessonPosition: where?.lessonPosition ?? null },
-    program: program ? { id: program.id, name: program.name, description: program.description || '', position: programIndex } : null,
+    program: program ? { id: program.id, name: program.name, position: programIndex } : null,
   };
 }
 

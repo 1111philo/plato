@@ -57,7 +57,7 @@ test.describe('learner pages', () => {
     await page.setViewportSize({ width: 1280, height: 600 });
     await page.goto(`/lessons/${LESSONS[2].id}`);
     await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /^Lesson overview: \d+ of \d+ objectives met$/ }).first().click();
+    await page.getByRole('button', { name: /^Progress \(\d+ of \d+ Objectives\): lesson overview$/ }).first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     const box = await dialog.boundingBox();

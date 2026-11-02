@@ -102,8 +102,8 @@ test('the lesson overview shows the objectives met so far, where you are, and sh
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
 
-  const open = page.getByRole('button', { name: 'Lesson overview: 1 of 4 objectives met' }).first();
-  await expect(open).toHaveText('1 of 4 objectives met');
+  const open = page.getByRole('button', { name: 'Progress (1 of 4 Objectives): lesson overview' }).first();
+  await expect(open).toHaveText('Progress (1 of 4 Objectives)');
   await expect(page.getByRole('button', { name: 'Your work' })).toHaveCount(0);
   await open.focus();
   await page.keyboard.press('Enter');

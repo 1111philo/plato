@@ -62,7 +62,8 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #489 | Coach replies show as they stream in: the typing animation and its setting are gone | #247 |
 | #490 | One lesson overview: "N of M objectives met" opens objectives, exemplar, where you are, shared work, and additional context (replaces Lesson Overview + Your work) | #438 |
 | #491 | Notifications: Everyone means every role, plus By role; Invitation automations (always on, editable) and Removed from the wait list (off by default) | #389, #388 |
-| #492 | Getting Started becomes a three-lesson course, "Getting Started with plato"; course overviews (description + How assessment works) replace the footer link; course descriptions editable | #443, #257 |
+| #492 | Getting Started becomes a three-lesson course, "Getting Started with plato" | #443 |
+| #493 | "How assessment works" moves to the lesson overview's footer (left of Close); the header button reads "Progress (N of M Objectives)"; course descriptions aren't shown | #257, #438 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

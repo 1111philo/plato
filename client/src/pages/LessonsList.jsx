@@ -297,8 +297,6 @@ export default function LessonsList() {
                     id={`course-${group.key}`}
                     level={2}
                     name={group.program.name}
-                    description={group.program.description}
-                    navigate={navigate}
                     progress={progressByProgram[group.program.id]}
                   />
                 )}
@@ -383,10 +381,7 @@ export default function LessonsList() {
 // Course (level 2, with a progress bar) or unit (level 3, count only)
 // header: completed / total lessons, the learner's own custom-* lessons
 // excluded. Units outside a course render at level 2 without a bar.
-// A course heading is the course's overview: name, progress, its
-// description, and how lessons are judged (the assessment page lives here,
-// next to the lessons it describes, not in the footer).
-function ProgressHeader({ id, level, name, progress, description, navigate }) {
+function ProgressHeader({ id, level, name, progress }) {
   const Heading = `h${level}`;
   const isCourse = level === 2 && !!id;
   const { completed = 0, total = 0 } = progress || {};
@@ -423,18 +418,6 @@ function ProgressHeader({ id, level, name, progress, description, navigate }) {
             style={{ width: `${pct}%` }}
           />
         </div>
-      )}
-      {isCourse && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          {description && <>{description} </>}
-          <a
-            href="/how-assessment-works"
-            onClick={(e) => { e.preventDefault(); navigate('/how-assessment-works'); }}
-            className="text-primary underline underline-offset-2"
-          >
-            How assessment works<span className="sr-only"> in {name}</span>
-          </a>
-        </p>
       )}
     </div>
   );
