@@ -1,4 +1,4 @@
-// The lesson work view (#438): objectives checklist, summary, and the
+// The lesson overview (#438): objectives checklist, summary, and the
 // learner's saved attachments, read from what plato already stores. Pure,
 // tested in client/tests/lessonWork.test.js.
 
@@ -32,6 +32,12 @@ export function objectiveStatuses(kb, fallbackObjectives = []) {
   const done = kb?.status === 'completed';
   const met = new Set(kb?.objectivesMet || []);
   return list.map((objective, i) => ({ objective, met: done || met.has(i) }));
+}
+
+/** "N of M objectives met": the lesson header's button text (opens the overview) and the checklist summary. */
+export function objectivesMetLabel(kb, fallbackObjectives = []) {
+  const list = objectiveStatuses(kb, fallbackObjectives);
+  return `${list.filter((o) => o.met).length} of ${list.length} objectives met`;
 }
 
 /** 1-based numbers for the coach's context, or undefined when none are met. */
