@@ -52,6 +52,8 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
+          # Names the session so Bedrock logs and CloudTrail show which repo and workflow spent what.
+          role-session-name: plato-revise
           aws-region: us-east-2
 
       - uses: anthropics/claude-code-action@v1
