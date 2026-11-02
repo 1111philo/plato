@@ -176,6 +176,7 @@ benign condition, downgrade it to `logger.warn` or stop logging it.
 - `server/src/lib/logger.js` — structured logger; `code` conventions.
 - `server/src/lib/cloudwatch-logs.js` — CloudWatch retrieval + noise filters.
 - `server/src/routes/admin.js` — `GET /v1/admin/logs` (the `view=groups` aggregation).
+- `server/src/routes/admin.js` — `GET /v1/admin/ping` — liveness check (`{ ok, time }`), `stats.read` so educators and testers can call it too.
 - `scripts/log-watch.js` + `.github/workflows/log-watch.yml` — the alarm (Tier A).
 - `scripts/pilot-report.js` — the pilot's daily report, incl. the data-loss callout.
 - `.github/workflows/pilot.yml` — the severity interrupt in the picking order.
