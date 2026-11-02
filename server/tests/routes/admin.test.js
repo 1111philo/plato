@@ -815,6 +815,52 @@ describe('lessons endpoint — updatedByName', () => {
   });
 });
 
+describe('GET /v1/admin/ping', () => {
+  beforeEach(() => {
+    db.getUserById = async (id) => {
+      if (id === 'usr_admin') return { userId: 'usr_admin', role: 'admin', name: 'Admin' };
+      if (id === 'usr_user') return { userId: 'usr_user', role: 'user' };
+      if (id === 'usr_educator') return { userId: 'usr_educator', role: 'educator' };
+      if (id === 'usr_tester') return { userId: 'usr_tester', role: 'tester' };
+      return null;
+    };
+  });
+
+  async function roleReq(app, userId, role) {
+    const token = await signAccessToken(userId, role);
+    return app.request('/v1/admin/ping', { headers: { 'Authorization': 'Bearer ' + token } });
+  }
+
+  it('returns ok and an ISO 8601 timestamp for admin', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const before = Date.now();
+    const res = await adminReq(app, 'GET', '/v1/admin/ping');
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(Object.keys(data).sort(), ['ok', 'time']);
+    assert.equal(data.ok, true);
+    assert.match(data.time, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const t = new Date(data.time).getTime();
+    assert.ok(t >= before && t <= Date.now(), 'time is the server clock at request time');
+  });
+
+  it('is readable by educators and testers (stats.read)', async () => {
+    const app = new Hono(); app.route('/', admin);
+    for (const [userId, role] of [['usr_educator', 'educator'], ['usr_tester', 'tester']]) {
+      const res = await roleReq(app, userId, role);
+      assert.equal(res.status, 200, role);
+      assert.equal((await res.json()).ok, true, role);
+    }
+  });
+
+  it('rejects learners', async () => {
+    const app = new Hono(); app.route('/', admin);
+    const res = await userReq(app, 'GET', '/v1/admin/ping');
+    assert.equal(res.status, 403);
+    assert.equal((await res.json()).permission, 'stats.read');
+  });
+});
+
 describe('GET /v1/admin/logs', () => {
   const origConsoleErr = console.error;
   const origConsoleWarn = console.warn;

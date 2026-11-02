@@ -1383,6 +1383,13 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   });
 });
 
+// GET /v1/admin/ping — liveness check for the admin API. Confirms the caller
+// is authenticated and authorized for an admin read (stats.read: educators and
+// testers included) and returns the server clock, nothing else.
+admin.get('/v1/admin/ping', (c) => {
+  return c.json({ ok: true, time: new Date().toISOString() });
+});
+
 // GET /v1/admin/logs — recent server errors/warnings for the pilot agent.
 // Merges in-process ring buffer with CloudWatch (default on). Failures from
 // CloudWatch populate `cloudwatch.error` rather than silently returning empty.

@@ -141,6 +141,7 @@ const R = [
   ['GET', '/v1/admin/notifications/messages', 'notifications.read'],
   ['POST', '/v1/admin/notifications/messages', 'notifications.write'],
   // Observability and audit
+  ['GET', '/v1/admin/ping', 'stats.read'],
   ['GET', '/v1/admin/logs', 'logs.read'],
   ['POST', '/v1/admin/impersonation/start', 'impersonation.use'],
   ['POST', '/v1/admin/impersonation/end', 'impersonation.use'],
