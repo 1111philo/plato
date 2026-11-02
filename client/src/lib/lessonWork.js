@@ -34,10 +34,16 @@ export function objectiveStatuses(kb, fallbackObjectives = []) {
   return list.map((objective, i) => ({ objective, met: done || met.has(i) }));
 }
 
-/** "N of M objectives met": the lesson header's button text (opens the overview) and the checklist summary. */
+/** "N of M objectives met": the overview's checklist summary. */
 export function objectivesMetLabel(kb, fallbackObjectives = []) {
   const list = objectiveStatuses(kb, fallbackObjectives);
   return `${list.filter((o) => o.met).length} of ${list.length} objectives met`;
+}
+
+/** "Progress (N of M Objectives)": the lesson header's button, which opens the overview. */
+export function progressLabel(kb, fallbackObjectives = []) {
+  const list = objectiveStatuses(kb, fallbackObjectives);
+  return `Progress (${list.filter((o) => o.met).length} of ${list.length} Objectives)`;
 }
 
 /** 1-based numbers for the coach's context, or undefined when none are met. */

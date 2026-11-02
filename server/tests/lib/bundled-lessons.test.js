@@ -167,7 +167,6 @@ describe('the Getting Started course', () => {
     assert.deepEqual((await run()).installed, BUNDLED_LESSONS.map((b) => b.id));
     const program = await get(`program:${BUNDLED_COURSE.programId}`);
     assert.deepEqual([program.name, program.unitIds, program.bundled], [BUNDLED_COURSE.name, [BUNDLED_COURSE.unitId], { id: BUNDLED_COURSE.id }]);
-    assert.ok(program.description);
     const unit = await get(`course:${BUNDLED_COURSE.unitId}`);
     assert.deepEqual([unit.programId, unit.lessonIds], [BUNDLED_COURSE.programId, BUNDLED_LESSONS.map((b) => b.id)]);
     for (const b of BUNDLED_LESSONS) {

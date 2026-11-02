@@ -523,7 +523,7 @@ and objectives), where they can reference it throughout the lesson.
    as `enrichmentContext: [{ source, context, reasoning }]`
 7. **UI display** — enrichments show in the "Additional context" section of
    the lesson overview dialog (`LessonOverview.jsx`, opened from the lesson
-   header's "N of M objectives met" button)
+   header's "Progress (N of M Objectives)" button)
 8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
 
 ### Enrichment data contract
@@ -945,12 +945,6 @@ course sorts above every other course; "Continue to Next Lesson" walks its
 three lessons and stops at the end of the course. A start-here lesson an
 admin moved out of every course still shows first, under **Start here**.
 
-**Course overview.** Every course heading on the Lessons page shows the
-course's description (Admin → Lessons → Courses & Units → Edit) and a **How
-assessment works** link (accessible name "How assessment works in <course>").
-That's where the assessment page is linked from, next to the lessons it
-describes; it's no longer in the footer.
-
 **Keep it current:** a PR that changes learner-facing behavior updates the
 lesson that teaches it (see CLAUDE.md). Unedited copies everywhere pick up
 the change on the next deploy.
@@ -960,8 +954,8 @@ the change on the next deploy.
 One read-only dialog per lesson (`client/src/components/chat/LessonOverview.jsx`).
 It used to be two, "Lesson Overview" and "Your work", which repeated the
 exemplar and the objectives; Blake's review on #451 merged them. It opens from
-the lesson header's **"N of M objectives met"** button (accessible name
-"Lesson overview: N of M objectives met"; the count is `objectivesMetLabel`),
+the lesson header's **"Progress (N of M Objectives)"** button (accessible name
+"Progress (N of M Objectives): lesson overview"; `progressLabel`),
 and from **Your progress** in the lessons page's outline dialog for started
 lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
 - **Objectives:** the checklist (met / not yet, with sr-only state). Before
@@ -975,7 +969,9 @@ lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
 - **Additional context** (`<details>`): plugin enrichments, when there are any.
 
 The progress score isn't repeated; the header's progress bar shows it. The
-dialog's body is one focusable scroll region (axe scrollable-region-focusable).
+footer has **How assessment works** (left of Close), the one place in the
+classroom that links the assessment page, next to the progress it explains.
+The dialog's body is one focusable scroll region (axe scrollable-region-focusable).
 It works the same on completed lessons and in View as User (it only reads).
 
 **The checklist.** The coach may add `"objectivesMet": [1, 3]` (1-based, as
@@ -1014,7 +1010,8 @@ go in the optional `## Coach Directive`. No new lesson fields are needed.
 ### How assessment works (#257, #414)
 
 `/how-assessment-works` (`client/src/pages/HowAssessmentWorks.jsx`) is a
-public page, linked in the classroom footer and on the sign-in page, that
+public page, linked from the lesson overview's footer (and the Getting Started
+lessons), that
 describes what plato actually does:
 - each lesson's exemplar and 2–4 objectives
 - the AI coach scoring progress 0–10 after every reply, and the model used

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Check from 'lucide-react/dist/esm/icons/check';
 import { getScreenshot } from '../../../js/storage.js';
 import { objectiveStatuses, objectivesMetLabel, collectArtifacts } from '../../lib/lessonWork.js';
@@ -9,8 +10,9 @@ import {
 
 /**
  * The lesson overview (#438, merged with "Your work" from Blake's review on
- * #451): one read-only dialog for a lesson, opened from the "N of M
- * objectives met" button in the lesson header. It has the objectives
+ * #451): one read-only dialog for a lesson, opened from the "Progress (N of
+ * M Objectives)" button in the lesson header; its footer links "How
+ * assessment works". It has the objectives
  * checklist (met / not yet; informational, never completes a lesson), what
  * finished work looks like, where the learner is and the coach's notes, the
  * images and links they've shared (images fetched only when that section
@@ -18,6 +20,7 @@ import {
  * after completion, and in View as User.
  */
 export default function LessonOverview({ open, onOpenChange, lesson, lessonKB, messages }) {
+  const navigate = useNavigate();
   const objectives = objectiveStatuses(lessonKB, lesson.learningObjectives);
   const complete = lessonKB?.status === 'completed';
   const started = !!lessonKB?.status;
@@ -198,7 +201,15 @@ export default function LessonOverview({ open, onOpenChange, lesson, lessonKB, m
             </details>
           )}
         </div>
-        <DialogFooter>
+        <DialogFooter className="sm:items-center">
+          {/* How lessons are judged, next to the progress it explains. */}
+          <a
+            href="/how-assessment-works"
+            onClick={(e) => { e.preventDefault(); onOpenChange(false); navigate('/how-assessment-works'); }}
+            className="self-center text-sm text-primary underline underline-offset-2"
+          >
+            How assessment works
+          </a>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>

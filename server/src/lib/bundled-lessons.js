@@ -46,7 +46,6 @@ export const BUNDLED_COURSE = Object.freeze({
   unitId: 'unit-getting-started',
   name: 'Getting Started with plato',
   unitName: 'How plato works',
-  description: 'Three short lessons on using plato: how lessons and the AI coach work, how to share your work, and what plato does behind the scenes.',
 });
 
 /**
@@ -63,7 +62,7 @@ async function ensureBundledCourse(db, now) {
         if (err.name !== 'ConditionalCheckFailedException') throw err; // exists: another container, or an admin's own
       }
     };
-    await create(`program:${c.programId}`, { name: c.name, description: c.description, unitIds: [c.unitId], bundled: { id: c.id }, ...stamp });
+    await create(`program:${c.programId}`, { name: c.name, description: '', unitIds: [c.unitId], bundled: { id: c.id }, ...stamp });
     await create(`course:${c.unitId}`, { name: c.unitName, programId: c.programId, lessonIds: BUNDLED_LESSONS.map((b) => b.id), bundled: { id: c.id }, ...stamp });
     // Bundled lessons installed before the course existed (one lesson, no unit) join it.
     for (const b of BUNDLED_LESSONS) {
