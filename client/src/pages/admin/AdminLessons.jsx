@@ -15,7 +15,6 @@ import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
@@ -438,7 +437,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
 
   // Streaming
   const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
 
@@ -487,9 +485,9 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     }
   }
 
-  // Handle stream drain completing
+  // The stream finished: append the persisted reply
   useEffect(() => {
-    if (displayText === null && pendingRef.current) {
+    if (streamingText === null && pendingRef.current) {
       const { msgs, r } = pendingRef.current;
       pendingRef.current = null;
       if (msgs) {
@@ -503,7 +501,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       if (r != null) setReadiness(r);
       setBusy('');
     }
-  }, [displayText, notifyTitle]);
+  }, [streamingText, notifyTitle]);
 
   // Start conversation on mount (and on key change after lesson creation).
   // Skip when resuming an existing conversation that already has an agent reply.
@@ -707,7 +705,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       </div>
 
       {/* Readiness bar + Create Lesson button */}
-      {(chatMessages.length > 0 || displayText != null) && (
+      {(chatMessages.length > 0 || streamingText != null) && (
         <div className="flex items-end gap-4 mb-4">
           <div
             className="flex-1"
@@ -761,12 +759,12 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
             <div className="mb-3">
               <ChatArea announcement={srAnnouncement}>
                 {chatMessages.map(renderMessage)}
-                {displayText != null && displayText.length > 0 && (
-                  <AssistantMessage content={displayText} streaming />
+                {streamingText != null && streamingText.length > 0 && (
+                  <AssistantMessage content={streamingText} streaming />
                 )}
-                {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+                {busy === 'starting' && !streamingText && <ThinkingSpinner text="Starting..." />}
                 {busy === 'creating' && <ThinkingSpinner text="Generating lesson..." />}
-                {busy === 'qa' && !displayText && <ThinkingSpinner />}
+                {busy === 'qa' && !streamingText && <ThinkingSpinner />}
               </ChatArea>
             </div>
 

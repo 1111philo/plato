@@ -369,7 +369,7 @@ server-side is where the SSRF defense must live.
   work-in-progress portfolio site for reference and the coach infers completion
   from content that doesn't exist or isn't finished yet.
 
-## Composing and reply reveal (#247)
+## Composing and showing replies (#247)
 
 **Composing during a reply.** `ComposeBar` has two locks. `disabled` turns
 the whole composer off (read-only views such as View as User). `sendDisabled`
@@ -385,18 +385,17 @@ Shift+Enter is always a new line, and Enter that confirms an IME composition
 never sends (`isSendKeystroke` in `client/src/lib/chatPrefs.js`). The current
 shortcut is visible next to Send and is the textarea's accessible description.
 
-**Reveal.** `useStreamedText` types replies out at about 33 characters a
-second, but `nextRevealPosition` keeps it at most ~40 ticks (~1.2 s) behind the
-stream. Once the stream ends, the rest drains in under a second, so a fast
-model never leaves a long typing backlog. Returning to a background tab shows
-everything buffered at once. **Instant mode** shows each chunk as it arrives.
-It's on with the `instantText` preference, or by default when the device
-prefers reduced motion; an explicit "off" wins. The hook still goes `null`
-only after the reveal catches up with a finished stream, which is the signal
-chat pages use to append the persisted message.
+**Replies show as they stream in.** Each chat renders the streamed text as
+it arrives (`streamingText`, as a streaming `AssistantMessage`), with no
+artificial typing pace: the reply already streams in real time, so an
+animation only added delay. (An earlier `useStreamedText` typewriter and its
+`instantText` preference were removed after the launch review on #451; a
+stored `instantText` is ignored.) When the stream ends the page sets
+`streamingText` to `null`, which is the signal to append the persisted
+message.
 
-Both preferences live in the learner's `preferences` sync record and are set
-in Settings → Chat, which saves on change.
+The `sendKey` preference lives in the learner's `preferences` sync record and
+is set in Settings → Chat, which saves on change.
 
 ## Behind this response (#411)
 
