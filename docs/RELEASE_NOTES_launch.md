@@ -60,7 +60,9 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #484 | Second adversarial review: Slack 429 at signup, failed-turn restore, wait-list IP, refused-save resend, UTF-8 size guard, group rename finish, roles rollback script | review |
 | #486 | Invites for existing accounts: a wait-list entry whose email has an account can be invited; they get an email and a classroom notice, and accepting merges the answers (replaces Copy to account) | #363 |
 | #489 | Coach replies show as they stream in: the typing animation and its setting are gone | #247 |
-| #GS | Getting Started becomes a three-lesson course, "Getting Started with plato"; course overviews (description + How assessment works) replace the footer link; course descriptions editable | #443, #257 |
+| #490 | One lesson overview: "N of M objectives met" opens objectives, exemplar, where you are, shared work, and additional context (replaces Lesson Overview + Your work) | #438 |
+| #492 | Getting Started becomes a three-lesson course, "Getting Started with plato"; course overviews (description + How assessment works) replace the footer link; course descriptions editable | #443, #257 |
+| #491 | Notifications: Everyone means every role, plus By role; Invitation automations (always on, editable) and Removed from the wait list (off by default) | #389, #388 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
@@ -157,7 +159,7 @@ lock and makes no writes):
   no name.
 
 > The rehearsal below ran before Getting Started became a three-lesson
-> course (#GS). Re-run it before the merge: expect 5 more added records (two
+> course (#492). Re-run it before the merge: expect 5 more added records (two
 > lessons and their markers, the course, the unit, and the course marker),
 > and m004 unchanged.
 
