@@ -371,7 +371,7 @@ export default function LessonsList() {
           timeStats={timeStats[detailLesson.lessonId]}
           open={!!detailLesson}
           onOpenChange={(open) => { if (!open) setDetailLesson(null); }}
-          onOpenWork={() => navigate(`/lessons/${detailLesson.lessonId}?view=work`)}
+          onOpenOverview={() => navigate(`/lessons/${detailLesson.lessonId}?view=overview`)}
         />
       )}
     </div>
@@ -620,7 +620,7 @@ function ProgressRing({ pct, size = 22, stroke = 2.5 }) {
   );
 }
 
-function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange, onOpenWork }) {
+function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange, onOpenOverview }) {
   const pct = progress?.status === 'completed' ? 100 : (progress?.progress != null ? progress.progress * 10 : null);
   const progressText = progress?.status === 'completed' ? 'Completed' : (pct != null ? `${pct}% complete` : null);
   const range = timeStats && (timeStats.sampleSize ?? 0) >= 3
@@ -697,8 +697,9 @@ function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange, o
         </div>
 
         <DialogFooter>
-          {/* Started lessons: jump to the lesson's work view (#438). */}
-          {progress?.status && <Button variant="outline" onClick={onOpenWork}>Your work</Button>}
+          {/* Started lessons: open the lesson with its overview showing (#438):
+              objectives met so far, the coach's notes, shared work. */}
+          {progress?.status && <Button variant="outline" onClick={onOpenOverview}>Your progress</Button>}
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
         </DialogFooter>
       </DialogContent>

@@ -20,15 +20,12 @@ import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import AgentActivity from '../components/chat/AgentActivity.jsx';
-import LessonWork from '../components/chat/LessonWork.jsx';
+import LessonOverview from '../components/chat/LessonOverview.jsx';
+import { objectivesMetLabel } from '../lib/lessonWork.js';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
 
 export default function LessonChat() {
   const { lessonGroupId } = useParams();
@@ -72,10 +69,9 @@ export default function LessonChat() {
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
-  const [showObjectives, setShowObjectives] = useState(false);
-  // "Your work" (#438); `?view=work` opens it (from the lessons page).
-  const [showWork, setShowWork] = useState(() => new URLSearchParams(window.location.search).get('view') === 'work');
-  const objectivesTitleRef = useRef(null);
+  // The lesson overview (#438); `?view=overview` opens it (from the lessons
+  // page; `?view=work` is the old name).
+  const [showOverview, setShowOverview] = useState(() => ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')));
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
@@ -154,23 +150,6 @@ export default function LessonChat() {
     if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
     if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
   }, []);
-
-  // Move focus to the Objectives dialog title when it opens so screen
-  // readers announce the dialog's purpose instead of landing on the close
-  // button. Two nested RAFs are required: Base UI runs its own focus
-  // management on open (focusing the close button) which may itself use a
-  // single RAF, so one RAF is not enough to reliably win.
-  useEffect(() => {
-    if (!showObjectives) return;
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        if (!cancelled) objectivesTitleRef.current?.focus();
-      });
-    });
-    return () => { cancelled = true; cancelAnimationFrame(id); };
-  }, [showObjectives]);
 
   useEffect(() => {
     const lesson = lessonRef.current;
@@ -320,6 +299,8 @@ export default function LessonChat() {
 
   if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
+  // The header button opening the lesson overview: "N of M objectives met".
+  const metLabel = objectivesMetLabel(lessonKB, lesson.learningObjectives);
   const busy = !!loading;
   const composePlaceholder = phase === LESSON_PHASES.COMPLETED
     ? 'Share feedback about this lesson...'
@@ -400,22 +381,13 @@ export default function LessonChat() {
                 <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                  onClick={() => setShowObjectives(true)}
-                  aria-expanded={showObjectives}
-                  aria-controls="lesson-objectives-dialog"
+                  onClick={() => setShowOverview(true)}
+                  aria-label={`Lesson overview: ${metLabel}`}
+                  aria-expanded={showOverview}
+                  aria-controls="lesson-overview-dialog"
                 >
-                  Lesson Overview ({lesson.learningObjectives.length} Objectives)
+                  {metLabel}
                 </button>
-                {phase && (
-                  <button
-                    className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                    onClick={() => setShowWork(true)}
-                    aria-expanded={showWork}
-                    aria-controls="lesson-work-dialog"
-                  >
-                    Your work
-                  </button>
-                )}
               </div>
               <ProgressBar lessonKB={lessonKB} />
             </div>
@@ -449,22 +421,13 @@ export default function LessonChat() {
               <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                onClick={() => setShowObjectives(true)}
-                aria-expanded={showObjectives}
-                aria-controls="lesson-objectives-dialog"
+                onClick={() => setShowOverview(true)}
+                aria-label={`Lesson overview: ${metLabel}`}
+                aria-expanded={showOverview}
+                aria-controls="lesson-overview-dialog"
               >
-                Lesson Overview ({lesson.learningObjectives.length} Objectives)
+                {metLabel}
               </button>
-              {phase && (
-                <button
-                  className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                  onClick={() => setShowWork(true)}
-                  aria-expanded={showWork}
-                  aria-controls="lesson-work-dialog"
-                >
-                  Your work
-                </button>
-              )}
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
@@ -565,94 +528,8 @@ export default function LessonChat() {
         </div>
       )}
 
-      <LessonWork open={showWork} onOpenChange={setShowWork} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+      <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
 
-      {/* Objectives dialog */}
-      <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
-        <DialogContent id="lesson-objectives-dialog" className="max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
-            {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
-          </DialogHeader>
-          {/* Focusable so keyboard users can scroll it: its content is all
-              text, nothing inside takes focus (axe scrollable-region-focusable). */}
-          <div className="overflow-y-auto flex-1 space-y-4 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Lesson overview">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Exemplar</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Learning Objectives</h3>
-            <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
-              {lesson.learningObjectives.map((obj, i) => (
-                <li key={i}>{obj}</li>
-              ))}
-            </ul>
-          </div>
-          {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">Additional Context</h3>
-              <p className="text-xs text-muted-foreground">
-                Reference material gathered for this lesson from enabled plugins
-              </p>
-              {lessonKB.enrichments.map((enrichment, idx) => (
-                <section
-                  key={idx}
-                  className="border border-blue-200 bg-blue-50 rounded p-3 space-y-2"
-                  aria-labelledby={`enrichment-${idx}-label`}
-                >
-                  <h4
-                    id={`enrichment-${idx}-label`}
-                    className="text-sm font-medium text-blue-900"
-                  >
-                    {enrichment.label || enrichment.pluginId}
-                  </h4>
-                  {enrichment.reasoning && (
-                    <div role="note">
-                      <p className="sr-only">Why this context matters:</p>
-                      <p className="text-xs text-blue-700">
-                        {enrichment.reasoning}
-                      </p>
-                    </div>
-                  )}
-                  {enrichment.context && (
-                    <div>
-                      <p className="sr-only">Context:</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {enrichment.context}
-                      </p>
-                    </div>
-                  )}
-                  {enrichment.sources && enrichment.sources.length > 0 && (
-                    <nav aria-label={`Sources from ${enrichment.label || enrichment.pluginId}`}>
-                      <div className="text-xs font-medium text-blue-800 mb-1">Sources:</div>
-                      <ul className="text-xs space-y-1">
-                        {enrichment.sources.map((source, sidx) => (
-                          <li key={sidx}>
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 rounded"
-                              aria-label={`${source.title || source.url} (opens in new tab)`}
-                            >
-                              {source.title || source.url}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </nav>
-                  )}
-                </section>
-              ))}
-            </div>
-          )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {confirmModal && (
         <ConfirmModal

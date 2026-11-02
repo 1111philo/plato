@@ -94,29 +94,36 @@ test('the lesson editor shows the lesson creator behind each reply', async ({ pa
   await expect(page.getByText('Readiness 3 of 10')).toBeVisible();
 });
 
-// #438: the work view, by keyboard, with the checklist the coach fills in.
-test('"Your work" shows the objectives checked so far, a summary, and shared links', async ({ page }) => {
+// #438: the lesson overview (merged with "Your work"), by keyboard, with the
+// checklist the coach fills in. The header button says how many are met.
+test('the lesson overview shows the objectives met so far, where you are, and shared work', async ({ page }) => {
   await login(page, LEARNER);
   await page.goto(`/lessons/${LESSONS[2].id}`); // continues the conversation from the test above
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
 
-  const open = page.getByRole('button', { name: 'Your work' }).first();
+  const open = page.getByRole('button', { name: 'Lesson overview: 1 of 4 objectives met' }).first();
+  await expect(open).toHaveText('1 of 4 objectives met');
+  await expect(page.getByRole('button', { name: 'Your work' })).toHaveCount(0);
   await open.focus();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: 'Your work' });
+  const dialog = page.getByRole('dialog', { name: LESSONS[2].name });
   await expect(dialog).toBeVisible();
   const objectives = dialog.getByRole('list', { name: 'Objectives' }).getByRole('listitem');
   await expect(objectives).toHaveCount(4);
-  await expect(objectives.first()).toContainText(', shown');
+  await expect(objectives.first()).toContainText(', met');
   await expect(objectives.nth(1)).toContainText(', not yet');
-  await dialog.getByText('Summary', { exact: true }).click();
+  await expect(dialog.getByRole('heading', { name: 'What finished work looks like' })).toHaveCount(1);
   await expect(dialog.getByRole('heading', { name: 'Where you are' })).toBeVisible();
-  await dialog.locator('summary', { hasText: 'Artifacts' }).click();
+  await dialog.locator('summary', { hasText: 'Shared work' }).click();
   await expect(dialog.getByText(/Nothing shared yet/)).toBeVisible();
-  await expectAccessible(page, { include: '[role=dialog]', label: 'your work dialog' });
+  await expectAccessible(page, { include: '[role=dialog]', label: 'lesson overview dialog (started)' });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
+
+  // "Your progress" on the lessons page links here with ?view=overview.
+  await page.goto(`/lessons/${LESSONS[2].id}?view=overview`);
+  await expect(page.getByRole('dialog', { name: LESSONS[2].name })).toBeVisible({ timeout: 20_000 });
 });
 
 // #451 review H1/M10: a reply cut off at max_tokens isn't saved; the draft comes back.

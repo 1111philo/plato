@@ -3,7 +3,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeObjectivesMet, objectiveStatuses, objectivesMetForContext, collectArtifacts } from '../src/lib/lessonWork.js';
+import { mergeObjectivesMet, objectiveStatuses, objectivesMetLabel, objectivesMetForContext, collectArtifacts } from '../src/lib/lessonWork.js';
 
 const kb = (over = {}) => ({ status: 'active', objectives: [{ objective: 'A' }, { objective: 'B' }, { objective: 'C' }], ...over });
 
@@ -34,6 +34,14 @@ describe('objectiveStatuses', () => {
   });
   it('falls back to the lesson objectives before a KB exists', () => {
     assert.deepEqual(objectiveStatuses(null, ['X', 'Y']), [{ objective: 'X', met: false }, { objective: 'Y', met: false }]);
+  });
+});
+
+describe('objectivesMetLabel', () => {
+  it('counts met objectives: before the lesson starts, during, and once complete', () => {
+    assert.equal(objectivesMetLabel(null, ['X', 'Y', 'Z', 'W']), '0 of 4 objectives met');
+    assert.equal(objectivesMetLabel(kb({ objectivesMet: [1] })), '1 of 3 objectives met');
+    assert.equal(objectivesMetLabel(kb({ status: 'completed' })), '3 of 3 objectives met');
   });
 });
 

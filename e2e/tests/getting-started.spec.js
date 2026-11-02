@@ -15,7 +15,7 @@ test('learners find Getting Started first, and the coach opens it', async ({ pag
 
   await start.click();
   await expect(page).toHaveURL(/\/lessons\/getting-started$/);
-  await expect(page.getByRole('button', { name: /Lesson Overview \(4 Objectives\)/ }).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('button', { name: /^Lesson overview: \d of 4 objectives met$/ }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
 });
 

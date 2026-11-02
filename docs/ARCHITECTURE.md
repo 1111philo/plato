@@ -522,8 +522,9 @@ and objectives), where they can reference it throughout the lesson.
 5. **Storage** — if enrichments exist, stored on `lessonKB.enrichments` and synced
 6. **Coach context** — `buildContext()` injects enrichments into coach system prompt
    as `enrichmentContext: [{ source, context, reasoning }]`
-7. **UI display** — `LessonChat` displays enrichments in the "Additional Context"
-   section of the lesson overview dialog (opened via "Lesson Overview" button)
+7. **UI display** — enrichments show in the "Additional context" section of
+   the lesson overview dialog (`LessonOverview.jsx`, opened from the lesson
+   header's "N of M objectives met" button)
 8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
 
 ### Enrichment data contract
@@ -553,12 +554,11 @@ host filters out nulls — only non-null returns are stored.
   The enrichment step expands to show per-plugin progress when multiple plugins
   are active. Includes `role="status"` and `aria-live="polite"` for screen reader
   announcements.
-- **Lesson Overview Dialog** (`client/src/pages/LessonChat.jsx`) — modal dialog
-  displaying lesson name, description, exemplar, learning objectives, and an
-  "Additional Context" section showing enrichment data from plugins. Each enrichment
-  is a semantic `<section>` with heading (`<h4>`), reasoning text, context paragraph,
-  and source links in a `<nav>` with proper aria-labels and focus styles. The dialog
-  content is scrollable (`max-h-[85vh]`) to handle long enrichments.
+- **Lesson overview dialog** (`client/src/components/chat/LessonOverview.jsx`) —
+  its "Additional context" section (a `<details>`, shown only when there are
+  enrichments) renders each enrichment as a semantic `<section>` with a heading
+  (`<h4>`), reasoning text, context paragraph, and source links in a `<nav>`
+  with proper aria-labels and focus styles. See [the lesson overview](#the-lesson-overview-438).
 
 ### WordPress Info plugin (reference implementation)
 
@@ -927,19 +927,27 @@ time; completion and progress persist like any lesson's.
 lesson (see CLAUDE.md). Unedited copies everywhere pick up the change on the
 next deploy.
 
-### Your work: the lesson work view (#438)
+### The lesson overview (#438)
 
-A **"Your work"** button next to "Lesson Overview" (and on the lessons
-page's outline dialog for started lessons, via `/lessons/:id?view=work`)
-opens a read-only dialog (`client/src/components/chat/LessonWork.jsx`) with
-three native `<details>` sections:
-- **Progress:** the progress score and an objectives checklist.
-- **Summary:** the exemplar, the coach's "where you are", and its notes, all
-  read from the lesson KB. Nothing is generated for it.
-- **Artifacts:** images and links the learner shared, from the messages'
-  `metadata.imageKeys` / `metadata.links`. Images are fetched only when the
-  section opens, each key once.
+One read-only dialog per lesson (`client/src/components/chat/LessonOverview.jsx`).
+It used to be two, "Lesson Overview" and "Your work", which repeated the
+exemplar and the objectives; Blake's review on #451 merged them. It opens from
+the lesson header's **"N of M objectives met"** button (accessible name
+"Lesson overview: N of M objectives met"; the count is `objectivesMetLabel`),
+and from **Your progress** in the lessons page's outline dialog for started
+lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
+- **Objectives:** the checklist (met / not yet, with sr-only state). Before
+  the lesson starts nothing is met; a completed lesson shows all met.
+- **What finished work looks like:** the exemplar, once.
+- **Where you are** and **the coach's notes**, when the lesson KB has them.
+  Nothing is generated for the dialog.
+- **Shared work** (`<details>`, started lessons): images and links the
+  learner shared, from the messages' `metadata.imageKeys` / `metadata.links`.
+  Images are fetched only when the section opens, each key once.
+- **Additional context** (`<details>`): plugin enrichments, when there are any.
 
+The progress score isn't repeated; the header's progress bar shows it. The
+dialog's body is one focusable scroll region (axe scrollable-region-focusable).
 It works the same on completed lessons and in View as User (it only reads).
 
 **The checklist.** The coach may add `"objectivesMet": [1, 3]` (1-based, as
