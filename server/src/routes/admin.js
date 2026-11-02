@@ -8,7 +8,8 @@ import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.
 import { registerNotificationRoutes } from './admin-notifications.js';
 import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
-import { sendInviteEmail, sendAccountInviteEmail, sendResetEmail } from '../lib/email.js';
+import { sendResetEmail } from '../lib/email.js';
+import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { MAX_EXCHANGES, MINS_PER_EXCHANGE } from '../lib/lesson-limits.js';
@@ -308,8 +309,8 @@ admin.post('/v1/admin/invites/resend', async (c) => {
   });
 
   const result = pendingInvite.forUserId
-    ? await sendAccountInviteEmail(email.toLowerCase(), adminUser.name)
-    : await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name);
+    ? await sendAccountInviteEmail(email.toLowerCase(), adminUser.name, { firstName: pendingInvite.profile?.firstName })
+    : await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name, { firstName: pendingInvite.profile?.firstName });
   return c.json({ inviteToken, email: email.toLowerCase(), ...result }, 201);
 });
 
@@ -477,8 +478,8 @@ admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
   await db.deleteInvite(entry.inviteToken);
 
   const result = account
-    ? await sendAccountInviteEmail(entry.email, adminUser.name)
-    : await sendInviteEmail(entry.email, inviteToken, adminUser.name);
+    ? await sendAccountInviteEmail(entry.email, adminUser.name, { firstName: nameFields(account).firstName })
+    : await sendInviteEmail(entry.email, inviteToken, adminUser.name, { firstName: entry.profile?.firstName });
   return c.json({ inviteToken, email: entry.email, existingAccount: !!account, ...result }, 201);
 });
 
@@ -522,6 +523,15 @@ admin.delete('/v1/admin/waitlist/:token', async (c) => {
   const entry = await db.getInvite(c.req.param('token'));
   if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
   await db.deleteInvite(entry.inviteToken);
+  // The "Removed from the wait list" automation: once, since the entry is
+  // gone now (a second DELETE is a 404). Never fails the removal.
+  try {
+    if ((await readAutomations()).waitlistRemoved) {
+      await sendTemplated('waitlist-removed', { to: entry.email, vars: { firstName: nameFields(entry.profile || {}).firstName } });
+    }
+  } catch (err) {
+    logger.error('waitlist_removed_email_failed', { error: err?.message || String(err) });
+  }
   return c.json({ ok: true });
 });
 

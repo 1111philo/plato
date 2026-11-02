@@ -4,7 +4,7 @@
  * notifications.write). Logic lives in lib/notifications.js.
  */
 import {
-  TEMPLATES, readAutomations, writeAutomations, getTemplate, putTemplate, resetTemplate,
+  TEMPLATES, ALWAYS_ON, readAutomations, writeAutomations, getTemplate, putTemplate, resetTemplate,
   validateTemplate, renderEmail, sendNotificationEmail,
 } from '../lib/notifications.js';
 import { getClassroom } from '../lib/email.js';
@@ -20,6 +20,7 @@ const SAMPLE = {
   progress: '60%',
   progressSummary: 'This week you finished 2 lessons and you’re halfway through a third.',
   newLessons: 'New this week: Writing a System Prompt.',
+  inviterName: 'Ann Admin',
 };
 
 export function registerNotificationRoutes(admin) {
@@ -28,7 +29,7 @@ export function registerNotificationRoutes(admin) {
       readAutomations(),
       Promise.all(Object.keys(TEMPLATES).map((id) => getTemplate(id))),
     ]);
-    return c.json({ automations, templates });
+    return c.json({ automations, alwaysOn: ALWAYS_ON, templates });
   });
 
   // PUT /v1/admin/notifications/automations — body { waitlistConfirmation?: bool, … }

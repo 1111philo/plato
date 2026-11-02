@@ -48,8 +48,11 @@ beforeEach(() => {
 describe('admin notifications', () => {
   it('lists automations (all off) and every template with its default copy', async () => {
     const data = await (await req('GET', '/v1/admin/notifications')).json();
-    assert.deepEqual(data.automations, { waitlistConfirmation: false, inactivityNudge: false, weeklyDigest: false });
-    assert.deepEqual(data.templates.map((t) => [t.id, t.isDefault]), [['waitlist-confirmation', true], ['inactivity-nudge', true], ['weekly-digest', true]]);
+    assert.deepEqual(data.automations, { waitlistConfirmation: false, waitlistRemoved: false, inactivityNudge: false, weeklyDigest: false });
+    assert.deepEqual(data.alwaysOn, ['invite', 'account-invite']);
+    assert.deepEqual(data.templates.map((t) => [t.id, t.isDefault]), [
+      ['waitlist-confirmation', true], ['waitlist-removed', true], ['invite', true], ['account-invite', true], ['inactivity-nudge', true], ['weekly-digest', true],
+    ]);
   });
 
   it('turns an automation on', async () => {

@@ -49,15 +49,42 @@ describe('validateMessage', () => {
     assert.match(m.validateMessage(draft({ audience: { type: 'group', group: 'Nope' } }), { groups: ['Cohort A'] }).error, /groups/);
     assert.match(m.validateMessage(draft({ audience: { type: 'users', userIds: [] } })).error, /at least one/);
     assert.match(m.validateMessage(draft({ body: 'Hi {{lessonName}}' })).error, /Unknown variable/);
+    assert.match(m.validateMessage(draft({ audience: { type: 'role', roles: [] } })).error, /at least one role/);
+    assert.match(m.validateMessage(draft({ audience: { type: 'role', roles: ['owner'] } })).error, /at least one role/);
+  });
+  it('new everyone and group messages reach every role; a role audience keeps only known roles', () => {
+    assert.deepEqual(m.validateMessage(draft()).message.audience, { type: 'all', allRoles: true });
+    assert.deepEqual(m.validateMessage(draft({ audience: { type: 'group', group: 'Cohort A' } }), { groups: ['Cohort A'] }).message.audience,
+      { type: 'group', group: 'Cohort A', allRoles: true });
+    assert.deepEqual(m.validateMessage(draft({ audience: { type: 'role', roles: ['tester', 'admin', 'owner', 'admin'] } })).message.audience,
+      { type: 'role', roles: ['admin', 'tester'] });
   });
 });
 
 describe('recipients', () => {
-  it('everyone and groups mean learners (legacy role included); specific people can be anyone', async () => {
+  it('legacy everyone and group messages (no allRoles) mean learners; specific people can be anyone', async () => {
     const ids = async (audience) => (await m.recipientsOf({ audience, createdAt: new Date().toISOString() }, db)).map((u) => u.userId).sort();
     assert.deepEqual(await ids({ type: 'all' }), ['usr_ada', 'usr_bo']);
     assert.deepEqual(await ids({ type: 'group', group: 'Cohort A' }), ['usr_ada']);
     assert.deepEqual(await ids({ type: 'users', userIds: ['usr_ed', 'usr_nope'] }), ['usr_ed']);
+  });
+  it('everyone and groups reach every role now; roles pick roles (legacy user = learner)', async () => {
+    const ids = async (audience) => (await m.recipientsOf({ audience, createdAt: new Date().toISOString() }, db)).map((u) => u.userId).sort();
+    assert.deepEqual(await ids({ type: 'all', allRoles: true }), ['usr_ada', 'usr_bo', 'usr_ed']);
+    assert.deepEqual(await ids({ type: 'group', group: 'Cohort A', allRoles: true }), ['usr_ada', 'usr_ed']);
+    assert.deepEqual(await ids({ type: 'role', roles: ['learner'] }), ['usr_ada', 'usr_bo']);
+    assert.deepEqual(await ids({ type: 'role', roles: ['educator', 'admin'] }), ['usr_ed']);
+  });
+  it('a message sent before allRoles existed keeps reaching learners only (the bell is read-time)', () => {
+    const old = { audience: { type: 'all' }, createdAt: '2026-10-01T00:00:00Z' };
+    const ed = { userId: 'usr_ed', role: 'educator', createdAt: '2025-01-01T00:00:00Z' };
+    assert.equal(m.isRecipient(old, ed), false);
+    assert.equal(m.isRecipient({ ...old, audience: { type: 'all', allRoles: true } }, ed), true);
+  });
+  it('people who joined later don’t get older broadcasts, role messages included', () => {
+    const late = { userId: 'u', role: 'admin', createdAt: '2026-02-01T00:00:00Z' };
+    assert.equal(m.isRecipient({ audience: { type: 'role', roles: ['admin'] }, createdAt: '2026-01-01T00:00:00Z' }, late), false);
+    assert.equal(m.isRecipient({ audience: { type: 'users', userIds: ['u'] }, createdAt: '2026-01-01T00:00:00Z' }, late), true);
   });
   it('learners who joined later don’t get older broadcasts', () => {
     const msg = { audience: { type: 'all' }, createdAt: '2026-01-01T00:00:00Z' };
@@ -78,7 +105,7 @@ describe('in-app messages', () => {
     let list = await m.messagesFor(await db.getUserById('usr_ada'), db);
     assert.equal(list.length, 1, 'email-only messages aren’t in the bell');
     assert.deepEqual([list[0].subject, list[0].body, list[0].important, list[0].read, list[0].fromName], ['Hello Ada', 'Welcome to plato.', true, false, 'Ann Admin']);
-    assert.equal((await m.messagesFor(await db.getUserById('usr_ed'), db)).length, 0, 'educators aren’t in “everyone”');
+    assert.equal((await m.messagesFor(await db.getUserById('usr_ed'), db)).length, 1, 'everyone includes educators');
     await m.markRead('usr_ada', [id, 'not-a-message'], db);
     list = await m.messagesFor(await db.getUserById('usr_ada'), db);
     assert.equal(list[0].read, true);
@@ -99,7 +126,7 @@ describe('idempotent compose (#451 review)', () => {
 describe('send-message job', () => {
   it('emails recipients with an unsubscribe link, skips opt-outs, records counts, and runs once', async () => {
     await setOptOut('usr_bo', { messages: true }, db);
-    const msg = await m.createMessage(m.validateMessage(draft({ email: true })).message, admin, db);
+    const msg = await m.createMessage(m.validateMessage(draft({ email: true, audience: { type: 'role', roles: ['learner'] } })).message, admin, db);
     assert.equal(msg.status, 'sending');
     const counts = await m.sendMessageEmails({ id: msg.id }, { db });
     assert.deepEqual(counts, { recipients: 2, emailed: 1, optedOut: 1, blocked: 0, skipped: 0, failed: 0 });
@@ -113,7 +140,7 @@ describe('send-message job', () => {
     assert.equal(mails.length, 1);
   });
   it('a retried job (Lambda retries failed async jobs) emails only who it missed', async () => {
-    const msg = await m.createMessage(m.validateMessage(draft({ email: true })).message, admin, db);
+    const msg = await m.createMessage(m.validateMessage(draft({ email: true, audience: { type: 'role', roles: ['learner'] } })).message, admin, db);
     // First attempt: one of the two sends fails, then the run dies before recording the result.
     let calls = 0;
     setEmailTransport(async (raw) => { calls++; mails.push(raw); if (calls === 1) throw Object.assign(new Error('timeout'), { name: 'TimeoutError' }); });
