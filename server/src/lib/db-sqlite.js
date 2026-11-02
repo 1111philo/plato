@@ -133,6 +133,14 @@ if (hasCustomFields.count === 0) {
   sqlite.exec('ALTER TABLE users ADD COLUMN customFields TEXT');
 }
 
+// Admin agreement acceptance timestamp (#407)
+const hasAdminAgreement = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'adminAgreementAcceptedAt'"
+).get();
+if (hasAdminAgreement.count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN adminAgreementAcceptedAt TEXT');
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"

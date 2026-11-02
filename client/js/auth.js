@@ -223,6 +223,20 @@ export async function updateProfile(updates) {
 }
 
 /**
+ * Accept the admin user agreement (#407).
+ */
+export async function acceptAdminAgreement() {
+  const res = await authenticatedFetch('/v1/me/accept-admin-agreement', {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to accept agreement');
+  }
+  return res.json();
+}
+
+/**
  * Admin-defined custom user fields (#364): definitions, the caller's values,
  * and the ids of required fields still missing. Always fetched fresh — the
  * cached auth user can't know an admin just added a required field.

@@ -36,6 +36,7 @@ me.get('/v1/me', async (c) => {
     role: user.role,
     customFields: visibleFieldValues(defs, user.customFields),
     createdAt: user.createdAt,
+    adminAgreementAcceptedAt: user.adminAgreementAcceptedAt,
   });
 });
 
@@ -52,6 +53,18 @@ me.get('/v1/me/fields', async (c) => {
     values: visibleFieldValues(defs, user.customFields),
     missing: missingRequiredFields(defs, user.customFields),
   });
+});
+
+// POST /v1/me/accept-admin-agreement — record admin agreement acceptance (#407)
+me.post('/v1/me/accept-admin-agreement', async (c) => {
+  const user = c.get('user');
+  if (user.role !== 'admin') {
+    return c.json({ error: 'Only admins can accept the admin agreement' }, 403);
+  }
+  await db.updateUser(user.userId, {
+    adminAgreementAcceptedAt: new Date().toISOString(),
+  });
+  return c.json({ ok: true });
 });
 
 // PATCH /v1/me — update profile fields

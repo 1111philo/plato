@@ -14,6 +14,7 @@ import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import ScreenReaderAnnounce from './components/ScreenReaderAnnounce.jsx';
 import ProfileCompletionGate from './components/ProfileCompletionGate.jsx';
+import AdminAgreementGate from './components/AdminAgreementGate.jsx';
 import { BrandingProvider } from './contexts/BrandingContext.jsx';
 
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout.jsx'));
@@ -103,9 +104,11 @@ export default function App() {
         <Route path="/plato/*" element={
           <RequireAuth>
             <RequireAdmin>
-              <Suspense fallback={<AdminFallback />}>
-                <AdminLayout />
-              </Suspense>
+              <AdminAgreementGate>
+                <Suspense fallback={<AdminFallback />}>
+                  <AdminLayout />
+                </Suspense>
+              </AdminAgreementGate>
             </RequireAdmin>
           </RequireAuth>
         }>
