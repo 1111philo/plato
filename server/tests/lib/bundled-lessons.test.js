@@ -11,12 +11,15 @@ const DB_PATH = './data/test-bundled-lessons.db';
 process.env.DB_BACKEND = 'sqlite';
 process.env.SQLITE_PATH = DB_PATH;
 const { default: db } = await import('../../src/lib/db-sqlite.js');
-const { ensureBundledLessons, bundledLessonStatus, actOnBundledLesson, versionOf, isStartHere, readBundledMarkdown } = await import('../../src/lib/bundled-lessons.js');
+const { ensureBundledLessons, bundledLessonStatus, actOnBundledLesson, versionOf, isStartHere, readBundledMarkdown, BUNDLED_LESSONS, BUNDLED_COURSE } = await import('../../src/lib/bundled-lessons.js');
+const { validateLessonMarkdown } = await import('../../src/lib/lesson-markdown.js');
 
 const V1 = '# Getting Started\n\nOrientation.\n\n## Exemplar\n\nA message.\n\n## Learning Objectives\n\n- Can do one\n- Can do two\n';
 const V2 = V1.replace('Orientation.', 'Orientation, revised.');
 let canonical = V1;
-const read = () => canonical;
+// Only the first lesson unless a test says otherwise (siblings read as missing).
+let siblings = null;
+const read = (file) => (file === 'getting-started.md' ? canonical : siblings?.[file] ?? null);
 const run = () => ensureBundledLessons({ db, read });
 const lesson = async () => (await db.getSyncData('_system', 'lesson:getting-started'))?.data;
 const admin = { userId: 'usr_admin', username: 'admin' };
@@ -24,18 +27,22 @@ const admin = { userId: 'usr_admin', username: 'admin' };
 async function reset() {
   for (const i of await db.getAllSyncData('_system')) await db.deleteSyncData('_system', i.dataKey);
   canonical = V1;
+  siblings = null;
 }
 after(() => { for (const f of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) if (existsSync(f)) unlinkSync(f); });
 
 describe('bundled lessons', () => {
   beforeEach(reset);
 
-  it('ships the real Getting Started file with a valid shape', () => {
-    const md = readBundledMarkdown('getting-started.md');
-    assert.match(md, /^# Getting Started$/m);
-    const objectives = md.split(/^## Learning Objectives$/m)[1].split(/^## /m)[0].match(/^- Can .+/gm);
-    assert.ok(objectives.length >= 2 && objectives.length <= 4, `${objectives.length} objectives`);
-    assert.match(md, /^## Coach Directive$/m);
+  it('ships every real Getting Started lesson with a valid shape', () => {
+    for (const b of BUNDLED_LESSONS) {
+      const md = readBundledMarkdown(b.file);
+      assert.ok(md, b.file);
+      assert.equal(validateLessonMarkdown(md), null, b.file);
+      assert.match(md, /^## Exemplar$/m, b.file);
+      assert.match(md, /^## Coach Directive$/m, b.file);
+    }
+    assert.match(readBundledMarkdown('getting-started.md'), /^# Welcome to plato$/m);
   });
 
   it('a brand-new classroom gets it public; a second run changes nothing', async () => {
@@ -43,6 +50,7 @@ describe('bundled lessons', () => {
     const l = await lesson();
     assert.equal(l.status, 'public');
     assert.equal(l.name, 'Getting Started');
+    assert.equal(l.course, BUNDLED_COURSE.unitId, 'in the Getting Started unit');
     assert.deepEqual(l.bundled, { id: 'getting-started', version: versionOf(V1) });
     assert.ok(isStartHere(l));
     assert.ok(await db.getSyncData('_system', 'bundled:getting-started'), 'install marker');
@@ -145,5 +153,62 @@ describe('bundled lessons', () => {
   it('rejects unknown actions', async () => {
     await run();
     assert.equal((await actOnBundledLesson('getting-started', 'nuke', admin, { db, read })).status, 400);
+  });
+});
+
+describe('the Getting Started course', () => {
+  beforeEach(async () => {
+    await reset();
+    siblings = { 'getting-started-sharing.md': V1.replace('# Getting Started', '# Sharing'), 'getting-started-behind.md': V1.replace('# Getting Started', '# Behind') };
+  });
+  const get = async (key) => (await db.getSyncData('_system', key))?.data;
+
+  it('installs one course holding one unit with the lessons in order, all public on a new classroom', async () => {
+    assert.deepEqual((await run()).installed, BUNDLED_LESSONS.map((b) => b.id));
+    const program = await get(`program:${BUNDLED_COURSE.programId}`);
+    assert.deepEqual([program.name, program.unitIds, program.bundled], [BUNDLED_COURSE.name, [BUNDLED_COURSE.unitId], { id: BUNDLED_COURSE.id }]);
+    assert.ok(program.description);
+    const unit = await get(`course:${BUNDLED_COURSE.unitId}`);
+    assert.deepEqual([unit.programId, unit.lessonIds], [BUNDLED_COURSE.programId, BUNDLED_LESSONS.map((b) => b.id)]);
+    for (const b of BUNDLED_LESSONS) {
+      const l = await get(`lesson:${b.id}`);
+      assert.deepEqual([l.status, l.course, isStartHere(l)], ['public', BUNDLED_COURSE.unitId, true], b.id);
+    }
+  });
+
+  it('an install that already had the first lesson: it joins the unit; new lessons follow its status', async () => {
+    siblings = null;
+    await run(); // the one-lesson release: public, no course yet on that install
+    const first = await db.getSyncData('_system', 'lesson:getting-started');
+    await db.putSyncData('_system', 'lesson:getting-started', { ...first.data, course: null }, first.version);
+    await db.deleteSyncData('_system', `bundled:course:${BUNDLED_COURSE.id}`);
+    await db.deleteSyncData('_system', `program:${BUNDLED_COURSE.programId}`);
+    await db.deleteSyncData('_system', `course:${BUNDLED_COURSE.unitId}`);
+    siblings = { 'getting-started-sharing.md': V1, 'getting-started-behind.md': V1 };
+    assert.deepEqual((await run()).installed, ['getting-started-sharing', 'getting-started-behind']);
+    assert.equal((await get('lesson:getting-started')).course, BUNDLED_COURSE.unitId);
+    assert.equal((await get('lesson:getting-started-sharing')).status, 'public', 'follows the published first lesson');
+  });
+
+  it('on an existing classroom everything arrives private', async () => {
+    await db.createSyncData('_system', 'lesson:les-1', { name: 'Existing', markdown: V1, status: 'public' });
+    await run();
+    for (const b of BUNDLED_LESSONS) assert.equal((await get(`lesson:${b.id}`)).status, 'private', b.id);
+  });
+
+  it('is the admin\u2019s after install: a deleted course is never recreated, and a placed lesson isn\u2019t moved', async () => {
+    await run();
+    await db.deleteSyncData('_system', `program:${BUNDLED_COURSE.programId}`);
+    const l = await db.getSyncData('_system', 'lesson:getting-started');
+    await db.putSyncData('_system', 'lesson:getting-started', { ...l.data, course: 'course-mine' }, l.version);
+    await run();
+    assert.equal(await get(`program:${BUNDLED_COURSE.programId}`), undefined);
+    assert.equal((await get('lesson:getting-started')).course, 'course-mine');
+  });
+
+  it('a course the admin already made under the same id is left alone', async () => {
+    await db.createSyncData('_system', `program:${BUNDLED_COURSE.programId}`, { name: 'Mine', unitIds: [] });
+    await run();
+    assert.deepEqual(await get(`program:${BUNDLED_COURSE.programId}`), { name: 'Mine', unitIds: [] });
   });
 });

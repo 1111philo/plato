@@ -71,7 +71,9 @@ export const MIGRATIONS = [
       const units = items.filter((i) => i.dataKey.startsWith('course:'));
       // Our own prog-default doesn't count: an earlier run that created it and
       // then lost a unit write (or ran out of time) must finish the job.
-      const hasProgram = items.some((i) => i.dataKey.startsWith('program:') && i.dataKey !== 'program:prog-default');
+      // Neither does a course plato installed (Getting Started, `bundled`):
+      // startup installs it before migrations run, and it isn't an admin's.
+      const hasProgram = items.some((i) => i.dataKey.startsWith('program:') && i.dataKey !== 'program:prog-default' && !i.data?.bundled);
       const pending = units.filter((u) => !u.data?.programId);
       result.scanned = units.length;
       if (pending.length === 0) { result.skipped = units.length; return result; }
@@ -86,7 +88,8 @@ export const MIGRATIONS = [
       const sortByName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
       const settings = items.find((i) => i.dataKey === 'settings')?.data || {};
       const programId = 'prog-default';
-      const unitIds = units.map((u) => ({ id: u.dataKey.slice(7), name: u.data?.name })).sort(sortByName).map((u) => u.id);
+      // Units not in a course yet (the bundled Getting Started unit already is).
+      const unitIds = pending.map((u) => ({ id: u.dataKey.slice(7), name: u.data?.name })).sort(sortByName).map((u) => u.id);
       const name = (settings.classroomName || settings.logoAlt || '').trim() || 'Main Course';
       result.notes.push(`create Course "${name}" with ${unitIds.length} unit(s)`);
       if (!dryRun) {

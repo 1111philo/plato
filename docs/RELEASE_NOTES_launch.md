@@ -59,6 +59,8 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #483 | Port of prod hotfix #482: Copy to account for wait-list entries whose email already has an account | #363 |
 | #484 | Second adversarial review: Slack 429 at signup, failed-turn restore, wait-list IP, refused-save resend, UTF-8 size guard, group rename finish, roles rollback script | review |
 | #486 | Invites for existing accounts: a wait-list entry whose email has an account can be invited; they get an email and a classroom notice, and accepting merges the answers (replaces Copy to account) | #363 |
+| #489 | Coach replies show as they stream in: the typing animation and its setting are gone | #247 |
+| #GS | Getting Started becomes a three-lesson course, "Getting Started with plato"; course overviews (description + How assessment works) replace the footer link; course descriptions editable | #443, #257 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
@@ -88,8 +90,11 @@ Beta-RC-232's code), see `server/scripts/rehearse-upgrade.js`.
 - runs `m003_role_learner`, `m004_default_program`, and `m005_name_split`
   (table above). Each is conditional and idempotent, runs once per install
   under a lock, and never holds up serving for more than 20 s.
-- installs **Getting Started** as a *private* lesson. Admin → Lessons asks
-  an admin to review and publish it, so learners see nothing new until then.
+- installs the **Getting Started with plato** course (one unit, three
+  lessons) with its lessons *private*, before the migrations run. Admin →
+  Lessons shows one notice with **Publish all**, so learners see nothing new
+  until an admin publishes them. m004 still puts your existing units into
+  the default course; it doesn't count the bundled course as yours.
 - leaves every email automation **off**.
 
 **4. Check.** Search the logs for `migration_applied`. Each migration logs
@@ -150,6 +155,11 @@ lock and makes no writes):
   so name order equals their numbering and nothing reorders.
 - `m005_name_split`: 184 would update. 12 names have 3+ parts, and 1 user has
   no name.
+
+> The rehearsal below ran before Getting Started became a three-lesson
+> course (#GS). Re-run it before the merge: expect 5 more added records (two
+> lessons and their markers, the course, the unit, and the course marker),
+> and m004 unchanged.
 
 **Full rehearsal on a point-in-time copy of prod** (`scripts/rehearse-upgrade.js`
 against `plato-rehearsal-*` restored from PITR; the tables were deleted

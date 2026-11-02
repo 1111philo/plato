@@ -57,6 +57,24 @@ describe('start here (#443)', () => {
   it('is not part of any course progress', () => {
     assert.deepEqual(completionBy('program', [gs], { 'getting-started': { status: 'completed' } }), {});
   });
+
+  // The Getting Started course (Blake's review on #451): a course of its own, shown first.
+  const GSP = { id: 'prog-getting-started', name: 'Getting Started with plato', position: 0 };
+  const GSU = { id: 'unit-getting-started', name: 'How plato works', position: 0 };
+  const course = [
+    { lessonId: 'getting-started-behind', name: 'Behind', startHere: true, program: GSP, unit: { ...GSU, lessonPosition: 2 } },
+    { lessonId: 'getting-started', name: 'Welcome', startHere: true, program: GSP, unit: { ...GSU, lessonPosition: 0 } },
+    { lessonId: 'getting-started-sharing', name: 'Sharing', startHere: true, program: GSP, unit: { ...GSU, lessonPosition: 1 } },
+  ];
+  it('as a course: shown first, under its own course heading, lessons in order, next lesson walks it', () => {
+    const sorted = sortLessons([...lessons, ...course]);
+    assert.deepEqual(sorted.slice(0, 3).map((l) => l.lessonId), ['getting-started', 'getting-started-sharing', 'getting-started-behind']);
+    const [first] = groupForDisplay(sorted);
+    assert.deepEqual([first.key, first.program.name, first.units.map((u) => u.unit.name)], ['prog-getting-started', 'Getting Started with plato', ['How plato works']]);
+    assert.equal(nextLessonAfter(sorted, 'getting-started').lessonId, 'getting-started-sharing');
+    assert.equal(nextLessonAfter(sorted, 'getting-started-behind'), null, 'the course ends; no jump into another course');
+    assert.deepEqual(completionBy('program', course, { 'getting-started': { status: 'completed' } }), { 'prog-getting-started': { completed: 1, total: 3 } });
+  });
 });
 
 describe('groupForDisplay', () => {

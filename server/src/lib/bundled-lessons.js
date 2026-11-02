@@ -18,6 +18,15 @@
  * publishNoticeDismissed? }`, where `version` is the hash of the canonical
  * markdown the copy was last synced to. The copy counts as edited when its
  * markdown no longer hashes to `version`.
+ *
+ * The lessons come as one course, **Getting Started with plato** (#443,
+ * Blake's review on #451): `BUNDLED_COURSE` is installed once per install
+ * (marker `_system:bundled:course:<id>`) as a Course holding one Unit with
+ * the lessons in order. After that it's the admin's: renamed, reordered, or
+ * deleted, it's never recreated. A bundled lesson installed later joins the
+ * unit if it still exists. Learners see the course first (`startHere`).
+ * The course record carries `bundled: { id }`, so the default-course
+ * migration (m004) doesn't count it as one an admin made.
  */
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
@@ -27,7 +36,48 @@ import defaultDb from './db.js';
 
 export const BUNDLED_LESSONS = Object.freeze([
   { id: 'getting-started', file: 'getting-started.md', startHere: true },
+  { id: 'getting-started-sharing', file: 'getting-started-sharing.md', startHere: true },
+  { id: 'getting-started-behind', file: 'getting-started-behind.md', startHere: true },
 ]);
+
+export const BUNDLED_COURSE = Object.freeze({
+  id: 'getting-started',
+  programId: 'prog-getting-started',
+  unitId: 'unit-getting-started',
+  name: 'Getting Started with plato',
+  unitName: 'How plato works',
+  description: 'Three short lessons on using plato: how lessons and the AI coach work, how to share your work, and what plato does behind the scenes.',
+});
+
+/**
+ * Install the Getting Started course and unit once. Returns the unit id when
+ * the unit exists (new or the admin's, still there), else null.
+ */
+async function ensureBundledCourse(db, now) {
+  const c = BUNDLED_COURSE;
+  const markerKey = `bundled:course:${c.id}`;
+  if (!(await db.getSyncData('_system', markerKey))) {
+    const stamp = { createdBy: 'plato', createdByName: 'plato', createdAt: now() };
+    const create = async (key, data) => {
+      try { await db.createSyncData('_system', key, data); } catch (err) {
+        if (err.name !== 'ConditionalCheckFailedException') throw err; // exists: another container, or an admin's own
+      }
+    };
+    await create(`program:${c.programId}`, { name: c.name, description: c.description, unitIds: [c.unitId], bundled: { id: c.id }, ...stamp });
+    await create(`course:${c.unitId}`, { name: c.unitName, programId: c.programId, lessonIds: BUNDLED_LESSONS.map((b) => b.id), bundled: { id: c.id }, ...stamp });
+    // Bundled lessons installed before the course existed (one lesson, no unit) join it.
+    for (const b of BUNDLED_LESSONS) {
+      const lesson = await db.getSyncData('_system', `lesson:${b.id}`);
+      if (lesson?.data?.bundled && !lesson.data.course) {
+        try { await db.putSyncData('_system', `lesson:${b.id}`, { ...lesson.data, course: c.unitId }, lesson.version); } catch (err) {
+          if (err.name !== 'ConditionalCheckFailedException') throw err;
+        }
+      }
+    }
+    await create(markerKey, { installedAt: now() });
+  }
+  return (await db.getSyncData('_system', `course:${c.unitId}`)) ? c.unitId : null;
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LESSONS_DIRS = [
@@ -66,7 +116,14 @@ export function isStartHere(data) {
  */
 export async function ensureBundledLessons({ db = defaultDb, read = readBundledMarkdown, now = () => new Date().toISOString() } = {}) {
   const result = { installed: [], updated: [], customized: [], skipped: [] };
-  let items = null;
+  // Read before anything is installed: a classroom with no lessons yet gets
+  // the course public; an existing one gets it private, for an admin to publish.
+  const items = await db.getAllSyncData('_system');
+  const firstLesson = !items.some((i) => i.dataKey.startsWith('lesson:'));
+  let unitId = null;
+  try { unitId = await ensureBundledCourse(db, now); } catch (err) {
+    console.error('Bundled course failed (non-fatal):', err.message);
+  }
   for (const b of BUNDLED_LESSONS) {
     try {
       const markdown = read(b.file);
@@ -77,15 +134,17 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
 
       if (!marker) {
         if (!lesson) {
-          items ||= await db.getAllSyncData('_system');
-          const firstLesson = !items.some((i) => i.dataKey.startsWith('lesson:'));
+          // A lesson added to the course later follows the first one: public
+          // if an admin already published Getting Started.
+          const lead = items.find((i) => i.dataKey === `lesson:${BUNDLED_LESSONS[0].id}`)?.data;
+          const leadPublic = !!lead?.bundled && lead.status === 'public';
           try {
             await db.createSyncData('_system', `lesson:${b.id}`, {
               markdown,
               name: titleOf(markdown, b.id),
-              status: firstLesson ? 'public' : 'private',
+              status: firstLesson || leadPublic ? 'public' : 'private',
               sharedWith: [],
-              course: null,
+              course: unitId,
               bundled: { id: b.id, version },
               createdBy: 'plato', createdByName: 'plato', createdAt: now(),
               updatedBy: 'plato', updatedByName: 'plato',

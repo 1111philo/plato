@@ -36,9 +36,12 @@ const ALLOWED = {
   added: [
     /^sync:_system:migrations$/,
     /^sync:_system:program:prog-default$/, // m004_default_program
-    // Bundled lessons (#443): seeded at startup next to the migrations.
-    /^sync:_system:lesson:getting-started$/,
-    /^sync:_system:bundled:getting-started$/,
+    // Bundled Getting Started course (#443): seeded at startup, before the migrations.
+    /^sync:_system:lesson:getting-started(-sharing|-behind)?$/,
+    /^sync:_system:bundled:getting-started(-sharing|-behind)?$/,
+    /^sync:_system:bundled:course:getting-started$/,
+    /^sync:_system:program:prog-getting-started$/,
+    /^sync:_system:course:unit-getting-started$/,
   ],
   changed: [
     /^user:usr_(ada|cher|mae|jose|blank|pad)$/, // m003_role_learner: stored role was 'user'
@@ -60,11 +63,11 @@ describe('upgrade from Beta-RC-232', () => {
   before(async () => {
     await seedRc232(db);
     before1 = await snapshot(db);
+    // Same order as startup (index.js): bundled content is seeded first, then
+    // the migrations run. Covered by the rollback check below too.
+    assert.deepEqual((await ensureBundledLessons({ db })).installed, ['getting-started', 'getting-started-sharing', 'getting-started-behind']);
     const outcome = await runMigrations();
     for (const { id, result } of outcome.ran) assert.equal(result.errors, 0, `${id} reported errors: ${JSON.stringify(result)}`);
-    // Startup also installs bundled lessons; include them so the rollback
-    // check below covers them.
-    assert.deepEqual((await ensureBundledLessons({ db })).installed, ['getting-started']);
     after1 = await snapshot(db);
   });
   after(() => { cleanup(); rmSync(RC232_DIR, { recursive: true, force: true }); });
@@ -129,9 +132,19 @@ describe('upgrade from Beta-RC-232', () => {
   });
 
   it('Getting Started arrives private on an existing classroom (learners see nothing new until an admin publishes)', async () => {
-    const l = (await db.getSyncData('_system', 'lesson:getting-started')).data;
-    assert.equal(l.status, 'private');
-    assert.deepEqual(l.sharedWith, []);
+    for (const id of ['getting-started', 'getting-started-sharing', 'getting-started-behind']) {
+      const l = (await db.getSyncData('_system', `lesson:${id}`)).data;
+      assert.equal(l.status, 'private', id);
+      assert.deepEqual(l.sharedWith, [], id);
+      assert.equal(l.course, 'unit-getting-started', id);
+    }
+  });
+
+  it('the bundled course doesn\u2019t stop m004 from making the default course (startup seeds it first)', async () => {
+    const gs = (await db.getSyncData('_system', 'program:prog-getting-started')).data;
+    assert.deepEqual(gs.unitIds, ['unit-getting-started']);
+    assert.equal((await db.getSyncData('_system', 'course:unit-getting-started')).data.programId, 'prog-getting-started');
+    assert.ok(await db.getSyncData('_system', 'program:prog-default'), 'default course still created');
   });
 
   it('never rewrites learner work', () => {
@@ -171,8 +184,8 @@ describe('upgrade from Beta-RC-232', () => {
 
     const publicVisible = FIXTURE.lessons.filter((l) => l.status === 'public').length;
     assert.equal(results['admin users'].count, FIXTURE.users.length);
-    assert.equal(results['admin lessons'].count, FIXTURE.lessons.length + 1, 'plus the private Getting Started');
-    assert.equal(results['admin courses'].count, FIXTURE.courses.length);
+    assert.equal(results['admin lessons'].count, FIXTURE.lessons.length + 3, 'plus the three private Getting Started lessons');
+    assert.equal(results['admin courses'].count, FIXTURE.courses.length + 1, 'plus the Getting Started unit (RC-232 calls units courses)');
     assert.equal(results['admin waitlist'].count, FIXTURE.waitlist.length);
     assert.equal(results['learner lessons'].count, publicVisible + 1, 'public + the private lesson shared with Ada');
     assert.equal(results['learner kb'].count, 10, "Ada's completed lesson keeps progress 10");

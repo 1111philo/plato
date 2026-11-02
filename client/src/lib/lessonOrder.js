@@ -10,7 +10,7 @@ const byName = (a, b) => (a || '').localeCompare(b || '', undefined, { numeric: 
 const rank = (v) => (typeof v === 'number' ? v : Number.POSITIVE_INFINITY);
 
 /**
- * "Start here" lessons first (Getting Started, #443), then courses in their
+ * "Start here" lessons first (the Getting Started course, #443), then courses in their
  * order, then units in the course's order, then lessons in the unit's order.
  * Units outside any course come after courses; lessons outside any unit,
  * including the learner's own custom-* lessons, come last. Ties fall back to
@@ -58,17 +58,20 @@ export function nextLessonAfter(lessons, lessonId) {
 export function groupForDisplay(sorted) {
   const groups = [];
   for (const lesson of sorted) {
-    const programKey = lesson.startHere ? 'start-here'
-      : lesson.program?.id || (lesson.unit ? 'units-without-course' : 'other');
+    // Getting Started (#443) is a course of its own; it sorts first. A start-here
+    // lesson an admin took out of every course still gets its own group.
+    const programKey = lesson.program?.id
+      || (lesson.startHere ? 'start-here' : lesson.unit ? 'units-without-course' : 'other');
     let g = groups[groups.length - 1];
     if (!g || g.key !== programKey) {
       g = { key: programKey, program: lesson.program || null, units: [] };
       groups.push(g);
     }
-    const unitKey = lesson.startHere ? 'start-here' : lesson.unit?.id || 'no-unit';
+    const loose = lesson.startHere && !lesson.program;
+    const unitKey = loose ? 'start-here' : lesson.unit?.id || 'no-unit';
     let u = g.units[g.units.length - 1];
     if (!u || u.key !== unitKey) {
-      u = { key: unitKey, unit: lesson.startHere ? null : lesson.unit || null, lessons: [] };
+      u = { key: unitKey, unit: loose ? null : lesson.unit || null, lessons: [] };
       g.units.push(u);
     }
     u.lessons.push(lesson);
