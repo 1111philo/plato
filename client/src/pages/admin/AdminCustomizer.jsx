@@ -10,7 +10,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { renderMd } from '../../lib/helpers.js';
 import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
 import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
@@ -290,7 +289,6 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
   const [error, setError] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const notifyTitle = useTitleNotification('Customizer — Admin');
@@ -316,7 +314,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
   }, [chatMessages]);
 
   useEffect(() => {
-    if (displayText === null && pendingRef.current) {
+    if (streamingText === null && pendingRef.current) {
       const { msgs, r } = pendingRef.current;
       pendingRef.current = null;
       if (msgs) {
@@ -330,7 +328,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
       if (r != null) setReadiness(r);
       setBusy('');
     }
-  }, [displayText]);
+  }, [streamingText]);
 
   // Start conversation — skip if resuming from a saved conversation
   useEffect(() => {
@@ -467,7 +465,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
         </div>
       )}
 
-      {(chatMessages.length > 0 || displayText != null) && (
+      {(chatMessages.length > 0 || streamingText != null) && (
         <div className="flex items-end gap-4 mb-4">
           <div
             className="flex-1"
@@ -509,12 +507,12 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
             <div className="mb-3">
               <ChatArea announcement={srAnnouncement}>
                 {chatMessages.map(renderMessage)}
-                {displayText != null && displayText.length > 0 && (
-                  <AssistantMessage content={displayText} streaming />
+                {streamingText != null && streamingText.length > 0 && (
+                  <AssistantMessage content={streamingText} streaming />
                 )}
-                {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+                {busy === 'starting' && !streamingText && <ThinkingSpinner text="Starting..." />}
                 {busy === 'creating' && <ThinkingSpinner text="Generating knowledge base..." />}
-                {busy === 'qa' && !displayText && <ThinkingSpinner />}
+                {busy === 'qa' && !streamingText && <ThinkingSpinner />}
               </ChatArea>
             </div>
 

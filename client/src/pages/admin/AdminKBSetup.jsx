@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 
 import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
 import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useStreamedText } from '../../hooks/useStreamedText.js';
 import { useTitleNotification } from '../../hooks/useTitleNotification.js';
 import { MSG_TYPES } from '../../lib/constants.js';
 import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
@@ -28,7 +27,6 @@ export default function AdminKBSetup() {
   const [error, setError] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
   const pendingRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const notifyTitle = useTitleNotification('Set Up Knowledge Base — plato');
@@ -45,7 +43,7 @@ export default function AdminKBSetup() {
   }, []);
 
   useEffect(() => {
-    if (displayText === null && pendingRef.current) {
+    if (streamingText === null && pendingRef.current) {
       const { msgs, r } = pendingRef.current;
       pendingRef.current = null;
       if (msgs) {
@@ -59,7 +57,7 @@ export default function AdminKBSetup() {
       if (r != null) setReadiness(r);
       setBusy('');
     }
-  }, [displayText, notifyTitle]);
+  }, [streamingText, notifyTitle]);
 
   // Start conversation
   useEffect(() => {
@@ -191,7 +189,7 @@ export default function AdminKBSetup() {
         </div>
       )}
 
-      {(chatMessages.length > 0 || displayText != null) && (
+      {(chatMessages.length > 0 || streamingText != null) && (
         <div className="flex items-end gap-4 mb-4">
           <div
             className="flex-1"
@@ -229,12 +227,12 @@ export default function AdminKBSetup() {
             <div className="mb-3">
               <ChatArea announcement={srAnnouncement}>
                 {chatMessages.map(renderMessage)}
-                {displayText != null && displayText.length > 0 && (
-                  <AssistantMessage content={displayText} streaming />
+                {streamingText != null && streamingText.length > 0 && (
+                  <AssistantMessage content={streamingText} streaming />
                 )}
-                {busy === 'starting' && !displayText && <ThinkingSpinner text="Starting..." />}
+                {busy === 'starting' && !streamingText && <ThinkingSpinner text="Starting..." />}
                 {busy === 'creating' && <ThinkingSpinner text="Generating knowledge base..." />}
-                {busy === 'qa' && !displayText && <ThinkingSpinner />}
+                {busy === 'qa' && !streamingText && <ThinkingSpinner />}
               </ChatArea>
             </div>
 

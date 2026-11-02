@@ -8,7 +8,7 @@ import {
 } from '../../js/storage.js';
 import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
 import { useApp } from '../contexts/AppContext.jsx';
-import { SEND_KEYS, sendKeyOf, isMacLike, prefersReducedMotion } from '../lib/chatPrefs.js';
+import { SEND_KEYS, sendKeyOf, isMacLike } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
@@ -315,7 +315,7 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
   );
 }
 
-// How messages are sent and how coach replies appear, in every chat (#247).
+// How messages are sent, in every chat (#247).
 // Saved to the preferences record as soon as an option changes.
 function ChatPreferences() {
   const { state, dispatch } = useApp();
@@ -323,8 +323,6 @@ function ChatPreferences() {
   const prefs = state.preferences || {};
   const sendKey = sendKeyOf(prefs);
   const mod = isMacLike() ? '⌘' : 'Ctrl';
-  const reducedMotion = prefersReducedMotion();
-  const instant = prefs.instantText ?? reducedMotion;
 
   async function update(patch) {
     const next = { ...prefs, ...patch };
@@ -359,17 +357,6 @@ function ChatPreferences() {
             <span>Enter <span className="text-muted-foreground">(Shift+Enter adds a new line)</span></span>
           </label>
         </fieldset>
-        <label className={option}>
-          <input type="checkbox" className="mt-0.5 accent-primary" checked={instant}
-            aria-describedby="instant-text-hint"
-            onChange={(e) => update({ instantText: e.target.checked })} />
-          <span>
-            Show coach replies instantly
-            <span id="instant-text-hint" className="block text-muted-foreground">
-              {reducedMotion ? 'On by default because your device asks for reduced motion.' : 'Skips the typing animation.'}
-            </span>
-          </span>
-        </label>
         <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
       </CardContent>
     </Card>

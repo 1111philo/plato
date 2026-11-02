@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useStreamedText } from '../hooks/useStreamedText.js';
 import { useTitleNotification } from '../hooks/useTitleNotification.js';
 import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
 import { launchConfetti } from '../lib/confetti.js';
@@ -60,7 +59,6 @@ export default function LessonChat() {
   const [error, setError] = useState('');
 
   const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
   const pendingAfterStreamRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const srClearTimeoutRef = useRef(null);
@@ -107,7 +105,7 @@ export default function LessonChat() {
   }, []);
 
   useEffect(() => {
-    if (displayText === null && pendingAfterStreamRef.current) {
+    if (streamingText === null && pendingAfterStreamRef.current) {
       const { msgs, p, confetti } = pendingAfterStreamRef.current;
       pendingAfterStreamRef.current = null;
       if (msgs) {
@@ -148,7 +146,7 @@ export default function LessonChat() {
       }
       setLoading('');
     }
-  }, [displayText]);
+  }, [streamingText]);
 
   useEffect(() => () => {
     if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
@@ -487,15 +485,15 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      {loading === 'starting' && !displayText ? (
+      {loading === 'starting' && !streamingText ? (
         <LessonLoadingView step={loadingStep} enrichments={loadingEnrichments} />
       ) : (
         <ChatArea ref={chatAreaRef} announcement={srAnnouncement}>
           {messages.map(renderMessage)}
-          {displayText != null && displayText.length > 0 && (
-            <AssistantMessage content={displayText} streaming />
+          {streamingText != null && streamingText.length > 0 && (
+            <AssistantMessage content={streamingText} streaming />
           )}
-          {loading === 'qa' && !displayText && <ThinkingSpinner />}
+          {loading === 'qa' && !streamingText && <ThinkingSpinner />}
           {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
           {phase === LESSON_PHASES.COMPLETED && (
             <div className="flex flex-col items-center gap-3 mt-8 mb-4 px-4">

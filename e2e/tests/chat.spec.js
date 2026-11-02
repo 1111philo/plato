@@ -36,8 +36,8 @@ test('choosing Enter to send in Settings applies to the chat', async ({ page }) 
   const chat = page.locator('[data-slot=card]', { has: page.getByText('Send a message with') });
   await chat.getByRole('radio', { name: /^Enter/ }).check();
   await expect(chat.getByRole('status')).toHaveText('Saved.');
-  // Reduced motion is on in this suite, so instant replies default on.
-  await expect(chat.getByRole('checkbox', { name: /Show coach replies instantly/ })).toBeChecked();
+  // Replies show as they stream in; there's no typing-animation option.
+  await expect(chat.getByRole('checkbox', { name: /Show coach replies instantly/ })).toHaveCount(0);
   await expectAccessible(page, { label: 'settings chat preferences' });
 
   await page.goto(`/lessons/${LESSONS[0].id}`);
