@@ -110,7 +110,7 @@ describe('learner lesson placement', () => {
     const lessons = await (await req('GET', '/v1/lessons', null, 'usr_learner', content)).json();
     const l2 = lessons.find((l) => l.lessonId === 'l2');
     assert.deepEqual(l2.unit, { id: 'u1', name: 'Unit A', position: 0, lessonPosition: 1 });
-    assert.deepEqual(l2.program, { id: 'p1', name: 'Course One', position: 0 });
+    assert.deepEqual(l2.program, { id: 'p1', name: 'Course One', description: '', position: 0 });
     assert.deepEqual(l2.course, { id: 'u1', name: 'Unit A' });
     const l3 = lessons.find((l) => l.lessonId === 'l3');
     assert.equal(l3.program, null, 'unit not in a course');

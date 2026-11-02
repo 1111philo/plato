@@ -888,23 +888,46 @@ coupling between the lessons themselves.
 *Known limitation (v1):* summaries build **forward** from completions after this
 shipped; pre-existing completions are not backfilled.
 
-### Getting Started, the bundled orientation lesson (#443)
+### Getting Started, the bundled orientation course (#443)
 
-One lesson ships with plato: **Getting Started** (`client/prompts/lessons/getting-started.md`,
-fixed id `getting-started`). It teaches the classroom itself: the coach's
-role, objectives and exemplars, sending and attaching work, completion,
-navigation, and Settings → Chat. Its `## Coach Directive` lists the real
-control names so the coach doesn't invent UI. The file travels with the
-prompts (the deploy's `cp -r client/prompts` copies the `lessons/` folder),
-and `seedDefaultContent` calls `ensureBundledLessons()`
-(`server/src/lib/bundled-lessons.js`) on every cold start:
+plato ships one course, **Getting Started with plato**, so every classroom
+can teach the platform itself. It's a Course holding one Unit ("How plato
+works") with three lessons, in order. Each lesson's exemplar proves the
+learner can use part of plato, not a subject:
+
+| Lesson (fixed id, file in `client/prompts/lessons/`) | The learner shows they can |
+|---|---|
+| **Welcome to plato** (`getting-started`, `getting-started.md`) | say what plato and the coach are; find the exemplar and objectives and which are met (the lesson overview); say how a lesson is completed and what happens after |
+| **Sharing your work** (`getting-started-sharing`, `getting-started-sharing.md`) | send, and pick the send key (Settings → Chat); share a screenshot or image; attach a link and say what the coach does with it |
+| **What plato does behind the scenes** (`getting-started-behind`, `getting-started-behind.md`) | read and correct the learner profile (Settings → Learner Profile → Add Feedback); use "Behind this response"; say what carries between lessons (unit progress) |
+
+Each lesson's `## Coach Directive` lists the real control names so the
+coach doesn't invent UI. The files travel with the prompts (the deploy's
+`cp -r client/prompts` copies the `lessons/` folder), and
+`seedDefaultContent` calls `ensureBundledLessons()`
+(`server/src/lib/bundled-lessons.js`) on every cold start, **before** the
+data migrations run.
+
+**The course** (`BUNDLED_COURSE`): `_system:program:prog-getting-started`
+and `_system:course:unit-getting-started` (unit `lessonIds` in lesson order),
+both marked `bundled: { id }`, installed once (`_system:bundled:course:getting-started`).
+After that it's the admin's: rename it, reorder it, or delete it, and it's
+never recreated. A record an admin already has under the same id is left
+alone. Lessons installed before the course existed (playground's one-lesson
+release) join the unit if they aren't in one. m004 ignores bundled courses
+when deciding whether an admin already made courses; startup installs this
+one first, and counting it would leave every existing unit outside the
+default course.
+
+**Each lesson:**
 
 | Situation | What happens |
 |---|---|
-| First time on an install, classroom has no lessons | created **public** |
-| First time on an existing classroom | created **private**; Admin → Lessons asks an admin to review and publish it |
+| First time on an install, classroom has no lessons | created **public**, in the Getting Started unit |
+| First time on an existing classroom | created **private**; Admin → Lessons shows one notice for the course with **Publish all / Review lessons / Dismiss** |
+| Added later to an install whose first Getting Started lesson is public | created public, so the course isn't left half-published |
 | Admin deleted it | never recreated (`_system:bundled:<id>` marker remembers the install) |
-| New version, copy unedited | updated in place; status, unit, and sharing kept; learner progress (`lessonKB:getting-started`) untouched |
+| New version, copy unedited | updated in place; status, unit, and sharing kept; learner progress (`lessonKB:<id>`) untouched |
 | New version, copy edited | never overwritten; Admin → Lessons shows "has an update" with **View update / Apply update / Dismiss** |
 | An admin's own lesson already uses the id | left alone (no `bundled` marker) |
 
@@ -915,16 +938,22 @@ lesson PUT keeps the marker, so editing makes a copy "edited" instead of
 detaching it. Routes: `GET /v1/admin/bundled-lessons` (content.read) and
 `POST /v1/admin/bundled-lessons/:id { action: 'apply' | 'dismiss' |
 'dismiss-publish' }` (content.write; apply is audit-logged
-`bundled_lesson_updated`).
+`bundled_lesson_updated`). Publish all uses the normal lesson PUT.
 
-Learners see it first: lesson reads include `startHere: true`, and the lessons
-page puts it under a **Start here** heading above the courses. It isn't in any
-course, so it doesn't count toward course progress. Learners can reopen it any
-time; completion and progress persist like any lesson's.
+Learners see it first: its lesson reads include `startHere: true`, so the
+course sorts above every other course; "Continue to Next Lesson" walks its
+three lessons and stops at the end of the course. A start-here lesson an
+admin moved out of every course still shows first, under **Start here**.
 
-**Keep it current:** a PR that changes learner-facing behavior updates this
-lesson (see CLAUDE.md). Unedited copies everywhere pick up the change on the
-next deploy.
+**Course overview.** Every course heading on the Lessons page shows the
+course's description (Admin → Lessons → Courses & Units → Edit) and a **How
+assessment works** link (accessible name "How assessment works in <course>").
+That's where the assessment page is linked from, next to the lessons it
+describes; it's no longer in the footer.
+
+**Keep it current:** a PR that changes learner-facing behavior updates the
+lesson that teaches it (see CLAUDE.md). Unedited copies everywhere pick up
+the change on the next deploy.
 
 ### The lesson overview (#438)
 

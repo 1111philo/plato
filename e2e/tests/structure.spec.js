@@ -62,3 +62,20 @@ test('learners see lessons grouped by course and unit, in the admin-defined orde
   await expect(page.getByLabel('Course', { exact: true })).toHaveValue('all');
   await expectAccessible(page, { label: 'lessons by course and unit' });
 });
+
+test('a course description is the overview learners see above its lessons', async ({ page, browser }) => {
+  await login(page, ADMIN);
+  await page.goto('/plato/lessons/structure');
+  await page.getByRole('button', { name: `Edit course ${PROGRAM.name}` }).click();
+  const form = page.getByRole('form', { name: `Edit course ${PROGRAM.name}` });
+  await form.getByLabel('Description').fill('Short lessons for the launch.');
+  await expectAccessible(page, { label: 'course edit form' });
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Short lessons for the launch.')).toBeVisible();
+
+  const learner = await (await browser.newContext()).newPage();
+  await login(learner, LEARNER);
+  await learner.goto('/lessons');
+  await expect(learner.getByText('Short lessons for the launch.')).toBeVisible({ timeout: 15_000 });
+  await expect(learner.getByRole('link', { name: `How assessment works in ${PROGRAM.name}` })).toBeVisible();
+});

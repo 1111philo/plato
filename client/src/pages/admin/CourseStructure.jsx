@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 
 const NAME_MAX = 80;
+const DESCRIPTION_MAX = 2000; // mirrors routes/admin-hierarchy.js
 const newId = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 const SELECT_CLASS = 'h-8 rounded-md border border-input bg-transparent px-2 text-sm';
 
@@ -30,7 +32,7 @@ export default function CourseStructure() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [announcement, setAnnouncement] = useState('');
-  const [editing, setEditing] = useState(null); // { kind: 'program'|'unit', id, name, programId? }
+  const [editing, setEditing] = useState(null); // { kind: 'program'|'unit', id, name, description?, programId? }
   const [confirm, setConfirm] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
   // Set only after the reloaded data renders, so focus lands on the moved
@@ -110,7 +112,8 @@ export default function CourseStructure() {
     if (!name) { setError('Name is required.'); return; }
     if (editing.kind === 'program') {
       const id = editing.id || newId('prog');
-      run(() => adminApi('PUT', `/v1/admin/programs/${id}`, { name }), editing.id ? `Renamed course to ${name}.` : `Added course ${name}.`);
+      // The description is the course overview learners see above its lessons.
+      run(() => adminApi('PUT', `/v1/admin/programs/${id}`, { name, description: editing.description || '' }), editing.id ? `Saved ${name}.` : `Added course ${name}.`);
     } else {
       const id = editing.id || newId('course');
       const body = { name, ...(editing.id ? {} : { programId: editing.programId || null }) };
@@ -133,6 +136,42 @@ export default function CourseStructure() {
 
   // Render helpers, not components: a component defined in the body is a
   // new type each render, which would remount the input while typing.
+  function courseForm(label) {
+    return (
+      <form onSubmit={saveEditing} className="w-full space-y-2" aria-label={label}>
+        <div className="space-y-1">
+          <label htmlFor="course-edit-name" className="text-sm font-medium">Name</label>
+          <Input
+            id="course-edit-name"
+            autoFocus
+            value={editing.name}
+            maxLength={NAME_MAX}
+            onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null); }}
+            className="h-8 w-64 max-w-full"
+          />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="course-edit-description" className="text-sm font-medium">Description</label>
+          <p id="course-edit-description-hint" className="text-xs text-muted-foreground">Learners see it above the course’s lessons, next to “How assessment works”.</p>
+          <Textarea
+            id="course-edit-description"
+            aria-describedby="course-edit-description-hint"
+            value={editing.description || ''}
+            maxLength={DESCRIPTION_MAX}
+            rows={3}
+            onChange={(e) => setEditing({ ...editing, description: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Escape') setEditing(null); }}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm">Save</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+        </div>
+      </form>
+    );
+  }
+
   function nameForm(label) {
     return (
       <form onSubmit={saveEditing} className="flex flex-wrap items-center gap-2" aria-label={label}>
@@ -240,7 +279,7 @@ export default function CourseStructure() {
 
       <div className="mb-4">
         {editing?.kind === 'program' && !editing.id
-          ? nameForm('New course name')
+          ? courseForm('New course')
           : <Button onClick={() => setEditing({ kind: 'program', id: null, name: '' })}>Add course</Button>}
       </div>
 
@@ -251,15 +290,16 @@ export default function CourseStructure() {
             <Card key={program.programId}>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  {isEditing ? nameForm(`Rename course ${program.name}`) : (
+                  {isEditing ? courseForm(`Edit course ${program.name}`) : (
                     <>
                       <h2 className="flex-1 min-w-0 text-lg font-semibold">{program.name}</h2>
                       <span className="text-sm text-muted-foreground">{program.unitCount} unit{program.unitCount === 1 ? '' : 's'} · {program.lessonCount} lesson{program.lessonCount === 1 ? '' : 's'}</span>
-                      <Button variant="ghost" size="sm" onClick={() => setEditing({ kind: 'program', id: program.programId, name: program.name })} aria-label={`Rename course ${program.name}`}>Rename</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setEditing({ kind: 'program', id: program.programId, name: program.name, description: program.description || '' })} aria-label={`Edit course ${program.name}`}>Edit</Button>
                       <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'program', id: program.programId, name: program.name, count: program.unitCount })} aria-label={`Delete course ${program.name}`}>Delete</Button>
                     </>
                   )}
                 </div>
+                {!isEditing && program.description && <p className="text-sm text-muted-foreground">{program.description}</p>}
                 {program.unitIds.length > 0 && (
                   <ol className="space-y-2" aria-label={`Units in ${program.name}`}>
                     {program.unitIds.map((unitId, index) => unitItem(unitId, program, index))}
