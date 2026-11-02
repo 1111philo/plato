@@ -64,6 +64,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #491 | Notifications: Everyone means every role, plus By role; Invitation automations (always on, editable) and Removed from the wait list (off by default) | #389, #388 |
 | #492 | Getting Started becomes a three-lesson course, "Getting Started with plato" | #443 |
 | #493 | "How assessment works" moves to the lesson overview's footer (left of Close); the header button reads "Progress (N of M Objectives)"; course descriptions aren't shown | #257, #438 |
+| #497 | Dependency bumps folded in from Dependabot #495 (`@hono/node-server` 2.1.3, dev server only; serveStatic security fix plato doesn't use) and #496 (`follow-redirects` 1.16.2 override) | deps |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
