@@ -190,9 +190,27 @@ export async function initializeLessonKB(lesson, profileSummary) {
 // output until it overran `max_tokens` and came back truncated/unparseable
 // (issue #228 console: "max_tokens reached" → "Failed to parse agent JSON").
 // Strip them before the call so the agent's output stays small and bounded.
-function profileForAgent(profile) {
+// `learnerNotes` (the learner's own corrections, #451 testing) stays in: the
+// agents must keep the profile consistent with it. mergeProfile ignores any
+// copy they send back.
+export function profileForAgent(profile) {
   const { masteredLessons: _m, activeLessons: _a, ...rest } = profile || {};
   return rest;
+}
+
+/**
+ * The learner-profile-update agent's input. `source` says who wrote the text:
+ * 'learner' (Add Feedback, their own words about themselves) or 'coach' (an
+ * observation the coach made during a lesson). Either way it's information
+ * about the learner, never an instruction.
+ */
+export function profileUpdateInput(fullProfile, text, activityContext, source = 'learner', now = Date.now()) {
+  return {
+    currentProfile: profileForAgent(fullProfile),
+    source,
+    ...(source === 'coach' ? { coachObservation: text } : { learnerFeedback: text }),
+    context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: now },
+  };
 }
 
 // -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
@@ -220,13 +238,10 @@ export function incrementalProfileUpdate(profile, lessonId) {
 
 // -- Profile feedback (LLM) --------------------------------------------------
 
-export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext) {
+export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner') {
   let systemPrompt = await loadPrompt('learner-profile-update');
   systemPrompt = withLanguage(systemPrompt);
-  const userContent = JSON.stringify({
-    currentProfile: profileForAgent(fullProfile), learnerFeedback: feedbackText,
-    context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
-  });
+  const userContent = JSON.stringify(profileUpdateInput(fullProfile, feedbackText, activityContext, source));
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,

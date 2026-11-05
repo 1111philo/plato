@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
   savePreferences,
-  getLearnerProfileSummary,
+  getLearnerProfileSummary, getLearnerProfile,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
@@ -14,7 +14,7 @@ import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncInBackground } from '../lib/syncDebounce.js';
-import { ensureProfileExists, mergeProfile } from '../lib/profileQueue.js';
+import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,30 @@ export default function Settings() {
   const [name, setName] = useState({ firstName: user?.firstName || '', lastName: user?.lastName || '' });
   const [username, setUsername] = useState(user?.username || '');
   const [profileSummary, setProfileSummary] = useState('');
+  const [learnerNotes, setLearnerNotes] = useState([]);
+
+  // Remove one of the learner's notes. The profile agent then revises the
+  // profile so it stops following that note (in the background).
+  async function removeNote(index) {
+    const profile = await ensureProfileExists();
+    const removed = profile.learnerNotes?.[index];
+    if (!removed) return;
+    const next = withoutLearnerNote(profile, index);
+    await saveLearnerProfile(next);
+    syncInBackground('profile');
+    setLearnerNotes(next.learnerNotes);
+    queueProfileUpdate(async () => {
+      const current = await ensureProfileExists();
+      const result = await orchestrator.updateProfileFromFeedback(current, `I removed this earlier note about myself; it no longer applies: "${removed.text}"`, {
+        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
+      }, 'learner');
+      if (result?.profile) {
+        await saveLearnerProfile(mergeProfile(current, result.profile));
+        if (result.summary) { await saveLearnerProfileSummary(result.summary); setProfileSummary(result.summary); }
+        syncInBackground('profile', 'profileSummary');
+      }
+    });
+  }
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -47,6 +71,7 @@ export default function Settings() {
   useEffect(() => {
     (async () => {
       setProfileSummary(await getLearnerProfileSummary());
+      setLearnerNotes((await getLearnerProfile())?.learnerNotes || []);
     })();
     getMyFields()
       .then((data) => {
@@ -240,6 +265,20 @@ export default function Settings() {
           <div className="rounded-md bg-muted p-3 text-sm leading-relaxed" aria-labelledby="profile-heading">
             {profileSummary || <em className="text-muted-foreground">No profile yet. Complete an activity to build your profile.</em>}
           </div>
+          {learnerNotes.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">What you&rsquo;ve told plato</h3>
+              <p className="text-xs text-muted-foreground">Your profile always follows these, even as lessons update it.</p>
+              <ul className="space-y-2" aria-label="Your notes">
+                {learnerNotes.map((n, i) => (
+                  <li key={`${n.at}-${i}`} className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+                    <span className="flex-1 whitespace-pre-wrap">{n.text}</span>
+                    <Button variant="ghost" size="xs" aria-label={`Remove note: ${n.text.slice(0, 60)}`} onClick={() => removeNote(i)}>Remove</Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
             Add Feedback
           </Button>
@@ -251,6 +290,7 @@ export default function Settings() {
         onOpenChange={setFeedbackOpen}
         onDone={async () => {
           setProfileSummary(await getLearnerProfileSummary());
+          setLearnerNotes((await getLearnerProfile())?.learnerNotes || []);
         }}
       />
     </div>
@@ -265,10 +305,13 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     if (!text.trim()) return;
     setSubmitting(true);
     try {
-      const profile = await ensureProfileExists();
+      // Keep the learner's words verbatim first: later updates can't drop them.
+      const profile = withLearnerNote(await ensureProfileExists(), text);
+      await saveLearnerProfile(profile);
+      syncInBackground('profile');
       const result = await orchestrator.updateProfileFromFeedback(profile, text.trim(), {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
-      });
+      }, 'learner');
       if (result?.profile) {
         const merged = mergeProfile(profile, result.profile);
         await saveLearnerProfile(merged);
@@ -281,6 +324,7 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     } catch (e) {
       console.error('[plato] Profile feedback failed:', e?.message || e);
       setSubmitting(false);
+      if (onDone) onDone(); // the note itself was saved; show it
     }
   };
 
