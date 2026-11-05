@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useId } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { getLessonKB } from '../../js/storage.js';
 import { authenticatedFetch } from '../../js/auth.js';
@@ -62,6 +62,8 @@ function formatTimeRange(p20, p80) {
 export default function LessonsList() {
   const { state } = useApp();
   const navigate = useNavigate();
+  // Set by signup when the server made up the username (left blank): say it once.
+  const newUsername = useLocation().state?.newUsername || null;
   const { impersonatedUser } = useAuth();
   const { lessons, loaded } = state;
   const [lessonData, setLessonData] = useState({});
@@ -259,6 +261,9 @@ export default function LessonsList() {
       </div>
       {/* An invite to this account (#363); View as User doesn't show the learner's. */}
       {!impersonatedUser && <AccountInviteNotice />}
+      <p role="status" className={newUsername ? 'mb-4 rounded-lg border bg-card px-4 py-3 text-sm' : 'sr-only'}>
+        {newUsername ? <>Your username is <strong>{newUsername}</strong>. You can change it in Settings.</> : ''}
+      </p>
 
       {/* Always-mounted live region. Updates whenever filter or page changes.
           Persistent rather than conditional so screen readers reliably pick

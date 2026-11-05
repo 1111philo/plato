@@ -566,6 +566,19 @@ describe('signup from a wait-list invite', () => {
     assert.equal((await makeApp().request('/v1/auth/invite/inv_none')).status, 404);
   });
 
+  it('GET /v1/auth/invite/:token answers for a usable link invite and 404s a used, expired, or full one', async () => {
+    const future = Math.floor(Date.now() / 1000) + 3600;
+    const link = { inviteToken: 'inv_link', status: 'pending', isLink: true, ttl: future, usageCount: 1, maxUsages: 5 };
+    db.getInvite = async () => link;
+    const res = await makeApp().request('/v1/auth/invite/inv_link');
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).isLink, true);
+    for (const bad of [{ ...link, usageCount: 5 }, { ...link, ttl: 1 }, { ...link, status: 'used' }, { ...invite, status: 'used' }]) {
+      db.getInvite = async () => bad;
+      assert.equal((await makeApp().request('/v1/auth/invite/inv_link')).status, 404);
+    }
+  });
+
   it('GET /v1/auth/invite/:token refuses a wait-list entry', async () => {
     db.getInvite = async () => ({ ...invite, status: 'waitlist' });
     assert.equal((await makeApp().request('/v1/auth/invite/inv_x')).status, 404);

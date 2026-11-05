@@ -103,15 +103,23 @@ auth.post('/v1/auth/setup', async (c) => {
   }, 201);
 });
 
-// GET /v1/auth/invite/:token — what the signup form can fill in for an email
-// invite: the email, and for a wait-list invite (#363) the person's answers.
+// GET /v1/auth/invite/:token — whether an invite can still be used, and what
+// the signup form can fill in: the email for an email invite, and for a
+// wait-list invite (#363) the person's answers. A link invite has no email
+// (`isLink: true`); a used, expired, or full one is 404, so the form can say
+// so before anyone fills it in.
 auth.get('/v1/auth/invite/:token', async (c) => {
   const invite = await db.getInvite(c.req.param('token'));
   // An invite for an existing account (forUserId) is accepted in the
   // classroom, never through signup.
-  if (!invite || invite.status !== 'pending' || !invite.email || invite.forUserId
+  if (!invite || invite.status !== 'pending' || invite.forUserId
     || (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000))) {
     return c.json({ error: 'Invalid or expired invite' }, 404);
+  }
+  if (!invite.email) {
+    const full = invite.maxUsages != null && (invite.usageCount || 0) >= invite.maxUsages;
+    if (!invite.isLink || full) return c.json({ error: 'Invalid or expired invite' }, 404);
+    return c.json({ email: null, isLink: true, name: null, firstName: null, lastName: null, userGroup: null, customFields: {} });
   }
   const profile = invite.profile || {};
   const named = profile.firstName || profile.name;
