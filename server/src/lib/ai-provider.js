@@ -40,6 +40,17 @@ const MODEL_MAP = {
   'claude-sonnet-4-6': 'us.anthropic.claude-sonnet-4-6',
 };
 
+/**
+ * The Bedrock ID to call for a friendly model name. Local dev only:
+ * BEDROCK_MODEL_ARN swaps `LLM` for a developer's own tagged access point
+ * (application inference profile), so their testing is tracked and capped
+ * apart from production. Ignored on Lambda.
+ */
+export function resolveModelId(model, env = process.env) {
+  if (model === LLM && env.BEDROCK_MODEL_ARN && !env.AWS_LAMBDA_FUNCTION_NAME) return env.BEDROCK_MODEL_ARN;
+  return MODEL_MAP[model] || model;
+}
+
 /** Anthropic models use the legacy InvokeModel body; everything else Converse. */
 function usesLegacyInvoke(modelId) {
   return modelId.includes('anthropic.');
@@ -56,7 +67,7 @@ function withTimeout(label) {
 
 const ai = {
   async invoke(model, body) {
-    const modelId = MODEL_MAP[model] || model;
+    const modelId = resolveModelId(model);
     const { abortSignal, clear } = withTimeout('invoke');
     try {
       if (usesLegacyInvoke(modelId)) {
@@ -78,7 +89,7 @@ const ai = {
   },
 
   async *invokeStream(model, body) {
-    const modelId = MODEL_MAP[model] || model;
+    const modelId = resolveModelId(model);
     const { abortSignal, clear } = withTimeout('stream');
     try {
       if (usesLegacyInvoke(modelId)) {
@@ -138,6 +149,6 @@ const onLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 if (wantsMock && onLambda) console.error('AI_PROVIDER=mock ignored on Lambda; using Bedrock');
 const provider = wantsMock && !onLambda ? (await import('./ai-mock.js')).default : ai;
 
-console.log(`AI provider: ${provider === ai ? `bedrock (${MODEL_MAP[LLM] || LLM})` : 'mock (AI_PROVIDER=mock)'}`);
+console.log(`AI provider: ${provider === ai ? `bedrock (${resolveModelId(LLM)})` : 'mock (AI_PROVIDER=mock)'}`);
 
 export default provider;

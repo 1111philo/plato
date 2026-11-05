@@ -125,6 +125,12 @@ removed when plato moved to open weights.
 
 Current model: **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
 
+In local dev only, `BEDROCK_MODEL_ARN` in `server/.env` makes `LLM` call a
+developer's own Bedrock application inference profile instead, a tagged and
+capped copy of the same model. That way their testing is tracked apart from
+production. `resolveModelId()` ignores it on Lambda, so it can't change what
+production calls.
+
 ### Why this model
 
 Selected against the models available on Bedrock in us-east-2 by applying four
