@@ -105,6 +105,29 @@ function stripTags(text) {
   return (tagStart !== -1 ? text.slice(0, tagStart) : text).trim();
 }
 
+/**
+ * When a coach reply came back without `[PROGRESS]`, ask for its tags
+ * (orchestrator.repairCoachTags) and fill in what's missing. `repair` returns
+ * the raw tag text. Never throws: on any failure the reply stands as parsed,
+ * as it did before. Returns the parsed response plus `tagsRecovered`.
+ */
+export async function recoverMissingTags(parsed, repair) {
+  if (parsed.progress != null) return { ...parsed, tagsRecovered: false };
+  try {
+    const tags = parseCoachResponse(await repair());
+    if (tags.progress == null) return { ...parsed, tagsRecovered: false };
+    return {
+      ...parsed,
+      progress: tags.progress,
+      kbUpdate: parsed.kbUpdate || tags.kbUpdate,
+      profileUpdate: parsed.profileUpdate || tags.profileUpdate,
+      tagsRecovered: true,
+    };
+  } catch {
+    return { ...parsed, tagsRecovered: false };
+  }
+}
+
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
@@ -320,14 +343,19 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
 
+  // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
+  // "The reply was cut off", since the tags come last).
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
     cleanStream(onStream),
-    1024
+    2048
   );
 
-  const parsed = parseCoachResponse(coachMsg);
+  const parsed = await recoverMissingTags(
+    parseCoachResponse(coachMsg),
+    () => orchestrator.repairCoachTags(messages, stripTags(coachMsg)),
+  );
 
   const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   // The objectives checklist (#438) first, against the KB as it was, so the

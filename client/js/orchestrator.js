@@ -160,6 +160,24 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   return content;
 }
 
+// The coach sometimes ends a reply without its tag block, so nothing is
+// recorded: no progress, no objectives, while its words say otherwise
+// (testers saw "you've met all three" with progress stuck at 0). This asks
+// the same model, with the same conversation, for only the tags of the reply
+// it just gave. The instruction is in the system prompt, so it can't be
+// confused with (or forged by) the learner's text.
+export const TAG_REPAIR_CUE = 'Tags for your last reply.';
+export async function repairCoachTags(messages, reply) {
+  let systemPrompt = await loadPrompt('coach');
+  systemPrompt = `${systemPrompt}\n\n---\n\n## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`;
+  const { content } = await callApi({
+    model: LLM, systemPrompt,
+    messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
+    maxTokens: 600,
+  });
+  return content;
+}
+
 // -- Lesson Owner (LLM) -------------------------------------------------------
 
 export async function initializeLessonKB(lesson, profileSummary) {

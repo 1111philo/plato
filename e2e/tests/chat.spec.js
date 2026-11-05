@@ -85,6 +85,24 @@ test('learners can see which agents worked on a reply and what they did', async 
   await expectAccessible(page, { label: 'agent activity open' });
 });
 
+// #451 tester QA: a reply without its tags used to record nothing. The client
+// asks for the tags in a second call, and says so under the reply.
+test('a coach reply that comes back without its tags still records progress', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto('/lessons/getting-started-behind');
+  await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await composer.fill('MOCK_NOTAGS here is my answer');
+  await composer.press(`${MOD}+Enter`);
+  await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2, { timeout: 20_000 });
+  const latest = page.getByRole('button', { name: /^Behind this response/ }).last();
+  await latest.click();
+  const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
+  await expect(panel).toContainText('Recorded this reply’s progress in a second step');
+  await expect(panel).toContainText(/Progress 0 → [1-9] of 10/);
+  await expect(page.getByRole('button', { name: /^Progress \([1-9] of 3 Objectives\): lesson overview$/ }).first()).toBeVisible();
+});
+
 test('the lesson editor shows the lesson creator behind each reply', async ({ page }) => {
   await login(page, ADMIN);
   await page.goto('/plato/lessons/new');

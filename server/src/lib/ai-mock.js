@@ -8,7 +8,8 @@
  * the readiness tag, extractor markdown, and so on.
  *
  * Coach pacing: each learner turn adds 3 progress points; a message containing
- * MOCK_COMPLETE awards 10, so tests can drive a lesson to completion.
+ * MOCK_COMPLETE awards 10, so tests can drive a lesson to completion;
+ * MOCK_NOTAGS leaves the tags off (the tag-repair call then supplies them).
  */
 
 const MOCK_USAGE = { input_tokens: 0, output_tokens: 0 };
@@ -44,6 +45,9 @@ function coachReply(messages) {
   const kb = { insights: [`Mock insight after turn ${learnerTurns.length}`], learnerPosition: `Mock position at progress ${progress}` };
   // Each learner turn checks off the next objective (1-based), for the work view (#438).
   if (learnerTurns.length > 0) kb.objectivesMet = [learnerTurns.length];
+  // MOCK_NOTAGS: the reply leaves off its tag block, as the real model sometimes
+  // does; the client then asks for the tags (orchestrator.repairCoachTags).
+  if (/MOCK_NOTAGS/.test(lastText)) return body;
   return `${body}\n\n[PROGRESS: ${progress}]\n[KB_UPDATE: ${JSON.stringify(kb)}]`;
 }
 
