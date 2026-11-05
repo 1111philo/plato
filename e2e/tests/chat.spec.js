@@ -153,3 +153,28 @@ test('a failed turn comes back ahead of a draft typed meanwhile', async ({ page 
   await expect(page.getByRole('alert').filter({ hasText: 'The reply was cut off' })).toBeVisible({ timeout: 20_000 });
   await expect(composer).toHaveValue('MOCK_SLOW MOCK_TRUNCATE my long answer\n\nok');
 });
+
+// Tester feedback on #451: after "Continue to Next Lesson" the previous
+// lesson's chat showed in the next one. Same route, new :lessonGroupId; the
+// next lesson here hasn't been started, the case where its opening reply
+// was appended to the old messages.
+test('moving to another lesson never shows the previous lesson’s chat', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[0].id}`);
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+  const oldText = 'A message only lesson one has';
+  await composer.fill(oldText);
+  await composer.press(`${MOD}+Enter`);
+  await expect(page.locator('[data-chat-message="user"]', { hasText: oldText })).toBeVisible({ timeout: 20_000 });
+
+  // Client-side navigation within the same route, like Continue to Next Lesson.
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/lessons/getting-started-behind');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/lessons\/getting-started-behind$/);
+  await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(oldText, { exact: false })).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 1, name: 'What plato does behind the scenes' }).first()).toBeVisible();
+});

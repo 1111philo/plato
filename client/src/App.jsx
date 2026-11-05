@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { can } from './lib/permissions.js';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext.jsx';
 import AppShell from './components/AppShell.jsx';
 import LessonsList from './pages/LessonsList.jsx';
@@ -8,6 +8,7 @@ import LessonChat from './pages/LessonChat.jsx';
 import Settings from './pages/Settings.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import SignedInInvite from './pages/SignedInInvite.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import Privacy from './pages/Privacy.jsx';
 import HowAssessmentWorks from './pages/HowAssessmentWorks.jsx';
@@ -64,6 +65,25 @@ function RequireGuest({ children }) {
   return children;
 }
 
+// /signup: an invite opened while signed in says so (SignedInInvite) instead
+// of quietly showing that account's classroom.
+function SignupRoute() {
+  const { loggedIn, loading } = useAuth();
+  const [params] = useSearchParams();
+  if (loading) return null;
+  if (loggedIn) return params.get('token') ? <SignedInInvite /> : <Navigate to="/lessons" replace />;
+  return <Signup />;
+}
+
+// One LessonChat per lesson: keyed by id, so moving to another lesson
+// ("Continue to Next Lesson") starts from fresh state, and nothing still in
+// flight for the previous lesson (a reply, its messages, the composer) can
+// land in the next one.
+function LessonChatRoute() {
+  const { lessonGroupId } = useParams();
+  return <LessonChat key={lessonGroupId} />;
+}
+
 const AdminFallback = () => (
   <main className="min-h-dvh flex items-center justify-center" role="status" aria-live="polite">
     <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" aria-hidden="true" />
@@ -107,7 +127,7 @@ export default function App() {
       <ScreenReaderAnnounce />
       <Routes>
         <Route path="/login" element={<RequireGuest><Login /></RequireGuest>} />
-        <Route path="/signup" element={<RequireGuest><Signup /></RequireGuest>} />
+        <Route path="/signup" element={<SignupRoute />} />
         <Route path="/waitlist" element={<RequireGuest><Waitlist /></RequireGuest>} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
@@ -155,7 +175,7 @@ export default function App() {
               <Routes>
                 <Route path="/lessons" element={<LessonsList />} />
                 <Route path="/lessons/create" element={<Navigate to="/lessons" replace />} />
-                <Route path="/lessons/:lessonGroupId" element={<LessonChat />} />
+                <Route path="/lessons/:lessonGroupId" element={<LessonChatRoute />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/" element={<Navigate to="/lessons" replace />} />
                 <Route path="*" element={<Navigate to="/lessons" replace />} />

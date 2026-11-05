@@ -31,6 +31,10 @@ export default function Signup() {
   const token = searchParams.get('token') || '';
   const confirmRef = useRef(null);
   const branding = usePublicBranding('Create account');
+  // 'checking' until GET /v1/auth/invite answers; 'invalid' for a used,
+  // expired, or full invite (or none at all), so nobody fills in a form
+  // that can't work.
+  const [inviteState, setInviteState] = useState(token ? 'checking' : 'invalid');
 
   useEffect(() => {
     fetch('/v1/groups')
@@ -48,7 +52,11 @@ export default function Signup() {
   useEffect(() => {
     if (!token) return;
     fetch(`/v1/auth/invite/${encodeURIComponent(token)}`)
-      .then(r => (r.ok ? r.json() : null))
+      .then(r => {
+        if (r.status === 404) { setInviteState('invalid'); return null; }
+        setInviteState('ok'); // anything else (even a network hiccup): let the server decide on submit
+        return r.ok ? r.json() : null;
+      })
       .then(d => {
         if (!d) return;
         if (d.email) setEmail(prev => prev || d.email);
@@ -56,7 +64,7 @@ export default function Signup() {
         if (d.userGroup) setGroup(prev => prev || d.userGroup);
         if (d.customFields) setFieldValues(prev => ({ ...d.customFields, ...prev }));
       })
-      .catch(() => {});
+      .catch(() => setInviteState('ok'));
   }, [token]);
 
   async function handleSignup() {
@@ -103,7 +111,8 @@ export default function Signup() {
       if (!res.ok) throw new Error(data.error || 'Signup failed');
       // Log in with the returned credentials
       await login(data.user?.email || email.trim(), password);
-      navigate('/lessons', { replace: true });
+      // A username the server made up is shown once on the Lessons page.
+      navigate('/lessons', { replace: true, state: !username.trim() && data.user?.username ? { newUsername: data.user.username } : null });
     } catch (e) {
       setError(e.message || 'Signup failed');
     } finally {
@@ -111,11 +120,26 @@ export default function Signup() {
     }
   }
 
-  if (!branding) return null;
+  if (!branding || inviteState === 'checking') return null;
 
   return (
     <main className="min-h-dvh shrink-0 flex flex-col items-center justify-start py-12 p-4" style={{ backgroundColor: branding.primary }}>
       {branding.logo ? (<img src={branding.logo} alt={branding.classroomName} className="h-16 w-16 mb-6 rounded-lg object-contain" />) : (<h1 className="text-2xl font-bold text-white mb-6">{branding.classroomName}</h1>)}
+      {inviteState === 'invalid' ? (
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-2xl">This invite can&rsquo;t be used</CardTitle>
+            <CardDescription>
+              {token
+                ? 'It has already been used, has expired, or has reached its limit. Ask the person who invited you for a new one.'
+                : 'Creating an account needs an invite link.'}
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Button variant="link" onClick={() => navigate('/login')}>Already have an account? Sign in</Button>
+          </CardFooter>
+        </Card>
+      ) : (
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">Create your account</CardTitle>
@@ -143,8 +167,10 @@ export default function Signup() {
             <Label htmlFor="signup-username">
               Username <span className="text-muted-foreground text-xs">(optional)</span>
             </Label>
+            <p id="signup-username-hint" className="text-xs text-muted-foreground">Leave it blank and we&rsquo;ll make one for you. You can change it in Settings.</p>
             <Input
               id="signup-username"
+              aria-describedby="signup-username-hint"
               type="text"
               placeholder="Choose a username"
               autoComplete="username"
@@ -208,6 +234,7 @@ export default function Signup() {
           </Button>
         </CardFooter>
       </Card>
+      )}
       <p className="mt-4 text-xs text-white/90">
         <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
