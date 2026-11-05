@@ -72,6 +72,8 @@ export function coachTurnActivity({ before, after, parsed, achieved = false, new
     did: [
       progressLine(before?.progress, after?.progress, { achieved, wasCompleted }),
       ...newlyMet.map((o) => `Checked off an objective: ${o}`),
+      // lessonEngine.recoverMissingTags: the reply came without its progress.
+      ...(parsed?.tagsRecovered ? ['Recorded this reply’s progress in a second step'] : []),
     ],
     notes: [
       ...(parsed?.kbUpdate?.insights || []),

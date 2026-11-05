@@ -17,7 +17,7 @@ globalThis.localStorage = {
 };
 globalThis.fetch = async () => ({ ok: false, status: 404 });
 
-const { assertImageWithinBedrockLimit, normalizeImageDataUrls } = await import('../src/lib/lessonEngine.js');
+const { assertImageWithinBedrockLimit, normalizeImageDataUrls, recoverMissingTags, parseCoachResponse } = await import('../src/lib/lessonEngine.js');
 
 // Build a data URL whose base64 body decodes (per length*3/4) to exactly
 // `bytes` bytes. The guard uses the same math so the round-trip is exact.
@@ -94,5 +94,32 @@ describe('normalizeImageDataUrls', () => {
 
   it('returns an empty array for an empty input array', () => {
     assert.deepEqual(normalizeImageDataUrls([]), []);
+  });
+});
+
+// Testers saw the coach say "you've met all three" while nothing was recorded:
+// the reply had no tags. recoverMissingTags asks for them (#451 tester QA).
+describe('recoverMissingTags', () => {
+  const noTags = parseCoachResponse('You have covered all three objectives. Well done.');
+  it('leaves a reply that has its tags alone, without asking', async () => {
+    let asked = false;
+    const tagged = parseCoachResponse('Good.\n\n[PROGRESS: 4]');
+    const r = await recoverMissingTags(tagged, async () => { asked = true; return ''; });
+    assert.equal(asked, false);
+    assert.deepEqual([r.progress, r.tagsRecovered], [4, false]);
+  });
+  it('fills in progress, the KB update, and the profile update from the repair', async () => {
+    const r = await recoverMissingTags(noTags, async () => '[PROGRESS: 10]\n[KB_UPDATE: {"insights": ["x"], "objectivesMet": [1, 2, 3]}]\n[PROFILE_UPDATE: {"observation": "y"}]');
+    assert.equal(r.progress, 10);
+    assert.deepEqual(r.kbUpdate.objectivesMet, [1, 2, 3]);
+    assert.equal(r.profileUpdate.observation, 'y');
+    assert.equal(r.tagsRecovered, true);
+    assert.equal(r.text, noTags.text, 'the learner-visible text is unchanged');
+  });
+  it('never throws: a failed or tagless repair keeps the reply as it was', async () => {
+    for (const repair of [async () => { throw new Error('boom'); }, async () => 'no tags here']) {
+      const r = await recoverMissingTags(noTags, repair);
+      assert.deepEqual([r.progress, r.tagsRecovered], [null, false]);
+    }
   });
 });
