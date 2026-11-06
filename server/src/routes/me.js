@@ -13,7 +13,7 @@ import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
 import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
 import {
-  getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues,
+  getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues, learnerFields,
 } from '../lib/user-fields.js';
 
 async function loadFieldDefinitions() {
@@ -39,7 +39,7 @@ me.get('/v1/me', async (c) => {
     ...nameFields(user),
     userGroup: user.userGroup,
     role: normalizeRole(user.role),
-    customFields: visibleFieldValues(defs, user.customFields),
+    customFields: visibleFieldValues(learnerFields(defs), user.customFields),
     createdAt: user.createdAt,
   });
 });
@@ -51,7 +51,8 @@ me.get('/v1/me', async (c) => {
 // until `missing` is empty.
 me.get('/v1/me/fields', async (c) => {
   const user = c.get('user');
-  const defs = await loadFieldDefinitions();
+  // Fields hidden from learners (admin-only) aren't listed, shown, or required.
+  const defs = learnerFields(await loadFieldDefinitions());
   return c.json({
     userFields: defs,
     values: visibleFieldValues(defs, user.customFields),
@@ -74,7 +75,8 @@ me.patch('/v1/me', async (c) => {
 
   if (body.customFields !== undefined) {
     defs = await loadFieldDefinitions();
-    const merged = mergeFieldValues(defs, c.get('user').customFields, body.customFields, { enforceRequired: true });
+    // Learners set only the fields they can see; admin-only values are kept.
+    const merged = mergeFieldValues(defs, c.get('user').customFields, body.customFields, { enforceRequired: true, editable: learnerFields(defs) });
     if (merged.error) return c.json({ error: merged.error }, 400);
     updates.customFields = merged.values;
   }
@@ -121,7 +123,7 @@ me.patch('/v1/me', async (c) => {
     ...nameFields(updated),
     userGroup: updated.userGroup,
     role: normalizeRole(updated.role),
-    customFields: visibleFieldValues(defs, updated.customFields),
+    customFields: visibleFieldValues(learnerFields(defs), updated.customFields),
   });
 });
 
@@ -156,14 +158,15 @@ me.get('/v1/me/invite', async (c) => {
   if (!inv) return c.json({ invite: null });
   const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
   const { userGroup, fields } = mergeProfile(user, inv.profile, settings);
-  const labels = new Map(getFieldDefinitions(settings).map((d) => [d.id, d.label]));
+  const labels = new Map(learnerFields(getFieldDefinitions(settings)).map((d) => [d.id, d.label]));
   const inviter = inv.invitedBy ? await db.getUserById(inv.invitedBy).catch(() => null) : null;
   return c.json({
     invite: {
       inviteToken: inv.inviteToken,
       invitedByName: inviter ? nameFields(inviter).name || inviter.username || null : null,
       userGroup,
-      fields: fields.map((id) => labels.get(id)),
+      // Admin-only answers are still merged on accept, but not named here.
+      fields: fields.map((id) => labels.get(id)).filter(Boolean),
       createdAt: inv.createdAt,
     },
   });
@@ -203,7 +206,7 @@ me.get('/v1/me/export', async (c) => {
       userGroup: user.userGroup,
       role: normalizeRole(user.role),
       // Exported with labels so the file is readable without the definitions.
-      customFields: defs
+      customFields: learnerFields(defs)
         .filter((d) => typeof user.customFields?.[d.id] === 'string')
         .map((d) => ({ id: d.id, label: d.label, value: user.customFields[d.id] })),
       createdAt: user.createdAt,
