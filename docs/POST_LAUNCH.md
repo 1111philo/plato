@@ -38,3 +38,15 @@ Valid, but left for after the launch:
 - **The wait-list rate limit is per server instance** (5 per 10 min), so a burst can spread across Lambda containers and get past it. A shared counter (DynamoDB TTL item per IP) would make it exact.
 - **Prompt injection is mitigated, not solved.** The coach and profile prompts now ignore claims of authority (measured 0/4 vs 4/4), but a determined learner may find phrasings that work. Completion still rests on the model's judgment; a second-opinion check on the completing turn would harden it.
 - **The profile summary sometimes notes that it ignored an instruction.** Harmless, but noisy.
+
+## From the third adversarial review (Nov 6)
+
+- **Model: measure, don't assume.** Check in the selection method from `docs/MODEL_SELECTION.md` as `server/scripts/model-bench.js` (five scenarios, three trials: required-tag compliance, completion awards 10, injection resistance, TTFT and p50/p99 latency). Run it on every `coach.md` change and on candidates. `coach.md` has grown about 32% since Qwen3-VL was selected; its tag compliance at today's size is what `coach_tags_recovered` / `coach_tags_unrecovered` in `/v1/admin/logs` now show on real traffic.
+- **Evaluate Magistral Small 1.2** (`mistral.magistral-small-2509`, Apache-2.0, image input, us-east-2) with that bench, and update `MODEL_SELECTION.md`. The doc's "exactly one eligible model" is out of date. Kimi K3 has image input but isn't OSI-licensed. The July doc's "~500 ms" latency trade is also smaller than what's measured now (p50 2.7 s, p99 12 s).
+- **Wait-list limiter behind a direct Function URL call:** add a secret origin header from CloudFront (or WAF), and trust `X-Forwarded-For` only when it's present. Otherwise key on `sourceIp`.
+- **Group rename recovery survives a reload:** the "Finish moving people" button only lasts until the dialog closes. Detect members whose group name isn't in the list and offer the move from there. The move-only server path should also 404 an `oldName` that no one has.
+- **Slack Retry all** uses the signup call settings (4 s, no retries, fail on 429). Retry all over many users can pass 29 s; give it its own, more patient settings and run it as a job.
+- **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.
+- **Publishing Getting Started lowers dashboard completion rates** on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
+- **Policy (Blake):** a bundled lesson added in a *future* release goes public automatically if Getting Started lesson 1 is public. The recorded decision is "bundled content arrives private for review". Keep the auto-publish (no half-published course) or always arrive private?
+- **`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.
