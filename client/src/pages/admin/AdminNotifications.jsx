@@ -348,7 +348,7 @@ function TemplateEditor({ template, canWrite, onNotice, onSaved }) {
         <Label htmlFor={`${id}-body`}>Message</Label>
         <Textarea id={`${id}-body`} rows={7} value={body} maxLength={5000} disabled={!canWrite} onChange={(e) => setBody(e.target.value)} aria-describedby={`${id}-hint`} />
         <p id={`${id}-hint`} className="text-xs text-muted-foreground">
-          You can use {vars(template.variables)}.{template.variables.includes('link') ? ' Put {{link}} on its own line for a button.' : ''}
+          You can use {vars(template.variables)}.{template.variables.includes('link') ? ' {{link}} is required: put it on its own line, where the button goes (not in the subject).' : ''}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

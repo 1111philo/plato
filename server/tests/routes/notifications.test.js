@@ -68,6 +68,10 @@ describe('admin notifications', () => {
     const reset = await (await req('DELETE', '/v1/admin/notifications/templates/waitlist-confirmation')).json();
     assert.equal(reset.template.isDefault, true);
     assert.equal((await req('PUT', '/v1/admin/notifications/templates/nope', { subject: 'x', body: 'y' })).status, 404);
+    // An invitation can't be saved without its link (#451 third review).
+    const noLink = await req('PUT', '/v1/admin/notifications/templates/invite', { subject: 'Hi', body: 'Welcome.' });
+    assert.equal(noLink.status, 400);
+    assert.match((await noLink.json()).error, /needs \{\{link\}\}/);
   });
 
   it('sends a test of an unsaved draft to the admin, with sample values', async () => {

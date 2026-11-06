@@ -43,8 +43,9 @@ export default function BundledLessonNotices({ onChanged, onMessage }) {
   }
 
   // The Getting Started course's lessons arrive together, so one notice asks
-  // to publish them; each update notice stays per lesson.
-  const toPublish = items.filter((i) => i.needsPublish && !i.updateAvailable);
+  // to publish them; each update notice stays per lesson. A private lesson
+  // that also has an update is in both: publishing doesn't apply the update.
+  const toPublish = items.filter((i) => i.needsPublish);
   const updates = items.filter((i) => i.updateAvailable);
   if (toPublish.length === 0 && updates.length === 0) return null;
 

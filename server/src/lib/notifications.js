@@ -155,6 +155,21 @@ export function validateTemplate(id, { subject, body }, variables = TEMPLATES[id
   if (unknown.length) {
     return `Unknown ${unknown.length === 1 ? 'variable' : 'variables'}: ${[...new Set(unknown)].map((v) => `{{${v}}}`).join(', ')}. You can use ${variables.map((v) => `{{${v}}}`).join(', ')}.`;
   }
+  return id ? linkProblem(id, { subject, body }) : null;
+}
+
+const HAS_LINK = /\{\{\s*link\s*\}\}/;
+
+/**
+ * A template with a link button (invitations, the reminder, the digest) is
+ * useless without its link: an invitation without `{{link}}` can't be
+ * accepted. And `{{link}}` in the subject would put the invite token in the
+ * Subject header. Returns an error string or null.
+ */
+export function linkProblem(id, { subject, body }) {
+  if (!TEMPLATES[id]?.linkLabel) return null;
+  if (HAS_LINK.test(subject || '')) return 'Keep {{link}} out of the subject. It goes in the message, where it becomes a button.';
+  if (!HAS_LINK.test(body || '')) return 'The message needs {{link}}, on a line of its own, where the button goes. Without it, people can’t act on this email.';
   return null;
 }
 
@@ -349,7 +364,13 @@ export async function sendTemplated(id, { to, userId = null, kind = null, vars =
     const state = await readNotifyState(userId, db);
     if (state.optOut?.[kind]) return { optedOut: true };
   }
-  const [template, classroom] = await Promise.all([getTemplate(id, db), getClassroom()]);
+  let [template, classroom] = await Promise.all([getTemplate(id, db), getClassroom()]);
+  // A saved copy from before the link rule (or edited around it) would send
+  // an email nobody can act on. Send plato's default copy instead.
+  if (linkProblem(id, template)) {
+    logger.error('email_template_invalid', { template: id, problem: 'link' });
+    template = { ...template, subject: TEMPLATES[id].subject, body: TEMPLATES[id].body };
+  }
   const allVars = { classroomName: classroom.name, ...vars };
   const unsubscribe = kind && userId ? unsubscribeUrl(userId, kind) : null;
   const label = kind ? UNSUBSCRIBE_KINDS[kind] : null;

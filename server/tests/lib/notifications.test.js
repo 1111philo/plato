@@ -60,6 +60,15 @@ describe('validateTemplate', () => {
     assert.match(n.validateTemplate('waitlist-confirmation', { subject: 'x'.repeat(201), body: 'x' }), /at most 200/);
     assert.match(n.validateTemplate('waitlist-confirmation', { subject: 'x', body: '  ' }), /required/);
   });
+  it('a template with a link button needs {{link}} in the message, and never in the subject', () => {
+    for (const id of ['invite', 'account-invite', 'inactivity-nudge', 'weekly-digest']) {
+      assert.match(n.validateTemplate(id, { subject: 'Hi', body: 'No link here.' }), /needs \{\{link\}\}/, id);
+      assert.match(n.validateTemplate(id, { subject: 'Go: {{link}}', body: '{{link}}' }), /out of the subject/, id);
+      assert.equal(n.validateTemplate(id, { subject: 'Hi', body: 'Here:\n\n{{link}}' }), null, id);
+    }
+    // Templates without a button don't need one.
+    assert.equal(n.validateTemplate('waitlist-confirmation', { subject: 'Hi', body: 'Thanks.' }), null);
+  });
 });
 
 describe('templates storage', () => {
@@ -184,6 +193,18 @@ describe('invitations (always on, editable)', () => {
     await n.sendInviteEmail('ada@x.com', 'inv_1', null, { firstName: 'Ada' });
     assert.match(sent[0], /^Subject: Come in, Ada$/m);
     assert.match(decodeParts(sent[0])[0], /^The C team says hi\./);
+  });
+
+  it('a saved invitation without {{link}} (from before the rule) falls back to the default copy', async () => {
+    await db.putSyncData('_system', 'settings', { classroomName: 'C' }, 0);
+    const old = await db.getSyncData('_system', 'emailTemplate:invite');
+    await db.putSyncData('_system', 'emailTemplate:invite', { subject: 'Hello', body: 'No link, sorry.' }, old?.version || 0);
+    const r = await n.sendInviteEmail('ada@x.com', 'inv_2', 'Ann');
+    assert.equal(r.sent, true);
+    const [text, html] = decodeParts(sent[0]);
+    assert.doesNotMatch(text, /No link, sorry/);
+    assert.ok(html.includes('signup?token=inv_2') && html.includes('>Create your account</a>'), 'the default copy, with its button');
+    await n.resetTemplate('invite', db);
   });
 
   it('the existing-account invite links to the classroom', async () => {
