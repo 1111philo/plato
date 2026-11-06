@@ -70,10 +70,13 @@ export function coachTurnActivity({ before, after, parsed, achieved = false, new
   const coach = entry('coach', {
     read: coachReads({ hasUnitNote, images, links }),
     did: [
-      progressLine(before?.progress, after?.progress, { achieved, wasCompleted }),
+      // lessonEngine.recoverMissingTags: with no progress from the reply or
+      // its repair, nothing was scored; don't show a score as if it was.
+      parsed?.tagsMissing
+        ? 'Didn’t record progress for this reply'
+        : progressLine(before?.progress, after?.progress, { achieved, wasCompleted }),
       ...newlyMet.map((o) => `Checked off an objective: ${o}`),
-      // lessonEngine.recoverMissingTags: the reply came without its progress.
-      ...(parsed?.tagsRecovered ? ['Recorded this reply’s progress in a second step'] : []),
+      ...(parsed?.tagsRecovered ? ['Recorded what this reply left out in a second step'] : []),
     ],
     notes: [
       ...(parsed?.kbUpdate?.insights || []),

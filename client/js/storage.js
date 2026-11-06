@@ -258,6 +258,9 @@ export async function saveLessonMessages(lessonId, msgs) {
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
   all = fitMessages([...all, ...withTimestamps]);
   _cache.set(key, all);
+  // Past the budget even after trimming: the server would refuse it (413) on
+  // this and every later turn. Don't send it; say why instead.
+  if (byteSize(all) > MESSAGES_BUDGET) return 'too_long';
   return putSyncData(key, all);
 }
 

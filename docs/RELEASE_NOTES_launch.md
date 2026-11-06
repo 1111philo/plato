@@ -164,10 +164,16 @@ lock and makes no writes):
 - `m005_name_split`: 184 would update. 12 names have 3+ parts, and 1 user has
   no name.
 
-> The rehearsal below ran before Getting Started became a three-lesson
-> course (#492). Re-run it before the merge: expect 5 more added records (two
-> lessons and their markers, the course, the unit, and the course marker),
-> and m004 unchanged.
+> **Not yet re-run.** The rehearsal below ran before Getting Started became a
+> three-lesson course (#492). Re-run it before the merge and replace the
+> results below. Expect **7** more added records than below: the two new
+> lessons (`lesson:getting-started-sharing`, `lesson:getting-started-behind`)
+> and their markers (`bundled:getting-started-sharing`,
+> `bundled:getting-started-behind`), the course (`program:prog-getting-started`),
+> the unit (`course:unit-getting-started`), and the course marker
+> (`bundled:course:getting-started`); m004's default course unchanged. The
+> upgrade test (`upgrade-from-rc232.test.js`) already checks this in startup
+> order; the rehearsal checks it on a copy of prod's real data.
 
 **Full rehearsal on a point-in-time copy of prod** (`scripts/rehearse-upgrade.js`
 against `plato-rehearsal-*` restored from PITR; the tables were deleted
@@ -189,5 +195,7 @@ afterwards):
 2026-10-30 (all 0 errors). All 11 users' name parts rejoin exactly to their
 unchanged `name`.
 
-**Before Blake merges:** take on-demand backups of the five prod tables
-(command in "Upgrading from Beta-RC-232" above) and record the ARNs here.
+**Before Blake merges (not done yet):** take on-demand backups of the five
+prod tables (command in "Upgrading from Beta-RC-232" above) and record the
+ARNs here. This is done right before the merge on purpose, so the backup is
+as fresh as possible.

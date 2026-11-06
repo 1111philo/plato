@@ -126,7 +126,13 @@ export async function isReady() {
 
 // -- Streaming conversations --------------------------------------------------
 
-export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
+/**
+ * An agent's full system prompt: its prompt file, plus the program knowledge
+ * base and lesson catalog for the agents that get them, plus `addendum`, in
+ * the learner's language (#240). Shared by the streamed call and the coach's
+ * tag repair, so a repair is judged under the same prompt as the reply.
+ */
+async function buildSystemPrompt(promptName, addendum = '') {
   let systemPrompt = await loadPrompt(promptName);
   if (KB_AGENTS.includes(promptName)) {
     const kb = await loadKnowledgeBase();
@@ -139,9 +145,13 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
     const catalog = await loadPublicCatalog();
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
-
+  if (addendum) systemPrompt = `${systemPrompt}\n\n---\n\n${addendum}`;
   // The learner's language, if not English (#240) — see language.js.
-  systemPrompt = withLanguage(systemPrompt);
+  return withLanguage(systemPrompt);
+}
+
+export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
+  const systemPrompt = await buildSystemPrompt(promptName);
 
   const resp = await authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
@@ -167,9 +177,21 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
 // it just gave. The instruction is in the system prompt, so it can't be
 // confused with (or forged by) the learner's text.
 export const TAG_REPAIR_CUE = 'Tags for your last reply.';
+
+/**
+ * Report a client-side event the server should log (it has no other way to
+ * see it): `coach_tags_recovered`, `coach_tags_unrecovered`,
+ * `conversation_too_long`. Fire-and-forget; never throws.
+ */
+export function reportEvent(code, meta = {}) {
+  authenticatedFetch('/v1/ai/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, ...meta }),
+  }).catch(() => {});
+}
 export async function repairCoachTags(messages, reply) {
-  let systemPrompt = await loadPrompt('coach');
-  systemPrompt = `${systemPrompt}\n\n---\n\n## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`;
+  const systemPrompt = await buildSystemPrompt('coach', `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`);
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
@@ -226,7 +248,8 @@ export function profileUpdateInput(fullProfile, text, activityContext, source = 
   return {
     currentProfile: profileForAgent(fullProfile),
     source,
-    ...(source === 'coach' ? { coachObservation: text } : { learnerFeedback: text }),
+    // 'learner-removed': the learner deleted a note; it's what no longer applies, not new feedback.
+    ...(source === 'coach' ? { coachObservation: text } : source === 'learner-removed' ? { removedNote: text } : { learnerFeedback: text }),
     context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: now },
   };
 }

@@ -181,4 +181,19 @@ describe('conversationTooLong (#451 second review N4)', async () => {
     assert.equal(conversationTooLong('long-1'), true);
     assert.equal(conversationTooLong('never-loaded'), false);
   });
+
+  it('a conversation past the budget isn\u2019t sent at all; saveLessonMessages says too_long (third review N4)', async () => {
+    clearCache();
+    let puts = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => { if (opts?.method === 'PUT') puts++; return realFetch(url, opts); };
+    try {
+      assert.equal(await saveLessonMessages('long-2', [{ role: 'user', content: 'short' }]), true);
+      const before = puts;
+      assert.equal(await saveLessonMessages('long-2', [{ role: 'user', content: '学'.repeat(Math.ceil(MESSAGES_BUDGET / 2.5)) }]), 'too_long');
+      assert.equal(puts, before, 'no PUT for a record the server would refuse');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
 });

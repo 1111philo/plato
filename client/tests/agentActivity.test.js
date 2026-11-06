@@ -25,6 +25,13 @@ describe('coachTurnActivity', () => {
     assert.deepEqual(coach.did, ['Progress 2 → 5 of 10', 'Checked off an objective: Can name three values']);
   });
 
+  it('says when nothing was scored, instead of showing an unchanged score (#451 third review R2)', () => {
+    const [missing] = coachTurnActivity({ before: { progress: 3 }, after: { progress: 3 }, parsed: { tagsMissing: true } });
+    assert.deepEqual(missing.did, ['Didn’t record progress for this reply']);
+    const [recovered] = coachTurnActivity({ before: { progress: 3 }, after: { progress: 5 }, parsed: { tagsRecovered: true } });
+    assert.deepEqual(recovered.did, ['Progress 3 → 5 of 10', 'Recorded what this reply left out in a second step']);
+  });
+
   it('prefers an explicit profile observation', () => {
     const [, profile] = coachTurnActivity({ before: { progress: 1 }, after: { progress: 1 }, parsed: { profileUpdate: { observation: 'Prefers examples' }, kbUpdate: { insights: ['x'] } } });
     assert.deepEqual(profile.notes, ['Prefers examples']);
