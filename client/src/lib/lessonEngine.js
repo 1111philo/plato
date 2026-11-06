@@ -11,7 +11,7 @@ import {
   getLearnerProfileSummary, getPreferences, getAuthUser,
   getLessonKB, saveLessonKB, getCourseProgress,
   saveScreenshot, getScreenshot,
-  saveLessonMessages, getLessonMessages, replaceLessonMessages, conversationTooLong,
+  saveLessonMessages, getLessonMessages, replaceLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
@@ -106,26 +106,31 @@ function stripTags(text) {
 }
 
 /**
- * When a coach reply came back without `[PROGRESS]`, ask for its tags
- * (orchestrator.repairCoachTags) and fill in what's missing. `repair` returns
- * the raw tag text. Never throws: on any failure the reply stands as parsed,
- * as it did before. Returns the parsed response plus `tagsRecovered`.
+ * When a coach reply came back without `[PROGRESS]` or without `[KB_UPDATE]`
+ * (where `objectivesMet` lives), ask for its tags
+ * (orchestrator.repairCoachTags) and fill in only what's missing. `repair`
+ * returns the raw tag text. Never throws. Returns the parsed response plus
+ * `tagsRepairTried`, `tagsRecovered` (something missing was filled in), and
+ * `tagsMissing` (still no progress: the turn records none, and "Behind this
+ * response" says so).
  */
 export async function recoverMissingTags(parsed, repair) {
-  if (parsed.progress != null) return { ...parsed, tagsRecovered: false };
-  try {
-    const tags = parseCoachResponse(await repair());
-    if (tags.progress == null) return { ...parsed, tagsRecovered: false };
-    return {
-      ...parsed,
-      progress: tags.progress,
-      kbUpdate: parsed.kbUpdate || tags.kbUpdate,
-      profileUpdate: parsed.profileUpdate || tags.profileUpdate,
-      tagsRecovered: true,
-    };
-  } catch {
-    return { ...parsed, tagsRecovered: false };
+  if (parsed.progress != null && parsed.kbUpdate) {
+    return { ...parsed, tagsRepairTried: false, tagsRecovered: false, tagsMissing: false };
   }
+  let tags = {};
+  try { tags = parseCoachResponse(await repair()); } catch { /* the reply stands as parsed */ }
+  const progress = parsed.progress ?? tags.progress ?? null;
+  const kbUpdate = parsed.kbUpdate || tags.kbUpdate || null;
+  return {
+    ...parsed,
+    progress,
+    kbUpdate,
+    profileUpdate: parsed.profileUpdate || tags.profileUpdate || null,
+    tagsRepairTried: true,
+    tagsRecovered: (parsed.progress == null && progress != null) || (!parsed.kbUpdate && !!kbUpdate),
+    tagsMissing: progress == null,
+  };
 }
 
 export function parseCoachResponse(raw) {
@@ -356,6 +361,10 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     parseCoachResponse(coachMsg),
     () => orchestrator.repairCoachTags(messages, stripTags(coachMsg)),
   );
+  // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
+  if (parsed.tagsRepairTried) {
+    orchestrator.reportEvent(parsed.progress != null && parsed.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
+  }
 
   const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   // The objectives checklist (#438) first, against the KB as it was, so the
@@ -413,18 +422,21 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   });
   const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
 
-  // false = the server refused it (e.g. over the item size limit); tell the
-  // learner. No background retry then: it would send the same refused record.
-  // (The cache keeps the turn, so the next save tries it again.)
+  // true = saved. false = the server refused it; 'too_long' = not sent (past
+  // the size budget). Either way tell the learner, and don't retry in the
+  // background: it would send the same record. (The cache keeps the turn, so
+  // the next save tries it again.)
   const saved = await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
-  if (saved !== false) syncInBackground(`messages:${lessonId}`);
+  if (saved === true) syncInBackground(`messages:${lessonId}`);
 
   const userMsg = imageDataUrls.length > 0
     ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }
     : persistedUserMsg;
-  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase,
-    // 'too_long': the conversation itself is past the size limit, so later turns won't save either.
-    saveFailed: saved === false && (conversationTooLong(lessonId) ? 'too_long' : true) };
+  // 'too_long': the conversation itself is past the size limit, so later
+  // turns won't save either (saveLessonMessages doesn't even send it).
+  const saveFailed = saved === 'too_long' ? 'too_long' : saved === false;
+  if (saveFailed === 'too_long') orchestrator.reportEvent('conversation_too_long', { lessonId });
+  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase, saveFailed };
 }
 
 /**

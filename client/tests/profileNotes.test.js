@@ -48,5 +48,8 @@ describe('learner notes', () => {
     const coach = profileUpdateInput(profile, 'Prefers short examples', ctx, 'coach', 5);
     assert.deepEqual([coach.source, coach.coachObservation, coach.learnerFeedback], ['coach', 'Prefers short examples', undefined]);
     assert.equal(coach.context.timestamp, 5);
+    // Removing a note isn't new feedback (#451 third review): it must not read as "the learner says X".
+    const removed = profileUpdateInput(profile, 'QA account', ctx, 'learner-removed', 5);
+    assert.deepEqual([removed.source, removed.removedNote, removed.learnerFeedback], ['learner-removed', 'QA account', undefined]);
   });
 });

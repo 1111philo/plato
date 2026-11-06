@@ -45,9 +45,9 @@ export default function Settings() {
     setLearnerNotes(next.learnerNotes);
     queueProfileUpdate(async () => {
       const current = await ensureProfileExists();
-      const result = await orchestrator.updateProfileFromFeedback(current, `I removed this earlier note about myself; it no longer applies: "${removed.text}"`, {
+      const result = await orchestrator.updateProfileFromFeedback(current, removed.text, {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
-      }, 'learner');
+      }, 'learner-removed');
       if (result?.profile) {
         await saveLearnerProfile(mergeProfile(current, result.profile));
         if (result.summary) { await saveLearnerProfileSummary(result.summary); setProfileSummary(result.summary); }

@@ -8,6 +8,18 @@ const aiRoute = new Hono();
 
 aiRoute.use('/v1/ai/*', authenticate);
 
+// POST /v1/ai/events — client-side events only the browser sees, logged so
+// they show in /v1/admin/logs (OBSERVABILITY.md): a coach reply's missing tags
+// recovered or not, a conversation past the size budget. Known codes only.
+const CLIENT_EVENTS = new Set(['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long']);
+aiRoute.post('/v1/ai/events', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (!CLIENT_EVENTS.has(body?.code)) return c.json({ error: 'Unknown event' }, 400);
+  const lessonId = typeof body.lessonId === 'string' ? body.lessonId.slice(0, 120) : null;
+  logger.warn(body.code, { userId: c.get('userId'), lessonId });
+  return c.json({ ok: true });
+});
+
 aiRoute.post('/v1/ai/messages', async (c) => {
   const body = await c.req.json();
   const { model, max_tokens, system, messages, stream: isStream } = body;

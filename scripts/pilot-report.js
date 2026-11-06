@@ -222,7 +222,8 @@ function formatGroups(logs) {
 function formatDataLossWatch(logs) {
   const hits = (logs.groups || []).filter((g) => {
     // A record refused for size (#451 review M1) is lost learner work too.
-    if (g.code === 'sync_item_too_large') return true;
+    // conversation_too_long: the client stopped sending a conversation past its budget.
+    if (g.code === 'sync_item_too_large' || g.code === 'conversation_too_long') return true;
     if (g.code !== 'unhandled_error') return false;
     const m = g.sample?.meta || {};
     const method = String(m.method || '').toUpperCase();

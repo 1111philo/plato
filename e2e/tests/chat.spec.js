@@ -98,7 +98,7 @@ test('a coach reply that comes back without its tags still records progress', as
   const latest = page.getByRole('button', { name: /^Behind this response/ }).last();
   await latest.click();
   const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
-  await expect(panel).toContainText('Recorded this reply’s progress in a second step');
+  await expect(panel).toContainText('Recorded what this reply left out in a second step');
   await expect(panel).toContainText(/Progress 0 → [1-9] of 10/);
   await expect(page.getByRole('button', { name: /^Progress \([1-9] of 3 Objectives\): lesson overview$/ }).first()).toBeVisible();
 });

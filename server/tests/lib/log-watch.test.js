@@ -12,9 +12,10 @@ describe('dataLossGroups', () => {
       { code: 'unhandled_error', sample: { meta: { method: 'PUT', path: '/v1/sync/messages:x' } } },
       { code: 'unhandled_error', sample: { meta: { method: 'GET', path: '/v1/sync' } } },
       { code: 'sync_item_too_large', sample: { meta: { dataKey: 'messages' } } },
+      { code: 'conversation_too_long', sample: { meta: { lessonId: 'les-1' } } },
       { code: 'job_failed' },
     ];
-    assert.deepEqual(dataLossGroups({ groups }).map((g) => g.code), ['unhandled_error', 'sync_item_too_large']);
+    assert.deepEqual(dataLossGroups({ groups }).map((g) => g.code), ['unhandled_error', 'sync_item_too_large', 'conversation_too_long']);
   });
 });
 

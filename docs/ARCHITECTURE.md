@@ -301,6 +301,11 @@ is its own `screenshot:<key>` record, and the message stores only
   land on the admin's own account).
 - `putSyncData` returns a durability boolean and logs rejected/failed writes
   instead of swallowing them.
+- **Conversation past the budget (#451 third review).** If even after
+  trimming the record is over 340 KB, `saveLessonMessages` doesn't send it
+  (it would 413 on this and every later turn) and returns `'too_long'`;
+  LessonChat shows the "too long to save" message only then, and the client
+  reports `conversation_too_long` once per turn to `POST /v1/ai/events`.
 - **Size guard (#451 reviews).** The server refuses any sync record over
   380 KB with `413` (`sync_item_too_large`, Tier A), counting **UTF-8 bytes**
   as DynamoDB does (`Buffer.byteLength`, not `.length`: a CJK character is 3
@@ -948,8 +953,10 @@ detaching it. Routes: `GET /v1/admin/bundled-lessons` (content.read) and
 'dismiss-publish' }` (content.write; apply is audit-logged
 `bundled_lesson_updated`). Publish all uses the normal lesson PUT.
 
-Learners see it first: its lesson reads include `startHere: true`, so the
-course sorts above every other course; "Continue to Next Lesson" walks its
+Learners see it first: its lesson reads include `startHere: true` (only while
+the lesson is in the Getting Started unit or in none; one an admin moves into
+their own unit sorts with that unit, so that course isn't split into two
+headings), so the course sorts above every other course; "Continue to Next Lesson" walks its
 three lessons and stops at the end of the course. A start-here lesson an
 admin moved out of every course still shows first, under **Start here**.
 
@@ -1077,15 +1084,26 @@ recorded while the reply itself says "you've met all three". Testers saw a
 lesson stuck at 0/3 after the coach announced 10/10.
 
 `recoverMissingTags` (`lessonEngine.js`) handles it in code: when a reply has
-no `[PROGRESS]`, `orchestrator.repairCoachTags` sends the same conversation
-plus the reply back to the coach with a system-prompt addendum asking for
-**only** the tags (the cue sits in the system prompt, so learner text can't
-forge or trigger it). The recovered tags fill in what's missing and go through
-`applyCoachResponseToKB` like any others; a failed repair leaves the turn as
-it was. "Behind this response" says "Recorded this reply's progress in a
-second step". The mock's `MOCK_NOTAGS` cue exercises it in e2e. Coach turns
-also get `max_tokens: 2048` (was 1024), so a long explanation doesn't run out
-before its tags.
+no `[PROGRESS]` **or** no `[KB_UPDATE]` (where `objectivesMet` lives),
+`orchestrator.repairCoachTags` sends the same conversation plus the reply back
+to the coach and asks for **only** the tags. The repair's system prompt is
+built by the same `buildSystemPrompt` as the reply's (knowledge base, lesson
+catalog, the learner's language), plus an addendum with the cue, so learner
+text can't forge or trigger it. Only the missing tags are taken (a reply's own
+progress stands), and they go through `applyCoachResponseToKB` like any
+others. "Behind this response" says "Recorded what this reply left out in a
+second step"; if there's still no progress, it says "Didn't record progress
+for this reply" instead of showing an unchanged score.
+
+Both outcomes are logged: the client reports `coach_tags_recovered` /
+`coach_tags_unrecovered` to `POST /v1/ai/events` (known codes only, signed in),
+so the drop rate shows in `/v1/admin/logs` and the pilot report. Cost: a repair
+resends the turn's input (about 1x), on the turns that need it; at plato's
+volume that's cents a month. Latency: one extra round trip (p50 ~2.7 s) after
+a reply that already finished streaming. The mock's `MOCK_NOTAGS` cue
+exercises the wiring in e2e (the model side is measured on Bedrock, not by the
+mock). Coach turns also get `max_tokens: 2048` (was 1024), so a long
+explanation doesn't run out before its tags.
 
 ### What the coach trusts
 

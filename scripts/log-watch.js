@@ -56,7 +56,8 @@ async function login(apiUrl) {
 export function dataLossGroups(logs) {
   return (logs?.groups || []).filter((g) => {
     // A record refused for size (#451 review M1) is lost learner work too.
-    if (g.code === 'sync_item_too_large') return true;
+    // conversation_too_long: the client stopped sending a conversation past its budget.
+    if (g.code === 'sync_item_too_large' || g.code === 'conversation_too_long') return true;
     if (g.code !== 'unhandled_error') return false;
     const m = g.sample?.meta || {};
     const method = String(m.method || '').toUpperCase();
@@ -80,7 +81,8 @@ export function buildIssueBody(logs, hits, total) {
   const lines = hits.map((g) => {
     const m = g.sample?.meta || {};
     // sync_item_too_large carries { dataKey, size, limit }, not a request.
-    const where = m.method ? `${m.method} ${m.path}` : `${m.dataKey || 'record'}:*`;
+    const where = m.method ? `${m.method} ${m.path}`
+      : m.lessonId ? `messages:${m.lessonId}` : `${m.dataKey || 'record'}:*`;
     const detail = m.error || (m.size ? `${m.size} bytes, over the ${m.limit}-byte limit` : '');
     const err = String(detail).replace(/\s+/g, ' ').slice(0, 160);
     return `- \`${g.code}\` ×${g.count} — \`${where}\` — _${err}_ (first ${g.firstSeen}, last ${g.lastSeen})`;

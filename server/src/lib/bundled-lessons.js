@@ -106,7 +106,11 @@ const bundledById = new Map(BUNDLED_LESSONS.map((b) => [b.id, b]));
 
 /** True when a lesson record is a bundled lesson that should be shown first. */
 export function isStartHere(data) {
-  return !!(data?.bundled && bundledById.get(data.bundled.id)?.startHere);
+  // Only while it's in the Getting Started unit (or no unit): a lesson an
+  // admin moved into their own unit sorts with that unit, so its course
+  // isn't split into two headings around the Getting Started course.
+  const placed = !data?.course || data.course === BUNDLED_COURSE.unitId;
+  return !!(data?.bundled && placed && bundledById.get(data.bundled.id)?.startHere);
 }
 
 /**

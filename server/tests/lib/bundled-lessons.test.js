@@ -141,6 +141,14 @@ describe('bundled lessons', () => {
     assert.equal((await lesson()).status, 'public', 'its status is kept');
   });
 
+  it('a Getting Started lesson moved into an admin\u2019s unit stops sorting first (no split course)', async () => {
+    await run();
+    const l = await lesson();
+    assert.ok(isStartHere(l));
+    assert.equal(isStartHere({ ...l, course: null }), true, 'outside any unit: still shown first');
+    assert.equal(isStartHere({ ...l, course: 'course-mine' }), false);
+  });
+
   it("leaves an admin's own lesson that happens to use the id alone", async () => {
     await db.createSyncData('_system', 'lesson:getting-started', { name: 'Ours', markdown: 'custom', status: 'public' });
     await run();
