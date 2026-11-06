@@ -44,6 +44,16 @@ test('an invite opened while signed in says who is signed in', async ({ page }) 
   await expect(page).toHaveURL(new RegExp(`token=${token}`));
 });
 
+test('a dead invite opened while signed in says it can’t be used, without asking to sign out', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto('/signup?token=inv_not_a_real_token');
+  await expect(page.getByRole('heading', { level: 1, name: 'This invite can’t be used' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sign out and continue' })).toHaveCount(0);
+  await expectAccessible(page, { label: 'dead invite while signed in' });
+  await page.getByRole('button', { name: 'Go to my lessons' }).click();
+  await expect(page).toHaveURL(/\/lessons$/);
+});
+
 test('a username the server makes up is shown once after signup', async ({ page }) => {
   const email = `blank-username-${Date.now()}@example.com`;
   const token = await freshInvite(email);

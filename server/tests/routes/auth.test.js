@@ -360,3 +360,21 @@ describe('POST /v1/auth/logout', () => {
     assert.ok(deleted);
   });
 });
+
+// Generated usernames are checked (#451 third review): DynamoDB's createUser
+// only conditions on userId, so a collision would duplicate a username.
+describe('uniqueUsername', async () => {
+  const { uniqueUsername } = await import('../../src/routes/auth.js');
+  it('skips taken names and gives up after its tries', async () => {
+    const taken = new Set(['user-aaaaaa', 'user-bbbbbb']);
+    const orig = db.getUserByUsername;
+    db.getUserByUsername = async (u) => (taken.has(u) ? { userId: 'usr_x', username: u } : null);
+    try {
+      const seq = ['user-aaaaaa', 'user-bbbbbb', 'user-cccccc'];
+      assert.equal(await uniqueUsername({ generate: () => seq.shift() }), 'user-cccccc');
+      assert.equal(await uniqueUsername({ generate: () => 'user-aaaaaa', tries: 3 }), null);
+    } finally {
+      db.getUserByUsername = orig;
+    }
+  });
+});

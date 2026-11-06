@@ -25,6 +25,20 @@ function generateUsername() {
   return 'user-' + randomBytes(3).toString('hex');
 }
 
+/**
+ * A generated username nobody has yet. The random part is small (16.7M), and
+ * DynamoDB's createUser only conditions on userId, so a collision would
+ * create a second account with the same username. Returns null if every try
+ * is taken (practically never).
+ */
+async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
+  for (let i = 0; i < tries; i++) {
+    const candidate = generate();
+    if (!(await db.getUserByUsername(candidate))) return candidate;
+  }
+  return null;
+}
+
 const auth = new Hono();
 
 // GET /v1/auth/setup-status — check if initial setup is needed
@@ -51,7 +65,8 @@ auth.post('/v1/auth/setup', async (c) => {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
 
-  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  const username = rawUsername ? rawUsername.toLowerCase() : await uniqueUsername();
+  if (!username) return c.json({ error: 'Couldn’t pick a username. Please choose one.' }, 409);
   if (rawUsername) {
     const usernameErr = validateUsername(rawUsername);
     if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -180,7 +195,8 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Account already exists for this email' }, 409);
   }
 
-  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  const username = rawUsername ? rawUsername.toLowerCase() : await uniqueUsername();
+  if (!username) return c.json({ error: 'Couldn’t pick a username. Please choose one.' }, 409);
   if (rawUsername) {
     const usernameErr = validateUsername(rawUsername);
     if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -408,4 +424,4 @@ auth.post('/v1/auth/reset-password', async (c) => {
 });
 
 export default auth;
-export { validateUsername, generateUsername };
+export { validateUsername, generateUsername, uniqueUsername };

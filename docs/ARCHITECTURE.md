@@ -497,7 +497,7 @@ People ask to join; an admin invites them later. Integrator-facing API guide: [`
 - **Admin:** Users → **Wait List** filter, with Invite (not shown for an email with a pending invite; resend that one instead) and Remove per row; click a row to edit the entry (`/plato/users/waitlist/:token`: name, email, group, custom fields — same validation as joining, and a new email must not belong to a user, pending invite, or other entry). Users → **Wait List** button to open or close the form and make or revoke the key. Routes: `GET /v1/admin/waitlist`, `PUT /v1/admin/waitlist/settings`, `POST`/`DELETE /v1/admin/waitlist/key`, `PUT /v1/admin/waitlist/:token` (edit; conditional on the row still being an entry, so it can't race an Invite), `POST /v1/admin/waitlist/:token/invite`, `DELETE /v1/admin/waitlist/:token`.
 - **Invite:** creates a normal email invite that carries the entry's `profile`, sends the invite email, and deletes the entry. Resend keeps the profile.
 - **Invites for existing accounts.** When the entry's email already has an account, Invite creates the invite with `forUserId` (the account's id) instead of a signup link, emails the person a link to the classroom (`sendAccountInviteEmail`), and deletes the entry. The lessons list shows a "You're invited" notice (`AccountInviteNotice`, from `GET /v1/me/invite`) saying what accepting would add. **Accept** (`POST /v1/me/invite/:token/accept`) merges the answers into the account, then marks the invite used. The merge only fills what's missing: the group if the account has none and it still exists, and blank custom fields whose answer is still valid. It never copies the name and never overwrites (`mergeProfile` in `lib/account-invites.js`). **Decline** deletes the invite. Both write audit entries (`account_invite_accepted` / `_declined`). A `forUserId` invite can't be used to sign up (`GET /v1/auth/invite/:token` 404s, signup 400s). Resend keeps `forUserId`, and Admin → Users marks the row "Invited / Has an account". Expires in 7 days like any invite. Storage: `forUserId` is a new optional attribute (DynamoDB) / column (SQLite, added by the pragma pattern). Beta-RC-232 ignores it, and its signup refuses these invites anyway because the email already has an account.
-- **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. That route also says whether the invite can still be used: a used, expired, or full invite (link invites answer `isLink: true` while usable) is 404, and the page shows "This invite can't be used" instead of a form nobody can submit. An invite link opened while signed in shows who's signed in, with **Sign out and continue** / **Go to my lessons** (`SignedInInvite.jsx`), instead of quietly opening that account's classroom. A username left blank is made up by the server and shown once on the Lessons page ("Your username is …"). There's no confirmation email at signup. A stored group that has since been renamed or deleted is ignored rather than assigned.
+- **Signup:** the form is prefilled from `GET /v1/auth/invite/:token`; values the person submits win. That route also says whether the invite can still be used: a used, expired, or full invite (link invites answer `isLink: true` while usable) is 404, and the page shows "This invite can't be used" instead of a form nobody can submit. An invite link opened while signed in shows who's signed in, with **Sign out and continue** / **Go to my lessons** (`SignedInInvite.jsx`), instead of quietly opening that account's classroom. It checks the invite first, so a dead one says "This invite can't be used" without asking anyone to sign out. A username left blank is made up by the server (`uniqueUsername`: `user-` + 6 hex characters, checked against existing usernames, up to 5 tries, then a 409 asking them to pick one; DynamoDB's `createUser` only conditions on `userId`, so the check is what keeps usernames unique) and shown once on the Lessons page ("Your username is …"). There's no confirmation email at signup. A stored group that has since been renamed or deleted is ignored rather than assigned.
 - **Custom fields:** deleting a custom user field also erases its answers from wait-list entries and the invites made from them (`setInviteProfile`), and `GET /v1/admin/waitlist` only returns answers to fields that still exist.
 - **Rate limit.** Unkeyed joins are limited to 5 per client IP per 10 minutes, per container (best-effort; `429` beyond that). The IP is the **rightmost** `X-Forwarded-For` entry (CloudFront appends the viewer's address; the leftmost is whatever the sender wrote), after dropping the Lambda's own source address from the end, or that source address when there's no header (`clientIp` in `routes/waitlist.js`). A request sent straight to the Function URL can still pick its entry. Keyed requests from an outside form aren't limited. Once the wait-list confirmation is on, each join can send an email, so one source can't spray them. The public form carries a **honeypot**: a hidden `website` input (off-screen, `aria-hidden`, out of the tab order). An unkeyed request that fills it gets the normal `202` and nothing is stored. Keyed requests skip the check, so an outside form may send any fields.
 
@@ -946,7 +946,7 @@ lesson PUT keeps the marker, so editing makes a copy "edited" instead of
 detaching it. Routes: `GET /v1/admin/bundled-lessons` (content.read) and
 `POST /v1/admin/bundled-lessons/:id { action: 'apply' | 'dismiss' |
 'dismiss-publish' }` (content.write; apply is audit-logged
-`bundled_lesson_updated`). Publish all uses the normal lesson PUT.
+`bundled_lesson_updated`). Publish all uses the normal lesson PUT. A private lesson that also has an update is in both notices; publishing it doesn't apply the update.
 
 Learners see it first: its lesson reads include `startHere: true`, so the
 course sorts above every other course; "Continue to Next Lesson" walks its
@@ -1121,7 +1121,7 @@ Once `lessonKB.status === 'completed'`, the thread is feedback-only.
   chatter. Completion semantics must not depend on a model choosing to obey an
   instruction — the freeze is now in code.
 - `achieved` is one-shot — only true on the transition turn — so completion side
-  effects (confetti, completion profile update) don't re-fire on subsequent
+  effects (confetti, skipped under `prefers-reduced-motion`; completion profile update) don't re-fire on subsequent
   feedback messages.
 - KB updates (`insights`, `learnerPosition`) are **not** frozen — capturing
   feedback is the entire point of the post-completion thread.
@@ -1544,6 +1544,13 @@ Only the password-reset email stays in `email.js`.
     button.
   - Saving refuses unknown variables, a multi-line subject, or anything over
     200 characters (subject) or 5000 (body).
+  - A template with a button (`linkLabel`: both invitations, the reminder,
+    the digest) must keep `{{link}}` in the body and may not put it in the
+    subject (`linkProblem`): an invitation without its link can't be
+    accepted, and a link in the subject would put the invite token in the
+    Subject header. A stored copy that breaks this (saved before the rule) is
+    never sent: `sendTemplated` logs `email_template_invalid` and sends
+    plato's default copy instead.
   - Values are HTML-escaped in the HTML part.
 - **Sending** is multipart text + HTML, as raw MIME through SES
   (`SendRawEmail`), so we can add `List-Unsubscribe` and one-click
