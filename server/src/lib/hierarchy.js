@@ -6,7 +6,7 @@
  *
  * | UI label | Record                   | Membership                    | Order              |
  * |----------|--------------------------|-------------------------------|--------------------|
- * | Course   | `_system:program:<id>`   | (top level)                   | by name            |
+ * | Course   | `_system:program:<id>`   | (top level)                   | `programOrder.programIds` |
  * | Unit     | `_system:course:<id>`    | `unit.programId`              | `program.unitIds`  |
  * | Lesson   | `_system:lesson:<id>`    | `lesson.course` (the unit id) | `unit.lessonIds`   |
  *
@@ -15,6 +15,10 @@
  * sorted by name, which is exactly the pre-hierarchy behavior. A missing or
  * stale array can't hide or duplicate anything; it just falls back to
  * alphabetical.
+ *
+ * Course order lives in one record, `_system:programOrder` = `{ programIds }`
+ * (there's no parent to hold it). No record, or a stale one, means name
+ * order, as before.
  *
  * ID prefixes: units `course-<8>` (made client-side, as before), courses
  * (programs) `prog-<8>`.
@@ -37,7 +41,7 @@ export function orderIds(order, memberIds, nameOf = (id) => id) {
 /**
  * Build the hierarchy from `_system` sync-data items (db.getAllSyncData).
  * Returns:
- * - `programs`: ordered by name, `[{ id, name, description, unitIds }]`
+ * - `programs`: in `programOrder` order, the rest by name, `[{ id, name, description, unitIds }]`
  * - `units`: Map id → `{ id, name, programId, lessonIds }`, with `programId`
  *   null if missing or pointing at a deleted program
  * - `placement`: Map lessonId → `{ unitId, programId, unitPosition, lessonPosition }`
@@ -46,11 +50,13 @@ export function orderIds(order, memberIds, nameOf = (id) => id) {
  */
 export function buildHierarchy(systemItems) {
   const programData = new Map();
+  let programOrder = null;
   const unitData = new Map();
   const lessonsByUnit = new Map();
   const lessonName = new Map();
   for (const i of systemItems) {
-    if (i.dataKey.startsWith('program:')) programData.set(i.dataKey.slice(8), i.data || {});
+    if (i.dataKey === 'programOrder') programOrder = i.data?.programIds;
+    else if (i.dataKey.startsWith('program:')) programData.set(i.dataKey.slice(8), i.data || {});
     else if (i.dataKey.startsWith('course:')) unitData.set(i.dataKey.slice(7), i.data || {});
     else if (i.dataKey.startsWith('lesson:')) {
       const id = i.dataKey.slice(7);
@@ -68,12 +74,11 @@ export function buildHierarchy(systemItems) {
   }
 
   const unitName = (u) => units.get(u)?.name;
-  const programs = [...programData.entries()]
-    .map(([id, d]) => {
-      const memberUnits = [...units.values()].filter((u) => u.programId === id).map((u) => u.id);
-      return { id, name: d.name || id, description: d.description || '', unitIds: orderIds(d.unitIds, memberUnits, unitName) };
-    })
-    .sort(byName((p) => p.name));
+  const programById = new Map([...programData.entries()].map(([id, d]) => {
+    const memberUnits = [...units.values()].filter((u) => u.programId === id).map((u) => u.id);
+    return [id, { id, name: d.name || id, description: d.description || '', unitIds: orderIds(d.unitIds, memberUnits, unitName) }];
+  }));
+  const programs = orderIds(programOrder, [...programById.keys()], (id) => programById.get(id).name).map((id) => programById.get(id));
 
   const placement = new Map();
   for (const p of programs) {

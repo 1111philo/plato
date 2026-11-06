@@ -97,6 +97,18 @@ describe('courses (programs)', () => {
     assert.equal((await req('PUT', '/v1/admin/programs/p1/order', { unitIds: ['u2'] })).status, 400);
   });
 
+  it('orders courses with an exact permutation; learners get the new positions', async () => {
+    await req('PUT', '/v1/admin/programs/p2', { name: 'Course Two' });
+    assert.equal((await req('PUT', '/v1/admin/programs-order', { programIds: ['p2', 'p1'] })).status, 200);
+    assert.deepEqual(rec('programOrder').programIds, ['p2', 'p1']);
+    const { programs } = await (await req('GET', '/v1/admin/programs')).json();
+    assert.deepEqual(programs.map((p) => p.programId), ['p2', 'p1']);
+    assert.equal((await req('PUT', '/v1/admin/programs-order', { programIds: ['p2'] })).status, 400);
+    assert.equal((await req('PUT', '/v1/admin/programs-order', { programIds: ['p2', 'p1', 'p9'] })).status, 400);
+    const lessons = await (await req('GET', '/v1/lessons', null, 'usr_learner', content)).json();
+    assert.equal(lessons.find((l) => l.lessonId === 'l2').program.position, 1, 'Course One is now second');
+  });
+
   it('deleting a course keeps its units, unassigned', async () => {
     assert.equal((await req('DELETE', '/v1/admin/programs/p1')).status, 200);
     assert.equal(rec('program:p1'), undefined);

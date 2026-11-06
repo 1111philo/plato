@@ -55,6 +55,17 @@ describe('buildHierarchy', () => {
     assert.deepEqual(h.placement.get('l1'), { unitId: 'u1', programId: 'p1', unitPosition: 1, lessonPosition: 1 });
   });
 
+  it('orders courses by programOrder, then the rest by name; a stale order changes nothing else', () => {
+    const many = [
+      { dataKey: 'program:pa', data: { name: 'Alpha' } },
+      { dataKey: 'program:pb', data: { name: 'Beta' } },
+      { dataKey: 'program:pc', data: { name: 'Gamma' } },
+    ];
+    assert.deepEqual(buildHierarchy(many).programs.map((p) => p.id), ['pa', 'pb', 'pc'], 'no order: by name');
+    const ordered = [...many, { dataKey: 'programOrder', data: { programIds: ['pc', 'p-deleted', 'pa'] } }];
+    assert.deepEqual(buildHierarchy(ordered).programs.map((p) => p.id), ['pc', 'pa', 'pb'], 'listed first, unlisted after by name');
+  });
+
   it('treats a unit whose course was deleted as unassigned', () => {
     assert.equal(h.units.get('u3').programId, null);
     assert.deepEqual(h.unassignedUnitIds, ['u3']);
