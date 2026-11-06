@@ -1307,7 +1307,28 @@ Users list, none of which have plugin slots, and #363 depends on it.
 
 **Storage.**
 - Definitions: ordered array at `_system:settings.userFields`, alongside
-  `userGroups`. Shape: `{ id: 'fld_…', label, type, required, options? }`.
+  `userGroups`. Shape: `{ id: 'fld_…', label, type, required, options?,
+  hideFromLearner?, hideFromApi? }`.
+
+**Visibility.** Two optional flags per field, set in the User Fields dialog
+("Who sees it"). Admins always see and edit every field, and hiding never
+deletes stored values.
+- **`hideFromLearner`** (badge "Admins only"): not in the learner's
+  Settings, the required-fields prompt (`/v1/me/fields`), `/v1/me`, their data
+  export, signup, the wait-list form, or the invite they open. A learner can't
+  set or clear it, and it can't be required of them (`required` is forced off).
+- **`hideFromApi`** (badge "Not on public forms"): not listed by the public
+  `GET /v1/user-fields` (what signup and the wait-list form render) and not
+  accepted from `POST /v1/waitlist` (keyed or not) or from signup. Learners
+  still see and edit it in Settings, and a required one is collected by the
+  required-fields prompt after signup.
+- How: `learnerFields(defs)` and `publicFields(defs)` (`lib/user-fields.js`)
+  give each audience its list, and learner/public routes pass that list as
+  `mergeFieldValues(..., { editable })`. Fields outside it are ignored in the
+  request and **kept as stored** (filtering the definitions instead would
+  silently drop the admin's values on the next learner save). `required` is
+  checked only among the editable fields. Admin routes (Edit User, the
+  wait-list entry editor) pass no `editable`.
   Types: `text`, `textarea`, `dropdown` (with `options`), `link` (http/https
   only), `phone` (7–15 digits).
 - Values: on the **user record** as `customFields: { [fieldId]: string }` —

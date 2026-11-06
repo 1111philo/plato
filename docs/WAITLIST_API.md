@@ -97,7 +97,9 @@ Values are strings, trimmed. Per field type:
 | `link` | a full `http://` or `https://` URL |
 | `phone` | digits with optional `+`, spaces, `( ) . -`; 7–15 digits |
 
-Unknown field ids are ignored. An empty string means "no answer".
+Unknown field ids are ignored, and so are fields an admin has hidden from
+the API or from learners (they aren't listed by `GET /v1/user-fields`
+either). An empty string means "no answer".
 
 ### Responses
 

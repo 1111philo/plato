@@ -10,7 +10,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import db from './db.js';
 import { hashToken } from './crypto.js';
-import { getFieldDefinitions, mergeFieldValues } from './user-fields.js';
+import { getFieldDefinitions, mergeFieldValues, publicFields } from './user-fields.js';
 import { readNameInput } from './names.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,7 +56,7 @@ export function hasValidApiKey(authHeader, config) {
  * it must be one of the classroom's groups).
  * Returns `{ email, profile }` or `{ error }`.
  */
-export function validateWaitlistEntry(body, settings) {
+export function validateWaitlistEntry(body, settings, { admin = false } = {}) {
   const { email, userGroup, customFields } = body || {};
   const nameInput = readNameInput(body, { required: true });
   if (nameInput.error) return { error: nameInput.error };
@@ -70,7 +70,10 @@ export function validateWaitlistEntry(body, settings) {
     group = userGroup;
   }
 
-  const merged = mergeFieldValues(getFieldDefinitions(settings), {}, customFields, { enforceRequired: true });
+  // The public form and API only set the public fields; an admin editing the
+  // entry sets any of them.
+  const defs = getFieldDefinitions(settings);
+  const merged = mergeFieldValues(defs, {}, customFields, { enforceRequired: true, editable: admin ? null : publicFields(defs) });
   if (merged.error) return { error: merged.error };
 
   return {

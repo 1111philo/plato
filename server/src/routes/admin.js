@@ -491,7 +491,7 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
   const body = await c.req.json();
   const settings = await db.getSyncData('_system', 'settings');
-  const result = validateWaitlistEntry(body, settings?.data || {});
+  const result = validateWaitlistEntry(body, settings?.data || {}, { admin: true });
   if (result.error) return c.json({ error: result.error }, 400);
 
   if (result.email !== entry.email) {

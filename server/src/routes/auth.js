@@ -8,7 +8,7 @@ import { signAccessToken } from '../lib/jwt.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
-import { getFieldDefinitions, mergeFieldValues } from '../lib/user-fields.js';
+import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
@@ -142,7 +142,8 @@ auth.get('/v1/auth/invite/:token', async (c) => {
     email: invite.email,
     ...(named ? nameFields(profile) : { name: null, firstName: null, lastName: null }),
     userGroup: profile.userGroup || null,
-    customFields: profile.customFields || {},
+    // Only what the signup form shows: admin-only answers stay on the server.
+    customFields: visibleFieldValues(publicFields(getFieldDefinitions((await db.getSyncData('_system', 'settings'))?.data)), profile.customFields),
   });
 });
 
@@ -213,7 +214,10 @@ auth.post('/v1/auth/signup', async (c) => {
   let customFields = {};
   if (rawCustomFields !== undefined || profile?.customFields) {
     const settings = await db.getSyncData('_system', 'settings');
-    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), profile?.customFields || {}, rawCustomFields);
+    // The form sets only the public fields; the invite's admin-set answers to
+    // the others are kept as they are.
+    const defs = getFieldDefinitions(settings?.data);
+    const merged = mergeFieldValues(defs, profile?.customFields || {}, rawCustomFields, { editable: publicFields(defs) });
     if (merged.error) return c.json({ error: merged.error }, 400);
     customFields = merged.values;
   }
