@@ -101,6 +101,7 @@ lost something?* Yes → A. No → B.
 | `waitlist_removed_email_failed` | error | B | the "removed from the wait list" email didn't send (the entry was still removed) |
 | `ai_stream_failed` | error | B | an AI reply stream failed partway (Bedrock error or the 115 s timeout); the learner sees an error and the turn isn't saved |
 | `ai_invoke_failed` | error | B | a non-streamed AI call failed (background agents: learner profile, unit notes, lesson creation, extractors); the caller gets a 500 |
+| `email_template_invalid` | error | B | a stored email template that needs a link button has no `{{link}}` in its body (or has one in the subject); plato sent its default copy instead (`{ template, problem }`). Fix the template in Admin → Notifications → Automations |
 | `coach_tags_recovered` | warn | B | a coach reply came without `[PROGRESS]` or `[KB_UPDATE]` and the tag-repair call filled it in (reported by the client via `POST /v1/ai/events`); the rate is the model's tag-drop rate |
 | `coach_tags_unrecovered` | warn | B | the same, but the repair didn't help: that turn recorded no progress (or no checklist/notes). A rising count means the coach prompt or model needs attention |
 | `conversation_too_long` | warn | A | a lesson's conversation is past the 340 KB budget even after trimming, so new turns aren't saved (progress still is). Reported by the client; the record is never sent |
