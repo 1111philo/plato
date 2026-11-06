@@ -167,32 +167,26 @@ lock and makes no writes):
 - `m005_name_split`: 184 would update. 12 names have 3+ parts, and 1 user has
   no name.
 
-> **Not yet re-run.** The rehearsal below ran before Getting Started became a
-> three-lesson course (#492). Re-run it before the merge and replace the
-> results below. Expect **7** more added records than below: the two new
-> lessons (`lesson:getting-started-sharing`, `lesson:getting-started-behind`)
-> and their markers (`bundled:getting-started-sharing`,
-> `bundled:getting-started-behind`), the course (`program:prog-getting-started`),
-> the unit (`course:unit-getting-started`), and the course marker
-> (`bundled:course:getting-started`); m004's default course unchanged. The
-> upgrade test (`upgrade-from-rc232.test.js`) already checks this in startup
-> order; the rehearsal checks it on a copy of prod's real data.
-
-**Full rehearsal on a point-in-time copy of prod** (`scripts/rehearse-upgrade.js`
-against `plato-rehearsal-*` restored from PITR; the tables were deleted
-afterwards):
-- All three migrations ran with 0 errors, and Getting Started was installed
-  **private**.
-- Diff: **0 removed**, 4 added (migration state, the Course, Getting
-  Started, and its marker), 190 changed (the 185 users and 5 units, as
-  expected).
-- **5,304 learner records untouched, byte for byte**: 1,730 conversations,
-  1,683 screenshots, 1,719 lesson progress records, 171 unit progress notes,
+**Full rehearsal on a point-in-time copy of prod, re-run 2026-11-06 on the
+final code** (`playground` at `4351cb9`, after #510; `scripts/rehearse-upgrade.js`
+in startup order, against `plato-rehearsal-*` restored from PITR at
+2026-11-06 21:39 UTC; the tables were deleted afterwards):
+- All three migrations ran with 0 errors: `m003_role_learner` updated 179
+  of 185 users; `m004_default_program` created the Course "Plato" with all 5
+  existing units (and skipped the Getting Started unit, as it should);
+  `m005_name_split` updated 184 (12 names with 3+ parts, 1 user with no name).
+- The Getting Started course installed with all three lessons **private**, in
+  its unit.
+- Diff: **0 removed**, **11 added** (migration state, the default Course, and
+  the 9 Getting Started records: three lessons, their markers, the course, its
+  unit, its marker), 190 changed (the 185 users and 5 units, as expected).
+- **5,333 learner records untouched, byte for byte**: 1,740 conversations,
+  1,688 screenshots, 1,729 lesson progress records, 175 unit progress notes,
   and custom lessons.
-- A second run did nothing.
+- Every existing unit is in a course after m004. A second run did nothing.
 - **Rollback:** Beta-RC-232's own route handlers served the migrated copy.
-  Admin users (185), lessons (39), and courses (5), plus a learner's profile
-  (role `learner`), lessons (35), and sync (75 records) all returned 200.
+  Admin users (185), lessons (41), and courses (6), plus a learner's profile
+  (role `learner`), lessons (36), and sync (75 records) all returned 200.
 
 **Playground soak:** the same migrations ran on playground's real deploy on
 2026-10-30 (all 0 errors). All 11 users' name parts rejoin exactly to their
