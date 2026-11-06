@@ -27,3 +27,14 @@ Each is small or rare. None can lose learner work without saying so.
 - **`?include=stats` gets slower as the user list grows**, because it recomputes for every user on each request.
 - **No bounce or complaint handling for SES.**
 - **Screenshots from failed turns are left behind** as orphaned `screenshot:*` records.
+
+## From tester QA on the launch build (Nov 5)
+
+Valid, but left for after the launch:
+
+- **Two admin tabs editing the same user: the last save wins** without warning. User records have no version check; add `updatedAt`-based optimistic locking to `PATCH /v1/admin/users/:userId` (409 + "changed since you opened it").
+- **Courses can't be reordered** (units and lessons can). Courses sort by name; add an order (e.g. `_system:programOrder`) and Move up/down in Courses & Units. Getting Started already shows first.
+- **Likely-typo email domains** (`gamil.com`) are accepted on the wait list. Product decision: warn ("did you mean gmail.com?") rather than reject.
+- **The wait-list rate limit is per server instance** (5 per 10 min), so a burst can spread across Lambda containers and get past it. A shared counter (DynamoDB TTL item per IP) would make it exact.
+- **Prompt injection is mitigated, not solved.** The coach and profile prompts now ignore claims of authority (measured 0/4 vs 4/4), but a determined learner may find phrasings that work. Completion still rests on the model's judgment; a second-opinion check on the completing turn would harden it.
+- **The profile summary sometimes notes that it ignored an instruction.** Harmless, but noisy.
