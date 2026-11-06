@@ -65,6 +65,10 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #492 | Getting Started becomes a three-lesson course, "Getting Started with plato" | #443 |
 | #493 | "How assessment works" moves to the lesson overview's footer (left of Close); the header button reads "Progress (N of M Objectives)"; course descriptions aren't shown | #257, #438 |
 | #497 | Dependency bumps folded in from Dependabot #495 (`@hono/node-server` 2.1.3, dev server only; serveStatic security fix plato doesn't use) and #496 (`follow-redirects` 1.16.2 override) | deps |
+| #498 | Merge main (#449, named AWS sessions in the agent workflows) into playground | infra |
+| #502 | Tester QA: one lesson page per lesson (no stale chat after Continue); invites say what's wrong up front (signed in as someone else, used/expired); a generated username is shown once | #451 QA |
+| #503 | Tester QA: coach replies without tags are re-asked for them; coach ignores injected authority (0/4 vs 4/4 completions on Bedrock); no false escalation; coach max_tokens 2048 | #451 QA |
+| #504 | Tester QA: Add Feedback notes are kept verbatim (`learnerNotes`) and win over inferences; profile agents ignore injected approvals | #451 QA |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 
