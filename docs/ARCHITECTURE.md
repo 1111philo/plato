@@ -684,6 +684,15 @@ a lesson can sit outside any unit, and a unit outside any course. Everything
 here is organization only. Lesson visibility (public/private/draft +
 `sharedWith`) is unchanged, and nothing here affects completion.
 
+**Course order** (Blake's review, launch): `_system:programOrder` =
+`{ programIds }`, set by `PUT /v1/admin/programs-order` (exactly every course
+once; `content.write`) from Move up / Move down in Admin → Lessons → Courses &
+Units. Learners see courses in that order (`program.position`). No record, or
+a course it doesn't list, falls back to name order, so installs without one
+behave as before and Beta-RC-232 ignores it. Getting Started (`bundled`) is
+pinned at the top of the admin list with no move buttons, matching what
+learners see (`startHere` sorts it first).
+
 **Storage keeps its pre-hierarchy names** (glossary: storage `course` = UI
 **Unit**; storage `program` = UI **Course**). Nothing that references a unit
 had to move: `lesson.course`, learners' `courseProgress:<unitId>` memory, and
@@ -927,7 +936,8 @@ both marked `bundled: { id }`, installed once (`_system:bundled:course:getting-s
 After that it's the admin's: rename it, reorder it, or delete it, and it's
 never recreated. A record an admin already has under the same id is left
 alone. Lessons installed before the course existed (playground's one-lesson
-release) join the unit if they aren't in one. m004 ignores bundled courses
+release) join the unit if they aren't in one; on a classroom that already has
+lessons, new ones arrive private. m004 ignores bundled courses
 when deciding whether an admin already made courses; startup installs this
 one first, and counting it would leave every existing unit outside the
 default course.
@@ -938,7 +948,7 @@ default course.
 |---|---|
 | First time on an install, classroom has no lessons | created **public**, in the Getting Started unit |
 | First time on an existing classroom | created **private**; Admin → Lessons shows one notice for the course with **Publish all / Review lessons / Dismiss** |
-| Added later to an install whose first Getting Started lesson is public | created public, so the course isn't left half-published |
+| Added in a later release to an existing classroom | created **private**, even if the rest of Getting Started is published; Admin → Lessons asks an admin to review and publish it |
 | Admin deleted it | never recreated (`_system:bundled:<id>` marker remembers the install) |
 | New version, copy unedited | updated in place; status, unit, and sharing kept; learner progress (`lessonKB:<id>`) untouched |
 | New version, copy edited | never overwritten; Admin → Lessons shows "has an update" with **View update / Apply update / Dismiss** |

@@ -183,7 +183,7 @@ describe('the Getting Started course', () => {
     }
   });
 
-  it('an install that already had the first lesson: it joins the unit; new lessons follow its status', async () => {
+  it('an install that already had the first lesson: it joins the unit; new lessons arrive private for review', async () => {
     siblings = null;
     await run(); // the one-lesson release: public, no course yet on that install
     const first = await db.getSyncData('_system', 'lesson:getting-started');
@@ -194,7 +194,8 @@ describe('the Getting Started course', () => {
     siblings = { 'getting-started-sharing.md': V1, 'getting-started-behind.md': V1 };
     assert.deepEqual((await run()).installed, ['getting-started-sharing', 'getting-started-behind']);
     assert.equal((await get('lesson:getting-started')).course, BUNDLED_COURSE.unitId);
-    assert.equal((await get('lesson:getting-started-sharing')).status, 'public', 'follows the published first lesson');
+    assert.equal((await get('lesson:getting-started')).status, 'public', 'the published first lesson stays public');
+    assert.equal((await get('lesson:getting-started-sharing')).status, 'private', 'new plato copy waits for an admin, even next to a published lesson');
   });
 
   it('on an existing classroom everything arrives private', async () => {

@@ -71,6 +71,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #504 | Tester QA: Add Feedback notes are kept verbatim (`learnerNotes`) and win over inferences; profile agents ignore injected approvals | #451 QA |
 | #507 | Third review: templates with a link button must keep `{{link}}` (an invalid stored copy falls back to the default); generated usernames checked for uniqueness; a dead invite while signed in says so; Publish all includes lessons with an update; confetti respects reduced motion | review |
 | #508 | Third review: tag repair uses the reply's own system prompt; a failed repair is disclosed; repair also for a missing KB update; tag-drop and too-long conversations logged via `POST /v1/ai/events`; Getting Started lessons moved into another unit stop sorting first | review |
+| #510 | Courses can be ordered (Courses & Units → Move up/down; `_system:programOrder`); bundled lessons added in a later release always arrive private | #408, #443 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

@@ -13,7 +13,8 @@ const SELECT_CLASS = 'h-8 rounded-md border border-input bg-transparent px-2 tex
 /**
  * Admin → Lessons → Courses & Units (#408): the Course → Unit → Lesson
  * structure in one place. Add, rename, and delete courses and units; put a
- * unit in a course; order units within a course and lessons within a unit.
+ * unit in a course; order courses (Getting Started stays first), units within
+ * a course, and lessons within a unit.
  * Lessons themselves are created and edited in the lesson editor.
  *
  * Reordering uses Move up / Move down buttons (keyboard and screen reader
@@ -96,6 +97,17 @@ export default function CourseStructure() {
     const name = units.get(unitId)?.name || 'Unit';
     run(() => adminApi('PUT', `/v1/admin/programs/${program.programId}/order`, { unitIds: move(program.unitIds, index, delta) }),
       `Moved ${name} ${delta < 0 ? 'up' : 'down'}.`, `unit-${unitId}-${delta < 0 ? 'up' : 'down'}`);
+  }
+
+  // Courses in learner order. Getting Started (bundled) is always shown to
+  // learners first, so it's pinned at the top here too and doesn't move.
+  const pinned = programs.filter((p) => p.bundled);
+  const movable = programs.filter((p) => !p.bundled);
+  function moveProgram(index, delta) {
+    const program = movable[index];
+    const order = move(movable.map((p) => p.programId), index, delta);
+    run(() => adminApi('PUT', '/v1/admin/programs-order', { programIds: [...pinned.map((p) => p.programId), ...order] }),
+      `Moved ${program.name} ${delta < 0 ? 'up' : 'down'}.`, `course-${program.programId}-${delta < 0 ? 'up' : 'down'}`);
   }
 
   function moveLesson(unit, index, delta) {
@@ -245,16 +257,25 @@ export default function CourseStructure() {
       </div>
 
       <div className="space-y-4">
-        {programs.map((program) => {
+        <ol className="space-y-4" aria-label="Courses">
+        {[...pinned, ...movable].map((program) => {
           const isEditing = editing?.kind === 'program' && editing.id === program.programId;
+          const index = movable.indexOf(program);
           return (
-            <Card key={program.programId}>
+            <li key={program.programId}>
+            <Card>
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
                   {isEditing ? nameForm(`Rename course ${program.name}`) : (
                     <>
                       <h2 className="flex-1 min-w-0 text-lg font-semibold">{program.name}</h2>
-                      <span className="text-sm text-muted-foreground">{program.unitCount} unit{program.unitCount === 1 ? '' : 's'} · {program.lessonCount} lesson{program.lessonCount === 1 ? '' : 's'}</span>
+                      <span className="text-sm text-muted-foreground">{program.unitCount} unit{program.unitCount === 1 ? '' : 's'} · {program.lessonCount} lesson{program.lessonCount === 1 ? '' : 's'}{program.bundled ? ' · always first for learners' : ''}</span>
+                      {!program.bundled && (
+                        <>
+                          <Button id={`course-${program.programId}-up`} variant="ghost" size="icon-xs" disabled={index === 0} onClick={() => moveProgram(index, -1)} aria-label={`Move course ${program.name} up`}>&uarr;</Button>
+                          <Button id={`course-${program.programId}-down`} variant="ghost" size="icon-xs" disabled={index === movable.length - 1} onClick={() => moveProgram(index, 1)} aria-label={`Move course ${program.name} down`}>&darr;</Button>
+                        </>
+                      )}
                       <Button variant="ghost" size="sm" onClick={() => setEditing({ kind: 'program', id: program.programId, name: program.name })} aria-label={`Rename course ${program.name}`}>Rename</Button>
                       <Button variant="ghost" size="sm" onClick={() => setConfirm({ kind: 'program', id: program.programId, name: program.name, count: program.unitCount })} aria-label={`Delete course ${program.name}`}>Delete</Button>
                     </>
@@ -268,8 +289,10 @@ export default function CourseStructure() {
                 {addUnit(program.programId)}
               </CardContent>
             </Card>
+            </li>
           );
         })}
+        </ol>
 
         <Card>
           <CardContent className="space-y-3">

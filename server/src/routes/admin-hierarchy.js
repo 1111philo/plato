@@ -193,6 +193,8 @@ export function registerHierarchyRoutes(admin) {
         unitIds: p.unitIds,
         unitCount: p.unitIds.length,
         lessonCount: p.unitIds.reduce((n, u) => n + h.units.get(u).lessonIds.length, 0),
+        // Getting Started (#443): learners always see it first.
+        bundled: !!meta.get(p.id)?.data?.bundled,
         updatedByName: meta.get(p.id)?.data?.updatedByName || null,
         updatedAt: meta.get(p.id)?.updatedAt,
       })),
@@ -249,6 +251,24 @@ export function registerHierarchyRoutes(admin) {
     }
     await updateRecord(`program:${id}`, (d) => ({ ...d, unitIds }));
     return c.json({ programId: id, unitIds });
+  });
+
+  // PUT /v1/admin/programs-order: body { programIds }, every course exactly
+  // once, in the order learners and admins should see them.
+  admin.put('/v1/admin/programs-order', async (c) => {
+    const { programIds } = await c.req.json().catch(() => ({}));
+    const h = buildHierarchy(await db.getAllSyncData('_system'));
+    if (!isPermutation(programIds, h.programs.map((p) => p.id))) {
+      return c.json({ error: 'programIds must list each course exactly once' }, 400);
+    }
+    const cur = await db.getSyncData('_system', 'programOrder');
+    try {
+      await db.putSyncData('_system', 'programOrder', { programIds, updatedBy: c.get('user').userId }, cur?.version || 0);
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return c.json({ error: 'The order changed meanwhile; reload and try again' }, 409);
+      throw err;
+    }
+    return c.json({ programIds });
   });
 
   // Delete a course; its units stay, just unassigned.

@@ -80,6 +80,7 @@ const R = [
   ['GET', '/v1/admin/programs/:programId', 'content.read'],
   ['PUT', '/v1/admin/programs/:programId', 'content.write'],
   ['PUT', '/v1/admin/programs/:programId/order', 'content.write'],
+  ['PUT', '/v1/admin/programs-order', 'content.write'],
   ['DELETE', '/v1/admin/programs/:programId', 'content.write'],
   // Users
   ['GET', '/v1/admin/users', 'users.read'],

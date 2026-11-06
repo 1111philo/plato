@@ -3,7 +3,8 @@
  * Rehearse the launch upgrade on restored copies of an install's tables.
  * Self-hosted installs can run it too. It:
  *   1. snapshots every record (users + sync-data),
- *   2. runs the data migrations and the bundled-lesson install for real (--apply),
+ *   2. runs, for real and in startup order (index.js), the bundled-content
+ *      install (the Getting Started course) and then the data migrations,
  *   3. diffs before/after: nothing removed, changes only where a migration says
  *      it may change, and learner work (messages, screenshots, lessonKB,
  *      courseProgress, custom lessons) byte-for-byte untouched,
@@ -49,7 +50,16 @@ async function snapshot() {
   return { out, users };
 }
 
-const ALLOWED_ADDED = [/^sync:_system:migrations$/, /^sync:_system:program:prog-default$/, /^sync:_system:lesson:getting-started$/, /^sync:_system:bundled:getting-started$/];
+const ALLOWED_ADDED = [
+  /^sync:_system:migrations$/,
+  /^sync:_system:program:prog-default$/, // m004
+  // The Getting Started course (#443): three lessons, their markers, the course, its unit, its marker.
+  /^sync:_system:lesson:getting-started(-sharing|-behind)?$/,
+  /^sync:_system:bundled:getting-started(-sharing|-behind)?$/,
+  /^sync:_system:bundled:course:getting-started$/,
+  /^sync:_system:program:prog-getting-started$/,
+  /^sync:_system:course:unit-getting-started$/,
+];
 const ALLOWED_CHANGED = [/^user:/, /^sync:_system:course:/];
 const LEARNER_WORK = /^sync:usr_[^:]+:(messages|screenshot|lessonKB|courseProgress|lessons):/;
 
@@ -65,8 +75,11 @@ const byPrefix = (m) => {
 };
 lines.push('## Before', '', '```', JSON.stringify(byPrefix(before.out), null, 1), '```', '');
 
-const outcome = await runMigrations();
+// Startup order: bundled content first, then migrations (m004 must not count
+// the bundled course as one an admin made).
+const unitsBefore = (await db.getAllSyncData('_system')).filter((i) => i.dataKey.startsWith('course:')).map((i) => i.dataKey);
 const bundled = await ensureBundledLessons({ db });
+const outcome = await runMigrations();
 lines.push('## Migrations', '');
 for (const { id, result } of outcome.ran) {
   lines.push(`- \`${id}\`: scanned ${result.scanned}, updated ${result.updated}, skipped ${result.skipped}, errors ${result.errors}${(result.notes || []).map((n) => `; ${n}`).join('')}`);
@@ -87,8 +100,13 @@ const badChanged = changed.filter((k) => !ALLOWED_CHANGED.some((r) => r.test(k))
 check(badChanged.length === 0, `only users and units changed${badChanged.length ? `: ${badChanged.slice(0, 5).join(', ')}` : ''}`);
 const work = [...before.out.keys()].filter((k) => LEARNER_WORK.test(k));
 check(work.every((k) => after.out.get(k) === before.out.get(k)), `learner work untouched (${work.length} records: conversations, screenshots, progress, unit notes, custom lessons)`);
-const gs = (await db.getSyncData('_system', 'lesson:getting-started'))?.data;
-check(!gs || gs.status === 'private', 'Getting Started arrived private');
+for (const id of ['getting-started', 'getting-started-sharing', 'getting-started-behind']) {
+  const gs = (await db.getSyncData('_system', `lesson:${id}`))?.data;
+  check(!!gs && gs.status === 'private' && gs.course === 'unit-getting-started', `${id} arrived private, in the Getting Started unit`);
+}
+const systemAfter = await db.getAllSyncData('_system');
+const unitsOutside = unitsBefore.filter((k) => !systemAfter.find((i) => i.dataKey === k)?.data?.programId);
+check(unitsOutside.length === 0, `every existing unit (${unitsBefore.length}) is in a course after m004${unitsOutside.length ? `: ${unitsOutside.join(', ')} not` : ''}`);
 const again = await runMigrations();
 check(again.ran.length === 0, 'a second run does nothing');
 

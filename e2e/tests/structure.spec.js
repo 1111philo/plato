@@ -62,3 +62,30 @@ test('learners see lessons grouped by course and unit, in the admin-defined orde
   await expect(page.getByLabel('Course', { exact: true })).toHaveValue('all');
   await expectAccessible(page, { label: 'lessons by course and unit' });
 });
+
+test('admins order courses by keyboard; Getting Started stays first', async ({ page }) => {
+  await login(page, ADMIN);
+  await page.goto('/plato/lessons/structure');
+  await page.getByRole('button', { name: 'Add course' }).click();
+  await page.keyboard.type('Another Course');
+  await page.keyboard.press('Enter');
+  const courses = page.getByRole('list', { name: 'Courses' });
+  await expect(courses.getByRole('heading', { name: 'Another Course' })).toBeVisible();
+  // Getting Started is pinned: no move buttons, always first.
+  await expect(page.getByRole('button', { name: /Move course Getting Started/ })).toHaveCount(0);
+  await expect(courses.locator(':scope > li').first()).toContainText('Getting Started with plato');
+
+  const names = async () => (await courses.locator(':scope > li h2').allInnerTexts());
+  const before = await names();
+  const second = before[1];
+  const down = page.getByRole('button', { name: `Move course ${second} down` });
+  await down.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status').filter({ hasText: `Moved ${second} down.` })).toBeAttached();
+  await expect.poll(names).toEqual([before[0], before[2], before[1], ...before.slice(3)]);
+  await expect(page.getByRole('button', { name: `Move course ${second} up` })).toBeFocused();
+  await expectAccessible(page, { label: 'courses & units with course order' });
+  // Put it back for the other tests.
+  await page.getByRole('button', { name: `Move course ${second} up` }).click();
+  await expect.poll(names).toEqual(before);
+});

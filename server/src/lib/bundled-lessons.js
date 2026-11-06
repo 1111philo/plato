@@ -137,15 +137,14 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
 
       if (!marker) {
         if (!lesson) {
-          // A lesson added to the course later follows the first one: public
-          // if an admin already published Getting Started.
-          const lead = items.find((i) => i.dataKey === `lesson:${BUNDLED_LESSONS[0].id}`)?.data;
-          const leadPublic = !!lead?.bundled && lead.status === 'public';
+          // On an existing classroom it arrives private, even when the rest of
+          // Getting Started is published: an admin reviews new plato copy
+          // before learners see it (Admin → Lessons asks them to).
           try {
             await db.createSyncData('_system', `lesson:${b.id}`, {
               markdown,
               name: titleOf(markdown, b.id),
-              status: firstLesson || leadPublic ? 'public' : 'private',
+              status: firstLesson ? 'public' : 'private',
               sharedWith: [],
               course: unitId,
               bundled: { id: b.id, version },
