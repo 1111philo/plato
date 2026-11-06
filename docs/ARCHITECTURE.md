@@ -1310,14 +1310,17 @@ Users list, none of which have plugin slots, and #363 depends on it.
   `userGroups`. Shape: `{ id: 'fld_…', label, type, required, options?,
   hideFromLearner?, hideFromApi? }`.
 
-**Visibility.** Two optional flags per field, set in the User Fields dialog
-("Who sees it"). Admins always see and edit every field, and hiding never
+**Visibility.** Two optional flags per field. The User Fields dialog offers
+them as one choice, "Who can see and fill it in": **Everyone** (no flags),
+**Learners, after signup** (`hideFromApi`), **Admins only**
+(`hideFromLearner`; `fieldVisibility` / `visibilityFlags` in
+`client/src/lib/userFields.js`). Admins always see and edit every field, and hiding never
 deletes stored values.
-- **`hideFromLearner`** (badge "Admins only"): not in the learner's
+- **`hideFromLearner`** ("Admins only"): not in the learner's
   Settings, the required-fields prompt (`/v1/me/fields`), `/v1/me`, their data
   export, signup, the wait-list form, or the invite they open. A learner can't
   set or clear it, and it can't be required of them (`required` is forced off).
-- **`hideFromApi`** (badge "Not on public forms"): not listed by the public
+- **`hideFromApi`** ("After signup"): not listed by the public
   `GET /v1/user-fields` (what signup and the wait-list form render) and not
   accepted from `POST /v1/waitlist` (keyed or not) or from signup. Learners
   still see and edit it in Settings, and a required one is collected by the
@@ -1389,6 +1392,18 @@ learners re-pick after an admin edits the list. Deliberate choices:
   User".
 - Required fields show a visible "(required)" label marker (aria-hidden;
   `aria-required` carries it for screen readers).
+
+**The User Fields dialog** (`UserFieldsDialog.jsx`). One row per field: its
+label and a one-line summary (`fieldSummary`: "Dropdown · Required ·
+Everyone"), Move up / Move down, and **Edit**. Edit opens the editor in place
+of the row; **Add field** opens it at the end. One editor at a time; Escape
+or Cancel closes it and returns focus to the row's Edit (or Add field). The
+editor has label, type (and dropdown options), "Who can see and fill it in",
+Required (not offered for admin-only fields, with a hint for when it's asked),
+the field ID for the wait-list API (fields everyone sees), and **Delete
+field** behind a confirmation. Changes and moves are announced in a status
+region. Deleting refreshes Admin → Users quietly (the page spinner would
+unmount the open dialog).
 
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list

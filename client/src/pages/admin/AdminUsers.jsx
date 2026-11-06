@@ -1223,8 +1223,9 @@ export default function AdminUsers() {
           // Reset a filter pointing at a deleted field.
           // Drop filters on a deleted field.
           setFilters((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith('field:') || next.some((f) => `field:${f.id}` === k))));
-          // Values for deleted fields were erased server-side; refresh rows.
-          if (next.length < userFields.length) loadData();
+          // Values for deleted fields were erased server-side; refresh rows,
+          // quietly: the page spinner would unmount the open dialog.
+          if (next.length < userFields.length) loadData({ quiet: true });
         }}
       />
 

@@ -14,6 +14,32 @@ export function fieldTypeLabel(type) {
   return FIELD_TYPE_OPTIONS.find((t) => t.value === type)?.label || type;
 }
 
+/**
+ * Who can see and fill in a field: one choice in the admin UI, stored as the
+ * server's two flags (lib/user-fields.js). Admins always see every field.
+ */
+export const FIELD_VISIBILITY = [
+  { value: 'everyone', label: 'Everyone', summary: 'Everyone', hint: 'Signup, the wait-list form and API, and the learner’s profile.' },
+  { value: 'learners', label: 'Learners, after signup', summary: 'After signup', hint: 'In the learner’s profile only. Not on signup, the wait-list form, or the API.' },
+  { value: 'admins', label: 'Admins only', summary: 'Admins only', hint: 'Learners never see it. Only admins fill it in.' },
+];
+
+export function fieldVisibility(field) {
+  if (field?.hideFromLearner) return 'admins';
+  if (field?.hideFromApi) return 'learners';
+  return 'everyone';
+}
+
+export function visibilityFlags(visibility) {
+  return { hideFromLearner: visibility === 'admins', hideFromApi: visibility !== 'everyone' };
+}
+
+/** "Dropdown · Required · Everyone": a field's settings in one line. */
+export function fieldSummary(field) {
+  const vis = FIELD_VISIBILITY.find((v) => v.value === fieldVisibility(field));
+  return [fieldTypeLabel(field.type), field.required && !field.hideFromLearner ? 'Required' : null, vis.summary].filter(Boolean).join(' · ');
+}
+
 /** Mirror of the server's missingRequiredFields — used to disable Save until filled. */
 export function missingRequired(defs, values) {
   const v = values || {};
