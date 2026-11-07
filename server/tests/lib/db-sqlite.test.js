@@ -243,6 +243,26 @@ describe('db-sqlite', () => {
       await db.deleteRefreshToken(hash);
       assert.equal(await db.getRefreshToken(hash), null);
     });
+    it('refuses a reset token as a refresh token (#451 scale review S1)', async () => {
+      const resetHash = 'asreset_' + Date.now();
+      await db.storeResetToken(resetHash, 'usr_test');
+      assert.equal(await db.getRefreshToken(resetHash), null);
+      await db.deleteResetToken(resetHash);
+    });
+
+    it('stores the session version, marks rotation once, and refuses expired items', async () => {
+      const h = 'rot_' + Date.now();
+      await db.storeRefreshToken(h, 'usr_test', { tokenVersion: 3 });
+      assert.equal((await db.getRefreshToken(h)).tokenVersion, 3);
+      await db.markRefreshTokenRotated(h, 30);
+      const first = (await db.getRefreshToken(h)).rotatedAt;
+      assert.ok(first);
+      await db.markRefreshTokenRotated(h, 30);
+      assert.equal((await db.getRefreshToken(h)).rotatedAt, first, 'the first rotation time is kept');
+      await db.markRefreshTokenRotated(h, -1); // grace already over
+      assert.equal(await db.getRefreshToken(h), null);
+      await db.deleteRefreshToken(h);
+    });
   });
 
   describe('reset tokens', () => {

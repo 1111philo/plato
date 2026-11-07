@@ -7,7 +7,8 @@ import { registerHierarchyRoutes } from './admin-hierarchy.js';
 import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.js';
 import { registerNotificationRoutes } from './admin-notifications.js';
 import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
-import { generateInviteToken, generateResetToken, hashToken } from '../lib/crypto.js';
+import { generateInviteToken, hashToken } from '../lib/crypto.js';
+import { issueResetToken } from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
 import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
 import { validateUsername } from './auth.js';
@@ -693,8 +694,8 @@ admin.post('/v1/admin/users/:userId/reset-password', async (c) => {
   if (!user) {
     return c.json({ error: 'User not found' }, 404);
   }
-  const token = generateResetToken();
-  await db.storeResetToken(hashToken(token), user.userId);
+  // An admin can always send one (no cooldown); only the newest link works.
+  const token = await issueResetToken(user, { force: true });
   await sendResetEmail(user.email, token);
   return c.json({ ok: true });
 });

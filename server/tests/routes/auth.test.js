@@ -301,6 +301,7 @@ describe('POST /v1/auth/refresh', () => {
   it('rotates refresh tokens', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     db.setUserActivityField = async () => {};
@@ -316,6 +317,7 @@ describe('POST /v1/auth/refresh', () => {
   it('refresh updates lastActiveAt (heartbeat without per-message amplification)', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     const writes = [];
@@ -331,6 +333,7 @@ describe('POST /v1/auth/refresh', () => {
   it('refresh succeeds even if lastActiveAt write throws', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     db.setUserActivityField = async () => { throw new Error('throttled'); };

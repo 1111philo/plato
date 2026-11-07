@@ -3,42 +3,20 @@ import db from '../lib/db.js';
 import { readWaitlistConfig, hasValidApiKey, validateWaitlistEntry, waitlistTokenFor } from '../lib/waitlist.js';
 import { readAutomations, sendTemplated } from '../lib/notifications.js';
 import { logger } from '../lib/logger.js';
+import { clientIp, createLimiter } from '../lib/rate-limit.js';
 
 const waitlist = new Hono();
 
 // Unkeyed joins per client IP: at most JOIN_LIMIT per JOIN_WINDOW_MS, per
 // container (best-effort; a keyed outside form is exempt). Once the
 // wait-list confirmation is on, each join can send an email, so one source
-// mustn't be able to spray them.
+// mustn't be able to spray them. clientIp: see lib/rate-limit.js.
 export const JOIN_LIMIT = 5;
 export const JOIN_WINDOW_MS = 10 * 60 * 1000;
-const recentJoins = new Map(); // ip -> [timestamps]
-function overLimit(ip, now = Date.now()) {
-  if (!ip) return false;
-  const times = (recentJoins.get(ip) || []).filter((t) => now - t < JOIN_WINDOW_MS);
-  times.push(now);
-  recentJoins.set(ip, times);
-  if (recentJoins.size > 10_000) recentJoins.clear(); // bound memory
-  return times.length > JOIN_LIMIT;
-}
-export function _resetJoinLimit() { recentJoins.clear(); }
-
-/**
- * The caller's IP for the limiter. CloudFront *appends* the viewer's address
- * to any X-Forwarded-For the sender wrote, so only the rightmost entry is
- * trustworthy; the leftmost is whatever the sender chose. The Lambda's own
- * source address (CloudFront's, behind it) is dropped from the end in case
- * the Function URL appended it, and used when there's no header at all.
- * A request sent straight to the Function URL, skipping CloudFront, can still
- * choose its entry; the limit is best-effort.
- */
-export function clientIp(c) {
-  const rc = c.env?.requestContext || c.env?.event?.requestContext;
-  const source = rc?.http?.sourceIp || rc?.identity?.sourceIp || '';
-  const hops = (c.req.header('x-forwarded-for') || '').split(',').map((s) => s.trim()).filter(Boolean);
-  while (hops.length > 1 && hops[hops.length - 1] === source) hops.pop();
-  return hops[hops.length - 1] || source;
-}
+const joins = createLimiter({ limit: JOIN_LIMIT, windowMs: JOIN_WINDOW_MS });
+const overLimit = (ip) => joins.hit(ip);
+export function _resetJoinLimit() { joins.reset(); }
+export { clientIp };
 
 // GET /v1/waitlist — public. Whether the "Join the wait list" form is open.
 waitlist.get('/v1/waitlist', async (c) => {

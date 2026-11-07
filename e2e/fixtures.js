@@ -3,6 +3,8 @@ export const LEARNER = { email: 'learner@example.com', password: 'password123', 
 export const EDUCATOR = { email: 'educator@example.com', password: 'password123', name: 'Eda Educator', role: 'educator' };
 // Has an account and joins the wait list (account invites, #363).
 export const INVITEE = { email: 'invitee@example.com', password: 'password123', name: 'Ina Invitee' };
+// Changes its own password (Settings, #451 scale review).
+export const PASSWORD_USER = { email: 'password-user@example.com', password: 'password123', name: 'Pat Password' };
 export const TESTER = { email: 'tester@example.com', password: 'password123', name: 'Tess Tester', role: 'tester' };
 // Hierarchy (#408): a Course (stored program:*) containing a Unit (stored course:*).
 export const PROGRAM = { id: 'prog-e2e0001', name: 'Launch Course' };

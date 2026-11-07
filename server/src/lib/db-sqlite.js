@@ -139,6 +139,13 @@ for (const col of ['firstName', 'lastName', 'nameSource']) {
   if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
 }
 
+// Sign-in security (#451 scale review): session version, failed sign-ins,
+// and the latest reset link (lib/sessions.js).
+for (const [col, type] of [['tokenVersion', 'INTEGER DEFAULT 0'], ['failedLogins', 'INTEGER DEFAULT 0'], ['lockedUntil', 'TEXT'], ['resetTokenHash', 'TEXT'], ['resetRequestedAt', 'TEXT']]) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
@@ -218,6 +225,15 @@ const hasInviteForUser = sqlite.prepare(
 if (hasInviteForUser.count === 0) {
   sqlite.exec('ALTER TABLE invites ADD COLUMN forUserId TEXT');
 }
+
+// Refresh tokens: session version at issue, and when one was exchanged (grace)
+for (const [col, type] of [['tokenVersion', 'INTEGER DEFAULT 0'], ['rotatedAt', 'TEXT']]) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('refresh_tokens') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE refresh_tokens ADD COLUMN ${col} ${type}`);
+}
+
+/** An item whose `ttl` (epoch seconds) has passed. */
+const expired = (item) => typeof item?.ttl === 'number' && item.ttl < Math.floor(Date.now() / 1000);
 
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
@@ -461,16 +477,25 @@ const db = {
 
   // ── Refresh Tokens ──
 
-  async storeRefreshToken(tokenHash, userId) {
+  // Same contract as db-dynamodb.js: reset tokens and expired items are refused.
+  async storeRefreshToken(tokenHash, userId, { tokenVersion = 0 } = {}) {
     const ttl = Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO refresh_tokens (tokenHash, userId, type, createdAt, ttl)
-       VALUES (?, ?, 'refresh', ?, ?)`
-    ).run(tokenHash, userId, new Date().toISOString(), ttl);
+      `INSERT INTO refresh_tokens (tokenHash, userId, type, createdAt, ttl, tokenVersion)
+       VALUES (?, ?, 'refresh', ?, ?, ?)`
+    ).run(tokenHash, userId, new Date().toISOString(), ttl, tokenVersion);
   },
 
   async getRefreshToken(tokenHash) {
-    return sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash) || null;
+    const item = sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash);
+    if (!item || item.type === 'reset' || expired(item)) return null;
+    return item;
+  },
+
+  async markRefreshTokenRotated(tokenHash, graceSeconds) {
+    sqlite.prepare(
+      'UPDATE refresh_tokens SET rotatedAt = COALESCE(rotatedAt, ?), ttl = ? WHERE tokenHash = ?'
+    ).run(new Date().toISOString(), Math.floor(Date.now() / 1000) + graceSeconds, tokenHash);
   },
 
   async deleteRefreshToken(tokenHash) {
@@ -489,7 +514,7 @@ const db = {
 
   async getResetToken(tokenHash) {
     const item = sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash);
-    if (!item || item.type !== 'reset') return null;
+    if (!item || item.type !== 'reset' || expired(item)) return null;
     return item;
   },
 

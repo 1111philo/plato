@@ -133,10 +133,14 @@ describe('PATCH /v1/me', () => {
     assert.equal(res.status, 409);
   });
 
-  it('rejects short password', async () => {
+  it('rejects short password (with the right current password)', async () => {
+    const { hashPassword } = await import('../../src/lib/password.js');
+    const passwordHash = await hashPassword('current-pass');
+    const base = await db.getUserById('usr_test');
+    db.getUserById = async () => ({ ...base, passwordHash });
     const app = new Hono();
     app.route('/', me);
-    const res = await authedReq(app, 'PATCH', '/v1/me', { password: 'short' });
+    const res = await authedReq(app, 'PATCH', '/v1/me', { password: 'short', currentPassword: 'current-pass' });
     assert.equal(res.status, 400);
   });
 });

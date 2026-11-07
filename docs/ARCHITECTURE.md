@@ -467,6 +467,55 @@ Verify changes by hand with the compose bar in *both* states (fixed mid-lesson,
 inline at the end of a short one); `client/tests/stickToBottom.test.js` covers
 only the decision layer.
 
+## Sign-in and sessions
+
+Access tokens are JWTs (15 min, `sub`, `role`, `tv`); refresh tokens are
+random, stored hashed in the refresh-tokens table (30 days). Password reset
+tokens share that table with `type: 'reset'` (1 h). One owner for issuing and
+ending sessions: `server/src/lib/sessions.js`. Hardened after the scale review
+on #451:
+
+- **Reset tokens aren't sessions.** `getRefreshToken` refuses a `type: 'reset'`
+  item, and both readers refuse an item whose `ttl` has passed (DynamoDB's TTL
+  deletion can lag ~48 h). Only the newest reset link per user works
+  (`user.resetTokenHash`; requesting a new one deletes the old token), and
+  forgot-password sends at most one email per user per 5 minutes (it always
+  answers ok). Admin → Users → Reset password ignores the cooldown.
+- **Session version.** `user.tokenVersion` (missing = 0) is stamped into every
+  access token (`tv`) and stored on every refresh token. `authenticate`
+  refuses an access token whose `tv` doesn't match; refresh refuses a refresh
+  token from an older version. `revokeSessions` bumps it on a password change,
+  an email change, and a password reset, so every other device is signed out
+  at once. The person who made the change gets a fresh session in the same
+  response (`PATCH /v1/me` returns `session`, which `updateProfile` stores).
+- **Changing the password or email needs the current password**
+  (`currentPassword`; 403 `current_password_required` otherwise), and the email
+  is format-checked. Settings → Account asks for it. (Verifying a new email by
+  link before switching isn't built; learners can't change their email in the
+  UI today.)
+- **Refresh rotation with a grace.** An exchanged refresh token is marked
+  `rotatedAt` (its `ttl` cut to 30 s) instead of deleted, so tabs and parallel
+  requests refreshing with it at the same moment all succeed; after the grace
+  it's refused. The client keeps that rare: one refresh at a time per tab
+  (`refreshInFlight`), a Web Lock across tabs (a waiting tab re-reads
+  `plato_auth` and uses what the other stored), and a refresh ~2 minutes
+  *before* the access token expires (`REFRESH_AHEAD_MS`), so most requests
+  never see a 401 (`client/js/auth.js`).
+- **Limits.** Per client IP, per container (best-effort; `lib/rate-limit.js`,
+  `clientIp` as for the wait list): login 30, refresh 120, forgot-password 5,
+  reset 10, signup 10, setup 10 per 10 minutes; `429` beyond that. Per account:
+  5 wrong passwords in a row lock sign-in for 15 minutes (`failedLogins`,
+  `lockedUntil`; a correct password or a reset clears it). A name or email no
+  account has gets the same lock message after as many tries, so a lock
+  doesn't reveal which accounts exist. An exact, edge-wide limit is WAF's job
+  (DEPLOY.md).
+- **Malformed JSON** on the public auth endpoints is a `400`, not an
+  `unhandled_error`.
+
+All of these fields are optional and additive on the user and token records
+(no migration); Beta-RC-232 ignores them, so a rollback keeps working (its
+refresh simply rotates the old way).
+
 ## Invite system
 
 Admins invite users via email or shareable link. Invites expire after 7 days (TTL enforced in DynamoDB/SQLite). All invite operations are audit-logged.
