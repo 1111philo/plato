@@ -536,6 +536,66 @@ admin.delete('/v1/admin/waitlist/:token', async (c) => {
 });
 
 // PATCH /v1/admin/users/:userId — update user fields
+// POST /v1/admin/users/bulk-update — one change for many users at once:
+// body `{ userIds, set: { field: 'userGroup' | '<custom field id>', value } }`.
+// `value` null or '' clears it. The change is validated once (a group must
+// exist; a field value must pass its rules), then applied per user; required
+// fields aren't enforced here (clearing one just means those learners are
+// asked for it again). Returns `{ updated, unchanged, failed: [{ userId, error }] }`
+// and writes one `users_bulk_updated` audit entry.
+export const BULK_MAX_USERS = 1000;
+admin.post('/v1/admin/users/bulk-update', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = Array.isArray(body.userIds) ? [...new Set(body.userIds.filter((x) => typeof x === 'string'))] : [];
+  if (!ids.length) return c.json({ error: 'Choose at least one user' }, 400);
+  if (ids.length > BULK_MAX_USERS) return c.json({ error: `Update at most ${BULK_MAX_USERS} users at a time` }, 400);
+  const field = body.set?.field;
+  const raw = body.set?.value;
+  if (raw != null && typeof raw !== 'string') return c.json({ error: 'The new value must be text' }, 400);
+  const value = raw == null ? '' : raw.trim();
+  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
+
+  let apply; // (user) => updates | null when nothing changes
+  let label;
+  if (field === 'userGroup') {
+    if (value && !(settings.userGroups || []).includes(value)) return c.json({ error: 'Choose one of the classroom’s groups' }, 400);
+    label = 'Group';
+    apply = (u) => ((u.userGroup || '') === value ? null : { userGroup: value || null });
+  } else {
+    const def = getFieldDefinitions(settings).find((d) => d.id === field);
+    if (!def) return c.json({ error: 'Choose a group or a user field to change' }, 400);
+    const err = value ? validateValue(def, value) : null;
+    if (err) return c.json({ error: err }, 400);
+    label = def.label;
+    apply = (u) => {
+      const current = u.customFields || {};
+      if ((current[def.id] || '') === value) return null;
+      const next = { ...current };
+      if (value) next[def.id] = value; else delete next[def.id];
+      return { customFields: next };
+    };
+  }
+
+  const result = { updated: 0, unchanged: 0, failed: [] };
+  for (const userId of ids) {
+    try {
+      const user = await db.getUserById(userId);
+      if (!user) { result.failed.push({ userId, error: 'User not found' }); continue; }
+      const updates = apply(user);
+      if (!updates) { result.unchanged++; continue; }
+      await db.updateUser(userId, updates);
+      result.updated++;
+    } catch (e) {
+      result.failed.push({ userId, error: e?.message || 'Update failed' });
+    }
+  }
+  await db.createAuditLog({
+    action: 'users_bulk_updated', userId: null, performedBy: c.get('user').userId,
+    details: { field, label, cleared: !value, count: result.updated, failed: result.failed.length },
+  });
+  return c.json(result);
+});
+
 admin.patch('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
   const user = await db.getUserById(userId);

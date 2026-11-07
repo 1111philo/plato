@@ -87,6 +87,7 @@ const R = [
   ['GET', '/v1/admin/users/:userId', 'users.read'],
   ['GET', '/v1/admin/users/:userId/stats', 'users.read'],
   ['PATCH', '/v1/admin/users/:userId', 'users.write'],
+  ['POST', '/v1/admin/users/bulk-update', 'users.write'],
   ['DELETE', '/v1/admin/users/:userId', 'users.write'],
   ['POST', '/v1/admin/users/:userId/reset-password', 'users.write'],
   ['PUT', '/v1/admin/users/:userId/role', 'users.role'],

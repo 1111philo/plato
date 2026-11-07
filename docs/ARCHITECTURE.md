@@ -1405,6 +1405,21 @@ field** behind a confirmation. Changes and moves are announced in a status
 region. Deleting refreshes Admin → Users quietly (the page spinner would
 unmount the open dialog).
 
+**Bulk update** (Admin → Users). Admins (`users.write`) get a checkbox on
+each user row and a header checkbox for the page; once a whole page is
+selected, "Select all N matching users" extends it to everyone the search and
+filters match. The selection is tied to the search and filters it was made
+under, so changing either empties it and a change can't reach people the
+admin can no longer see. **Update…** changes one thing for everyone selected:
+the group, or any one user field (including admin-only ones), set to a value
+or cleared, with a sentence saying exactly what will happen.
+`POST /v1/admin/users/bulk-update { userIds (≤ 1000), set: { field:
+'userGroup' | '<field id>', value } }` validates the change once (the group
+must exist; the value must pass the field's rules), applies it per user,
+skips people who already have it, reports `{ updated, unchanged, failed }`,
+and writes one `users_bulk_updated` audit entry. Required fields aren't
+enforced there: clearing one just means those learners are asked for it again.
+
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list
 and adds a column with that field's values. **Download CSV** (#382) exports
