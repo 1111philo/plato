@@ -16,6 +16,12 @@ describe('template.yaml', () => {
       assert.match(fn(name), /- ses:SendEmail/);
     });
   }
+  for (const name of ['UsersTable', 'InvitesTable', 'RefreshTokensTable', 'SyncDataTable', 'AuditLogTable']) {
+    it(`${name} is kept if the resource is removed or replaced`, () => {
+      assert.match(fn(name), /DeletionPolicy: Retain/);
+      assert.match(fn(name), /UpdateReplacePolicy: Retain/);
+    });
+  }
   it('creates no EventBridge rules (the deploy role in docs/DEPLOY.md cannot)', () => {
     assert.doesNotMatch(template, /Type: Schedule|AWS::Events::Rule/);
   });
