@@ -223,3 +223,23 @@ describe('invitations (always on, editable)', () => {
     assert.equal(sent.length, 0);
   });
 });
+
+// #451 scale review H6: an SES throttle is retried once after a short wait.
+describe('sendNotificationEmail and SES throttling', async () => {
+  const n = await import('../../src/lib/notifications.js');
+  const msg = { to: 'a@x.com', subject: 's', text: 't', html: 'h', allowlist: false };
+  it('retries a throttle once; a second throttle, or another error, goes to the caller', async () => {
+    n._setThrottleRetryMs(1);
+    let calls = 0;
+    const throttle = Object.assign(new Error('Maximum sending rate exceeded.'), { name: 'Throttling' });
+    assert.deepEqual(await n.sendNotificationEmail({ ...msg, send: async () => { if (calls++ === 0) throw throttle; } }), { sent: true });
+    assert.equal(calls, 2);
+    calls = 0;
+    await assert.rejects(n.sendNotificationEmail({ ...msg, send: async () => { calls++; throw throttle; } }));
+    assert.equal(calls, 2, 'only one retry');
+    calls = 0;
+    await assert.rejects(n.sendNotificationEmail({ ...msg, send: async () => { calls++; throw new Error('MessageRejected'); } }));
+    assert.equal(calls, 1, 'no retry for other errors');
+    n._setThrottleRetryMs(300);
+  });
+});

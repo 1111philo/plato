@@ -49,7 +49,9 @@ function coachReply(messages) {
   // MOCK_NOTAGS: the reply leaves off its tag block, as the real model sometimes
   // does; the client then asks for the tags (orchestrator.repairCoachTags).
   if (/MOCK_NOTAGS/.test(lastText)) return body;
-  return `${body}\n\n[PROGRESS: ${progress}]\n[KB_UPDATE: ${JSON.stringify(kb)}]`;
+  // A learner turn also carries a profile observation, as coach.md asks.
+  const profile = learnerTurns.length > 0 ? `\n[PROFILE_UPDATE: ${JSON.stringify({ observation: `Mock observation after turn ${learnerTurns.length}` })}]` : '';
+  return `${body}\n\n[PROGRESS: ${progress}]\n[KB_UPDATE: ${JSON.stringify(kb)}]${profile}`;
 }
 
 function lessonOwnerReply(messages) {

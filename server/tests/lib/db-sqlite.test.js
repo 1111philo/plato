@@ -291,6 +291,15 @@ describe('db-sqlite', () => {
   describe('sync data', () => {
     const userId = 'usr_sync_test';
 
+    it('getSyncDataExcept skips one key prefix (GET /v1/sync leaves screenshots out)', async () => {
+      const u = 'usr_except_test';
+      await db.putSyncData(u, 'profile', { a: 1 }, 0);
+      await db.putSyncData(u, 'screenshot:k1', 'data:image/png;base64,AAA', 0);
+      await db.putSyncData(u, 'userMeta:x', { b: 2 }, 0);
+      const keys = (await db.getSyncDataExcept(u, 'screenshot:')).map((i) => i.dataKey).sort();
+      assert.deepEqual(keys, ['profile', 'userMeta:x']);
+    });
+
     it('puts and gets sync data', async () => {
       const result = await db.putSyncData(userId, 'profile', { name: 'Blake' }, 0);
       assert.equal(result.version, 1);

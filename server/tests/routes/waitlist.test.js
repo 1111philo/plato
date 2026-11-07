@@ -129,6 +129,7 @@ describe('unsubscribe (#400)', () => {
   it('GET asks to confirm (no change); POST unsubscribes; a bad token changes nothing', async () => {
     const writes = [];
     db.putSyncData = async (u, key, data) => { writes.push({ u, key, data }); };
+    db.createSyncData = async (u, key, data) => { writes.push({ u, key, data }); }; // first write of a record
     const token = unsubscribeToken('usr_ada', 'digest');
     const get = await app().request(`/v1/unsubscribe?token=${token}`);
     assert.equal(get.status, 200);

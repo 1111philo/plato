@@ -269,7 +269,11 @@ export async function updateNotifyState(userId, change, db = defaultDb) {
     const next = change(cur);
     if (next === cur) return cur;
     try {
-      await db.putSyncData(userId, STATE_KEY, next, item?.version || 0);
+      // No record yet: create-only. A versionless put is unconditional in
+      // both backends, so two first-time claims (overlapping job runs) would
+      // both win and both send (#451 scale review H6).
+      if (item) await db.putSyncData(userId, STATE_KEY, next, item.version);
+      else await db.createSyncData(userId, STATE_KEY, next);
       return next;
     } catch (err) {
       if (err.name !== 'ConditionalCheckFailedException' || attempt === 1) throw err;
@@ -338,6 +342,13 @@ export function buildMime({ fromName, fromAddress, to, subject, text, html, head
  * `unsubscribe` (a URL) adds the List-Unsubscribe headers. `allowlist: false`
  * skips EMAIL_ALLOWLIST, for invitations only: an admin chose that address.
  */
+export let THROTTLE_RETRY_MS = 300;
+export function _setThrottleRetryMs(ms) { THROTTLE_RETRY_MS = ms; } // tests
+function isThrottle(err) {
+  const name = err?.name || err?.Code || '';
+  return /Throttl/i.test(name) || err?.$metadata?.httpStatusCode === 429 || /Maximum sending rate exceeded/i.test(err?.message || '');
+}
+
 export async function sendNotificationEmail({ to, subject, text, html, classroom, unsubscribe = null, send = transport, allowlist = true }) {
   if (allowlist && !emailAllowed(to)) {
     logger.warn('email_not_allowlisted', { to: String(to).replace(/^[^@]*/, '***') });
@@ -350,7 +361,16 @@ export async function sendNotificationEmail({ to, subject, text, html, classroom
   const headers = unsubscribe
     ? { 'List-Unsubscribe': `<${unsubscribe}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
     : {};
-  await send(buildMime({ fromName: classroom?.name, fromAddress: SES_FROM_EMAIL, to, subject, text, html, headers }));
+  const raw = buildMime({ fromName: classroom?.name, fromAddress: SES_FROM_EMAIL, to, subject, text, html, headers });
+  try {
+    await send(raw);
+  } catch (err) {
+    // SES rate limit (14/s): wait a moment and try once more (#451 scale
+    // review H6). Anything else, or a second throttle, goes to the caller.
+    if (!isThrottle(err)) throw err;
+    await new Promise((r) => setTimeout(r, THROTTLE_RETRY_MS + Math.floor(Math.random() * THROTTLE_RETRY_MS)));
+    await send(raw);
+  }
   return { sent: true };
 }
 

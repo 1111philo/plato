@@ -13,7 +13,7 @@ import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
-import { syncInBackground } from '../lib/syncDebounce.js';
+import { syncIfUnsaved } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -40,8 +40,7 @@ export default function Settings() {
     const removed = profile.learnerNotes?.[index];
     if (!removed) return;
     const next = withoutLearnerNote(profile, index);
-    await saveLearnerProfile(next);
-    syncInBackground('profile');
+    syncIfUnsaved(await saveLearnerProfile(next), 'profile');
     setLearnerNotes(next.learnerNotes);
     queueProfileUpdate(async () => {
       const current = await ensureProfileExists();
@@ -49,9 +48,8 @@ export default function Settings() {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
       }, 'learner-removed');
       if (result?.profile) {
-        await saveLearnerProfile(mergeProfile(current, result.profile));
-        if (result.summary) { await saveLearnerProfileSummary(result.summary); setProfileSummary(result.summary); }
-        syncInBackground('profile', 'profileSummary');
+        syncIfUnsaved(await saveLearnerProfile(mergeProfile(current, result.profile)), 'profile');
+        if (result.summary) { syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary'); setProfileSummary(result.summary); }
       }
     });
   }
@@ -324,16 +322,14 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     try {
       // Keep the learner's words verbatim first: later updates can't drop them.
       const profile = withLearnerNote(await ensureProfileExists(), text);
-      await saveLearnerProfile(profile);
-      syncInBackground('profile');
+      syncIfUnsaved(await saveLearnerProfile(profile), 'profile');
       const result = await orchestrator.updateProfileFromFeedback(profile, text.trim(), {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
       }, 'learner');
       if (result?.profile) {
         const merged = mergeProfile(profile, result.profile);
-        await saveLearnerProfile(merged);
-        if (result.summary) await saveLearnerProfileSummary(result.summary);
-        syncInBackground('profile', 'profileSummary');
+        syncIfUnsaved(await saveLearnerProfile(merged), 'profile');
+        if (result.summary) syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary');
       }
       onOpenChange(false);
       setText('');
@@ -389,8 +385,7 @@ function ChatPreferences() {
     const next = { ...prefs, ...patch };
     dispatch({ type: 'SET_PREFERENCES', preferences: next });
     try {
-      await savePreferences(next);
-      syncInBackground('preferences');
+      syncIfUnsaved(await savePreferences(next), 'preferences');
       setFeedback('Saved.');
     } catch {
       setFeedback('Couldn’t save. Try again.');

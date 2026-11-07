@@ -1,6 +1,11 @@
 /**
  * Debounced sync — accumulates keys and flushes cache to server after 500ms.
  * Fire-and-forget, never blocks UI.
+ *
+ * The save* helpers in storage.js already PUT directly and return whether the
+ * write landed. Re-sending a record that just saved doubled every write
+ * (#451 scale review H2), so callers use `syncIfUnsaved`: a background retry
+ * only when the direct write didn't reach the server.
  */
 
 import {
@@ -31,6 +36,11 @@ async function getCacheData(syncKey) {
     return md ? { lessonId: syncKey.slice('lessons:'.length), markdown: md } : null;
   }
   return null;
+}
+
+/** Retry `syncKeys` in the background only if the direct save didn't land. */
+export function syncIfUnsaved(saved, ...syncKeys) {
+  if (saved !== true) syncInBackground(...syncKeys);
 }
 
 export function syncInBackground(...syncKeys) {

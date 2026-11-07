@@ -116,3 +116,45 @@ describe('weekly digest', () => {
     assert.equal(digestContent({ items: [], lessons: { a: { name: 'A', publishedAt: null } }, now: Date.now() }), null);
   });
 });
+
+// #451 scale review H6: learners in concurrent batches, a time budget, and
+// still once per learner.
+describe('large classrooms', () => {
+  const MANY = 20;
+  const ids = Array.from({ length: MANY }, (_, i) => 'usr_m' + i);
+  before(async () => {
+    for (const [i, id] of ids.entries()) {
+      await db.createUser({ userId: id, email: 'm' + i + '@x.com', passwordHash: 'x', name: 'M ' + i, firstName: 'M', lastName: String(i), role: 'learner' });
+    }
+  });
+  beforeEach(async () => {
+    for (const id of ids) {
+      for (const it of await db.getAllSyncData(id)) await db.deleteSyncData(id, it.dataKey);
+      await db.putSyncData(id, 'lessonKB:les-a', { status: 'active', progress: 2 }, 0);
+    }
+  });
+  const recipients = () => mails.map((r) => r.match(/^To: (.*)$/m)[1]);
+
+  it('two overlapping runs still remind each learner once', async () => {
+    await writeAutomations({ inactivityNudge: true }, db);
+    const t = Date.now() + 8 * DAY;
+    const [a, b] = await Promise.all([runInactivityNudges({ db, now: t }), runInactivityNudges({ db, now: t })]);
+    assert.equal(a.nudged + b.nudged, MANY + 1, 'every learner (and Ada) once');
+    assert.equal(new Set(recipients()).size, recipients().length, 'no address twice');
+  });
+
+  it('past the budget a run stops; the next run finishes the rest, with no repeats', async () => {
+    await writeAutomations({ weeklyDigest: true }, db);
+    const { BATCH_SIZE } = await import('../../src/lib/learner-emails.js');
+    let ticks = 0;
+    const clock = () => (ticks++ === 0 ? 0 : 10); // past the deadline after the first batch
+    const t = Date.now() + 1 * DAY;
+    const first = await runWeeklyDigest({ db, now: t, deadline: 5, clock });
+    assert.equal(first.learners, BATCH_SIZE);
+    assert.ok(first.remaining > 0);
+    const second = await runWeeklyDigest({ db, now: t });
+    assert.equal(first.sent + second.sent, MANY + 1);
+    assert.equal(second.remaining, undefined);
+    assert.equal(new Set(recipients()).size, recipients().length, 'no address twice');
+  });
+});

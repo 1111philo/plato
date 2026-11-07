@@ -9,7 +9,7 @@ describe('coachTurnActivity', () => {
   it('reports progress, notes, and the profile hand-off', () => {
     const agents = coachTurnActivity({
       before: { progress: 3, status: 'active' }, after: { progress: 6, status: 'active' },
-      parsed: { kbUpdate: { insights: ['Gave a concrete example'], learnerPosition: 'Can state the role' } },
+      parsed: { kbUpdate: { insights: ['Gave a concrete example'], learnerPosition: 'Can state the role' }, profileUpdate: { observation: 'Gave a concrete example' } },
       images: 1, hasUnitNote: true,
     });
     assert.deepEqual(agents.map((a) => a.agent), ['coach', 'learner-profile-update']);
@@ -18,6 +18,11 @@ describe('coachTurnActivity', () => {
     assert.ok(agents[0].read.includes('1 image you attached'));
     assert.ok(agents[0].read.includes('What you did in other lessons of this unit'));
     assert.deepEqual(agents[1].notes, ['Gave a concrete example']);
+  });
+
+  it('no [PROFILE_UPDATE], no profile hand-off: KB insights alone don\u2019t update the profile (#451 scale review)', () => {
+    const agents = coachTurnActivity({ before: { progress: 3 }, after: { progress: 4 }, parsed: { kbUpdate: { insights: ['x'] } } });
+    assert.deepEqual(agents.map((a) => a.agent), ['coach']);
   });
 
   it('lists objectives checked off this turn (#438)', () => {

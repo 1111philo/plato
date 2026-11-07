@@ -6,7 +6,7 @@ import {
   getLearnerProfile, saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
-import { syncInBackground } from './syncDebounce.js';
+import { syncIfUnsaved } from './syncDebounce.js';
 
 let _profileUpdateQueue = Promise.resolve();
 
@@ -75,9 +75,8 @@ async function saveProfileResult(existing, result) {
     return;
   }
   const merged = mergeProfile(existing, result.profile);
-  await saveLearnerProfile(merged);
-  if (result.summary) await saveLearnerProfileSummary(result.summary);
-  syncInBackground('profile', 'profileSummary');
+  syncIfUnsaved(await saveLearnerProfile(merged), 'profile');
+  if (result.summary) syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary');
 }
 
 export async function ensureProfileExists(name = '') {
@@ -98,8 +97,7 @@ export function updateProfileInBackground(lessonId, assessmentResult) {
   queueProfileUpdate(async () => {
     const profile = await ensureProfileExists();
     const updated = orchestrator.incrementalProfileUpdate(profile, lessonId, assessmentResult);
-    await saveLearnerProfile(updated);
-    syncInBackground('profile');
+    syncIfUnsaved(await saveLearnerProfile(updated), 'profile');
   });
 }
 
