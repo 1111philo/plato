@@ -49,3 +49,23 @@ Valid, but left for after the launch:
 - **Publishing Getting Started lowers dashboard completion rates** on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
 - **Policy (Blake):** a bundled lesson added in a *future* release goes public automatically if Getting Started lesson 1 is public. The recorded decision is "bundled content arrives private for review". Keep the auto-publish (no half-published course) or always arrive private?
 - **`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.
+
+## From the scale review (900 concurrent learners, Nov 7)
+
+Fixed before launch in #515–#521. Left for after:
+
+- **Alarms that page someone:** Lambda throttles/errors/p99, DynamoDB throttles, Bedrock errors, CloudFront 5xx, SES bounces/complaints, sent to Blake by email. Needs `sns:*` and `cloudwatch:PutMetricAlarm` on the deploy role, which it doesn't have yet.
+- **Provisioned concurrency** on the stream function for event windows (about $25 for 3 hours at 300–500), and a reserved floor on the API function.
+- **A load test** (k6, 0→900 virtual learners, plus 50→200 against real Bedrock) on playground. It needs a per-stage gate so the mock provider can run there.
+- **A timed rollback drill** on playground, with the time written into the runbook.
+- **Emailed verification before an email change.** Learners can't change their email in the UI today.
+- **Shared rate limiters.** The per-user AI limits and per-IP auth limits are per Lambda container.
+- **Two tabs on one lesson:** append-merge `messages:*` on 409 instead of overwriting.
+- **Streaming render:** memoize persisted messages and the markdown renderer.
+- **`GET /v1/branding`:** cap the logo size.
+- **Audit log:** a TTL, and a `userId` index for `listAuditLogsForUser` (a full Scan; nothing calls it yet).
+- **Compression for `/assets/*`:** cached at CloudFront but not showing as compressed yet.
+- **`shadcn` to devDependencies** in the client.
+- **S5 (policy):** learners can mark a lesson complete through `PUT /v1/sync`. At minimum, log a completion that has no conversation.
+- **S6:** gate `issue-intake.yml` on author association, and SHA-pin its actions.
+- **PITR on playground** (off), and in IaC once the deploy role can manage continuous backups.
