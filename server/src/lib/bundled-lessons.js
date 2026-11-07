@@ -121,8 +121,8 @@ export async function ensureBundledLessons({ db = defaultDb, read = readBundledM
   const result = { installed: [], updated: [], customized: [], skipped: [] };
   // Read before anything is installed: a classroom with no lessons yet gets
   // the course public; an existing one gets it private, for an admin to publish.
-  const items = await db.getAllSyncData('_system');
-  const firstLesson = !items.some((i) => i.dataKey.startsWith('lesson:'));
+  // One-item existence check, not a full `_system` read (cold start, #451 B3).
+  const firstLesson = !(await db.hasSyncDataWithPrefix('_system', 'lesson:'));
   let unitId = null;
   try { unitId = await ensureBundledCourse(db, now); } catch (err) {
     console.error('Bundled course failed (non-fatal):', err.message);

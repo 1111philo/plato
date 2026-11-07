@@ -2,11 +2,13 @@ import { Hono } from 'hono';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import db from '../lib/db.js';
 import { buildHierarchy } from '../lib/hierarchy.js';
 import { isStartHere } from '../lib/bundled-lessons.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { resolveReadUserId } from '../lib/view-as.js';
+import { systemItems, systemItem } from '../lib/system-cache.js';
+import { parseLessonFields } from '../lib/lesson-parse.js';
+import { maybeRefreshLessonTimeStats } from '../lib/lesson-time-stats.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +59,7 @@ content.get('/v1/version', (c) => {
 // GET /v1/branding — public (needed for login page theming)
 content.get('/v1/branding', async (c) => {
   c.header('Cache-Control', 'no-cache');
-  const item = await db.getSyncData('_system', 'settings');
+  const item = await systemItem('settings');
   const settings = item?.data || {};
   return c.json({
     theme: settings.theme || null,
@@ -69,7 +71,7 @@ content.get('/v1/branding', async (c) => {
 // GET /v1/prompts/:name — get a system prompt
 content.get('/v1/prompts/:name', async (c) => {
   const name = c.req.param('name');
-  const item = await db.getSyncData('_system', `prompt:${name}`);
+  const item = await systemItem(`prompt:${name}`);
   if (!item) return c.json({ error: 'Prompt not found' }, 404);
   return c.json({ name, content: item.data.content, updatedAt: item.updatedAt });
 });
@@ -102,7 +104,7 @@ content.get('/v1/lessons', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const userId = resolved.userId;
-  const items = await db.getAllSyncData('_system');
+  const items = await systemItems();
   const h = buildHierarchy(items);
   const lessons = items
     .filter(i => {
@@ -113,11 +115,16 @@ content.get('/v1/lessons', async (c) => {
       return Array.isArray(i.data.sharedWith) && i.data.sharedWith.includes(userId);
     })
     .map(i => {
-      const { sharedWith: _sharedWith, course: unitId, ...data } = i.data;
+      // The list carries what the classroom needs from each lesson, parsed
+      // here, not the raw markdown (#451 scale review, B1): the whole
+      // catalog's markdown used to go to every learner on every load.
+      // `GET /v1/lessons/:id` still returns the markdown.
+      const { sharedWith: _sharedWith, course: unitId, markdown, conversation: _conversation, ...data } = i.data;
       const lessonId = i.dataKey.slice('lesson:'.length);
       return {
         lessonId,
         ...data,
+        ...(markdown ? { parsed: parseLessonFields(markdown) } : {}),
         ...placementOf(h, lessonId, unitId),
         startHere: isStartHere(data),
         updatedAt: i.updatedAt,
@@ -127,66 +134,20 @@ content.get('/v1/lessons', async (c) => {
   return c.json(lessons);
 });
 
-// GET /v1/lessons/time-stats — per-lesson completion-time estimates derived from
-// completed lesson KBs across all users. Returns { [lessonId]: { p20, p80, sampleSize } }
-// where p20/p80 are exchange counts at the 20th/80th percentile (middle 60% range).
-// Lessons with fewer than 3 completions are omitted. Response is filtered to lessons
-// the requesting user can see (public + private shared with them) so we don't leak
-// information about lessons the user has no access to.
-//
-// Cache: each miss costs O(users × items-per-user) DynamoDB queries (listAllUsers
-// then getAllSyncData per user — same scan pattern as /v1/admin/stats/lessons,
-// but called from a learner-facing endpoint). Time stats are slow-moving — one
-// additional completion barely shifts a percentile — so a long TTL is fine.
-// 10 minutes keeps the scan rate at ≤6/hour per Lambda container regardless of
-// learner traffic.
-const TIME_STATS_TTL_MS = 10 * 60_000;
-let _timeStatsCache = null; // { computedAt, byLesson }
-
-async function computeAllLessonTimeStats() {
-  if (_timeStatsCache && Date.now() - _timeStatsCache.computedAt < TIME_STATS_TTL_MS) {
-    return _timeStatsCache.byLesson;
-  }
-  const users = await db.listAllUsers();
-  const exchangesByLesson = new Map();
-  for (const user of users) {
-    const items = await db.getAllSyncData(user.userId);
-    for (const item of items) {
-      if (!item.dataKey?.startsWith('lessonKB:')) continue;
-      const kb = item.data;
-      if (kb?.status !== 'completed') continue;
-      const exchanges = kb.activitiesCompleted;
-      if (typeof exchanges !== 'number' || exchanges <= 0) continue;
-      const lessonId = item.dataKey.slice('lessonKB:'.length);
-      if (!exchangesByLesson.has(lessonId)) exchangesByLesson.set(lessonId, []);
-      exchangesByLesson.get(lessonId).push(exchanges);
-    }
-  }
-  const byLesson = {};
-  for (const [lessonId, counts] of exchangesByLesson.entries()) {
-    if (counts.length < 3) continue;
-    counts.sort((a, b) => a - b);
-    const p20Idx = Math.floor(counts.length * 0.2);
-    const p80Idx = Math.min(Math.floor(counts.length * 0.8), counts.length - 1);
-    byLesson[lessonId] = { p20: counts[p20Idx], p80: counts[p80Idx], sampleSize: counts.length };
-  }
-  _timeStatsCache = { computedAt: Date.now(), byLesson };
-  return byLesson;
-}
-
-// Exposed for tests so the in-process cache doesn't leak between cases.
-export function _resetTimeStatsCache() { _timeStatsCache = null; }
-
+// GET /v1/lessons/time-stats — per-lesson completion-time estimates
+// ({ [lessonId]: { p20, p80, sampleSize } }), filtered to lessons the
+// requesting user can see. Read from the precomputed `_system:stats:timeStats`
+// (lib/lesson-time-stats.js); a learner's request never scans users. Missing
+// or stale asks the job to refresh it.
 content.get('/v1/lessons/time-stats', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const userId = resolved.userId;
-  const [systemItems, allStats] = await Promise.all([
-    db.getAllSyncData('_system'),
-    computeAllLessonTimeStats(),
-  ]);
+  const [items, record] = await Promise.all([systemItems(), systemItem('stats:timeStats')]);
+  maybeRefreshLessonTimeStats(record);
+  const allStats = record?.data?.byLesson || {};
   const visible = new Set();
-  for (const i of systemItems) {
+  for (const i of items) {
     if (!i.dataKey?.startsWith('lesson:')) continue;
     const status = normalizeStatus(i.data.status, !!i.data.markdown);
     if (status === 'draft') continue;
@@ -208,7 +169,7 @@ content.get('/v1/lessons/:lessonId', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
   const lessonId = c.req.param('lessonId');
-  const item = await db.getSyncData('_system', `lesson:${lessonId}`);
+  const item = await systemItem(`lesson:${lessonId}`);
   if (!item) return c.json({ error: 'Lesson not found' }, 404);
   const status = normalizeStatus(item.data.status, !!item.data.markdown);
   if (status === 'draft') return c.json({ error: 'Lesson not found' }, 404);
@@ -218,14 +179,14 @@ content.get('/v1/lessons/:lessonId', async (c) => {
     }
   }
   const { sharedWith: _sharedWith, course: unitId, ...data } = item.data;
-  const placement = unitId ? placementOf(buildHierarchy(await db.getAllSyncData('_system')), lessonId, unitId)
+  const placement = unitId ? placementOf(buildHierarchy(await systemItems()), lessonId, unitId)
     : { course: null, unit: null, program: null };
   return c.json({ lessonId, ...data, ...placement, startHere: isStartHere(data), updatedAt: item.updatedAt });
 });
 
 // GET /v1/knowledge-base — get the knowledge base content
 content.get('/v1/knowledge-base', async (c) => {
-  const item = await db.getSyncData('_system', 'knowledgeBase');
+  const item = await systemItem('knowledgeBase');
   if (!item) return c.json({ content: '' });
   return c.json({ content: item.data.content || '' });
 });

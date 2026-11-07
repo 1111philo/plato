@@ -181,6 +181,12 @@ const db = {
     return items;
   },
 
+  // Is there at least one user? One item, not a full Scan (cold start, #451 B3).
+  async hasAnyUser() {
+    const result = await doc.send(new ScanCommand({ TableName: USERS_TABLE, Limit: 1, ProjectionExpression: 'userId' }));
+    return (result.Items || []).length > 0 || !!result.LastEvaluatedKey;
+  },
+
   async countUsers() {
     let count = 0;
     let lastKey;
@@ -442,6 +448,18 @@ const db = {
   // and payload scale with the matched set, NOT the whole partition). Used by
   // admin stats to read `lessonKB:*` without dragging the large `screenshot:*`
   // / `messages:*` records.
+  // Does any record's dataKey begin with `prefix`? One item at most.
+  async hasSyncDataWithPrefix(userId, prefix) {
+    const result = await doc.send(new QueryCommand({
+      TableName: SYNC_DATA_TABLE,
+      KeyConditionExpression: 'userId = :uid AND begins_with(dataKey, :p)',
+      ExpressionAttributeValues: { ':uid': userId, ':p': prefix },
+      ProjectionExpression: 'dataKey',
+      Limit: 1,
+    }));
+    return (result.Items || []).length > 0;
+  },
+
   async getSyncDataByPrefix(userId, prefix) {
     const items = [];
     let lastKey;

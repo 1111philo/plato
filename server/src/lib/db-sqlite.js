@@ -338,6 +338,10 @@ const db = {
     return sqlite.prepare('SELECT * FROM users').all().map(rowToUser);
   },
 
+  async hasAnyUser() {
+    return !!sqlite.prepare('SELECT 1 FROM users LIMIT 1').get();
+  },
+
   async countUsers() {
     const row = sqlite.prepare('SELECT COUNT(*) as count FROM users').get();
     return row.count;
@@ -516,6 +520,12 @@ const db = {
   // Mirror of the DynamoDB sort-key prefix query: fetch only sync-data records
   // whose dataKey begins with `prefix` (e.g. 'lessonKB:'), so admin stats skip
   // the large screenshot:*/messages:* records.
+  async hasSyncDataWithPrefix(userId, prefix) {
+    return !!sqlite.prepare(
+      'SELECT 1 FROM sync_data WHERE userId = ? AND dataKey LIKE ? ESCAPE ? LIMIT 1'
+    ).get(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+  },
+
   async getSyncDataByPrefix(userId, prefix) {
     const rows = sqlite.prepare(
       'SELECT * FROM sync_data WHERE userId = ? AND dataKey LIKE ? ESCAPE ?'

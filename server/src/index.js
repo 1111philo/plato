@@ -1,3 +1,4 @@
+import { isSetUp, markSetUp } from './lib/setup-state.js';
 import { Hono } from 'hono';
 import { handle, streamHandle } from 'hono/aws-lambda';
 import { cors } from 'hono/cors';
@@ -44,8 +45,7 @@ server.use('*', async (c, next) => {
     // Admin bootstrap
     if (ADMIN_EMAIL && ADMIN_PASSWORD) {
       try {
-        const count = await db.countUsers();
-        if (count === 0) {
+        if (!(await isSetUp())) {
           const userId = generateUserId();
           const passwordHash = await hashPassword(ADMIN_PASSWORD);
           await db.createUser({
@@ -55,6 +55,7 @@ server.use('*', async (c, next) => {
             name: 'Admin',
             role: 'admin',
           });
+          markSetUp();
           console.log(`Admin bootstrapped: ${ADMIN_EMAIL}`);
         }
       } catch (err) {

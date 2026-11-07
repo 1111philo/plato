@@ -7,6 +7,7 @@ import { parseSSEStream, parseResponse, LLM, ApiError } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
+import { loadLessons } from './lessonOwner.js';
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -39,18 +40,17 @@ const PUBLIC_CATALOG_AGENTS = ['coach'];
 // Agents that see all lessons including private (admin-only)
 const ADMIN_CATALOG_AGENTS = ['lesson-creator', 'knowledge-base-editor'];
 
-let publicCatalog = null;
 let adminCatalog = null;
 
+// Built from lessonOwner's cached list (the classroom already loaded it), not
+// a second GET /v1/lessons (#451 scale review). Server lessons only: the
+// learner's own custom lessons were never in this catalog.
+// (Recomputed each time from that cached list, so it follows its refreshes.)
 async function loadPublicCatalog() {
-  if (publicCatalog) return publicCatalog;
   try {
-    const resp = await authenticatedFetch('/v1/lessons');
-    const lessons = resp.ok ? await resp.json() : [];
-    if (!lessons.length) { publicCatalog = ''; return ''; }
-    publicCatalog = lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
-  } catch { publicCatalog = ''; }
-  return publicCatalog;
+    const lessons = (await loadLessons()).filter((l) => !l.lessonId.startsWith('custom-'));
+    return lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
+  } catch { return ''; }
 }
 
 async function loadAdminCatalog() {
@@ -118,7 +118,7 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
   throw lastError;
 }
 
-export function invalidateLessonCatalog() { publicCatalog = null; adminCatalog = null; }
+export function invalidateLessonCatalog() { adminCatalog = null; }
 
 export async function isReady() {
   return true;

@@ -24,6 +24,65 @@ Detailed design notes and incident history for plato's load-bearing subsystems.
   via `/v1/branding` (public, no auth).
 - Data changes to existing records go through [data migrations](#data-migrations)
   — never ad-hoc scripts against prod.
+- Hot read-only paths read `_system` through an in-container cache; see
+  [System data cache](#system-data-cache-scale).
+
+### System data cache (scale)
+
+Every learner page load used to read the whole `_system` partition (all
+lessons with their markdown, prompts, settings) straight from DynamoDB, and
+again on every tab refocus. One full read is about 80 RCU and a partition
+serves about 3,000 RCU/s, so a few dozen learners refocusing in the same
+second throttled it, and the classroom showed an empty lessons list (#451
+scale review, B1). Now:
+
+- **`lib/system-cache.js`.** `systemItems()`, `systemItem(key)`, and
+  `systemItemsByPrefix(prefix)` keep what a container read for 30 s
+  (`SYSTEM_CACHE_TTL_MS`). Concurrent misses share one read. Any `_system`
+  put, create, or delete made through `db` in that container clears it at
+  once (`db.js` wraps the three write methods and calls `onSystemWrite`
+  listeners), so an admin sees their own change immediately; **other
+  containers may serve up to 30 s of the old copy.** On by default on Lambda
+  and the dev servers (`PLATO_SYSTEM_CACHE=on`), off in unit tests (they swap
+  `db` methods per test). Returned objects are shared: read-only.
+- **Who uses it:** read-only learner and public paths only: `GET /v1/lessons`,
+  `/v1/lessons/:id`, `/v1/lessons/time-stats`, `/v1/branding`,
+  `/v1/prompts/:name`, `/v1/knowledge-base`, `/v1/groups`, `/v1/user-fields`,
+  `/v1/me` and `/v1/me/fields` (field definitions), the bell
+  (`listMessages`), and email branding (`getClassroom`). Anything that
+  reads, changes, and writes back (admin saves, migrations, seeding,
+  version-conditioned puts) reads `db` directly.
+- **The lessons list carries parsed fields, not markdown.** `GET /v1/lessons`
+  returns each lesson's `parsed: { name, description, exemplar,
+  learningObjectives, coachDirective? }` (`lib/lesson-parse.js`, a line-for-
+  line copy of the client's `parseLessonPrompt`, checked by
+  `client/tests/lessonParse.test.js` on every bundled lesson). The raw
+  `markdown` is only on `GET /v1/lessons/:id`. `loadLessons()` accepts either.
+- **One catalog load.** The coach's lesson catalog is built from
+  `loadLessons()`'s cached list instead of a second `GET /v1/lessons`.
+- **Refocus.** Coming back to the tab re-syncs at most every 5 minutes
+  (`client/src/lib/refocusSync.js`), not on every refocus.
+- Measured (`server/tests/routes/system-reads.test.js`, one classroom page
+  load): 9 `_system` reads (2 full-partition) without the cache; with it, 4
+  on a cold container and 0 on the next load.
+
+**Time estimates** ("Expected time" on the Lessons page) come from
+`_system:stats:timeStats`, computed by the `lesson-time-stats` job
+(`lib/lesson-time-stats.js`: every learner's `lessonKB:*`, by prefix). `GET
+/v1/lessons/time-stats` only reads that record and, when it's missing or over
+an hour old, asks for the job (at most once per container per 10 minutes). A
+learner's request never scans users (B2: a cold container used to read the
+whole database while the learner waited). Until the first run, no estimates.
+
+**Cold start** (`server/src/index.js`, first request in a container): the
+admin bootstrap asks `isSetUp()` (`lib/setup-state.js`: `hasAnyUser`, one item,
+then remembered: users are never all deleted) instead of a full users Scan;
+the prompt checks in `seedDefaultContent` run in parallel instead of one after
+another; and `ensureBundledLessons` checks "any lessons yet?" with
+`hasSyncDataWithPrefix` (one item) instead of reading all of `_system`.
+Prompts are still compared on every cold start (no "already seeded" marker): a
+rollback to an older release re-seeds its own prompts, and the next upgrade
+must put these back.
 
 ## Data migrations
 
