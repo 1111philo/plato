@@ -235,7 +235,9 @@ export default function AdminUsers() {
 
   const existingEmails = useMemo(() => {
     const set = new Set();
-    for (const u of users) set.add(u.email.toLowerCase());
+    for (const u of users) {
+      if (u.email) set.add(u.email.toLowerCase()); // Skip users without an email
+    }
     for (const inv of pendingInvites) {
       if (inv.email) set.add(inv.email.toLowerCase()); // Skip link invites (email is null)
     }
