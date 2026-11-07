@@ -143,10 +143,14 @@ describe('S3: limits on sign-in and password reset', () => {
     assert.equal(last.status, 429);
   });
 
-  it('limits sign-ins per address', async () => {
+  it('limits sign-ins per address, but a whole room on one Wi-Fi address gets in', async () => {
+    const { AUTH_IP_LIMITS } = await import('../../src/routes/auth.js');
     const from = { 'X-Forwarded-For': '203.0.113.9' };
     let last;
-    for (let i = 0; i < 31; i++) last = await post('/v1/auth/login', { email: `x${i}`, password: 'nope' }, from);
+    // An event: hundreds of people behind one venue IP must not be refused.
+    for (let i = 0; i < 300; i++) last = await post('/v1/auth/login', { email: `x${i}`, password: 'nope' }, from);
+    assert.equal(last.status, 401);
+    for (let i = 300; i <= AUTH_IP_LIMITS.login; i++) last = await post('/v1/auth/login', { email: `x${i}`, password: 'nope' }, from);
     assert.equal(last.status, 429);
     assert.equal((await post('/v1/auth/login', { email: 'ada', password: PASSWORD }, { 'X-Forwarded-For': '198.51.100.1' })).status, 200);
   });

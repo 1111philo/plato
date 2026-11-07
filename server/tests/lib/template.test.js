@@ -11,6 +11,11 @@ const fn = (name) => template.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^
 
 describe('template.yaml', () => {
   for (const name of ['PlatoApiFunction', 'PlatoStreamFunction']) {
+    it(`${name} may call only plato's Bedrock model`, () => {
+      const bedrock = fn(name).split('bedrock:InvokeModelWithResponseStream')[1].split('- Statement:')[0];
+      assert.match(bedrock, /foundation-model\/qwen\.qwen3-vl-235b-a22b/);
+      assert.doesNotMatch(bedrock, /Resource: '\*'/);
+    });
     it(`${name} may send raw email (notifications use SES SendRawEmail)`, () => {
       assert.match(fn(name), /- ses:SendRawEmail/);
       assert.match(fn(name), /- ses:SendEmail/);
