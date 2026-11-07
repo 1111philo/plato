@@ -54,7 +54,7 @@ Valid, but left for after the launch:
 
 Fixed before launch in #515–#521. Left for after:
 
-- **Alarms that page someone:** Lambda throttles/errors/p99, DynamoDB throttles, Bedrock errors, CloudFront 5xx, SES bounces/complaints, sent to Blake by email. Needs `sns:*` and `cloudwatch:PutMetricAlarm` on the deploy role, which it doesn't have yet.
+- **Alarms in IaC:** the 11 prod alarms (emailing b3b@uic.edu) were created with the CLI on 2026-11-07 (`docs/DEPLOY.md`). Moving them into `template.yaml`, so playground gets them too, needs `sns:*` and `cloudwatch:PutMetricAlarm` / `DeleteAlarms` on the deploy role.
 - **Provisioned concurrency** on the stream function for event windows (about $25 for 3 hours at 300–500), and a reserved floor on the API function.
 - **A load test** (k6, 0→900 virtual learners, plus 50→200 against real Bedrock) on playground. It needs a per-stage gate so the mock provider can run there.
 - **A timed rollback drill** on playground, with the time written into the runbook.
