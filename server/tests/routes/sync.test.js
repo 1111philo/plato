@@ -14,6 +14,17 @@ async function authedReq(app, method, path, body) {
   });
 }
 
+// GET /v1/sync skips screenshots at the database (getSyncDataExcept). Back it
+// with each test's getAllSyncData fixture, and record what was excluded.
+let excludedPrefixes = [];
+beforeEach(() => {
+  excludedPrefixes = [];
+  db.getSyncDataExcept = async (userId, prefix) => {
+    excludedPrefixes.push(prefix);
+    return (await db.getAllSyncData(userId)).filter((i) => !i.dataKey?.startsWith(prefix));
+  };
+});
+
 describe('GET /v1/sync', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
@@ -59,6 +70,15 @@ describe('GET /v1/sync', () => {
     const data = await res.json();
     const keys = data.map((d) => d.dataKey);
     assert.deepEqual(keys, ['messages:wp-1'], 'screenshot:* must stay out of the bulk sync payload');
+  });
+
+  it('asks the database to skip screenshots instead of reading and dropping them', async () => {
+    db.getAllSyncData = async () => [{ dataKey: 'profile', data: {}, version: 1 }];
+    const app = new Hono();
+    app.route('/', sync);
+    const res = await authedReq(app, 'GET', '/v1/sync');
+    assert.equal(res.status, 200);
+    assert.deepEqual(excludedPrefixes, ['screenshot:']);
   });
 });
 

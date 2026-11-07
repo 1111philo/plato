@@ -16,7 +16,7 @@ import {
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import { compressImageDataUrl } from './imageCompression.js';
-import { syncInBackground } from './syncDebounce.js';
+import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
@@ -133,6 +133,11 @@ export async function recoverMissingTags(parsed, repair) {
   };
 }
 
+/** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
+export function shouldUpdateProfile(parsed) {
+  return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
+}
+
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
@@ -191,8 +196,6 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
   lessonKB.name = lesson.name;
   lessonKB.progress = 0;
   lessonKB.startedAt = ts();
-  await saveLessonKB(lessonId, lessonKB);
-  syncInBackground(`lessonKB:${lessonId}`);
 
   // Emit lessonStarted hook and collect enrichments from plugins
   let enrichments = [];
@@ -222,13 +225,11 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     console.warn('[startLesson] Failed to collect enrichments:', err);
   }
 
-  // Save enrichments (if any) BEFORE starting coach to avoid race condition
-  // where coach's progress update could overwrite enrichments
-  if (enrichments.length > 0) {
-    lessonKB.enrichments = enrichments;
-    await saveLessonKB(lessonId, lessonKB);
-    syncInBackground(`lessonKB:${lessonId}`);
-  }
+  // One KB write before the coach opens, with the enrichments in it (a later
+  // write would race the coach's progress update). It used to be written up
+  // to three times, each re-sent in the background (#451 scale review H2).
+  if (enrichments.length > 0) lessonKB.enrichments = enrichments;
+  syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
 
   // Coach opens the conversation
   if (onProgress) onProgress('starting');
@@ -248,9 +249,9 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
   // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
   // completes lessons. A lesson's Coach Directive can't change that.
   const opening = openingProgress(progress);
-  if (opening != null) {
+  if (opening != null && opening !== lessonKB.progress) {
     lessonKB.progress = opening;
-    await saveLessonKB(lessonId, lessonKB);
+    syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
   }
 
   const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
@@ -258,8 +259,9 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
   ];
 
-  await saveLessonMessages(lessonId, messages);
-  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+  const savedMessages = await saveLessonMessages(lessonId, messages);
+  // Retry the opener once in the background if it didn't land ('too_long' was never sent; there's nothing to retry).
+  if (savedMessages !== 'too_long') syncIfUnsaved(savedMessages, `messages:${lessonId}`);
   return { messages, lessonKB, phase: LESSON_PHASES.LEARNING };
 }
 
@@ -378,16 +380,13 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   lessonKB = applied.lessonKB;
   const { achieved, phase } = applied;
 
-  await saveLessonKB(lessonId, lessonKB);
-  syncInBackground(`lessonKB:${lessonId}`);
+  syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
 
-  // Profile updates — from explicit tag or from KB insights as fallback
-  if (parsed.profileUpdate?.observation) {
+  // The profile is updated from the coach's explicit [PROFILE_UPDATE] only
+  // (and on completion). Treating every turn's KB insights as a profile
+  // signal made most turns cost a second model call (#451 scale review H2).
+  if (shouldUpdateProfile(parsed)) {
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
-  } else if (parsed.kbUpdate?.insights?.length) {
-    // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join('. ');
-    updateProfileFromObservation(lessonKB, insightText);
   }
   if (achieved) {
     updateProfileOnCompletionInBackground(lessonKB, lesson);
@@ -427,7 +426,6 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // background: it would send the same record. (The cache keeps the turn, so
   // the next save tries it again.)
   const saved = await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
-  if (saved === true) syncInBackground(`messages:${lessonId}`);
 
   const userMsg = imageDataUrls.length > 0
     ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }

@@ -107,7 +107,7 @@ export async function getPreferences() {
 }
 
 export async function savePreferences(prefs) {
-  await putSyncData('preferences', prefs);
+  return putSyncData('preferences', prefs);
 }
 
 // -- Learner profile ----------------------------------------------------------
@@ -117,7 +117,7 @@ export async function getLearnerProfile() {
 }
 
 export async function saveLearnerProfile(profile) {
-  await putSyncData('profile', profile);
+  return putSyncData('profile', profile);
 }
 
 export async function getLearnerProfileSummary() {
@@ -126,7 +126,7 @@ export async function getLearnerProfileSummary() {
 }
 
 export async function saveLearnerProfileSummary(summary) {
-  await putSyncData('profileSummary', summary);
+  return putSyncData('profileSummary', summary);
 }
 
 // -- Lesson KB ----------------------------------------------------------------
@@ -136,7 +136,7 @@ export async function getLessonKB(lessonId) {
 }
 
 export async function saveLessonKB(lessonId, kb) {
-  await putSyncData(`lessonKB:${lessonId}`, kb);
+  return putSyncData(`lessonKB:${lessonId}`, kb);
 }
 
 export async function deleteLessonKB(lessonId) {
@@ -153,7 +153,7 @@ export async function getCourseProgress(courseId) {
 }
 
 export async function saveCourseProgress(courseId, progress) {
-  await putSyncData(`courseProgress:${courseId}`, progress);
+  return putSyncData(`courseProgress:${courseId}`, progress);
 }
 
 // -- Activity KB --------------------------------------------------------------

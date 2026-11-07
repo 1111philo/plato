@@ -18,7 +18,7 @@ import { logger } from '../lib/logger.js';
 import { fetchCloudWatchLogs } from '../lib/cloudwatch-logs.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
-import { classifyCache, kickoffAsyncRefresh } from '../lib/lesson-stats-cache.js';
+import { classifyCache, kickoffAsyncRefresh, canRefreshAsync } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
 import {
   readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey, validateWaitlistEntry,
@@ -1287,12 +1287,11 @@ export async function computeLessonStats() {
 
   for (const user of users) {
     const isLearner = normalizeRole(user.role) === 'learner';
-    // Only `lessonKB:*` (counts/pacing) and `messages:*` (duration fallback for
-    // legacy KBs without startedAt/completedAt) are needed — skip the large
-    // screenshot:* records entirely.
+    // Only `lessonKB:*` (counts/pacing) is read for everyone. A conversation
+    // (`messages:*`, up to 340 KB each) is read only for a legacy completed KB
+    // without startedAt/completedAt, which needs it for the duration
+    // (#451 scale review H5: reading every conversation was ~440 MB a pass).
     const kbItems = await db.getSyncDataByPrefix(user.userId, 'lessonKB:');
-    const msgItems = await db.getSyncDataByPrefix(user.userId, 'messages:');
-    const syncItems = kbItems.concat(msgItems);
     let userHasStarted = false;
     let userCompleted = 0;
 
@@ -1316,7 +1315,7 @@ export async function computeLessonStats() {
           durations.push((kb.completedAt - kb.startedAt) / 60000);
         } else {
           const lessonId = item.dataKey.replace('lessonKB:', '');
-          const msgItem = syncItems.find(s => s.dataKey === `messages:${lessonId}`);
+          const msgItem = await db.getSyncData(user.userId, `messages:${lessonId}`).catch(() => null);
           const msgs = msgItem?.data;
           if (Array.isArray(msgs) && msgs.length >= 2) {
             const first = msgs[0]?.timestamp;
@@ -1367,8 +1366,34 @@ export async function computeLessonStats() {
 export async function recomputeAndCacheLessonStats() {
   const stats = await computeLessonStats();
   const computedAt = new Date().toISOString();
-  await db.putSyncData('_system', 'stats:lessons', { computedAt, stats });
+  // Written without `refreshingAt`, which clears the marker below.
+  const cur = await db.getSyncData('_system', 'stats:lessons').catch(() => null);
+  await db.putSyncData('_system', 'stats:lessons', { computedAt, stats }, cur?.version || 0).catch(async (err) => {
+    // Another container wrote first; write over it (both are fresh).
+    if (err?.name !== 'ConditionalCheckFailedException') throw err;
+    const again = await db.getSyncData('_system', 'stats:lessons');
+    await db.putSyncData('_system', 'stats:lessons', { computedAt, stats }, again?.version || 0);
+  });
   return { computedAt, stats };
+}
+
+// At most one background recompute at a time: `refreshingAt` on the cache
+// record, claimed with a version-conditioned write. Ten admins opening the
+// dashboard used to start ten recomputes (#451 scale review H5). A claim
+// older than this is treated as abandoned.
+export const REFRESH_CLAIM_MS = 5 * 60 * 1000;
+async function refreshInBackground(cached) {
+  const claimedAt = Date.parse(cached?.data?.refreshingAt || '');
+  if (Number.isFinite(claimedAt) && Date.now() - claimedAt < REFRESH_CLAIM_MS) return false;
+  try {
+    await db.putSyncData('_system', 'stats:lessons', { ...cached.data, refreshingAt: new Date().toISOString() }, cached.version || 0);
+  } catch (err) {
+    if (err?.name === 'ConditionalCheckFailedException') return false; // someone else claimed it
+    throw err;
+  }
+  // A separate invocation (awaited: an Event invoke returns in tens of ms,
+  // and a pending call would die when the container freezes).
+  return kickoffAsyncRefresh();
 }
 
 admin.get('/v1/admin/stats/lessons', async (c) => {
@@ -1379,11 +1404,14 @@ admin.get('/v1/admin/stats/lessons', async (c) => {
     if (status === 'fresh') {
       return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
     }
-    if (status === 'stale') {
-      // Awaited: an Event invoke returns in tens of ms, and a pending call
-      // would die when the container freezes after the response.
-      await kickoffAsyncRefresh();
-      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt });
+    // Stale or expired: serve what's there and refresh in the background. A
+    // synchronous recompute walks every learner and would time out the
+    // request at scale. Only a brand-new install (no cache yet), or a
+    // server with no background function (local dev) and an expired
+    // cache, computes on the request.
+    if (cached?.data?.stats && (status === 'stale' || canRefreshAsync())) {
+      await refreshInBackground(cached);
+      return c.json({ ...cached.data.stats, computedAt: cached.data.computedAt, ...(status === 'expired' ? { stale: true } : {}) });
     }
   }
   const { computedAt, stats } = await recomputeAndCacheLessonStats();

@@ -23,7 +23,7 @@ import { normalizeRole } from './permissions.js';
 import { normalizeStatus } from './lesson-visibility.js';
 import { nameFields } from './names.js';
 import { readAutomations, readNotifyState, updateNotifyState, sendTemplated } from './notifications.js';
-import { registerJob } from './jobs.js';
+import { registerJob, dispatchJob } from './jobs.js';
 import { logger } from './logger.js';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -63,18 +63,42 @@ async function claimFor(userId, claim, db) {
   return claimed;
 }
 
-export async function runInactivityNudges({ db = defaultDb, now = Date.now() } = {}) {
+// Learners are handled a few at a time, concurrently: one by one, a large
+// classroom took longer than the job's 300 s timeout (#451 scale review H6).
+// Past the budget a run stops and the job dispatches itself to continue; the
+// claims written before each send make the next run skip anyone done.
+export const BATCH_SIZE = 8;
+export const RUN_BUDGET_MS = 240_000;
+export const MAX_CONTINUATIONS = 5;
+
+/** Run `fn` over `items` in concurrent batches; returns how many were left when the deadline passed. */
+export async function inBatches(items, fn, { size = BATCH_SIZE, deadline = Infinity, clock = Date.now } = {}) {
+  for (let i = 0; i < items.length; i += size) {
+    if (clock() > deadline) return items.length - i;
+    await Promise.all(items.slice(i, i + size).map(fn));
+  }
+  return 0;
+}
+
+export async function runInactivityNudges({ db = defaultDb, now = Date.now(), deadline = Infinity, clock = Date.now } = {}) {
   if (!(await readAutomations(db)).inactivityNudge) return { off: true };
-  const counts = { learners: 0, nudged: 0, optedOut: 0, notSent: 0 };
+  const counts = { learners: 0, nudged: 0, optedOut: 0, notSent: 0, errors: 0 };
   const system = await db.getAllSyncData('_system');
-  for (const u of await learners(db)) {
+  const remaining = await inBatches(await learners(db), (u) => nudgeOne(u).catch((err) => {
+    counts.errors++;
+    logger.error('learner_email_failed', { job: 'inactivity-nudge', error: err?.message || String(err) });
+  }), { deadline, clock });
+  if (remaining) counts.remaining = remaining;
+  return counts;
+
+  async function nudgeOne(u) {
     counts.learners++;
     const lessons = visibleLessons(system, u.userId);
     // Only lesson progress: the whole partition holds screenshots and conversations.
     const items = await db.getSyncDataByPrefix(u.userId, 'lessonKB:');
     const state = await readNotifyState(u.userId, db);
-    if (state.optOut?.nudge) { counts.optedOut++; continue; }
-    if (state.lastNudgeAt && now - Date.parse(state.lastNudgeAt) < DAY - 60 * 60 * 1000) continue;
+    if (state.optOut?.nudge) { counts.optedOut++; return; }
+    if (state.lastNudgeAt && now - Date.parse(state.lastNudgeAt) < DAY - 60 * 60 * 1000) return;
     const stale = items
       .filter((i) => i.dataKey.startsWith('lessonKB:'))
       .map((i) => ({ lessonId: i.dataKey.slice('lessonKB:'.length), kb: i.data || {}, at: Date.parse(i.updatedAt || '') }))
@@ -83,13 +107,13 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now() } =
         && !(state.nudges?.[l.lessonId] && now - Date.parse(state.nudges[l.lessonId]) < NUDGE_REPEAT_DAYS * DAY))
       .sort((a, b) => b.at - a.at);
     const pick = stale[0];
-    if (!pick) continue;
+    if (!pick) return;
     const stamp = new Date(now).toISOString();
     const claimed = await claimFor(u.userId, (st) => {
       if (st.nudges?.[pick.lessonId] && now - Date.parse(st.nudges[pick.lessonId]) < NUDGE_REPEAT_DAYS * DAY) return null;
       return { ...st, lastNudgeAt: stamp, nudges: { ...(st.nudges || {}), [pick.lessonId]: stamp } };
     }, db);
-    if (!claimed) continue;
+    if (!claimed) return;
     const r = await sendTemplated('inactivity-nudge', {
       to: u.email, userId: u.userId, kind: 'nudge',
       vars: {
@@ -110,7 +134,6 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now() } =
     });
     if (r.sent) counts.nudged++; else counts.notSent++;
   }
-  return counts;
 }
 
 /** The digest's two variable paragraphs, or null when there's nothing to say. */
@@ -135,22 +158,29 @@ export function digestContent({ items, lessons, now }) {
   return { progressSummary: progress.join('\n'), newLessons };
 }
 
-export async function runWeeklyDigest({ db = defaultDb, now = Date.now() } = {}) {
+export async function runWeeklyDigest({ db = defaultDb, now = Date.now(), deadline = Infinity, clock = Date.now } = {}) {
   if (!(await readAutomations(db)).weeklyDigest) return { off: true };
-  const counts = { learners: 0, sent: 0, nothingToSay: 0, optedOut: 0, notSent: 0 };
+  const counts = { learners: 0, sent: 0, nothingToSay: 0, optedOut: 0, notSent: 0, errors: 0 };
   const system = await db.getAllSyncData('_system');
-  for (const u of await learners(db)) {
+  const remaining = await inBatches(await learners(db), (u) => digestOne(u).catch((err) => {
+    counts.errors++;
+    logger.error('learner_email_failed', { job: 'weekly-digest', error: err?.message || String(err) });
+  }), { deadline, clock });
+  if (remaining) counts.remaining = remaining;
+  return counts;
+
+  async function digestOne(u) {
     counts.learners++;
     const state = await readNotifyState(u.userId, db);
-    if (state.optOut?.digest) { counts.optedOut++; continue; }
-    if (state.lastDigestAt && now - Date.parse(state.lastDigestAt) < DIGEST_EVERY_DAYS * DAY) continue;
+    if (state.optOut?.digest) { counts.optedOut++; return; }
+    if (state.lastDigestAt && now - Date.parse(state.lastDigestAt) < DIGEST_EVERY_DAYS * DAY) return;
     const content = digestContent({ items: await db.getSyncDataByPrefix(u.userId, 'lessonKB:'), lessons: visibleLessons(system, u.userId), now });
-    if (!content) { counts.nothingToSay++; continue; }
+    if (!content) { counts.nothingToSay++; return; }
     const stamp = new Date(now).toISOString();
     const claimed = await claimFor(u.userId, (st) => (
       st.lastDigestAt && now - Date.parse(st.lastDigestAt) < DIGEST_EVERY_DAYS * DAY ? null : { ...st, lastDigestAt: stamp }
     ), db);
-    if (!claimed) continue;
+    if (!claimed) return;
     const r = await sendTemplated('weekly-digest', {
       to: u.email, userId: u.userId, kind: 'digest',
       vars: { firstName: nameFields(u).firstName, ...content, link: `${APP_URL}/lessons` },
@@ -161,8 +191,20 @@ export async function runWeeklyDigest({ db = defaultDb, now = Date.now() } = {})
     });
     if (r.sent) counts.sent++; else counts.notSent++;
   }
-  return counts;
 }
 
-registerJob('inactivity-nudge', () => runInactivityNudges());
-registerJob('weekly-digest', () => runWeeklyDigest());
+/** A job run within the budget; if learners are left, it dispatches itself to continue. */
+function continuing(name, run) {
+  return async (payload = {}) => {
+    const hop = Number(payload.hop) || 0;
+    const result = await run({ deadline: Date.now() + RUN_BUDGET_MS });
+    if (result.remaining && hop < MAX_CONTINUATIONS) {
+      await dispatchJob(name, { hop: hop + 1 });
+      result.continued = true;
+    }
+    return result;
+  };
+}
+
+registerJob('inactivity-nudge', continuing('inactivity-nudge', runInactivityNudges));
+registerJob('weekly-digest', continuing('weekly-digest', runWeeklyDigest));

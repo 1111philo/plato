@@ -242,7 +242,9 @@ export const pluginRegistry = {
           entry.hookUnsubs = subscribeHooks(manifest.id, serverModule);
           await invokeOnActivate(serverModule, buildContext(manifest.id, settings));
         }
-        logger.warn('plugin_loaded', { pluginId: manifest.id, enabled });
+        // Plain console, not a coded warn: it fired for every plugin on every
+        // cold start and crowded /v1/admin/logs (#451 scale review).
+        console.log(`plugin_loaded ${manifest.id} (${enabled ? 'enabled' : 'disabled'})`);
       } catch (err) {
         logger.error('plugin_load_failed', { pluginId: folder.id, error: err?.message, stack: err?.stack });
       }

@@ -106,7 +106,9 @@ const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB
 sync.get('/v1/sync', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
-  const items = await db.getAllSyncData(resolved.userId);
+  // Screenshots are skipped at the database (often 3–10 MB per learner,
+  // #451 scale review); the rest are filtered here.
+  const items = await db.getSyncDataExcept(resolved.userId, 'screenshot:');
   return c.json(items
     // notify:* is server-only bookkeeping (opt-outs come from /v1/me/notifications).
     .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:') && !item.dataKey?.startsWith('notify:'))

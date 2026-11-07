@@ -281,7 +281,9 @@ is its own `screenshot:<key>` record, and the message stores only
 - Images are compressed client-side on paste
   (`client/src/lib/imageCompression.js`) to stay well under the per-record
   limit, persisted one-per-record, and excluded from the bulk `GET /v1/sync`
-  payload (fetched on demand by key).
+  payload (fetched on demand by key). The route skips them at the database
+  (`getSyncDataExcept`: two key-range queries around `screenshot:`), so they
+  aren't even read.
 - `ComposeBar.addImagesFromFiles` reads files via `FileReader` with
   `Promise.allSettled` (not `all`) so one unreadable file can't discard a whole
   batch, and surfaces the underlying `DOMException.name` in the alert
@@ -301,6 +303,20 @@ is its own `screenshot:<key>` record, and the message stores only
   land on the admin's own account).
 - `putSyncData` returns a durability boolean and logs rejected/failed writes
   instead of swallowing them.
+- **One write per save (#451 scale review H2).** The `save*` helpers in
+  `client/js/storage.js` PUT directly and return that boolean. A caller hands
+  it to `syncIfUnsaved(saved, key)` (`client/src/lib/syncDebounce.js`), which
+  retries in the background only if the write didn't land. Re-sending every
+  record 500 ms after it had saved doubled the heaviest writes (a `messages:`
+  record is up to 340 KB). `startLesson` writes `lessonKB` once before the
+  coach opens (with any plugin enrichments) and again only if the opener
+  changes progress. A coach turn updates the learner profile only from an
+  explicit `[PROFILE_UPDATE]` (`shouldUpdateProfile`), plus the completion
+  update; treating every turn's KB insights as a profile signal made most
+  turns cost a second model call. Per coach turn: about 2–3 sync PUTs (the
+  screenshot records, `lessonKB`, `messages`) instead of about 4–6, and one
+  model call (two when the coach sends a `[PROFILE_UPDATE]`, plus a rare tag
+  repair) instead of usually two.
 - **Conversation past the budget (#451 third review).** If even after
   trimming the record is over 340 KB, `saveLessonMessages` doesn't send it
   (it would 413 on this and every later turn) and returns `'too_long'`;
@@ -1286,12 +1302,19 @@ Admin dashboard at `/plato` (lazy-loaded, role-gated) has two KPI sections:
 Both are powered by `GET /v1/admin/stats/lessons`, which is **stale-while-
 revalidate cached** in `_system:stats:lessons` sync-data (see
 `server/src/lib/lesson-stats-cache.js`). Fresh window: 10 min. Stale window
-(10 min–24 h): cached payload served and an async Lambda self-invoke kicks off a
-refresh (`InvocationType: 'Event'`, see the wrapped handler in
-`server/src/index.js`). Expired (>24 h) or missing: recompute synchronously. The
-recompute walks every user's `lessonKB:*` + `messages:*` records (via
-`getSyncDataByPrefix`, skipping the large `screenshot:*` payloads), so it should
-never be on the hot path of an admin page load. `lambda:InvokeFunction`
+(10 min–24 h) and, on Lambda, expired (>24 h, answered with `stale: true`):
+the cached payload is served and an async Lambda invocation refreshes it
+(`InvocationType: 'Event'`, see the wrapped handler in `server/src/index.js`).
+Only one refresh runs at a time: the request claims it by writing
+`refreshingAt` onto the cache record with a version-conditioned put, and a
+claim younger than 5 min (`REFRESH_CLAIM_MS`) means someone is already on it;
+the recompute's write clears it (#451 scale review H5, ten staff opening the
+dashboard used to start ten recomputes). Missing (a brand-new install), or
+expired where there's no function to invoke (local dev): recompute on the
+request. The recompute walks every user's `lessonKB:*` (via
+`getSyncDataByPrefix`); a conversation (`messages:<id>`) is read only for a
+legacy completed KB without `startedAt`/`completedAt`, so it should never be
+on the hot path of an admin page load. `lambda:InvokeFunction`
 scoped to `${StackName}-*` is granted to `PlatoApiFunction` in `template.yaml`.
 In local dev / tests, `AWS_LAMBDA_FUNCTION_NAME` is unset and the kickoff is a
 no-op.
@@ -1723,6 +1746,16 @@ Only the password-reset email stays in `email.js`.
   - Run one by hand with `aws lambda invoke --function-name <PlatoApiFunction>
     --invocation-type Event --payload
     '{"__platoInternal":"platoJob","job":"inactivity-nudge"}'`.
+  - **Scale (#451 scale review H6):** both jobs handle learners 8 at a time
+    (`inBatches`, `BATCH_SIZE`), concurrently; one at a time, a large
+    classroom outran the 300 s job timeout. A run that passes its 240 s budget
+    (`RUN_BUDGET_MS`) stops and dispatches the job again (up to 5 times); the
+    claims written before each send make the next run skip anyone already
+    emailed. A claim on a learner with no `notify:state` yet is create-only
+    (`updateNotifyState`), so two overlapping runs can't both claim the same
+    learner (a versionless put is unconditional in both backends). Any send
+    retries once after an SES throttle, with jitter
+    (`sendNotificationEmail`).
 - **Admin routes** (`server/src/routes/admin-notifications.js`) need
   `notifications.read` (admins, testers) or `notifications.write` (admins):
   - `GET /v1/admin/notifications`

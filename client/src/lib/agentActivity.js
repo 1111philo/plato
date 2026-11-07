@@ -84,9 +84,8 @@ export function coachTurnActivity({ before, after, parsed, achieved = false, new
     ],
   });
   const out = [coach];
-  // Mirrors sendMessage: an explicit observation, else the KB insights.
-  const observation = parsed?.profileUpdate?.observation
-    || (parsed?.kbUpdate?.insights?.length ? parsed.kbUpdate.insights.join('. ') : null);
+  // Mirrors sendMessage (shouldUpdateProfile): only an explicit observation.
+  const observation = parsed?.profileUpdate?.observation?.trim() || null;
   if (observation) {
     out.push(entry('learner-profile-update', { did: ['Asked to update your learner profile from this turn'], notes: [observation] }));
   }

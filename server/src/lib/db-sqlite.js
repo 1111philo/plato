@@ -523,6 +523,14 @@ const db = {
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
 
+  // Same contract as db-dynamodb.js getSyncDataExcept.
+  async getSyncDataExcept(userId, prefix) {
+    const rows = sqlite.prepare(
+      'SELECT * FROM sync_data WHERE userId = ? AND dataKey NOT LIKE ? ESCAPE ?'
+    ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+    return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
+  },
+
   async putSyncData(userId, dataKey, data, expectedVersion) {
     const now = new Date().toISOString();
     const newVersion = (expectedVersion || 0) + 1;
