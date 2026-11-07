@@ -159,6 +159,11 @@ to `main` triggers `.github/workflows/trigger-deploy.yml`, which fires a
 listen for those events, check this repo out at the dispatched SHA, and run SAM
 deploy.
 
+**Deploy freeze.** Setting the repository variable `DEPLOY_FREEZE=true` stops
+the automatic prod deploy on push to `main` (the workflow logs a warning and
+exits). A manual run (`workflow_dispatch`) still deploys, for a deliberate fix
+or rollback. Use it around event days (`docs/RUNBOOK_EVENT_DAY.md`).
+
 One-time setup: a `DEPLOY_DISPATCH_TOKEN` secret on this repo (fine-grained PAT
 with `contents:write` on the deploy fork). Manual deploy: run `Trigger Deploy`
 here via `workflow_dispatch` with a `target` input (`prod` / `playground` /

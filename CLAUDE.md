@@ -126,4 +126,5 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 - [`docs/WAITLIST_API.md`](docs/WAITLIST_API.md) — public wait-list API guide for outside forms/integrations
 - [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — error-reporting tiers + how to add an alert
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — AWS deploy, environments, backups
+- [`docs/RUNBOOK_EVENT_DAY.md`](docs/RUNBOOK_EVENT_DAY.md) — before, during, and after a session with many learners at once (deploy freeze, backups, what to watch, rollback)
 - [`docs/plugins/`](docs/plugins/) — plugin authoring (human + AI guides, reference, examples)
