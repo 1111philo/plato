@@ -74,6 +74,7 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #510 | Courses can be ordered (Courses & Units → Move up/down; `_system:programOrder`); bundled lessons added in a later release always arrive private | #408, #443 |
 | #512 | User fields can be hidden from learners (admins only) or from public forms and the wait-list API; hidden values are kept | #364 |
 | #513 | User Fields dialog: rows with a one-line summary, edit in place, one "who can see it" choice (Everyone / Learners, after signup / Admins only), delete behind a confirmation; fits phones | #364 |
+| #514 | Bulk update in Admin → Users: select users (or all matching), then set or clear their group or one user field | #362 |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

@@ -37,6 +37,7 @@ import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, saveP
 import FiltersMenu from './FiltersMenu.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
 import GroupsDialog from './GroupsDialog.jsx';
+import BulkUpdateDialog from './BulkUpdateDialog.jsx';
 import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
@@ -172,6 +173,12 @@ export default function AdminUsers() {
   const [columnPrefs, setColumnPrefs] = useState(() => loadPrefs(`${USER_COLUMNS_KEY}:${currentUser?.userId || "anon"}`));
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [page, setPage] = useState(1);
+  // Bulk update: selected user ids, tied to the search and filters they were
+  // picked under. Changing either empties the selection (no effect needed), so
+  // a change can't reach people the admin can no longer see.
+  const [selection, setSelection] = useState({ key: '', ids: new Set() });
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [selectionNote, setSelectionNote] = useState('');
   const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
   const [sortAnnouncement, setSortAnnouncement] = useState('');
 
@@ -659,6 +666,37 @@ export default function AdminUsers() {
   const currentPage = Math.min(page, totalPages);
   const pageItems = sortedList.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
+  const canBulk = can(currentUser, 'users.write');
+  const scopeKey = JSON.stringify([filters, search]);
+  const selectedIds = selection.key === scopeKey ? selection.ids : new Set();
+  const matchingUserIds = sortedList.filter((i) => i._type === 'user').map((i) => i._user.userId);
+  const pageUserIds = pageItems.filter((i) => i._type === 'user').map((i) => i._user.userId);
+  const pageAllSelected = pageUserIds.length > 0 && pageUserIds.every((id) => selectedIds.has(id));
+  const pageSomeSelected = pageUserIds.some((id) => selectedIds.has(id));
+  function changeSelection(next, note) {
+    setSelection({ key: scopeKey, ids: next });
+    setSelectionNote(note ?? `${next.size} selected.`);
+  }
+  function toggleUser(id, on) {
+    const next = new Set(selectedIds);
+    if (on) next.add(id); else next.delete(id);
+    changeSelection(next);
+  }
+  function togglePage(on) {
+    const next = new Set(selectedIds);
+    for (const id of pageUserIds) { if (on) next.add(id); else next.delete(id); }
+    changeSelection(next);
+  }
+  function onBulkDone(result, { label, cleared, value }) {
+    const what = cleared ? `Cleared ${label}` : `Set ${label} to “${value}”`;
+    const parts = [`${what} for ${result.updated} ${result.updated === 1 ? 'user' : 'users'}.`];
+    if (result.unchanged) parts.push(`${result.unchanged} already had it.`);
+    if (result.failed?.length) parts.push(`${result.failed.length} couldn’t be updated.`);
+    setMessage({ text: parts.join(' '), type: result.failed?.length ? 'error' : 'success' });
+    changeSelection(new Set(), 'Selection cleared.');
+    loadData({ quiet: true });
+  }
+
   function handleSort(key) {
     setSortBy((prev) => {
       const next = prev.key === key
@@ -933,12 +971,35 @@ export default function AdminUsers() {
           (aria-sort attribute changes aren't reliably announced by NVDA/JAWS). */}
       <div role="status" aria-live="polite" className="sr-only">{sortAnnouncement}</div>
 
+      <p className="sr-only" role="status" aria-live="polite">{selectionNote}</p>
+      {canBulk && selectedIds.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm" role="region" aria-label="Selected users">
+          <span className="font-medium">{selectedIds.size} selected</span>
+          {pageAllSelected && selectedIds.size < matchingUserIds.length && (
+            <Button variant="link" size="sm" onClick={() => changeSelection(new Set(matchingUserIds), `All ${matchingUserIds.length} matching users selected.`)}>
+              Select all {matchingUserIds.length} matching users
+            </Button>
+          )}
+          <span className="flex-1" />
+          <Button size="sm" onClick={() => setBulkOpen(true)}>Update…</Button>
+          <Button size="sm" variant="ghost" onClick={() => changeSelection(new Set(), 'Selection cleared.')}>Clear selection</Button>
+        </div>
+      )}
+
       {filteredList.length > 0 ? (
         <>
           <div className="rounded-lg border overflow-hidden">
             <Table aria-label="Users and invites">
               <TableHeader>
                 <TableRow>
+                  {canBulk && (
+                    <TableHead className="w-10">
+                      <input type="checkbox" className="h-4 w-4 accent-primary align-middle" aria-label="Select all users on this page"
+                        disabled={pageUserIds.length === 0} checked={pageAllSelected}
+                        ref={(el) => { if (el) el.indeterminate = pageSomeSelected && !pageAllSelected; }}
+                        onChange={(e) => togglePage(e.target.checked)} />
+                    </TableHead>
+                  )}
                   {shownColumns.map((col) => (col.sortKey
                     ? <SortHeader key={col.id} sortKey={col.sortKey} sortBy={sortBy} onSort={handleSort} align={col.align}>{col.label}</SortHeader>
                     : <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>))}
@@ -952,7 +1013,18 @@ export default function AdminUsers() {
                   const open = item._type === 'waitlist' ? () => navigate(`/plato/users/waitlist/${item._key}`)
                     : item._type === 'user' ? () => openEditUser(item._user) : null;
                   return (
-                    <TableRow key={item._key} className={open ? 'cursor-pointer hover:bg-muted/50' : undefined} onClick={open || undefined}>
+                    <TableRow key={item._key} className={open ? 'cursor-pointer hover:bg-muted/50' : undefined} onClick={open || undefined}
+                      data-state={item._type === 'user' && selectedIds.has(item._user.userId) ? 'selected' : undefined}>
+                      {canBulk && (
+                        <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                          {item._type === 'user' && (
+                            <input type="checkbox" className="h-4 w-4 accent-primary align-middle"
+                              aria-label={`Select ${item.name || item.email}`}
+                              checked={selectedIds.has(item._user.userId)}
+                              onChange={(e) => toggleUser(item._user.userId, e.target.checked)} />
+                          )}
+                        </TableCell>
+                      )}
                       {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(item)}</TableCell>)}
                     </TableRow>
                   );
@@ -1227,6 +1299,15 @@ export default function AdminUsers() {
           // quietly: the page spinner would unmount the open dialog.
           if (next.length < userFields.length) loadData({ quiet: true });
         }}
+      />
+
+      <BulkUpdateDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        userIds={[...selectedIds]}
+        groups={groups}
+        userFields={userFields}
+        onDone={onBulkDone}
       />
 
       <WaitlistDialog
