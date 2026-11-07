@@ -54,6 +54,9 @@ export default function LessonChat() {
   const [loadingStep, setLoadingStep] = useState('initializing');
   const [loadingEnrichments, setLoadingEnrichments] = useState([]);
   const [error, setError] = useState('');
+  // After a busy / rate-limited reply: Send waits out the server's retryAfter,
+  // with a visible countdown; the start and end are announced (#451 scale review).
+  const [cooldown, setCooldown] = useState({ until: 0, left: 0, note: '' });
 
   const [streamingText, setStreamingText] = useState(null);
   const pendingAfterStreamRef = useRef(null);
@@ -144,6 +147,15 @@ export default function LessonChat() {
     }
   }, [streamingText]);
 
+  useEffect(() => {
+    if (!cooldown.until) return undefined;
+    const id = setInterval(() => {
+      const left = Math.max(0, Math.ceil((cooldown.until - Date.now()) / 1000));
+      setCooldown((c) => (left > 0 ? { ...c, left } : { until: 0, left: 0, note: 'You can send again.' }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldown.until]);
+
   useEffect(() => () => {
     if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
     if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
@@ -233,6 +245,11 @@ export default function LessonChat() {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
+      if (e.type === 'rate_limit' || e.type === 'overloaded') {
+        const ms = Math.min(60_000, e.retryAfterMs || 10_000);
+        const left = Math.ceil(ms / 1000);
+        setCooldown({ until: Date.now() + ms, left, note: `plato is busy. You can send again in ${left} seconds.` });
+      }
       // Nothing was saved (the user message is written with the reply), so
       // take the optimistic copy back out and return the message to the
       // composer to try again, ahead of anything typed meanwhile.
@@ -300,6 +317,7 @@ export default function LessonChat() {
   // The header button opening the lesson overview: "Progress (N of M Objectives)".
   const metLabel = progressLabel(lessonKB, lesson.learningObjectives);
   const busy = !!loading;
+  const sendBlocked = busy || cooldown.left > 0;
   const composePlaceholder = phase === LESSON_PHASES.COMPLETED
     ? 'Share feedback about this lesson...'
     : 'Chat with your coach...';
@@ -457,7 +475,7 @@ export default function LessonChat() {
             <AssistantMessage content={streamingText} streaming />
           )}
           {loading === 'qa' && !streamingText && <ThinkingSpinner />}
-          {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
+          {error && <div className="px-3 py-2 text-sm text-red-800 dark:text-destructive" role="alert">{error}</div>}
           {phase === LESSON_PHASES.COMPLETED && (
             <div className="flex flex-col items-center gap-3 mt-8 mb-4 px-4">
               {nextLesson ? (
@@ -485,6 +503,14 @@ export default function LessonChat() {
       )}
       </div>
 
+      {/* Send cooldown after a busy reply: the start and end are announced once;
+          the countdown itself is visible only (a per-second announcement is noise). */}
+      <p className="sr-only" role="status" aria-live="polite">{cooldown.note}</p>
+      {cooldown.left > 0 && (
+        <p className="mx-auto max-w-5xl px-4 pb-1 text-xs text-muted-foreground" aria-hidden="true" data-testid="send-cooldown">
+          You can send again in {cooldown.left} second{cooldown.left === 1 ? '' : 's'}.
+        </p>
+      )}
       {/* Inline compose — always in document flow for layout; invisible when pinned */}
       {phase && (
         <div ref={composeAnchorRef} inert={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
@@ -492,7 +518,8 @@ export default function LessonChat() {
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
             disabled={impersonating}
-            sendDisabled={busy}
+            sendDisabled={sendBlocked}
+            sendDisabledHint={!busy && cooldown.left > 0 ? 'Send when plato is ready again' : undefined}
             allowImages
             allowLinks
             text={composeText}
@@ -512,7 +539,8 @@ export default function LessonChat() {
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
             disabled={impersonating}
-            sendDisabled={busy}
+            sendDisabled={sendBlocked}
+            sendDisabledHint={!busy && cooldown.left > 0 ? 'Send when plato is ready again' : undefined}
             allowImages
             allowLinks
             elevated

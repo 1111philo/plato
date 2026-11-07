@@ -196,3 +196,25 @@ test('moving to another lesson never shows the previous lesson’s chat', async 
   await expect(page.getByText(oldText, { exact: false })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 1, name: 'What plato does behind the scenes' }).first()).toBeVisible();
 });
+
+// #451 scale review H3: when the AI service is busy, Send waits out the
+// server's retryAfter with a visible countdown, and the message comes back.
+test('a busy AI service holds Send with a countdown and gives the message back', async ({ page }) => {
+  test.setTimeout(60_000);
+  await login(page, LEARNER);
+  await page.goto('/lessons/getting-started-sharing');
+  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+  await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+  await composer.fill('MOCK_THROTTLE my answer');
+  await composer.press(`${MOD}+Enter`);
+  // One quiet retry first (up to ~7.5 s), then the typed error.
+  await expect(page.getByRole('alert').filter({ hasText: 'plato is busy right now' })).toBeVisible({ timeout: 20_000 });
+  await expect(composer).toHaveValue('MOCK_THROTTLE my answer');
+  await expect(page.getByTestId('send-cooldown')).toContainText(/You can send again in \d+ seconds?/);
+  await expect(page.getByRole('status').filter({ hasText: /plato is busy\. You can send again in \d+ seconds\./ })).toBeAttached();
+  await expect(page.getByRole('button', { name: 'Send' }).last()).toBeDisabled();
+  await expect(composer).toHaveAccessibleDescription('Send when plato is ready again');
+  await expectAccessible(page, { label: 'chat with send cooldown' });
+  await expect(page.getByTestId('send-cooldown')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByRole('status').filter({ hasText: 'You can send again.' })).toBeAttached();
+});

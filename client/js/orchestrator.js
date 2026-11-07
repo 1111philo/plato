@@ -3,7 +3,7 @@
  * parses structured JSON responses.
  */
 
-import { parseSSEStream, parseResponse, LLM, ApiError } from './api.js';
+import { parseSSEStream, parseResponse, LLM, ApiError, backoffMs, isRetryable } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
@@ -104,15 +104,16 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
     return parseResponse(resp);
   };
 
+  // Busy, rate-limited, timed out, or a 5xx: wait (the server's retryAfterMs,
+  // else exponential) with jitter, so a cohort that failed together doesn't
+  // retry together.
   const RETRIES = 2;
-  const DELAYS = [3000, 6000];
   let lastError;
   for (let i = 0; i <= RETRIES; i++) {
     try { return await attempt(); } catch (e) {
       lastError = e;
-      const isRetryable = e.type === 'overloaded' || (e.type === 'api' && e.status === 500);
-      if (!isRetryable || i === RETRIES) throw e;
-      await new Promise(r => setTimeout(r, DELAYS[i]));
+      if (!isRetryable(e) || i === RETRIES) throw e;
+      await new Promise(r => setTimeout(r, backoffMs(i, e.retryAfterMs)));
     }
   }
   throw lastError;
@@ -153,11 +154,21 @@ async function buildSystemPrompt(promptName, addendum = '') {
 export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
   const systemPrompt = await buildSystemPrompt(promptName);
 
-  const resp = await authenticatedFetch('/v1/ai/messages', {
+  const send = () => authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: LLM, max_tokens: maxTokens, system: systemPrompt, messages, stream: true }),
   });
+  let resp = await send();
+  // Busy before anything streamed (the server waits for the first chunk
+  // before answering): one jittered retry, then the typed error.
+  if (resp.status === 429 || resp.status === 503) {
+    const body = await resp.clone().json().catch(() => ({}));
+    if (body?.code !== 'rate_limited') {
+      await new Promise((r) => setTimeout(r, backoffMs(0, Number(body?.retryAfterMs) || undefined)));
+      resp = await send();
+    }
+  }
   const contentType = resp.headers.get('content-type') || '';
   if (resp.ok && contentType.includes('text/event-stream')) {
     let full = '';

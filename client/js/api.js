@@ -8,12 +8,40 @@
 export const LLM = 'qwen3-vl-235b';
 
 export class ApiError extends Error {
-  constructor(type, message, status) {
+  constructor(type, message, status, retryAfterMs) {
     super(message);
     this.name = 'ApiError';
-    this.type = type;   // 'invalid_key' | 'rate_limit' | 'network' | 'parse' | 'api'
+    // 'invalid_key' | 'rate_limit' | 'overloaded' | 'timeout' | 'network' | 'parse' | 'truncated' | 'api'
+    this.type = type;
     this.status = status;
+    // When the server says how long to wait (busy / rate-limited), in ms.
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+/** True for errors worth waiting out and trying again: busy, rate-limited, timed out, or a 5xx. */
+export function isRetryable(e) {
+  return e?.type === 'rate_limit' || e?.type === 'overloaded' || e?.type === 'timeout' || (e?.type === 'api' && e?.status >= 500);
+}
+
+/**
+ * Wait before retry number `attempt` (0 = first retry): the server's
+ * `retryAfterMs` if it gave one, else exponential from `baseMs`, with
+ * jitter so many clients that failed together don't retry together.
+ */
+export function backoffMs(attempt, retryAfterMs, { baseMs = 2000, rand = Math.random } = {}) {
+  const wait = Math.max(retryAfterMs || 0, baseMs * 2 ** attempt);
+  return Math.round(wait * (1 + 0.5 * rand()));
+}
+
+// The server's typed AI errors (server/src/lib/ai-limits.js).
+const TYPE_FOR_CODE = { throttled: 'rate_limit', rate_limited: 'rate_limit', overloaded: 'overloaded', timeout: 'timeout' };
+function aiErrorMessage(type, retryAfterMs) {
+  const secs = retryAfterMs ? Math.max(1, Math.ceil(retryAfterMs / 1000)) : null;
+  if (type === 'rate_limit') return secs ? `plato is busy right now. Try again in ${secs} second${secs === 1 ? '' : 's'}.` : 'plato is busy right now. Try again in a moment.';
+  if (type === 'overloaded') return 'The AI service is having trouble. Try again in a moment.';
+  if (type === 'timeout') return 'The reply took too long. Please try again.';
+  return null;
 }
 
 /**
@@ -26,10 +54,11 @@ export async function parseResponse(resp) {
     let body;
     try { body = await resp.json(); } catch { body = {}; }
     const msg = body?.error?.message || body?.error || `API returned ${status}`;
+    const retryAfterMs = Number(body?.retryAfterMs) || (Number(resp.headers?.get?.('retry-after')) * 1000) || undefined;
 
     if (status === 401) throw new ApiError('invalid_key', 'Session expired. Please sign in again.', status);
-    if (status === 429) throw new ApiError('rate_limit', 'Rate limited. Try again in a moment.', status);
-    if (status === 503 || status === 529) throw new ApiError('overloaded', 'API is temporarily overloaded. Retrying...', status);
+    const type = TYPE_FOR_CODE[body?.code] || (status === 429 ? 'rate_limit' : status === 503 || status === 529 ? 'overloaded' : status === 504 ? 'timeout' : null);
+    if (type) throw new ApiError(type, aiErrorMessage(type, retryAfterMs), status, retryAfterMs);
     if (status === 500) throw new ApiError('api', 'Internal server error. This may be a temporary issue.', status);
     throw new ApiError('api', msg, status);
   }
@@ -92,7 +121,9 @@ export async function* parseSSEStream(body, onDone, { failOnTruncation = false }
         try { event = JSON.parse(data); } catch { continue; }
 
         if (event.type === 'error') {
-          throw new ApiError('api', 'The response failed partway through. Please try again.');
+          const type = TYPE_FOR_CODE[event.error?.code];
+          const retryAfterMs = Number(event.error?.retryAfterMs) || undefined;
+          throw new ApiError(type || 'api', (type && aiErrorMessage(type, retryAfterMs)) || 'The response failed partway through. Please try again.', undefined, retryAfterMs);
         }
         if (event.type === 'message_delta' && event.delta?.stop_reason === 'max_tokens') truncated = true;
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
