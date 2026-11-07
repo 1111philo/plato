@@ -7,6 +7,18 @@
 //
 // This module is the single place that validates definitions and values; the
 // routes (me.js, admin.js, auth.js) only call into it.
+//
+// Visibility (two optional flags on a definition):
+// - `hideFromLearner`: admins only. Not in the learner's Settings, the
+//   required-fields prompt, signup, `/v1/me`, or their invite. A learner can't
+//   set or clear it, and it can't be required of them (`required` is forced off).
+// - `hideFromApi`: not listed by the public `GET /v1/user-fields` (what the
+//   signup and wait-list forms render) and not accepted from `POST /v1/waitlist`
+//   or signup. Learners still see it in Settings unless it's also hidden from them.
+// Admins see and edit every field. Hiding never deletes stored values.
+// `learnerFields` / `publicFields` give each audience its list; routes pass that
+// list as `editable` to mergeFieldValues, so stored values of hidden fields are
+// kept, never dropped.
 
 import { randomBytes } from 'node:crypto';
 
@@ -40,7 +52,11 @@ export function validateFieldDefinition(input, existing = null) {
   const type = input.type ?? existing?.type;
   if (!FIELD_TYPES.includes(type)) return { error: `Field type must be one of: ${FIELD_TYPES.join(', ')}` };
 
-  const field = { id: existing?.id || generateFieldId(), label, type, required: !!input.required };
+  const hideFromLearner = !!(input.hideFromLearner ?? existing?.hideFromLearner);
+  const hideFromApi = !!(input.hideFromApi ?? existing?.hideFromApi);
+  const field = { id: existing?.id || generateFieldId(), label, type, required: !!input.required && !hideFromLearner };
+  if (hideFromLearner) field.hideFromLearner = true;
+  if (hideFromApi) field.hideFromApi = true;
 
   if (type === 'dropdown') {
     const raw = Array.isArray(input.options) ? input.options : [];
@@ -94,17 +110,20 @@ export function validateValue(def, value) {
  * Returns `{ values }` (the full merged object, pruned of ids that no longer
  * have a definition) or `{ error }`.
  */
-export function mergeFieldValues(defs, current, patch, { enforceRequired = false } = {}) {
+export function mergeFieldValues(defs, current, patch, { enforceRequired = false, editable = null } = {}) {
   if (patch == null) patch = {};
   if (typeof patch !== 'object' || Array.isArray(patch)) return { error: 'customFields must be an object' };
   const byId = new Map(defs.map((d) => [d.id, d]));
+  // `editable`: the fields this caller may set (default: all). Others in the
+  // patch are ignored, and their stored values are kept as they are.
+  const canEdit = editable ? new Set(editable.map((d) => d.id)) : null;
   const values = {};
   for (const [id, v] of Object.entries(current || {})) {
     if (byId.has(id)) values[id] = v;
   }
   for (const [id, raw] of Object.entries(patch)) {
     const def = byId.get(id);
-    if (!def) continue;
+    if (!def || (canEdit && !canEdit.has(id))) continue;
     const value = raw == null ? '' : typeof raw === 'string' ? raw.trim() : null;
     if (value === null) return { error: `${def.label} must be a string` };
     if (value === '') {
@@ -116,7 +135,7 @@ export function mergeFieldValues(defs, current, patch, { enforceRequired = false
     values[id] = value;
   }
   if (enforceRequired) {
-    const missing = missingRequiredFields(defs, values);
+    const missing = missingRequiredFields(editable || defs, values);
     if (missing.length) return { error: requiredError(defs, missing) };
   }
   return { values };
@@ -143,6 +162,16 @@ export function missingRequiredFields(defs, values) {
       return false;
     })
     .map((d) => d.id);
+}
+
+/** Fields a learner sees and can edit (Settings, the required-fields prompt, signup). */
+export function learnerFields(defs) {
+  return defs.filter((d) => !d.hideFromLearner);
+}
+
+/** Fields the public forms render and accept (signup, the wait-list form and API). */
+export function publicFields(defs) {
+  return defs.filter((d) => !d.hideFromLearner && !d.hideFromApi);
 }
 
 /** Only the values that still have a definition — what API responses expose. */

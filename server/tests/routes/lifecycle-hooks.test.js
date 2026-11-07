@@ -52,7 +52,7 @@ describe('userCreated hook fires on signup', () => {
     assert.equal(res.status, 201);
     assert.equal(seen.length, 1, 'expected userCreated to fire once');
     assert.equal(seen[0].email, 'newuser@example.com');
-    assert.equal(seen[0].role, 'user');
+    assert.equal(seen[0].role, 'learner', "normalized: new signups and legacy 'user' report learner (#435)");
     assert.ok(seen[0].userId, 'userId in payload');
   });
 
@@ -91,7 +91,7 @@ describe('userDeleted hook fires on self-delete', () => {
     assert.equal(seen.length, 1);
     assert.equal(seen[0].userId, 'usr_self');
     assert.equal(seen[0].email, 'self@example.com');
-    assert.equal(seen[0].role, 'user');
+    assert.equal(seen[0].role, 'learner', "normalized: new signups and legacy 'user' report learner (#435)");
   });
 });
 

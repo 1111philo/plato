@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { can, normalizeRole } from '../../lib/permissions.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Card, CardContent } from '@/components/ui/card';
@@ -247,6 +249,9 @@ export default function AdminHome() {
   const [activeCount, setActiveCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [hasKB, setHasKB] = useState(true);
+  const { user } = useAuth();
+  // Educators can't read the KB (Customizer is admin/tester only, #435).
+  const canSeeKB = can(user, 'kb.read');
   const [lessonStats, setLessonStats] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshAnnounce, setRefreshAnnounce] = useState('');
@@ -261,15 +266,17 @@ export default function AdminHome() {
     Promise.all([
       adminApi('GET', '/v1/admin/users'),
       adminApi('GET', '/v1/admin/invites'),
-      adminApi('GET', '/v1/admin/knowledge-base'),
+      // Optional: an Educator's 403 here must not blank the whole dashboard.
+      canSeeKB ? adminApi('GET', '/v1/admin/knowledge-base').catch(() => null) : Promise.resolve(null),
       loadStats(),
     ]).then(([users, invites, kb, stats]) => {
-      setActiveCount(Array.isArray(users) ? users.length : 0);
+      // Matches the Users page "Active" filter: learners only, not staff.
+      setActiveCount(Array.isArray(users) ? users.filter((u) => normalizeRole(u.role) === 'learner').length : 0);
       setPendingCount(Array.isArray(invites) ? invites.filter(i => i.status === 'pending').length : 0);
-      setHasKB(!!kb?.content);
+      setHasKB(!canSeeKB || !!kb?.content);
       setLessonStats(stats);
     }).catch(() => {});
-  }, [loadStats]);
+  }, [loadStats, canSeeKB]);
 
   // Re-render the "Last updated" string every 30s so it stays accurate without
   // a refetch.
@@ -298,9 +305,10 @@ export default function AdminHome() {
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4 mb-1">
+      {/* Wraps on narrow screens (reflow at 320 px). */}
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 mb-1">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex flex-wrap items-center gap-3">
           {lastUpdated && (
             <span className="text-xs text-muted-foreground" aria-label={`Stats last updated ${lastUpdated}`}>
               Last updated {lastUpdated}

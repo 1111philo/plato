@@ -110,3 +110,42 @@ describe('user-fields: values', () => {
     assert.deepEqual(visibleFieldValues(DEFS, null), {});
   });
 });
+
+// Visibility flags (Blake, launch): admin-only fields and fields kept off the
+// public forms and the wait-list API.
+describe('user-fields: visibility', async () => {
+  const { learnerFields, publicFields } = await import('../../src/lib/user-fields.js');
+  const VIS = [
+    { id: 'fld_org', label: 'Organization', type: 'text', required: true },
+    { id: 'fld_note', label: 'Admin note', type: 'text', required: false, hideFromLearner: true },
+    { id: 'fld_cohort', label: 'Cohort code', type: 'text', required: false, hideFromApi: true },
+  ];
+
+  it('saves the flags, and a field hidden from learners can’t be required', () => {
+    const { field } = validateFieldDefinition({ label: 'Note', type: 'text', required: true, hideFromLearner: true });
+    assert.deepEqual([field.required, field.hideFromLearner, field.hideFromApi], [false, true, undefined]);
+    const api = validateFieldDefinition({ label: 'Code', type: 'text', hideFromApi: true }).field;
+    assert.equal(api.hideFromApi, true);
+    // An edit that leaves the flags out keeps them.
+    assert.equal(validateFieldDefinition({ label: 'Note 2', type: 'text' }, field).field.hideFromLearner, true);
+    // Explicitly turning one off works.
+    assert.equal(validateFieldDefinition({ label: 'Note 2', type: 'text', hideFromLearner: false }, field).field.hideFromLearner, undefined);
+  });
+
+  it('learners see all but admin-only fields; public forms see neither hidden kind', () => {
+    assert.deepEqual(learnerFields(VIS).map((d) => d.id), ['fld_org', 'fld_cohort']);
+    assert.deepEqual(publicFields(VIS).map((d) => d.id), ['fld_org']);
+  });
+
+  it('editable: hidden fields in the patch are ignored and their stored values kept', () => {
+    const current = { fld_org: 'UIC', fld_note: 'VIP', fld_cohort: 'C7' };
+    const r = mergeFieldValues(VIS, current, { fld_org: 'Loyola', fld_note: 'hacked', fld_cohort: '' }, { editable: publicFields(VIS), enforceRequired: true });
+    assert.deepEqual(r.values, { fld_org: 'Loyola', fld_note: 'VIP', fld_cohort: 'C7' });
+  });
+
+  it('required is checked only among the editable fields', () => {
+    const defs = [...VIS, { id: 'fld_x', label: 'X', type: 'text', required: true, hideFromApi: true }];
+    assert.equal(mergeFieldValues(defs, {}, { fld_org: 'UIC' }, { editable: publicFields(defs), enforceRequired: true }).error, undefined);
+    assert.match(mergeFieldValues(defs, {}, { fld_org: 'UIC' }, { editable: learnerFields(defs), enforceRequired: true }).error, /X is required/);
+  });
+});

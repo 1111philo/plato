@@ -2,9 +2,9 @@
   "$schema": "../../docs/plugins/plugin.schema.json",
   "id": "slack",
   "name": "Slack",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "apiVersion": "1.x",
-  "description": "Invite users to plato via Slack DMs. Connects with a Bot User OAuth Token.",
+  "description": "Invite users to plato via Slack DMs, and add new accounts to a Slack channel. Connects with a Bot User OAuth Token.",
   "author": "plato core",
   "license": "AGPL-3.0-or-later",
   "homepage": "https://github.com/1111philo/plato",
@@ -13,13 +13,17 @@
     "server.routes",
     "settings.read",
     "settings.write",
-    "ui.slot.adminSettingsPanel"
+    "ui.slot.adminSettingsPanel",
+    "hook.userCreated"
   ],
   "extensionPoints": {
     "serverRoutes": "server/index.js#default",
     "slots": {
       "adminSettingsPanel": "client/SlackSettingsPanel.jsx"
-    }
+    },
+    "hooks": [
+      "userCreated"
+    ]
   },
   "settingsSchema": {
     "type": "object",
@@ -37,6 +41,19 @@
         "type": "boolean",
         "default": false,
         "description": "True once a successful auth.test has occurred."
+      },
+      "autoInviteEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "Add each new plato account to a Slack channel, if the person is already in the workspace."
+      },
+      "autoInviteChannelId": {
+        "type": "string",
+        "description": "Channel id for auto-invite."
+      },
+      "autoInviteChannelName": {
+        "type": "string",
+        "description": "Channel name, for display."
       }
     }
   }

@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useStreamedText } from '../hooks/useStreamedText.js';
 import { useTitleNotification } from '../hooks/useTitleNotification.js';
 import { LESSON_PHASES, MSG_TYPES } from '../lib/constants.js';
 import { launchConfetti } from '../lib/confetti.js';
@@ -19,13 +18,13 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
+import AgentActivity from '../components/chat/AgentActivity.jsx';
+import LessonOverview from '../components/chat/LessonOverview.jsx';
+import { progressLabel } from '../lib/lessonWork.js';
+import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-  DialogDescription, DialogFooter,
-} from '@/components/ui/dialog';
 
 export default function LessonChat() {
   const { lessonGroupId } = useParams();
@@ -55,9 +54,11 @@ export default function LessonChat() {
   const [loadingStep, setLoadingStep] = useState('initializing');
   const [loadingEnrichments, setLoadingEnrichments] = useState([]);
   const [error, setError] = useState('');
+  // After a busy / rate-limited reply: Send waits out the server's retryAfter,
+  // with a visible countdown; the start and end are announced (#451 scale review).
+  const [cooldown, setCooldown] = useState({ until: 0, left: 0, note: '' });
 
   const [streamingText, setStreamingText] = useState(null);
-  const displayText = useStreamedText(streamingText);
   const pendingAfterStreamRef = useRef(null);
   const [srAnnouncement, setSrAnnouncement] = useState('');
   const srClearTimeoutRef = useRef(null);
@@ -69,8 +70,9 @@ export default function LessonChat() {
 
   // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
-  const [showObjectives, setShowObjectives] = useState(false);
-  const objectivesTitleRef = useRef(null);
+  // The lesson overview (#438); `?view=overview` opens it (from the lessons
+  // page; `?view=work` is the old name).
+  const [showOverview, setShowOverview] = useState(() => ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')));
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
@@ -102,7 +104,7 @@ export default function LessonChat() {
   }, []);
 
   useEffect(() => {
-    if (displayText === null && pendingAfterStreamRef.current) {
+    if (streamingText === null && pendingAfterStreamRef.current) {
       const { msgs, p, confetti } = pendingAfterStreamRef.current;
       pendingAfterStreamRef.current = null;
       if (msgs) {
@@ -143,29 +145,21 @@ export default function LessonChat() {
       }
       setLoading('');
     }
-  }, [displayText]);
+  }, [streamingText]);
+
+  useEffect(() => {
+    if (!cooldown.until) return undefined;
+    const id = setInterval(() => {
+      const left = Math.max(0, Math.ceil((cooldown.until - Date.now()) / 1000));
+      setCooldown((c) => (left > 0 ? { ...c, left } : { until: 0, left: 0, note: 'You can send again.' }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldown.until]);
 
   useEffect(() => () => {
     if (srClearTimeoutRef.current) clearTimeout(srClearTimeoutRef.current);
     if (srRafRef.current) cancelAnimationFrame(srRafRef.current);
   }, []);
-
-  // Move focus to the Objectives dialog title when it opens so screen
-  // readers announce the dialog's purpose instead of landing on the close
-  // button. Two nested RAFs are required: Base UI runs its own focus
-  // management on open (focusing the close button) which may itself use a
-  // single RAF, so one RAF is not enough to reliably win.
-  useEffect(() => {
-    if (!showObjectives) return;
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      if (cancelled) return;
-      requestAnimationFrame(() => {
-        if (!cancelled) objectivesTitleRef.current?.focus();
-      });
-    });
-    return () => { cancelled = true; cancelAnimationFrame(id); };
-  }, [showObjectives]);
 
   useEffect(() => {
     const lesson = lessonRef.current;
@@ -244,39 +238,43 @@ export default function LessonChat() {
       );
       const assistantMsg = result.messages.find(m => m.role === 'assistant');
       pendingAfterStreamRef.current = { msgs: assistantMsg ? [assistantMsg] : [], p: result.phase, confetti: result.achieved };
+      if (result.saveFailed === 'too_long') setError('This conversation is too long to save any more of it. Your progress is still saved; copy anything you need from new replies.');
+      else if (result.saveFailed) setError('This reply couldn’t be saved, so it may be missing after you reload. Copy anything you need from it.');
       setStreamingText(null);
-
-      const freshKB = await getLessonKB(lessonGroupId);
-      setLessonKB(freshKB);
     } catch (e) {
       setError(e.message || 'Failed to send.');
       setStreamingText(null);
       setLoading('');
+      if (e.type === 'rate_limit' || e.type === 'overloaded') {
+        const ms = Math.min(60_000, e.retryAfterMs || 10_000);
+        const left = Math.ceil(ms / 1000);
+        setCooldown({ until: Date.now() + ms, left, note: `plato is busy. You can send again in ${left} seconds.` });
+      }
+      // Nothing was saved (the user message is written with the reply), so
+      // take the optimistic copy back out and return the message to the
+      // composer to try again, ahead of anything typed meanwhile.
+      setMessages((prev) => prev.slice(0, -1));
+      setComposeText((cur) => [text || '', cur].filter((t) => t.trim()).join('\n\n'));
+      if (Array.isArray(imageDataUrls) && imageDataUrls.length) {
+        setComposeImages((cur) => [...imageDataUrls.map((dataUrl, i) => ({ dataUrl, name: `image-${i + 1}.png` })), ...cur].slice(0, 4));
+      }
+      if (Array.isArray(links) && links.length) {
+        setComposeLinks((cur) => [...links, ...cur.filter((l) => !links.some((m) => m.url === l.url))].slice(0, 3)); // ComposeBar's caps
+      }
+      return;
     }
+    // Outside the try: the turn is saved, so a failed refresh must not hand
+    // the message back (that would invite sending it twice).
+    try {
+      setLessonKB(await getLessonKB(lessonGroupId));
+    } catch { /* the next turn refreshes it */ }
   }, [lessonGroupId, lesson]);
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
-  // Find the next lesson in the same course
-  const nextLesson = (() => {
-    if (!lesson || !lessons.length) return null;
-    if (!lesson.course?.id) return null; // No next lesson for uncategorized lessons
-
-    // Get lessons in the same course, sorted by name
-    const sameCourse = lessons
-      .filter(l => l.course?.id === lesson.course?.id)
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-
-    // Find current lesson index in the sorted list
-    const currentIndex = sameCourse.findIndex(l => l.lessonId === lessonGroupId);
-
-    // Return next lesson in the course (if any)
-    if (currentIndex >= 0 && currentIndex < sameCourse.length - 1) {
-      return sameCourse[currentIndex + 1];
-    }
-
-    return null;
-  })();
+  // The next lesson in the admin-defined order: the rest of this unit, then
+  // the next unit of the same course (#408).
+  const nextLesson = lesson ? nextLessonAfter(lessons, lessonGroupId) : null;
 
   const handleExport = useCallback(async () => {
     const markdown = await getUserLessonMarkdown(lessonGroupId);
@@ -316,7 +314,10 @@ export default function LessonChat() {
 
   if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
+  // The header button opening the lesson overview: "Progress (N of M Objectives)".
+  const metLabel = progressLabel(lessonKB, lesson.learningObjectives);
   const busy = !!loading;
+  const sendBlocked = busy || cooldown.left > 0;
   const composePlaceholder = phase === LESSON_PHASES.COMPLETED
     ? 'Share feedback about this lesson...'
     : 'Chat with your coach...';
@@ -324,7 +325,12 @@ export default function LessonChat() {
   const renderMessage = (msg, idx) => {
     switch (msg.msgType) {
       case MSG_TYPES.GUIDE:
-        return <AssistantMessage key={idx} content={msg.content} />;
+        return (
+          <div key={idx}>
+            <AgentActivity agents={msg.metadata?.agents} />
+            <AssistantMessage content={msg.content} />
+          </div>
+        );
       case MSG_TYPES.USER:
         return (
           <div key={idx}>
@@ -387,15 +393,16 @@ export default function LessonChat() {
               &larr;
             </Button>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
                 <button
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                  onClick={() => setShowObjectives(true)}
-                  aria-expanded={showObjectives}
-                  aria-controls="lesson-objectives-dialog"
+                  onClick={() => setShowOverview(true)}
+                  aria-label={`${metLabel}: lesson overview`}
+                  aria-expanded={showOverview}
+                  aria-controls="lesson-overview-dialog"
                 >
-                  Lesson Overview ({lesson.learningObjectives.length} Objectives)
+                  {metLabel}
                 </button>
               </div>
               <ProgressBar lessonKB={lessonKB} />
@@ -426,16 +433,16 @@ export default function LessonChat() {
             &larr;
           </Button>
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-2">
-              <h1 className="text-sm font-semibold truncate">{lesson.name}</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
               <button
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                onClick={() => setShowObjectives(true)}
-                aria-label={`View ${lesson.learningObjectives.length} objectives`}
-                aria-expanded={showObjectives}
-                aria-controls="lesson-objectives-dialog"
+                onClick={() => setShowOverview(true)}
+                aria-label={`${metLabel}: lesson overview`}
+                aria-expanded={showOverview}
+                aria-controls="lesson-overview-dialog"
               >
-                Lesson Overview ({lesson.learningObjectives.length} Objectives)
+                {metLabel}
               </button>
             </div>
             <ProgressBar lessonKB={lessonKB} />
@@ -459,16 +466,16 @@ export default function LessonChat() {
       </div>
 
       <div className="flex-1">
-      {loading === 'starting' && !displayText ? (
+      {loading === 'starting' && !streamingText ? (
         <LessonLoadingView step={loadingStep} enrichments={loadingEnrichments} />
       ) : (
         <ChatArea ref={chatAreaRef} announcement={srAnnouncement}>
           {messages.map(renderMessage)}
-          {displayText != null && displayText.length > 0 && (
-            <AssistantMessage content={displayText} streaming />
+          {streamingText != null && streamingText.length > 0 && (
+            <AssistantMessage content={streamingText} streaming />
           )}
-          {loading === 'qa' && !displayText && <ThinkingSpinner />}
-          {error && <div className="px-3 py-2 text-sm text-destructive" role="alert">{error}</div>}
+          {loading === 'qa' && !streamingText && <ThinkingSpinner />}
+          {error && <div className="px-3 py-2 text-sm text-red-800 dark:text-destructive" role="alert">{error}</div>}
           {phase === LESSON_PHASES.COMPLETED && (
             <div className="flex flex-col items-center gap-3 mt-8 mb-4 px-4">
               {nextLesson ? (
@@ -496,13 +503,23 @@ export default function LessonChat() {
       )}
       </div>
 
+      {/* Send cooldown after a busy reply: the start and end are announced once;
+          the countdown itself is visible only (a per-second announcement is noise). */}
+      <p className="sr-only" role="status" aria-live="polite">{cooldown.note}</p>
+      {cooldown.left > 0 && (
+        <p className="mx-auto max-w-5xl px-4 pb-1 text-xs text-muted-foreground" aria-hidden="true" data-testid="send-cooldown">
+          You can send again in {cooldown.left} second{cooldown.left === 1 ? '' : 's'}.
+        </p>
+      )}
       {/* Inline compose — always in document flow for layout; invisible when pinned */}
       {phase && (
         <div ref={composeAnchorRef} inert={composePinned || undefined} className={composePinned ? 'invisible' : ''}>
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={sendBlocked}
+            sendDisabledHint={!busy && cooldown.left > 0 ? 'Send when plato is ready again' : undefined}
             allowImages
             allowLinks
             text={composeText}
@@ -521,7 +538,9 @@ export default function LessonChat() {
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
-            disabled={busy || impersonating}
+            disabled={impersonating}
+            sendDisabled={sendBlocked}
+            sendDisabledHint={!busy && cooldown.left > 0 ? 'Send when plato is ready again' : undefined}
             allowImages
             allowLinks
             elevated
@@ -535,90 +554,8 @@ export default function LessonChat() {
         </div>
       )}
 
-      {/* Objectives dialog */}
-      <Dialog open={showObjectives} onOpenChange={setShowObjectives}>
-        <DialogContent id="lesson-objectives-dialog" className="max-h-[85vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle ref={objectivesTitleRef} tabIndex={-1}>{lesson.name}</DialogTitle>
-            {lesson.description && <DialogDescription>{lesson.description}</DialogDescription>}
-          </DialogHeader>
-          <div className="overflow-y-auto flex-1 space-y-4 pr-2">
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Exemplar</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium">Learning Objectives</h3>
-            <ul className="list-disc pl-5 text-sm text-muted-foreground leading-relaxed space-y-1">
-              {lesson.learningObjectives.map((obj, i) => (
-                <li key={i}>{obj}</li>
-              ))}
-            </ul>
-          </div>
-          {lessonKB?.enrichments && lessonKB.enrichments.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">Additional Context</h3>
-              <p className="text-xs text-muted-foreground">
-                Reference material gathered for this lesson from enabled plugins
-              </p>
-              {lessonKB.enrichments.map((enrichment, idx) => (
-                <section
-                  key={idx}
-                  className="border border-blue-200 bg-blue-50 rounded p-3 space-y-2"
-                  aria-labelledby={`enrichment-${idx}-label`}
-                >
-                  <h4
-                    id={`enrichment-${idx}-label`}
-                    className="text-sm font-medium text-blue-900"
-                  >
-                    {enrichment.label || enrichment.pluginId}
-                  </h4>
-                  {enrichment.reasoning && (
-                    <div role="note">
-                      <p className="sr-only">Why this context matters:</p>
-                      <p className="text-xs text-blue-700">
-                        {enrichment.reasoning}
-                      </p>
-                    </div>
-                  )}
-                  {enrichment.context && (
-                    <div>
-                      <p className="sr-only">Context:</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {enrichment.context}
-                      </p>
-                    </div>
-                  )}
-                  {enrichment.sources && enrichment.sources.length > 0 && (
-                    <nav aria-label={`Sources from ${enrichment.label || enrichment.pluginId}`}>
-                      <div className="text-xs font-medium text-blue-800 mb-1">Sources:</div>
-                      <ul className="text-xs space-y-1">
-                        {enrichment.sources.map((source, sidx) => (
-                          <li key={sidx}>
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1 rounded"
-                              aria-label={`${source.title || source.url} (opens in new tab)`}
-                            >
-                              {source.title || source.url}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </nav>
-                  )}
-                </section>
-              ))}
-            </div>
-          )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowObjectives(false)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+
 
       {confirmModal && (
         <ConfirmModal

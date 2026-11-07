@@ -1,7 +1,15 @@
+/** True when the learner's system asks for reduced motion. */
+export function prefersReducedMotion(win = typeof window !== 'undefined' ? window : undefined) {
+  return !!win?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
 /**
  * Confetti burst — fires when the learner achieves the lesson exemplar.
+ * Skipped under prefers-reduced-motion; completion is still announced in
+ * the chat. Returns whether it ran.
  */
 export function launchConfetti() {
+  if (prefersReducedMotion()) return false;
   const colors = ['#fcd34d', '#60a5fa', '#f472b6', '#34d399', '#a78bfa'];
   const count = 60;
   const container = document.getElementById('main-content') || document.body;
@@ -19,4 +27,5 @@ export function launchConfetti() {
     container.appendChild(el);
     el.addEventListener('animationend', () => el.remove());
   }
+  return true;
 }

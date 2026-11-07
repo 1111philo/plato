@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, dirname, extname } from 'path';
 import { fileURLToPath } from 'url';
+import { sortGroups } from '../lib/groups.js';
+import { systemItem } from '../lib/system-cache.js';
 
 const app = new Hono();
 
@@ -59,18 +61,17 @@ app.get('/assets/*', (c) => {
 // ── API endpoints (public, no auth) ──
 
 app.get('/v1/groups', async (c) => {
-  const db = (await import('../lib/db.js')).default;
-  const item = await db.getSyncData('_system', 'settings');
-  return c.json({ userGroups: item?.data?.userGroups || [] });
+  const item = await systemItem('settings');
+  return c.json({ userGroups: sortGroups(item?.data?.userGroups || []) });
 });
 
-// Custom user field definitions (#364) — public so the signup form can render
-// them. Definitions only (labels/types/options); values are never exposed here.
+// Custom user field definitions (#364) — public so the signup and wait-list
+// forms can render them. Definitions only (labels/types/options); values are
+// never exposed here. Fields hidden from learners or from the API aren't listed.
 app.get('/v1/user-fields', async (c) => {
-  const db = (await import('../lib/db.js')).default;
-  const { getFieldDefinitions } = await import('../lib/user-fields.js');
-  const item = await db.getSyncData('_system', 'settings');
-  return c.json({ userFields: getFieldDefinitions(item?.data) });
+  const { getFieldDefinitions, publicFields } = await import('../lib/user-fields.js');
+  const item = await systemItem('settings');
+  return c.json({ userFields: publicFields(getFieldDefinitions(item?.data)) });
 });
 
 app.get('/v1/invite-example.csv', (c) => {

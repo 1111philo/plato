@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react';
-import { useApp } from '../contexts/AppContext.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
   savePreferences,
-  getLearnerProfileSummary,
+  getLearnerProfileSummary, getLearnerProfile,
   saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
-import { updateProfile, getMyFields } from '../../js/auth.js';
+import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
+import { useApp } from '../contexts/AppContext.jsx';
+import { SEND_KEYS, sendKeyOf, isMacLike } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
+import NameFields from '../components/NameFields.jsx';
 import * as orchestrator from '../../js/orchestrator.js';
-import { syncInBackground } from '../lib/syncDebounce.js';
-import { ensureProfileExists, mergeProfile } from '../lib/profileQueue.js';
+import { syncIfUnsaved } from '../lib/syncDebounce.js';
+import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,12 +27,34 @@ import {
 } from '@/components/ui/dialog';
 
 export default function Settings() {
-  const { state, dispatch } = useApp();
   const { user, refreshUser } = useAuth();
-  const [name, setName] = useState(user?.name || state.preferences?.name || '');
+  const [name, setName] = useState({ firstName: user?.firstName || '', lastName: user?.lastName || '' });
   const [username, setUsername] = useState(user?.username || '');
   const [profileSummary, setProfileSummary] = useState('');
+  const [learnerNotes, setLearnerNotes] = useState([]);
 
+  // Remove one of the learner's notes. The profile agent then revises the
+  // profile so it stops following that note (in the background).
+  async function removeNote(index) {
+    const profile = await ensureProfileExists();
+    const removed = profile.learnerNotes?.[index];
+    if (!removed) return;
+    const next = withoutLearnerNote(profile, index);
+    syncIfUnsaved(await saveLearnerProfile(next), 'profile');
+    setLearnerNotes(next.learnerNotes);
+    queueProfileUpdate(async () => {
+      const current = await ensureProfileExists();
+      const result = await orchestrator.updateProfileFromFeedback(current, removed.text, {
+        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
+      }, 'learner-removed');
+      if (result?.profile) {
+        syncIfUnsaved(await saveLearnerProfile(mergeProfile(current, result.profile)), 'profile');
+        if (result.summary) { syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary'); setProfileSummary(result.summary); }
+      }
+    });
+  }
+
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordFeedback, setPasswordFeedback] = useState('');
@@ -46,6 +70,7 @@ export default function Settings() {
   useEffect(() => {
     (async () => {
       setProfileSummary(await getLearnerProfileSummary());
+      setLearnerNotes((await getLearnerProfile())?.learnerNotes || []);
     })();
     getMyFields()
       .then((data) => {
@@ -94,14 +119,14 @@ export default function Settings() {
 
   const handleSaveName = async (e) => {
     e.preventDefault();
-    const trimmed = name.trim();
-    const prefs = { ...state.preferences, name: trimmed };
-    await savePreferences(prefs);
-    dispatch({ type: 'SET_PREFERENCES', preferences: prefs });
-    syncInBackground('preferences');
-
+    // Names live on the account (#402), not in preferences.
+    const next = { firstName: name.firstName.trim(), lastName: name.lastName.trim() };
+    if (!next.firstName) {
+      setNameFeedback('First name is required.');
+      return;
+    }
     try {
-      await updateProfile({ name: trimmed });
+      await updateProfile(next);
       await refreshUser();
       setNameFeedback('Saved!');
     } catch (err) {
@@ -112,6 +137,10 @@ export default function Settings() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
+    if (!currentPassword) {
+      setPasswordFeedback('Enter your current password.');
+      return;
+    }
     if (!newPassword || newPassword.length < 8) {
       setPasswordFeedback('Password must be at least 8 characters.');
       return;
@@ -123,10 +152,12 @@ export default function Settings() {
     setPasswordSubmitting(true);
     setPasswordFeedback('');
     try {
-      await updateProfile({ password: newPassword });
+      // Signs out every other device; this one stays signed in (lib/sessions.js).
+      await updateProfile({ password: newPassword, currentPassword });
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordFeedback('Password changed!');
+      setPasswordFeedback('Password changed. Other devices are signed out.');
     } catch (err) {
       setPasswordFeedback(err.message || 'Failed to change password');
     } finally {
@@ -163,17 +194,24 @@ export default function Settings() {
           <Separator />
 
           <form className="space-y-3" onSubmit={handleSaveName}>
-            <div className="space-y-1.5">
-              <Label htmlFor="account-name">Name</Label>
-              <Input id="account-name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
+            <NameFields idPrefix="account" value={name} onChange={setName} inferred={user?.nameSource === 'auto'} />
             <Button type="submit">Save</Button>
-            {nameFeedback && <p className="text-sm text-green-600" role="status" aria-live="polite">{nameFeedback}</p>}
+            {nameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{nameFeedback}</p>}
           </form>
 
           <Separator />
 
           <form className="space-y-3" onSubmit={handleChangePassword}>
+            <div className="space-y-1.5">
+              <Label htmlFor="current-password">Current Password</Label>
+              <PasswordField
+                id="current-password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={passwordSubmitting}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-password">New Password</Label>
               <PasswordField
@@ -229,6 +267,10 @@ export default function Settings() {
         </Card>
       )}
 
+      <ChatPreferences />
+
+      <EmailPreferences />
+
       <Card>
         <CardHeader>
           <CardTitle id="profile-heading">Learner Profile</CardTitle>
@@ -238,6 +280,20 @@ export default function Settings() {
           <div className="rounded-md bg-muted p-3 text-sm leading-relaxed" aria-labelledby="profile-heading">
             {profileSummary || <em className="text-muted-foreground">No profile yet. Complete an activity to build your profile.</em>}
           </div>
+          {learnerNotes.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">What you&rsquo;ve told plato</h3>
+              <p className="text-xs text-muted-foreground">Your profile always follows these, even as lessons update it.</p>
+              <ul className="space-y-2" aria-label="Your notes">
+                {learnerNotes.map((n, i) => (
+                  <li key={`${n.at}-${i}`} className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+                    <span className="flex-1 whitespace-pre-wrap">{n.text}</span>
+                    <Button variant="ghost" size="xs" aria-label={`Remove note: ${n.text.slice(0, 60)}`} onClick={() => removeNote(i)}>Remove</Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
             Add Feedback
           </Button>
@@ -249,6 +305,7 @@ export default function Settings() {
         onOpenChange={setFeedbackOpen}
         onDone={async () => {
           setProfileSummary(await getLearnerProfileSummary());
+          setLearnerNotes((await getLearnerProfile())?.learnerNotes || []);
         }}
       />
     </div>
@@ -263,15 +320,16 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     if (!text.trim()) return;
     setSubmitting(true);
     try {
-      const profile = await ensureProfileExists();
+      // Keep the learner's words verbatim first: later updates can't drop them.
+      const profile = withLearnerNote(await ensureProfileExists(), text);
+      syncIfUnsaved(await saveLearnerProfile(profile), 'profile');
       const result = await orchestrator.updateProfileFromFeedback(profile, text.trim(), {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
-      });
+      }, 'learner');
       if (result?.profile) {
         const merged = mergeProfile(profile, result.profile);
-        await saveLearnerProfile(merged);
-        if (result.summary) await saveLearnerProfileSummary(result.summary);
-        syncInBackground('profile', 'profileSummary');
+        syncIfUnsaved(await saveLearnerProfile(merged), 'profile');
+        if (result.summary) syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary');
       }
       onOpenChange(false);
       setText('');
@@ -279,6 +337,7 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     } catch (e) {
       console.error('[plato] Profile feedback failed:', e?.message || e);
       setSubmitting(false);
+      if (onDone) onDone(); // the note itself was saved; show it
     }
   };
 
@@ -310,5 +369,111 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// How messages are sent, in every chat (#247).
+// Saved to the preferences record as soon as an option changes.
+function ChatPreferences() {
+  const { state, dispatch } = useApp();
+  const [feedback, setFeedback] = useState('');
+  const prefs = state.preferences || {};
+  const sendKey = sendKeyOf(prefs);
+  const mod = isMacLike() ? '⌘' : 'Ctrl';
+
+  async function update(patch) {
+    const next = { ...prefs, ...patch };
+    dispatch({ type: 'SET_PREFERENCES', preferences: next });
+    try {
+      syncIfUnsaved(await savePreferences(next), 'preferences');
+      setFeedback('Saved.');
+    } catch {
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  const option = 'flex items-start gap-2 text-sm';
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Chat</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium mb-1">Send a message with</legend>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.MOD_ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.MOD_ENTER })} />
+            <span>{mod}+Enter <span className="text-muted-foreground">(Enter adds a new line)</span></span>
+          </label>
+          <label className={option}>
+            <input type="radio" name="send-key" className="mt-0.5 accent-primary" checked={sendKey === SEND_KEYS.ENTER}
+              onChange={() => update({ sendKey: SEND_KEYS.ENTER })} />
+            <span>Enter <span className="text-muted-foreground">(Shift+Enter adds a new line)</span></span>
+          </label>
+        </fieldset>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Which optional emails the learner gets (#400). Saved on change to the
+// server-only notify:state record through /v1/me/notifications. Checked
+// means "send it"; the server stores opt-outs.
+const EMAIL_KINDS = [
+  { key: 'nudge', label: 'Reminders to finish a lesson I started' },
+  { key: 'digest', label: 'A weekly summary of my progress and new lessons' },
+  { key: 'messages', label: 'Messages from my classroom' },
+];
+
+function EmailPreferences() {
+  const [optOut, setOptOut] = useState(null);
+  const [feedback, setFeedback] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    authenticatedFetch('/v1/me/notifications')
+      .then((r) => (r.ok ? r.json() : { optOut: {} }))
+      .then((d) => { if (!cancelled) setOptOut(d.optOut || {}); })
+      .catch(() => { if (!cancelled) setOptOut({}); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function update(key, receive) {
+    const before = optOut;
+    setOptOut({ ...optOut, [key]: !receive });
+    try {
+      const res = await authenticatedFetch('/v1/me/notifications', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ optOut: { [key]: !receive } }),
+      });
+      if (!res.ok) throw new Error();
+      setFeedback('Saved.');
+    } catch {
+      setOptOut(before);
+      setFeedback('Couldn’t save. Try again.');
+    }
+    setTimeout(() => setFeedback(''), 2000);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Email</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <fieldset className="space-y-2" disabled={!optOut}>
+          <legend className="text-sm font-medium mb-1">Email me</legend>
+          {EMAIL_KINDS.map((k) => (
+            <label key={k.key} className="flex items-start gap-2 text-sm">
+              <input type="checkbox" className="mt-0.5 accent-primary" checked={!optOut?.[k.key]} onChange={(e) => update(k.key, e.target.checked)} />
+              <span>{k.label}</span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
+      </CardContent>
+    </Card>
   );
 }

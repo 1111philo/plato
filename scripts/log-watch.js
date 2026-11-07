@@ -55,6 +55,9 @@ async function login(apiUrl) {
  */
 export function dataLossGroups(logs) {
   return (logs?.groups || []).filter((g) => {
+    // A record refused for size (#451 review M1) is lost learner work too.
+    // conversation_too_long: the client stopped sending a conversation past its budget.
+    if (g.code === 'sync_item_too_large' || g.code === 'conversation_too_long') return true;
     if (g.code !== 'unhandled_error') return false;
     const m = g.sample?.meta || {};
     const method = String(m.method || '').toUpperCase();
@@ -74,16 +77,20 @@ function ensureLabels() {
   }
 }
 
-function buildIssueBody(logs, hits, total) {
+export function buildIssueBody(logs, hits, total) {
   const lines = hits.map((g) => {
     const m = g.sample?.meta || {};
-    const err = String(m.error || '').replace(/\s+/g, ' ').slice(0, 160);
-    return `- \`${g.code}\` ×${g.count} — \`${m.method} ${m.path}\` — _${err}_ (first ${g.firstSeen}, last ${g.lastSeen})`;
+    // sync_item_too_large carries { dataKey, size, limit }, not a request.
+    const where = m.method ? `${m.method} ${m.path}`
+      : m.lessonId ? `messages:${m.lessonId}` : `${m.dataKey || 'record'}:*`;
+    const detail = m.error || (m.size ? `${m.size} bytes, over the ${m.limit}-byte limit` : '');
+    const err = String(detail).replace(/\s+/g, ' ').slice(0, 160);
+    return `- \`${g.code}\` ×${g.count} — \`${where}\` — _${err}_ (first ${g.firstSeen}, last ${g.lastSeen})`;
   });
   return [
     '**Automated data-loss alert** — raised by `log-watch` (`.github/workflows/log-watch.yml`).',
     '',
-    `Write requests to \`/v1/sync\` are failing server-side in the last ${logs.windowHours ?? 24}h. `
+    `Learner data isn't saving: writes to \`/v1/sync\` are failing or being refused in the last ${logs.windowHours ?? 24}h. `
       + "A failed sync write means a learner's saved work — conversation, lesson progress — may not be persisting.",
     '',
     `**${total} failure(s)** across ${hits.length} endpoint group(s):`,

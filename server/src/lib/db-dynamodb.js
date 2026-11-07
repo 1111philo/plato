@@ -8,6 +8,9 @@ import {
   AUDIT_LOG_TABLE, REFRESH_TOKEN_TTL_DAYS, INVITE_TTL_DAYS, RESET_TOKEN_TTL_HOURS,
 } from '../config.js';
 
+/** An item whose `ttl` (epoch seconds) has passed, though DynamoDB hasn't deleted it yet. */
+const expired = (item) => typeof item?.ttl === 'number' && item.ttl < Math.floor(Date.now() / 1000);
+
 const clientOpts = {};
 if (process.env.DYNAMODB_ENDPOINT) {
   clientOpts.endpoint = process.env.DYNAMODB_ENDPOINT;
@@ -19,13 +22,14 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const item = {
       userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
       userGroup: userGroup || null,
       role, createdAt: now, updatedAt: now,
     };
+    if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
     await doc.send(new PutCommand({
@@ -127,21 +131,43 @@ const db = {
     });
   },
 
-  async listUsers() {
-    const items = [];
-    let lastKey;
-    do {
-      const result = await doc.send(new ScanCommand({
+  // Migration helper: change a user's role only if it still holds `from`.
+  // Deliberately leaves updatedAt alone (a data migration, not a profile
+  // edit). Returns true if it changed the record.
+  async setUserRoleIf(userId, from, to) {
+    try {
+      await doc.send(new UpdateCommand({
         TableName: USERS_TABLE,
-        FilterExpression: '#r = :role',
+        Key: { userId },
+        UpdateExpression: 'SET #r = :to',
+        ConditionExpression: '#r = :from',
         ExpressionAttributeNames: { '#r': 'role' },
-        ExpressionAttributeValues: { ':role': 'user' },
-        ExclusiveStartKey: lastKey,
+        ExpressionAttributeValues: { ':from': from, ':to': to },
       }));
-      items.push(...result.Items);
-      lastKey = result.LastEvaluatedKey;
-    } while (lastKey);
-    return items;
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  },
+
+  // Migration helper: set the inferred name split (#402) only while `name` is
+  // still `expectedName` and no split exists yet. Leaves updatedAt alone.
+  async setUserNameSplitIf(userId, expectedName, { firstName, lastName, nameSource }) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET #f = :f, #l = :l, #s = :s',
+        ConditionExpression: '#n = :n AND attribute_not_exists(#f)',
+        ExpressionAttributeNames: { '#f': 'firstName', '#l': 'lastName', '#s': 'nameSource', '#n': 'name' },
+        ExpressionAttributeValues: { ':f': firstName, ':l': lastName, ':s': nameSource, ':n': expectedName },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
   },
 
   async listAllUsers() {
@@ -156,6 +182,12 @@ const db = {
       lastKey = result.LastEvaluatedKey;
     } while (lastKey);
     return items;
+  },
+
+  // Is there at least one user? One item, not a full Scan (cold start, #451 B3).
+  async hasAnyUser() {
+    const result = await doc.send(new ScanCommand({ TableName: USERS_TABLE, Limit: 1, ProjectionExpression: 'userId' }));
+    return (result.Items || []).length > 0 || !!result.LastEvaluatedKey;
   },
 
   async countUsers() {
@@ -175,7 +207,7 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
@@ -191,6 +223,7 @@ const db = {
     if (slackUserId) item.slackUserId = slackUserId;
     if (maxUsages !== null) item.maxUsages = maxUsages;
     if (profile) item.profile = profile;
+    if (forUserId) item.forUserId = forUserId;
     await doc.send(new PutCommand({
       TableName: INVITES_TABLE,
       Item: item,
@@ -209,6 +242,9 @@ const db = {
         createdAt: new Date().toISOString(),
         profile,
       },
+      // Create-only: the route derives the token from the email, so a second
+      // concurrent join for the same address fails here instead of duplicating.
+      ConditionExpression: 'attribute_not_exists(inviteToken)',
     }));
   },
 
@@ -334,11 +370,15 @@ const db = {
 
   // ── Refresh Tokens ──
 
-  async storeRefreshToken(tokenHash, userId) {
+  // `tokenVersion`: the user's session version when the token was issued
+  // (routes/auth.js, lib/sessions.js). Reset tokens share this table, so
+  // getRefreshToken refuses them; both readers refuse an expired item,
+  // because DynamoDB's TTL deletion can lag by up to ~48 h.
+  async storeRefreshToken(tokenHash, userId, { tokenVersion = 0 } = {}) {
     const ttl = Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_DAYS * 86400;
     await doc.send(new PutCommand({
       TableName: REFRESH_TOKENS_TABLE,
-      Item: { tokenHash, userId, createdAt: new Date().toISOString(), ttl },
+      Item: { tokenHash, userId, tokenVersion, createdAt: new Date().toISOString(), ttl },
     }));
   },
 
@@ -347,7 +387,22 @@ const db = {
       TableName: REFRESH_TOKENS_TABLE,
       Key: { tokenHash },
     }));
-    return result.Item || null;
+    const item = result.Item;
+    if (!item || item.type === 'reset' || expired(item)) return null;
+    return item;
+  },
+
+  // A refresh token that was just exchanged stays usable for a short grace
+  // (parallel tabs and requests refreshing at once), then expires.
+  async markRefreshTokenRotated(tokenHash, graceSeconds) {
+    await doc.send(new UpdateCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Key: { tokenHash },
+      UpdateExpression: 'SET rotatedAt = if_not_exists(rotatedAt, :now), #ttl = :ttl',
+      ConditionExpression: 'attribute_exists(tokenHash)',
+      ExpressionAttributeNames: { '#ttl': 'ttl' },
+      ExpressionAttributeValues: { ':now': new Date().toISOString(), ':ttl': Math.floor(Date.now() / 1000) + graceSeconds },
+    }));
   },
 
   async deleteRefreshToken(tokenHash) {
@@ -373,7 +428,7 @@ const db = {
       Key: { tokenHash },
     }));
     const item = result.Item;
-    if (!item || item.type !== 'reset') return null;
+    if (!item || item.type !== 'reset' || expired(item)) return null;
     return item;
   },
 
@@ -415,6 +470,18 @@ const db = {
   // and payload scale with the matched set, NOT the whole partition). Used by
   // admin stats to read `lessonKB:*` without dragging the large `screenshot:*`
   // / `messages:*` records.
+  // Does any record's dataKey begin with `prefix`? One item at most.
+  async hasSyncDataWithPrefix(userId, prefix) {
+    const result = await doc.send(new QueryCommand({
+      TableName: SYNC_DATA_TABLE,
+      KeyConditionExpression: 'userId = :uid AND begins_with(dataKey, :p)',
+      ExpressionAttributeValues: { ':uid': userId, ':p': prefix },
+      ProjectionExpression: 'dataKey',
+      Limit: 1,
+    }));
+    return (result.Items || []).length > 0;
+  },
+
   async getSyncDataByPrefix(userId, prefix) {
     const items = [];
     let lastKey;
@@ -431,6 +498,28 @@ const db = {
     return items;
   },
 
+  // Every record except those whose key starts with `prefix`, as two key-range
+  // queries (below and above the prefix), so the excluded records are never
+  // read or billed. GET /v1/sync uses it to skip screenshots (#451 scale review).
+  async getSyncDataExcept(userId, prefix) {
+    const after = prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
+    const items = [];
+    for (const [cond, value] of [['dataKey < :k', prefix], ['dataKey >= :k', after]]) {
+      let lastKey;
+      do {
+        const result = await doc.send(new QueryCommand({
+          TableName: SYNC_DATA_TABLE,
+          KeyConditionExpression: `userId = :uid AND ${cond}`,
+          ExpressionAttributeValues: { ':uid': userId, ':k': value },
+          ExclusiveStartKey: lastKey,
+        }));
+        items.push(...result.Items);
+        lastKey = result.LastEvaluatedKey;
+      } while (lastKey);
+    }
+    return items;
+  },
+
   async putSyncData(userId, dataKey, data, expectedVersion) {
     const now = new Date().toISOString();
     const newVersion = (expectedVersion || 0) + 1;
@@ -444,6 +533,20 @@ const db = {
     }
     await doc.send(new PutCommand(params));
     return { version: newVersion, updatedAt: now };
+  },
+
+  // Create-only write: throws ConditionalCheckFailedException if the record
+  // already exists. putSyncData with expectedVersion 0/undefined is an
+  // unconditional overwrite, so it can't be used for "create if absent"
+  // (migration state, bundled content) where concurrent cold starts race.
+  async createSyncData(userId, dataKey, data) {
+    const now = new Date().toISOString();
+    await doc.send(new PutCommand({
+      TableName: SYNC_DATA_TABLE,
+      Item: { userId, dataKey, data, updatedAt: now, version: 1 },
+      ConditionExpression: 'attribute_not_exists(dataKey)',
+    }));
+    return { version: 1, updatedAt: now };
   },
 
   async deleteSyncData(userId, dataKey) {

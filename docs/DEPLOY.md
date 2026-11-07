@@ -23,6 +23,27 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
+### Stack parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `Stage` | `prod` | `prod` or `playground` |
+| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. For the playground stack, the private deploy fork's workflow must pass it; until it does, playground sends no notification email. |
+
+### Scheduled jobs
+
+Learner emails (#400) need no scheduler resource and no extra deploy
+permissions. The first request after 15:00 UTC dispatches the day's
+inactivity reminder, and on Mondays the weekly digest (`server/src/lib/schedule.js`;
+one container claims each run). Both do nothing until an admin turns them on
+in Admin → Notifications → Automations. To run one now:
+
+```bash
+aws lambda invoke --function-name <stack>-PlatoApiFunction-<id> --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"__platoInternal":"platoJob","job":"weekly-digest"}' /dev/null
+```
+
 ## 2. Configure SAM
 
 Copy the example config and customize it for your AWS account:
@@ -138,9 +159,12 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - run: cd server && npm ci && npm test
 
   deploy:
@@ -155,9 +179,12 @@ jobs:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0  # need history + tags so we can read the latest Beta-RC-* tag
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
@@ -206,15 +233,25 @@ To serve the app from a custom domain:
 
 1. Create a CloudFront distribution with the Lambda Function URL as a **Custom Origin** (HTTPS-only)
 2. Set the Origin Request Policy to **AllViewerExceptHostHeader** (required for Lambda Function URLs)
-3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
-4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
-5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
-6. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+3. Set the default behavior's Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
+4. Add a `/assets/*` behavior: Cache Policy **CachingOptimized**, compression on, GET/HEAD, the same **AllViewerExceptHostHeader** origin request policy. Built assets have hashed names and `immutable`, so they need no invalidation; this saves a Lambda call per asset
+5. Origin read timeout **60 s** (the default 30 s turns a slow first AI reply into a 504 while Lambda keeps working)
+6. Optional: a WAF web ACL (scope CloudFront, us-east-1) with a rate rule on URI paths starting with `/v1/auth/`, per IP. Size it for a room of learners on one Wi-Fi address (prod uses 10,000 per 5 minutes)
+7. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
+8. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+9. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
    email links are built from it, so a stale value sends learners to the old host
 
 The CloudFront distribution and ACM certificate are **not** managed by
 `template.yaml`; they're provisioned once by hand and outlive stack updates. SAM
 only owns the Lambda Function URL that CloudFront points at.
+
+**Prod today** (`E18E92K4YHSX4B`, plato.courses; applied 2026-11-07): steps 3–6,
+with WAF web ACL `plato-prod` (rule `auth-rate-per-ip`, 10,000 requests per IP
+per 5 minutes on `/v1/auth/*`, blocked with a 429). Playground
+(`E2CS7J98JXT998`) has the defaults (no `/assets/*` behavior, 30 s, no WAF).
+Point-in-time recovery is on for prod's tables and off for playground's; it's a
+console setting because the deploy role can't manage continuous backups.
 
 ### Renaming a live domain
 

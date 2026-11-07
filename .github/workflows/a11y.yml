@@ -1,0 +1,40 @@
+name: Accessibility & E2E
+
+# Playwright + axe against a fresh dev-sqlite server with the deterministic
+# mock AI provider (server/src/lib/ai-mock.js). Fails on any serious/critical
+# WCAG 2.1 A/AA violation on any page or dialog, or a broken keyboard flow.
+# See e2e/README.md. Runs on every PR (drafts included) and on pushes to the
+# protected branches.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  push:
+    branches: [main, playground]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: cd client && npm ci && npm run build
+      - run: cd server && npm ci
+      - run: cd e2e && npm ci && npx playwright install --with-deps chromium
+      - run: cd e2e && npx playwright test
+        env:
+          CI: 'true'
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

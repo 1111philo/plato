@@ -5,6 +5,7 @@ import ai from '../../src/routes/ai.js';
 import aiProvider from '../../src/lib/ai-provider.js';
 import { fromConverseResponse, fromConverseStreamEvent } from '../../src/lib/converse.js';
 import db from '../../src/lib/db.js';
+import { _resetAiLimits } from '../../src/lib/ai-limits.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
 async function authedReq(app, method, path, body) {
@@ -27,6 +28,7 @@ function unauthReq(app, method, path, body) {
 describe('POST /v1/ai/messages', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    _resetAiLimits();
   });
 
   it('proxies valid request and returns response', async () => {
@@ -53,19 +55,37 @@ describe('POST /v1/ai/messages', () => {
     assert.equal(data.content[0].text, 'Hello!');
   });
 
-  it('passes model ID through to provider', async () => {
-    let receivedModel;
-    aiProvider.invoke = async (model) => {
-      receivedModel = model;
-      return { content: [{ type: 'text', text: 'ok' }], usage: {} };
-    };
+  it('a failed non-stream call is logged as ai_invoke_failed and typed for the client', async () => {
+    aiProvider.invoke = async () => { throw Object.assign(new Error('Too many requests'), { name: 'ThrottlingException' }); };
+    const { logger } = await import('../../src/lib/logger.js');
+    const codes = [];
+    const orig = logger.error;
+    logger.error = (code, meta) => { codes.push([code, meta?.error, meta?.code]); };
+    try {
+      const app = new Hono();
+      app.route('/', ai);
+      const res = await authedReq(app, 'POST', '/v1/ai/messages', { model: 'qwen3-vl-235b', messages: [{ role: 'user', content: 'Hi' }] });
+      assert.equal(res.status, 429);
+      const data = await res.json();
+      assert.equal(data.code, 'throttled');
+      assert.ok(data.retryAfterMs > 0);
+      assert.ok(res.headers.get('retry-after'));
+      assert.deepEqual(codes, [['ai_invoke_failed', 'Too many requests', 'throttled']]);
+    } finally {
+      logger.error = orig;
+    }
+  });
+
+  it('refuses any model but plato\u2019s own (no free gateway to the account\u2019s models)', async () => {
+    let called = false;
+    aiProvider.invoke = async () => { called = true; return { content: [{ type: 'text', text: 'ok' }], usage: {} }; };
     const app = new Hono();
     app.route('/', ai);
-    await authedReq(app, 'POST', '/v1/ai/messages', {
-      model: 'anthropic.claude-custom-v1:0',
-      messages: [{ role: 'user', content: 'Hi' }],
-    });
-    assert.equal(receivedModel, 'anthropic.claude-custom-v1:0');
+    for (const model of ['anthropic.claude-custom-v1:0', 'us.anthropic.claude-opus-5-5', 'qwen.qwen3-vl-235b-a22b-other']) {
+      const res = await authedReq(app, 'POST', '/v1/ai/messages', { model, messages: [{ role: 'user', content: 'Hi' }] });
+      assert.equal(res.status, 400, model);
+    }
+    assert.equal(called, false);
   });
 
   it('returns 400 when model is missing', async () => {

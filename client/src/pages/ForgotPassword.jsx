@@ -49,7 +49,7 @@ export default function ForgotPassword() {
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
-            <div className="bg-destructive/10 text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
+            <div className="bg-destructive/10 text-red-800 dark:text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
               {error}
             </div>
           )}
@@ -80,10 +80,10 @@ export default function ForgotPassword() {
           </Button>
         </CardFooter>
       </Card>
-      <p className="mt-4 text-xs text-white/60">
-        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white/80">Privacy</a>
+      <p className="mt-4 text-xs text-white/90">
+        <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white/80">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
       </p>
     </main>
   );

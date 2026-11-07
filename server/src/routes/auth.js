@@ -1,13 +1,20 @@
 import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
-import { generateUserId, generateRefreshToken, generateResetToken, hashToken } from '../lib/crypto.js';
+import { normalizeRole } from '../lib/permissions.js';
+import { generateUserId, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
-import { signAccessToken } from '../lib/jwt.js';
+import { clientIp, createLimiter, readJson } from '../lib/rate-limit.js';
+import { isSetUp, markSetUp } from '../lib/setup-state.js';
+import {
+  issueSession, exchangeRefreshToken, issueResetToken, resetTokenUser, revokeSessions,
+  signInLocked, recordFailedSignIn, clearFailedSignIns, LOGIN_MAX_FAILURES, LOGIN_LOCK_MS,
+} from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
-import { getFieldDefinitions, mergeFieldValues } from '../lib/user-fields.js';
+import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
+import { nameFields, readNameInput } from '../lib/names.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -23,30 +30,72 @@ function generateUsername() {
   return 'user-' + randomBytes(3).toString('hex');
 }
 
+/**
+ * A generated username nobody has yet. The random part is small (16.7M), and
+ * DynamoDB's createUser only conditions on userId, so a collision would
+ * create a second account with the same username. Returns null if every try
+ * is taken (practically never).
+ */
+async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
+  for (let i = 0; i < tries; i++) {
+    const candidate = generate();
+    if (!(await db.getUserByUsername(candidate))) return candidate;
+  }
+  return null;
+}
+
 const auth = new Hono();
+
+// Per-IP limits on the public auth endpoints (best-effort, per container;
+// lib/rate-limit.js). These are flood guards only: a whole room of learners
+// often shares one public IP (venue or campus Wi-Fi), so they must allow an
+// event's worth of people signing in or up from one address. Password
+// guessing is stopped per account (LOGIN_MAX_FAILURES), not here.
+const TEN_MIN = 10 * 60 * 1000;
+export const AUTH_IP_LIMITS = { login: 1000, refresh: 3000, forgot: 100, reset: 200, signup: 500, setup: 10 };
+const limits = {
+  login: createLimiter({ limit: AUTH_IP_LIMITS.login, windowMs: TEN_MIN }),
+  refresh: createLimiter({ limit: AUTH_IP_LIMITS.refresh, windowMs: TEN_MIN }),
+  forgot: createLimiter({ limit: AUTH_IP_LIMITS.forgot, windowMs: TEN_MIN }),
+  reset: createLimiter({ limit: AUTH_IP_LIMITS.reset, windowMs: TEN_MIN }),
+  signup: createLimiter({ limit: AUTH_IP_LIMITS.signup, windowMs: TEN_MIN }),
+  setup: createLimiter({ limit: 10, windowMs: TEN_MIN }),
+};
+// Wrong sign-ins for a name or email no account has, counted like a real
+// account's failures, so a lock doesn't reveal which accounts exist.
+const unknownSignIns = createLimiter({ limit: LOGIN_MAX_FAILURES - 1, windowMs: LOGIN_LOCK_MS });
+const TOO_MANY = { error: 'Too many requests. Please try again later.' };
+const LOCKED = { error: 'Too many sign-in attempts. Try again in 15 minutes, or reset your password.' };
+const limited = (c, name) => limits[name].hit(clientIp(c));
 
 // GET /v1/auth/setup-status — check if initial setup is needed
 auth.get('/v1/auth/setup-status', async (c) => {
-  const count = await db.countUsers();
-  return c.json({ needsSetup: count === 0 });
+  // Runs on every SPA boot: one read at most, then remembered (lib/setup-state.js).
+  return c.json({ needsSetup: !(await isSetUp()) });
 });
 
 // POST /v1/auth/setup — create the first admin account (only works when no users exist)
 auth.post('/v1/auth/setup', async (c) => {
+  if (limited(c, 'setup')) return c.json(TOO_MANY, 429);
   const count = await db.countUsers();
   if (count > 0) {
     return c.json({ error: 'Setup already completed' }, 400);
   }
 
-  const { email, name, password, username: rawUsername, classroomName } = await c.req.json();
-  if (!email || !name || !password) {
-    return c.json({ error: 'email, name, and password are required' }, 400);
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
+  const { email, password, username: rawUsername, classroomName } = body;
+  if (!email || !password) {
+    return c.json({ error: 'email, first name, and password are required' }, 400);
   }
+  const nameInput = readNameInput(body, { required: true });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
 
-  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  const username = rawUsername ? rawUsername.toLowerCase() : await uniqueUsername();
+  if (!username) return c.json({ error: 'Couldn’t pick a username. Please choose one.' }, 409);
   if (rawUsername) {
     const usernameErr = validateUsername(rawUsername);
     if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -62,9 +111,10 @@ auth.post('/v1/auth/setup', async (c) => {
     email: email.toLowerCase(),
     username,
     passwordHash,
-    name,
+    ...nameInput.fields,
     role: 'admin',
   });
+  markSetUp();
 
   // Emit userCreated so plugins can react. Errors in handlers are caught and
   // logged inside emit() — never bubble up to the user-facing request.
@@ -87,47 +137,62 @@ auth.post('/v1/auth/setup', async (c) => {
     }
   }
 
-  const accessToken = await signAccessToken(userId, 'admin');
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), userId);
+  const { accessToken, refreshToken } = await issueSession({ userId, role: 'admin' });
 
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: email.toLowerCase(), username, name, role: 'admin' },
+    user: { userId, email: email.toLowerCase(), username, ...nameFields(nameInput.fields), role: 'admin' },
   }, 201);
 });
 
-// GET /v1/auth/invite/:token — what the signup form can fill in for an email
-// invite: the email, and for a wait-list invite (#363) the person's answers.
+// GET /v1/auth/invite/:token — whether an invite can still be used, and what
+// the signup form can fill in: the email for an email invite, and for a
+// wait-list invite (#363) the person's answers. A link invite has no email
+// (`isLink: true`); a used, expired, or full one is 404, so the form can say
+// so before anyone fills it in.
 auth.get('/v1/auth/invite/:token', async (c) => {
   const invite = await db.getInvite(c.req.param('token'));
-  if (!invite || invite.status !== 'pending' || !invite.email
+  // An invite for an existing account (forUserId) is accepted in the
+  // classroom, never through signup.
+  if (!invite || invite.status !== 'pending' || invite.forUserId
     || (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000))) {
     return c.json({ error: 'Invalid or expired invite' }, 404);
   }
+  if (!invite.email) {
+    const full = invite.maxUsages != null && (invite.usageCount || 0) >= invite.maxUsages;
+    if (!invite.isLink || full) return c.json({ error: 'Invalid or expired invite' }, 404);
+    return c.json({ email: null, isLink: true, name: null, firstName: null, lastName: null, userGroup: null, customFields: {} });
+  }
   const profile = invite.profile || {};
+  const named = profile.firstName || profile.name;
   return c.json({
     email: invite.email,
-    name: profile.name || null,
+    ...(named ? nameFields(profile) : { name: null, firstName: null, lastName: null }),
     userGroup: profile.userGroup || null,
-    customFields: profile.customFields || {},
+    // Only what the signup form shows: admin-only answers stay on the server.
+    customFields: visibleFieldValues(publicFields(getFieldDefinitions((await db.getSyncData('_system', 'settings'))?.data)), profile.customFields),
   });
 });
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const { inviteToken, name, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = await c.req.json();
+  if (limited(c, 'signup')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
+  const { inviteToken, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = body;
 
-  if (!inviteToken || !name || !password) {
-    return c.json({ error: 'inviteToken, name, and password are required' }, 400);
+  if (!inviteToken || !password) {
+    return c.json({ error: 'inviteToken, first name, and password are required' }, 400);
   }
+  const nameInput = readNameInput(body, { required: true });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
 
   const invite = await db.getInvite(inviteToken);
-  if (!invite || invite.status !== 'pending') {
+  if (!invite || invite.status !== 'pending' || invite.forUserId) {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 
@@ -161,7 +226,8 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Account already exists for this email' }, 409);
   }
 
-  const username = rawUsername ? rawUsername.toLowerCase() : generateUsername();
+  const username = rawUsername ? rawUsername.toLowerCase() : await uniqueUsername();
+  if (!username) return c.json({ error: 'Couldn’t pick a username. Please choose one.' }, 409);
   if (rawUsername) {
     const usernameErr = validateUsername(rawUsername);
     if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -178,7 +244,10 @@ auth.post('/v1/auth/signup', async (c) => {
   let customFields = {};
   if (rawCustomFields !== undefined || profile?.customFields) {
     const settings = await db.getSyncData('_system', 'settings');
-    const merged = mergeFieldValues(getFieldDefinitions(settings?.data), profile?.customFields || {}, rawCustomFields);
+    // The form sets only the public fields; the invite's admin-set answers to
+    // the others are kept as they are.
+    const defs = getFieldDefinitions(settings?.data);
+    const merged = mergeFieldValues(defs, profile?.customFields || {}, rawCustomFields, { editable: publicFields(defs) });
     if (merged.error) return c.json({ error: merged.error }, 400);
     customFields = merged.values;
   }
@@ -213,14 +282,15 @@ auth.post('/v1/auth/signup', async (c) => {
     email: userEmail,
     username,
     passwordHash,
-    name,
-    userGroup: userGroup || profileGroup || null,
-    role: 'user',
+    ...nameInput.fields,
+    // Only one of the classroom's groups: broadcasts target groups by name.
+    userGroup: (userGroup && (await db.getSyncData('_system', 'settings'))?.data?.userGroups?.includes(userGroup) ? userGroup : null) || profileGroup || null,
+    role: 'learner',
     slackUserId: invite.slackUserId || null,
     customFields,
   });
 
-  await emitHook('userCreated', { userId, email: userEmail, role: 'user' });
+  await emitHook('userCreated', { userId, email: userEmail, role: 'learner' });
 
   // Mark invite as used after successful user creation
   if (invite.isLink) {
@@ -234,22 +304,23 @@ auth.post('/v1/auth/signup', async (c) => {
     await db.markInviteUsed(inviteToken);
   }
 
-  const accessToken = await signAccessToken(userId, 'user');
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), userId);
+  const { accessToken, refreshToken } = await issueSession({ userId, role: 'learner' });
 
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId, email: userEmail, username, name, role: 'user' },
+    user: { userId, email: userEmail, username, ...nameFields(nameInput.fields), role: 'learner' },
   }, 201);
 });
 
 // POST /v1/auth/login
 auth.post('/v1/auth/login', async (c) => {
-  const { email, password } = await c.req.json();
+  if (limited(c, 'login')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
+  const { email, password } = body;
 
-  if (!email || !password) {
+  if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
     return c.json({ error: 'Email/username and password are required' }, 400);
   }
 
@@ -258,17 +329,20 @@ auth.post('/v1/auth/login', async (c) => {
     ? await db.getUserByEmail(email)
     : await db.getUserByUsername(email);
   if (!user) {
+    if (unknownSignIns.hit(email.trim().toLowerCase())) return c.json(LOCKED, 429);
     return c.json({ error: 'Invalid credentials' }, 401);
   }
+  if (signInLocked(user)) return c.json(LOCKED, 429);
 
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) {
-    return c.json({ error: 'Invalid credentials' }, 401);
+    let locked = false;
+    try { locked = await recordFailedSignIn(user); } catch { /* best-effort */ }
+    return locked ? c.json(LOCKED, 429) : c.json({ error: 'Invalid credentials' }, 401);
   }
+  try { await clearFailedSignIns(user); } catch { /* best-effort */ }
 
-  const accessToken = await signAccessToken(user.userId, user.role);
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), user.userId);
+  const { accessToken, refreshToken } = await issueSession(user);
 
   // Activity-tracking writes are best-effort: login must succeed even if
   // audit-log / user-record writes are throttled or unavailable. The login
@@ -289,103 +363,87 @@ auth.post('/v1/auth/login', async (c) => {
   return c.json({
     accessToken,
     refreshToken,
-    user: { userId: user.userId, email: user.email, username: user.username, name: user.name, role: user.role },
+    user: { userId: user.userId, email: user.email, username: user.username, ...nameFields(user), role: normalizeRole(user.role) },
   });
 });
 
-// POST /v1/auth/refresh
+// POST /v1/auth/refresh — exchange a refresh token for a new pair. The old
+// token stays usable for a short grace so parallel requests and tabs don't
+// log each other out (lib/sessions.js).
 auth.post('/v1/auth/refresh', async (c) => {
-  const { refreshToken } = await c.req.json();
-  if (!refreshToken) {
+  if (limited(c, 'refresh')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const refreshToken = body?.refreshToken;
+  if (!refreshToken || typeof refreshToken !== 'string') {
     return c.json({ error: 'refreshToken is required' }, 400);
   }
 
-  const tokenHash = hashToken(refreshToken);
-  const stored = await db.getRefreshToken(tokenHash);
-  if (!stored) {
-    return c.json({ error: 'Invalid refresh token' }, 401);
-  }
-
-  const user = await db.getUserById(stored.userId);
-  if (!user) {
-    await db.deleteRefreshToken(tokenHash);
-    return c.json({ error: 'User not found' }, 401);
-  }
-
-  // Rotate: delete old, issue new
-  await db.deleteRefreshToken(tokenHash);
-  const newRefreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(newRefreshToken), user.userId);
-
-  const accessToken = await signAccessToken(user.userId, user.role);
+  const result = await exchangeRefreshToken(refreshToken);
+  if (result.error) return c.json({ error: result.error }, 401);
 
   // Best-effort: a token refresh fires every ~15 min while a learner is
   // active, so this gives `lastActiveAt` a heartbeat without per-message
   // write amplification on the user record.
   try {
-    await db.setUserActivityField(user.userId, 'lastActiveAt', new Date().toISOString());
+    await db.setUserActivityField(result.user.userId, 'lastActiveAt', new Date().toISOString());
   } catch { /* swallow */ }
 
-  return c.json({ accessToken, refreshToken: newRefreshToken });
+  return c.json({ accessToken: result.accessToken, refreshToken: result.refreshToken });
 });
 
 // POST /v1/auth/logout
 auth.post('/v1/auth/logout', async (c) => {
-  const { refreshToken } = await c.req.json();
-  if (refreshToken) {
-    await db.deleteRefreshToken(hashToken(refreshToken));
+  const body = await readJson(c);
+  if (typeof body?.refreshToken === 'string' && body.refreshToken) {
+    await db.deleteRefreshToken(hashToken(body.refreshToken));
   }
   return c.json({ ok: true });
 });
 
-// POST /v1/auth/forgot-password
+// POST /v1/auth/forgot-password — always answers ok (never says whether the
+// email has an account). At most one email per user per cooldown, and only
+// the newest link works (lib/sessions.js).
 auth.post('/v1/auth/forgot-password', async (c) => {
-  const { email } = await c.req.json();
-  if (!email) {
+  if (limited(c, 'forgot')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const email = body?.email;
+  if (!email || typeof email !== 'string') {
     return c.json({ error: 'Email is required' }, 400);
   }
 
   const user = await db.getUserByEmail(email);
-  // Always return ok to avoid leaking whether an email exists
-  if (!user) {
-    return c.json({ ok: true });
-  }
+  if (!user) return c.json({ ok: true });
 
-  const token = generateResetToken();
-  await db.storeResetToken(hashToken(token), user.userId);
-  await sendResetEmail(user.email, token);
-
+  const token = await issueResetToken(user);
+  if (token) await sendResetEmail(user.email, token);
   return c.json({ ok: true });
 });
 
-// POST /v1/auth/reset-password
+// POST /v1/auth/reset-password — set a new password with the newest reset
+// link. Ends every existing session (lib/sessions.js).
 auth.post('/v1/auth/reset-password', async (c) => {
-  const { resetToken, password } = await c.req.json();
-  if (!resetToken || !password) {
+  if (limited(c, 'reset')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const { resetToken, password } = body || {};
+  if (!resetToken || !password || typeof resetToken !== 'string' || typeof password !== 'string') {
     return c.json({ error: 'resetToken and password are required' }, 400);
   }
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
 
-  const tokenHash = hashToken(resetToken);
-  const stored = await db.getResetToken(tokenHash);
-  if (!stored) {
+  const found = await resetTokenUser(resetToken);
+  if (!found) {
     return c.json({ error: 'Invalid or expired reset link' }, 400);
   }
 
-  const user = await db.getUserById(stored.userId);
-  if (!user) {
-    await db.deleteResetToken(tokenHash);
-    return c.json({ error: 'User not found' }, 400);
-  }
-
   const passwordHash = await hashPassword(password);
-  await db.updateUser(user.userId, { passwordHash });
-  await db.deleteResetToken(tokenHash);
+  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null } });
+  await db.deleteResetToken(found.tokenHash);
 
   return c.json({ ok: true });
 });
 
 export default auth;
-export { validateUsername, generateUsername };
+export { validateUsername, generateUsername, uniqueUsername };
+export function _resetAuthLimits() { for (const l of Object.values(limits)) l.reset(); unknownSignIns.reset(); }

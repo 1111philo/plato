@@ -1,18 +1,27 @@
 import { Hono } from 'hono';
 import db from '../lib/db.js';
+import { normalizeRole } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { hashPassword } from '../lib/password.js';
+import { hashPassword, comparePassword } from '../lib/password.js';
+import { issueSession, revokeSessions } from '../lib/sessions.js';
 import { validateUsername } from './auth.js';
+import { nameFields, readNameInput } from '../lib/names.js';
+import { readNotifyState, setOptOut } from '../lib/notifications.js';
+import { messagesFor, markRead } from '../lib/messages.js';
+import { pendingInviteFor, mergeProfile, acceptInvite, declineInvite } from '../lib/account-invites.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
 import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
+import { systemItem } from '../lib/system-cache.js';
 import {
-  getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues,
+  getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues, learnerFields,
 } from '../lib/user-fields.js';
 
+// Read-only here (every classroom load asks for /v1/me and /v1/me/fields), so
+// served from the in-container `_system` cache (lib/system-cache.js).
 async function loadFieldDefinitions() {
-  const settings = await db.getSyncData('_system', 'settings');
+  const settings = await systemItem('settings');
   return getFieldDefinitions(settings?.data);
 }
 
@@ -31,10 +40,10 @@ me.get('/v1/me', async (c) => {
     userId: user.userId,
     email: user.email,
     username: user.username,
-    name: user.name,
+    ...nameFields(user),
     userGroup: user.userGroup,
-    role: user.role,
-    customFields: visibleFieldValues(defs, user.customFields),
+    role: normalizeRole(user.role),
+    customFields: visibleFieldValues(learnerFields(defs), user.customFields),
     createdAt: user.createdAt,
   });
 });
@@ -46,7 +55,8 @@ me.get('/v1/me', async (c) => {
 // until `missing` is empty.
 me.get('/v1/me/fields', async (c) => {
   const user = c.get('user');
-  const defs = await loadFieldDefinitions();
+  // Fields hidden from learners (admin-only) aren't listed, shown, or required.
+  const defs = learnerFields(await loadFieldDefinitions());
   return c.json({
     userFields: defs,
     values: visibleFieldValues(defs, user.customFields),
@@ -57,14 +67,33 @@ me.get('/v1/me/fields', async (c) => {
 // PATCH /v1/me — update profile fields
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
-  const body = await c.req.json();
-  const allowed = ['name', 'email', 'username', 'group', 'password'];
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON' }, 400);
+  const allowed = ['email', 'username', 'group', 'password'];
   const updates = {};
   let defs = null;
 
+  // A new password or email needs the current password (a stolen session
+  // alone can't take the account over), and ends every other session
+  // (lib/sessions.js). The caller gets a fresh session in the response.
+  const current = c.get('user');
+  const changesEmail = body.email !== undefined && String(body.email).trim().toLowerCase() !== (current.email || '').toLowerCase();
+  const changesCredentials = body.password !== undefined || changesEmail;
+  if (changesCredentials) {
+    if (typeof body.currentPassword !== 'string' || !(await comparePassword(body.currentPassword, current.passwordHash))) {
+      return c.json({ error: 'Your current password is incorrect', code: 'current_password_required' }, 403);
+    }
+  }
+
+  // firstName / lastName (#402); a lone `name` from an older client is split.
+  const nameInput = readNameInput(body, { current: c.get('user') });
+  if (nameInput.error) return c.json({ error: nameInput.error }, 400);
+  if (nameInput.fields) Object.assign(updates, nameInput.fields);
+
   if (body.customFields !== undefined) {
     defs = await loadFieldDefinitions();
-    const merged = mergeFieldValues(defs, c.get('user').customFields, body.customFields, { enforceRequired: true });
+    // Learners set only the fields they can see; admin-only values are kept.
+    const merged = mergeFieldValues(defs, c.get('user').customFields, body.customFields, { enforceRequired: true, editable: learnerFields(defs) });
     if (merged.error) return c.json({ error: merged.error }, 400);
     updates.customFields = merged.values;
   }
@@ -72,16 +101,21 @@ me.patch('/v1/me', async (c) => {
   for (const key of allowed) {
     if (body[key] !== undefined) {
       if (key === 'password') {
-        if (body.password.length < 8) {
+        if (typeof body.password !== 'string' || body.password.length < 8) {
           return c.json({ error: 'Password must be at least 8 characters' }, 400);
         }
         updates.passwordHash = await hashPassword(body.password);
       } else if (key === 'email') {
-        const existing = await db.getUserByEmail(body.email);
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+          return c.json({ error: 'A valid email is required' }, 400);
+        }
+        if (!changesEmail) continue;
+        const existing = await db.getUserByEmail(email);
         if (existing && existing.userId !== userId) {
           return c.json({ error: 'Email already in use' }, 409);
         }
-        updates.email = body.email.toLowerCase();
+        updates.email = email;
       } else if (key === 'username') {
         const usernameErr = validateUsername(body.username);
         if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -100,7 +134,13 @@ me.patch('/v1/me', async (c) => {
     return c.json({ error: 'No valid fields to update' }, 400);
   }
 
-  await db.updateUser(userId, updates);
+  let session = null;
+  if (changesCredentials) {
+    const revoked = await revokeSessions(current, { extra: updates });
+    session = await issueSession(revoked);
+  } else {
+    await db.updateUser(userId, updates);
+  }
   const updated = await db.getUserById(userId);
   if (!defs) defs = await loadFieldDefinitions();
 
@@ -108,11 +148,70 @@ me.patch('/v1/me', async (c) => {
     userId: updated.userId,
     email: updated.email,
     username: updated.username,
-    name: updated.name,
+    ...nameFields(updated),
     userGroup: updated.userGroup,
-    role: updated.role,
-    customFields: visibleFieldValues(defs, updated.customFields),
+    role: normalizeRole(updated.role),
+    customFields: visibleFieldValues(learnerFields(defs), updated.customFields),
+    // Only after a password or email change: this device's new session.
+    ...(session ? { session } : {}),
   });
+});
+
+// GET/PUT /v1/me/notifications — the learner's email opt-outs (#400):
+// `{ optOut: { nudge?, digest?, messages? } }`, true meaning "don't email me".
+// Stored in the server-only notify:state record.
+me.get('/v1/me/notifications', async (c) => {
+  const { optOut } = await readNotifyState(c.get('userId'));
+  return c.json({ optOut });
+});
+me.put('/v1/me/notifications', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const result = await setOptOut(c.get('userId'), body.optOut);
+  if (result.error) return c.json({ error: result.error }, 400);
+  return c.json(result);
+});
+
+// GET /v1/me/messages — announcements and messages for the bell (#389).
+me.get('/v1/me/messages', async (c) => c.json({ messages: await messagesFor(c.get('user')) }));
+
+// POST /v1/me/messages/read — body { ids }
+me.post('/v1/me/messages/read', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  return c.json(await markRead(c.get('userId'), body.ids));
+});
+
+// GET /v1/me/invite — an invite to this account (#363: the person joined
+// the wait list and an admin invited them), with what accepting would add.
+me.get('/v1/me/invite', async (c) => {
+  const user = c.get('user');
+  const inv = await pendingInviteFor(user);
+  if (!inv) return c.json({ invite: null });
+  const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
+  const { userGroup, fields } = mergeProfile(user, inv.profile, settings);
+  const labels = new Map(learnerFields(getFieldDefinitions(settings)).map((d) => [d.id, d.label]));
+  const inviter = inv.invitedBy ? await db.getUserById(inv.invitedBy).catch(() => null) : null;
+  return c.json({
+    invite: {
+      inviteToken: inv.inviteToken,
+      invitedByName: inviter ? nameFields(inviter).name || inviter.username || null : null,
+      userGroup,
+      // Admin-only answers are still merged on accept, but not named here.
+      fields: fields.map((id) => labels.get(id)).filter(Boolean),
+      createdAt: inv.createdAt,
+    },
+  });
+});
+
+// POST /v1/me/invite/:token/accept — merge the invite's answers into the account
+me.post('/v1/me/invite/:token/accept', async (c) => {
+  const r = await acceptInvite(c.get('user'), c.req.param('token'));
+  return r.error ? c.json({ error: r.error }, r.status) : c.json(r);
+});
+
+// POST /v1/me/invite/:token/decline — discard it; the account is untouched
+me.post('/v1/me/invite/:token/decline', async (c) => {
+  const r = await declineInvite(c.get('user'), c.req.param('token'));
+  return r.error ? c.json({ error: r.error }, r.status) : c.json(r);
 });
 
 // GET /v1/me/export — download all user data as JSON.
@@ -133,11 +232,11 @@ me.get('/v1/me/export', async (c) => {
       userId: user.userId,
       email: user.email,
       username: user.username,
-      name: user.name,
+      ...nameFields(user),
       userGroup: user.userGroup,
-      role: user.role,
+      role: normalizeRole(user.role),
       // Exported with labels so the file is readable without the definitions.
-      customFields: defs
+      customFields: learnerFields(defs)
         .filter((d) => typeof user.customFields?.[d.id] === 'string')
         .map((d) => ({ id: d.id, label: d.label, value: user.customFields[d.id] })),
       createdAt: user.createdAt,
@@ -158,6 +257,13 @@ me.delete('/v1/me', async (c) => {
   const user = c.get('user');
   const userId = user.userId;
 
+  // The last admin can't delete themselves: nobody could run the classroom,
+  // and /v1/auth/setup is closed once any user exists.
+  if (normalizeRole(user.role) === 'admin') {
+    const admins = (await db.listAllUsers()).filter((u) => normalizeRole(u.role) === 'admin').length;
+    if (admins <= 1) return c.json({ error: 'You’re the only admin. Make someone else an admin before deleting your account.' }, 409);
+  }
+
   // Log deletion before destroying data
   await db.createAuditLog({
     action: 'user_deleted',
@@ -170,7 +276,7 @@ me.delete('/v1/me', async (c) => {
   // Emit userDeleted BEFORE the cascade so plugins can read their per-user data
   // (userMeta:<id> records) while it still exists. Hook errors are caught by
   // emit(); they never block the deletion.
-  await emitHook('userDeleted', { userId, email: user.email, role: user.role });
+  await emitHook('userDeleted', { userId, email: user.email, role: normalizeRole(user.role) });
 
   // Delete all sync data (cascades plugin userMeta:* records too)
   const syncItems = await db.getAllSyncData(userId);

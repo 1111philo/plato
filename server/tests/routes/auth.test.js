@@ -38,8 +38,42 @@ describe('POST /v1/auth/signup', () => {
     assert.ok(data.accessToken);
     assert.ok(data.refreshToken);
     assert.equal(data.user.email, 'test@example.com');
-    assert.equal(data.user.role, 'user');
+    assert.equal(data.user.role, 'learner', 'new signups are learners (#435)');
     assert.ok(data.user.username); // auto-generated when not provided
+  });
+
+  it('stores first and last name, with the derived name (#402)', async () => {
+    let created;
+    db.createUser = async (u) => { created = u; };
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', {
+      inviteToken: 'inv_test', firstName: ' Mary ', lastName: 'Ann Evans', password: 'password123',
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual([created.firstName, created.lastName, created.name, created.nameSource], ['Mary', 'Ann Evans', 'Mary Ann Evans', 'user']);
+    const { user } = await res.json();
+    assert.deepEqual([user.firstName, user.lastName, user.name], ['Mary', 'Ann Evans', 'Mary Ann Evans']);
+  });
+
+  it('keeps only a group the classroom has', async () => {
+    let created;
+    db.createUser = async (u) => { created = u; };
+    db.getSyncData = async (_u, k) => (k === 'settings' ? { data: { userGroups: ['Cohort A'] } } : null);
+    const app = new Hono();
+    app.route('/', auth);
+    await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', firstName: 'A', password: 'password123', userGroup: 'Made Up' });
+    assert.equal(created.userGroup, null);
+    await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', firstName: 'A', password: 'password123', userGroup: 'Cohort A' });
+    assert.equal(created.userGroup, 'Cohort A');
+  });
+
+  it('requires a first name', async () => {
+    const app = new Hono();
+    app.route('/', auth);
+    const res = await req(app, 'POST', '/v1/auth/signup', { inviteToken: 'inv_test', lastName: 'Evans', password: 'password123' });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /first name is required/i);
   });
 
   it('creates user with custom username', async () => {
@@ -267,6 +301,7 @@ describe('POST /v1/auth/refresh', () => {
   it('rotates refresh tokens', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     db.setUserActivityField = async () => {};
@@ -282,6 +317,7 @@ describe('POST /v1/auth/refresh', () => {
   it('refresh updates lastActiveAt (heartbeat without per-message amplification)', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     const writes = [];
@@ -297,6 +333,7 @@ describe('POST /v1/auth/refresh', () => {
   it('refresh succeeds even if lastActiveAt write throws', async () => {
     db.getRefreshToken = async () => ({ tokenHash: 'hash', userId: 'usr_test' });
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.markRefreshTokenRotated = async () => {};
     db.deleteRefreshToken = async () => {};
     db.storeRefreshToken = async () => {};
     db.setUserActivityField = async () => { throw new Error('throttled'); };
@@ -324,5 +361,23 @@ describe('POST /v1/auth/logout', () => {
     const res = await req(app, 'POST', '/v1/auth/logout', { refreshToken: 'rt_test' });
     assert.equal(res.status, 200);
     assert.ok(deleted);
+  });
+});
+
+// Generated usernames are checked (#451 third review): DynamoDB's createUser
+// only conditions on userId, so a collision would duplicate a username.
+describe('uniqueUsername', async () => {
+  const { uniqueUsername } = await import('../../src/routes/auth.js');
+  it('skips taken names and gives up after its tries', async () => {
+    const taken = new Set(['user-aaaaaa', 'user-bbbbbb']);
+    const orig = db.getUserByUsername;
+    db.getUserByUsername = async (u) => (taken.has(u) ? { userId: 'usr_x', username: u } : null);
+    try {
+      const seq = ['user-aaaaaa', 'user-bbbbbb', 'user-cccccc'];
+      assert.equal(await uniqueUsername({ generate: () => seq.shift() }), 'user-cccccc');
+      assert.equal(await uniqueUsername({ generate: () => 'user-aaaaaa', tries: 3 }), null);
+    } finally {
+      db.getUserByUsername = orig;
+    }
   });
 });
