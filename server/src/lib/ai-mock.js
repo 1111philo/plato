@@ -9,7 +9,8 @@
  *
  * Coach pacing: each learner turn adds 3 progress points; a message containing
  * MOCK_COMPLETE awards 10, so tests can drive a lesson to completion;
- * MOCK_NOTAGS leaves the tags off (the tag-repair call then supplies them).
+ * MOCK_NOTAGS leaves the tags off (the tag-repair call then supplies them);
+ * MOCK_THROTTLE fails a streamed reply as a Bedrock throttle.
  */
 
 const MOCK_USAGE = { input_tokens: 0, output_tokens: 0 };
@@ -116,6 +117,9 @@ const mockAi = {
     const text = replyFor(agentOf(body.system), body.messages);
     const lastUser = textOf([...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content);
     const delay = /MOCK_SLOW/.test(lastUser) ? 250 : 5;
+    // MOCK_THROTTLE: Bedrock refuses before anything streams, as when the
+    // account is throttled; the route answers 429 throttled.
+    if (/MOCK_THROTTLE/.test(lastUser)) throw Object.assign(new Error('Too many requests'), { name: 'ThrottlingException' });
     yield { type: 'message_start', message: { role: 'assistant' } };
     // MOCK_TRUNCATE: the reply runs out of tokens halfway (stop_reason max_tokens).
     if (/MOCK_TRUNCATE/.test(lastUser)) {

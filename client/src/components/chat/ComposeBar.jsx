@@ -29,12 +29,15 @@ function hostLabel(url) {
  * only blocks sending, so the learner can write the next message while the
  * coach is still replying (#247). How a message is sent comes from the
  * learner's `sendKey` preference, shown as a hint next to Send.
+ * `sendDisabledHint` replaces "Send when the reply finishes" when sending is
+ * blocked for another reason (a busy-service cooldown).
  */
 export default function ComposeBar({
   placeholder = 'Ask a question...',
   onSend,
   disabled = false,
   sendDisabled = false,
+  sendDisabledHint = 'Send when the reply finishes',
   allowImages = false,
   allowLinks = false,
   elevated = false,
@@ -424,7 +427,7 @@ export default function ComposeBar({
           <div className="flex-1" />
           {!disabled && (
             <span id={hintId} className="text-xs text-muted-foreground px-1 truncate">
-              {sendDisabled ? 'Send when the reply finishes' : sendHint(sendKey)}
+              {sendDisabled ? sendDisabledHint : sendHint(sendKey)}
             </span>
           )}
           <Button

@@ -262,6 +262,43 @@ it is less consistent — one observed outlier hit 47 s TTFT. Streaming hides so
 of this, and `BEDROCK_TIMEOUT_MS` (115 s) still bounds the worst case, but the
 tail is real and worth watching in the log-watch alarm.
 
+### The AI proxy's limits (#451 scale review)
+
+`POST /v1/ai/messages` is open to every signed-in user, so it is not a general
+Bedrock gateway (`server/src/lib/ai-limits.js`):
+- **Only `LLM`.** The route returns 400 for any other `model`, and
+  `ai-provider.js` refuses anything else too (`resolveModel`), so no request
+  can reach another model on the account. (The Lambda role's IAM policy is
+  still `bedrock:InvokeModel*` on `*`; scoping it to the Qwen ARN is a
+  template change for the stack owner.)
+- **Sized to plato's agents, with headroom:** `max_tokens` 1–4096 (KB
+  extraction asks for 4096), ≤ 60 messages (a coach turn is ~43; its tag
+  repair adds 2), ≤ 4 images per message and 8 per request, a system prompt
+  ≤ 200,000 characters (coach.md + knowledge base + catalog is ~60–100 KB),
+  a body ≤ 5 MB (the Function URL's own cap is 6 MB).
+- **Per user, per container (best-effort):** 30 calls a minute (burst 30;
+  a learner turn makes 1–5) and 4 in flight. Over either: `429 { code:
+  'rate_limited', retryAfterMs }` and `ai_rate_limited` in the logs. A burst
+  spread across containers can exceed it; a shared counter would cost a
+  DynamoDB write per AI call.
+- **Typed errors** (`classifyAiError`): `{ error, code, retryAfterMs? }` with
+  `code` `throttled` (429), `overloaded` (503), `timeout` (504), or `failed`
+  (502), on JSON responses and on the SSE `error` event. On the stream path
+  the route waits for Bedrock's first event before sending SSE headers, so a
+  throttle at the start is a real 429 rather than a 200 with an error event.
+  The Bedrock client uses the SDK's adaptive retry mode (3 attempts).
+- **Client:** `callApi` retries busy, rate-limited, timed-out and 5xx errors
+  twice with `backoffMs` (the server's `retryAfterMs`, else 2 s / 4 s, plus up
+  to 50% jitter, so a cohort that failed together doesn't retry together).
+  `converseStream` makes one jittered retry when the service is busy before
+  anything streamed (not when plato's own per-user limit said no). LessonChat
+  holds Send for the `retryAfterMs` (≤ 60 s) with a visible countdown; the
+  start and the end are announced in a status region, the composer's hint
+  says "Send when plato is ready again", and the message goes back into the
+  composer as with any failed turn.
+- `/v1/links/fetch` allows 20 fetches a minute per user (per container);
+  `/v1/ai/events` logs a `lessonId` only if it looks like a lesson id.
+
 ## Image & conversation persistence (#191, #193)
 
 A learner's chat history for a lesson lives in one `messages:<lessonId>`
