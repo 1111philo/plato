@@ -8,6 +8,9 @@ import {
   AUDIT_LOG_TABLE, REFRESH_TOKEN_TTL_DAYS, INVITE_TTL_DAYS, RESET_TOKEN_TTL_HOURS,
 } from '../config.js';
 
+/** An item whose `ttl` (epoch seconds) has passed, though DynamoDB hasn't deleted it yet. */
+const expired = (item) => typeof item?.ttl === 'number' && item.ttl < Math.floor(Date.now() / 1000);
+
 const clientOpts = {};
 if (process.env.DYNAMODB_ENDPOINT) {
   clientOpts.endpoint = process.env.DYNAMODB_ENDPOINT;
@@ -361,11 +364,15 @@ const db = {
 
   // ── Refresh Tokens ──
 
-  async storeRefreshToken(tokenHash, userId) {
+  // `tokenVersion`: the user's session version when the token was issued
+  // (routes/auth.js, lib/sessions.js). Reset tokens share this table, so
+  // getRefreshToken refuses them; both readers refuse an expired item,
+  // because DynamoDB's TTL deletion can lag by up to ~48 h.
+  async storeRefreshToken(tokenHash, userId, { tokenVersion = 0 } = {}) {
     const ttl = Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_DAYS * 86400;
     await doc.send(new PutCommand({
       TableName: REFRESH_TOKENS_TABLE,
-      Item: { tokenHash, userId, createdAt: new Date().toISOString(), ttl },
+      Item: { tokenHash, userId, tokenVersion, createdAt: new Date().toISOString(), ttl },
     }));
   },
 
@@ -374,7 +381,22 @@ const db = {
       TableName: REFRESH_TOKENS_TABLE,
       Key: { tokenHash },
     }));
-    return result.Item || null;
+    const item = result.Item;
+    if (!item || item.type === 'reset' || expired(item)) return null;
+    return item;
+  },
+
+  // A refresh token that was just exchanged stays usable for a short grace
+  // (parallel tabs and requests refreshing at once), then expires.
+  async markRefreshTokenRotated(tokenHash, graceSeconds) {
+    await doc.send(new UpdateCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Key: { tokenHash },
+      UpdateExpression: 'SET rotatedAt = if_not_exists(rotatedAt, :now), #ttl = :ttl',
+      ConditionExpression: 'attribute_exists(tokenHash)',
+      ExpressionAttributeNames: { '#ttl': 'ttl' },
+      ExpressionAttributeValues: { ':now': new Date().toISOString(), ':ttl': Math.floor(Date.now() / 1000) + graceSeconds },
+    }));
   },
 
   async deleteRefreshToken(tokenHash) {
@@ -400,7 +422,7 @@ const db = {
       Key: { tokenHash },
     }));
     const item = result.Item;
-    if (!item || item.type !== 'reset') return null;
+    if (!item || item.type !== 'reset' || expired(item)) return null;
     return item;
   },
 

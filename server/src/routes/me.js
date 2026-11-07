@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import db from '../lib/db.js';
 import { normalizeRole } from '../lib/permissions.js';
 import { authenticate } from '../middleware/authenticate.js';
-import { hashPassword } from '../lib/password.js';
+import { hashPassword, comparePassword } from '../lib/password.js';
+import { issueSession, revokeSessions } from '../lib/sessions.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { readNotifyState, setOptOut } from '../lib/notifications.js';
@@ -63,10 +64,23 @@ me.get('/v1/me/fields', async (c) => {
 // PATCH /v1/me — update profile fields
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
-  const body = await c.req.json();
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') return c.json({ error: 'Invalid JSON' }, 400);
   const allowed = ['email', 'username', 'group', 'password'];
   const updates = {};
   let defs = null;
+
+  // A new password or email needs the current password (a stolen session
+  // alone can't take the account over), and ends every other session
+  // (lib/sessions.js). The caller gets a fresh session in the response.
+  const current = c.get('user');
+  const changesEmail = body.email !== undefined && String(body.email).trim().toLowerCase() !== (current.email || '').toLowerCase();
+  const changesCredentials = body.password !== undefined || changesEmail;
+  if (changesCredentials) {
+    if (typeof body.currentPassword !== 'string' || !(await comparePassword(body.currentPassword, current.passwordHash))) {
+      return c.json({ error: 'Your current password is incorrect', code: 'current_password_required' }, 403);
+    }
+  }
 
   // firstName / lastName (#402); a lone `name` from an older client is split.
   const nameInput = readNameInput(body, { current: c.get('user') });
@@ -84,16 +98,21 @@ me.patch('/v1/me', async (c) => {
   for (const key of allowed) {
     if (body[key] !== undefined) {
       if (key === 'password') {
-        if (body.password.length < 8) {
+        if (typeof body.password !== 'string' || body.password.length < 8) {
           return c.json({ error: 'Password must be at least 8 characters' }, 400);
         }
         updates.passwordHash = await hashPassword(body.password);
       } else if (key === 'email') {
-        const existing = await db.getUserByEmail(body.email);
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+          return c.json({ error: 'A valid email is required' }, 400);
+        }
+        if (!changesEmail) continue;
+        const existing = await db.getUserByEmail(email);
         if (existing && existing.userId !== userId) {
           return c.json({ error: 'Email already in use' }, 409);
         }
-        updates.email = body.email.toLowerCase();
+        updates.email = email;
       } else if (key === 'username') {
         const usernameErr = validateUsername(body.username);
         if (usernameErr) return c.json({ error: usernameErr }, 400);
@@ -112,7 +131,13 @@ me.patch('/v1/me', async (c) => {
     return c.json({ error: 'No valid fields to update' }, 400);
   }
 
-  await db.updateUser(userId, updates);
+  let session = null;
+  if (changesCredentials) {
+    const revoked = await revokeSessions(current, { extra: updates });
+    session = await issueSession(revoked);
+  } else {
+    await db.updateUser(userId, updates);
+  }
   const updated = await db.getUserById(userId);
   if (!defs) defs = await loadFieldDefinitions();
 
@@ -124,6 +149,8 @@ me.patch('/v1/me', async (c) => {
     userGroup: updated.userGroup,
     role: normalizeRole(updated.role),
     customFields: visibleFieldValues(learnerFields(defs), updated.customFields),
+    // Only after a password or email change: this device's new session.
+    ...(session ? { session } : {}),
   });
 });
 

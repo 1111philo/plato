@@ -2,9 +2,13 @@ import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
 import { normalizeRole } from '../lib/permissions.js';
-import { generateUserId, generateRefreshToken, generateResetToken, hashToken } from '../lib/crypto.js';
+import { generateUserId, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
-import { signAccessToken } from '../lib/jwt.js';
+import { clientIp, createLimiter, readJson } from '../lib/rate-limit.js';
+import {
+  issueSession, exchangeRefreshToken, issueResetToken, resetTokenUser, revokeSessions,
+  signInLocked, recordFailedSignIn, clearFailedSignIns, LOGIN_MAX_FAILURES, LOGIN_LOCK_MS,
+} from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
 import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
@@ -41,6 +45,24 @@ async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
 
 const auth = new Hono();
 
+// Per-IP limits on the public auth endpoints (best-effort, per container;
+// lib/rate-limit.js). Generous for real people, tight for scripts.
+const TEN_MIN = 10 * 60 * 1000;
+const limits = {
+  login: createLimiter({ limit: 30, windowMs: TEN_MIN }),
+  refresh: createLimiter({ limit: 120, windowMs: TEN_MIN }),
+  forgot: createLimiter({ limit: 5, windowMs: TEN_MIN }),
+  reset: createLimiter({ limit: 10, windowMs: TEN_MIN }),
+  signup: createLimiter({ limit: 10, windowMs: TEN_MIN }),
+  setup: createLimiter({ limit: 10, windowMs: TEN_MIN }),
+};
+// Wrong sign-ins for a name or email no account has, counted like a real
+// account's failures, so a lock doesn't reveal which accounts exist.
+const unknownSignIns = createLimiter({ limit: LOGIN_MAX_FAILURES - 1, windowMs: LOGIN_LOCK_MS });
+const TOO_MANY = { error: 'Too many requests. Please try again later.' };
+const LOCKED = { error: 'Too many sign-in attempts. Try again in 15 minutes, or reset your password.' };
+const limited = (c, name) => limits[name].hit(clientIp(c));
+
 // GET /v1/auth/setup-status — check if initial setup is needed
 auth.get('/v1/auth/setup-status', async (c) => {
   const count = await db.countUsers();
@@ -49,12 +71,14 @@ auth.get('/v1/auth/setup-status', async (c) => {
 
 // POST /v1/auth/setup — create the first admin account (only works when no users exist)
 auth.post('/v1/auth/setup', async (c) => {
+  if (limited(c, 'setup')) return c.json(TOO_MANY, 429);
   const count = await db.countUsers();
   if (count > 0) {
     return c.json({ error: 'Setup already completed' }, 400);
   }
 
-  const body = await c.req.json();
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
   const { email, password, username: rawUsername, classroomName } = body;
   if (!email || !password) {
     return c.json({ error: 'email, first name, and password are required' }, 400);
@@ -107,9 +131,7 @@ auth.post('/v1/auth/setup', async (c) => {
     }
   }
 
-  const accessToken = await signAccessToken(userId, 'admin');
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), userId);
+  const { accessToken, refreshToken } = await issueSession({ userId, role: 'admin' });
 
   return c.json({
     accessToken,
@@ -149,7 +171,9 @@ auth.get('/v1/auth/invite/:token', async (c) => {
 
 // POST /v1/auth/signup — sign up with invite token
 auth.post('/v1/auth/signup', async (c) => {
-  const body = await c.req.json();
+  if (limited(c, 'signup')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
   const { inviteToken, password, username: rawUsername, userGroup, email: providedEmail, customFields: rawCustomFields } = body;
 
   if (!inviteToken || !password) {
@@ -274,9 +298,7 @@ auth.post('/v1/auth/signup', async (c) => {
     await db.markInviteUsed(inviteToken);
   }
 
-  const accessToken = await signAccessToken(userId, 'learner');
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), userId);
+  const { accessToken, refreshToken } = await issueSession({ userId, role: 'learner' });
 
   return c.json({
     accessToken,
@@ -287,9 +309,12 @@ auth.post('/v1/auth/signup', async (c) => {
 
 // POST /v1/auth/login
 auth.post('/v1/auth/login', async (c) => {
-  const { email, password } = await c.req.json();
+  if (limited(c, 'login')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  if (!body) return c.json({ error: 'Invalid JSON' }, 400);
+  const { email, password } = body;
 
-  if (!email || !password) {
+  if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
     return c.json({ error: 'Email/username and password are required' }, 400);
   }
 
@@ -298,17 +323,20 @@ auth.post('/v1/auth/login', async (c) => {
     ? await db.getUserByEmail(email)
     : await db.getUserByUsername(email);
   if (!user) {
+    if (unknownSignIns.hit(email.trim().toLowerCase())) return c.json(LOCKED, 429);
     return c.json({ error: 'Invalid credentials' }, 401);
   }
+  if (signInLocked(user)) return c.json(LOCKED, 429);
 
   const valid = await comparePassword(password, user.passwordHash);
   if (!valid) {
-    return c.json({ error: 'Invalid credentials' }, 401);
+    let locked = false;
+    try { locked = await recordFailedSignIn(user); } catch { /* best-effort */ }
+    return locked ? c.json(LOCKED, 429) : c.json({ error: 'Invalid credentials' }, 401);
   }
+  try { await clearFailedSignIns(user); } catch { /* best-effort */ }
 
-  const accessToken = await signAccessToken(user.userId, user.role);
-  const refreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(refreshToken), user.userId);
+  const { accessToken, refreshToken } = await issueSession(user);
 
   // Activity-tracking writes are best-effort: login must succeed even if
   // audit-log / user-record writes are throttled or unavailable. The login
@@ -333,99 +361,83 @@ auth.post('/v1/auth/login', async (c) => {
   });
 });
 
-// POST /v1/auth/refresh
+// POST /v1/auth/refresh — exchange a refresh token for a new pair. The old
+// token stays usable for a short grace so parallel requests and tabs don't
+// log each other out (lib/sessions.js).
 auth.post('/v1/auth/refresh', async (c) => {
-  const { refreshToken } = await c.req.json();
-  if (!refreshToken) {
+  if (limited(c, 'refresh')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const refreshToken = body?.refreshToken;
+  if (!refreshToken || typeof refreshToken !== 'string') {
     return c.json({ error: 'refreshToken is required' }, 400);
   }
 
-  const tokenHash = hashToken(refreshToken);
-  const stored = await db.getRefreshToken(tokenHash);
-  if (!stored) {
-    return c.json({ error: 'Invalid refresh token' }, 401);
-  }
-
-  const user = await db.getUserById(stored.userId);
-  if (!user) {
-    await db.deleteRefreshToken(tokenHash);
-    return c.json({ error: 'User not found' }, 401);
-  }
-
-  // Rotate: delete old, issue new
-  await db.deleteRefreshToken(tokenHash);
-  const newRefreshToken = generateRefreshToken();
-  await db.storeRefreshToken(hashToken(newRefreshToken), user.userId);
-
-  const accessToken = await signAccessToken(user.userId, user.role);
+  const result = await exchangeRefreshToken(refreshToken);
+  if (result.error) return c.json({ error: result.error }, 401);
 
   // Best-effort: a token refresh fires every ~15 min while a learner is
   // active, so this gives `lastActiveAt` a heartbeat without per-message
   // write amplification on the user record.
   try {
-    await db.setUserActivityField(user.userId, 'lastActiveAt', new Date().toISOString());
+    await db.setUserActivityField(result.user.userId, 'lastActiveAt', new Date().toISOString());
   } catch { /* swallow */ }
 
-  return c.json({ accessToken, refreshToken: newRefreshToken });
+  return c.json({ accessToken: result.accessToken, refreshToken: result.refreshToken });
 });
 
 // POST /v1/auth/logout
 auth.post('/v1/auth/logout', async (c) => {
-  const { refreshToken } = await c.req.json();
-  if (refreshToken) {
-    await db.deleteRefreshToken(hashToken(refreshToken));
+  const body = await readJson(c);
+  if (typeof body?.refreshToken === 'string' && body.refreshToken) {
+    await db.deleteRefreshToken(hashToken(body.refreshToken));
   }
   return c.json({ ok: true });
 });
 
-// POST /v1/auth/forgot-password
+// POST /v1/auth/forgot-password — always answers ok (never says whether the
+// email has an account). At most one email per user per cooldown, and only
+// the newest link works (lib/sessions.js).
 auth.post('/v1/auth/forgot-password', async (c) => {
-  const { email } = await c.req.json();
-  if (!email) {
+  if (limited(c, 'forgot')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const email = body?.email;
+  if (!email || typeof email !== 'string') {
     return c.json({ error: 'Email is required' }, 400);
   }
 
   const user = await db.getUserByEmail(email);
-  // Always return ok to avoid leaking whether an email exists
-  if (!user) {
-    return c.json({ ok: true });
-  }
+  if (!user) return c.json({ ok: true });
 
-  const token = generateResetToken();
-  await db.storeResetToken(hashToken(token), user.userId);
-  await sendResetEmail(user.email, token);
-
+  const token = await issueResetToken(user);
+  if (token) await sendResetEmail(user.email, token);
   return c.json({ ok: true });
 });
 
-// POST /v1/auth/reset-password
+// POST /v1/auth/reset-password — set a new password with the newest reset
+// link. Ends every existing session (lib/sessions.js).
 auth.post('/v1/auth/reset-password', async (c) => {
-  const { resetToken, password } = await c.req.json();
-  if (!resetToken || !password) {
+  if (limited(c, 'reset')) return c.json(TOO_MANY, 429);
+  const body = await readJson(c);
+  const { resetToken, password } = body || {};
+  if (!resetToken || !password || typeof resetToken !== 'string' || typeof password !== 'string') {
     return c.json({ error: 'resetToken and password are required' }, 400);
   }
   if (password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400);
   }
 
-  const tokenHash = hashToken(resetToken);
-  const stored = await db.getResetToken(tokenHash);
-  if (!stored) {
+  const found = await resetTokenUser(resetToken);
+  if (!found) {
     return c.json({ error: 'Invalid or expired reset link' }, 400);
   }
 
-  const user = await db.getUserById(stored.userId);
-  if (!user) {
-    await db.deleteResetToken(tokenHash);
-    return c.json({ error: 'User not found' }, 400);
-  }
-
   const passwordHash = await hashPassword(password);
-  await db.updateUser(user.userId, { passwordHash });
-  await db.deleteResetToken(tokenHash);
+  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null } });
+  await db.deleteResetToken(found.tokenHash);
 
   return c.json({ ok: true });
 });
 
 export default auth;
 export { validateUsername, generateUsername, uniqueUsername };
+export function _resetAuthLimits() { for (const l of Object.values(limits)) l.reset(); unknownSignIns.reset(); }

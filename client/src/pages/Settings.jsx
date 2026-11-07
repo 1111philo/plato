@@ -56,6 +56,7 @@ export default function Settings() {
     });
   }
 
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordFeedback, setPasswordFeedback] = useState('');
@@ -138,6 +139,10 @@ export default function Settings() {
 
   const handleChangePassword = async (e) => {
     e.preventDefault();
+    if (!currentPassword) {
+      setPasswordFeedback('Enter your current password.');
+      return;
+    }
     if (!newPassword || newPassword.length < 8) {
       setPasswordFeedback('Password must be at least 8 characters.');
       return;
@@ -149,10 +154,12 @@ export default function Settings() {
     setPasswordSubmitting(true);
     setPasswordFeedback('');
     try {
-      await updateProfile({ password: newPassword });
+      // Signs out every other device; this one stays signed in (lib/sessions.js).
+      await updateProfile({ password: newPassword, currentPassword });
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      setPasswordFeedback('Password changed!');
+      setPasswordFeedback('Password changed. Other devices are signed out.');
     } catch (err) {
       setPasswordFeedback(err.message || 'Failed to change password');
     } finally {
@@ -197,6 +204,16 @@ export default function Settings() {
           <Separator />
 
           <form className="space-y-3" onSubmit={handleChangePassword}>
+            <div className="space-y-1.5">
+              <Label htmlFor="current-password">Current Password</Label>
+              <PasswordField
+                id="current-password"
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                disabled={passwordSubmitting}
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-password">New Password</Label>
               <PasswordField

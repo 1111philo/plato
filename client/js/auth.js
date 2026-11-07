@@ -145,13 +145,56 @@ export async function refreshCurrentUser() {
   }
 }
 
+// -- Token refresh (#451 scale review H1) -------------------------------------
+//
+// Access tokens last 15 minutes. Several requests (or tabs) noticing that at
+// once used to each refresh with the same refresh token: the first rotated
+// it, the rest failed, and the learner was logged out mid-lesson. Now:
+// - one refresh at a time per tab (`refreshInFlight`), and across tabs a Web
+//   Lock where the browser has it; whoever waited re-reads plato_auth and
+//   uses the tokens the other refresh stored;
+// - a request refreshes ~2 minutes *before* the token expires, so most never
+//   see a 401;
+// - the server keeps a just-rotated refresh token usable for 30 s, for the
+//   rare race that still slips through (server/src/lib/sessions.js).
+
+export const REFRESH_AHEAD_MS = 2 * 60 * 1000;
+let refreshInFlight = null;
+
+/** When an access token expires (ms since epoch), or 0 if unreadable. */
+export function accessTokenExpiresAt(accessToken) {
+  try {
+    const part = accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return (JSON.parse(atob(part)).exp || 0) * 1000;
+  } catch {
+    return 0;
+  }
+}
+
+const freshEnough = (accessToken) => accessTokenExpiresAt(accessToken) - Date.now() > REFRESH_AHEAD_MS;
+
+function withRefreshLock(fn) {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  return locks?.request ? locks.request('plato-auth-refresh', fn) : fn();
+}
+
 /**
- * Refresh the access token using the stored refresh token.
- * Returns true on success, false on failure (user must re-login).
+ * Get a fresh access token. `staleAccessToken` is the one the caller found
+ * expired (or about to): if the stored token has changed since, someone
+ * else already refreshed and that's used. Returns true on success, false
+ * when the session is over (the user must sign in again).
  */
-async function refreshAccessToken() {
+async function refreshAccessToken(staleAccessToken) {
+  if (!refreshInFlight) {
+    refreshInFlight = withRefreshLock(() => doRefresh(staleAccessToken)).finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doRefresh(staleAccessToken) {
   const tokens = await getAuthTokens();
   if (!tokens?.refreshToken) return false;
+  if (tokens.accessToken !== staleAccessToken && freshEnough(tokens.accessToken)) return true;
   try {
     const res = await fetch(`${SERVICE_URL}/v1/auth/refresh`, {
       method: 'POST',
@@ -159,6 +202,9 @@ async function refreshAccessToken() {
       body: JSON.stringify({ refreshToken: tokens.refreshToken }),
     });
     if (!res.ok) {
+      // Another tab may have rotated the token while this request was out.
+      const now = await getAuthTokens();
+      if (now?.refreshToken && now.refreshToken !== tokens.refreshToken) return true;
       // Don't clear auth silently — the user's data should be preserved.
       // Notify listeners so the UI can prompt re-login.
       _notifySessionExpired();
@@ -199,10 +245,18 @@ export async function authenticatedFetch(path, options = {}) {
     },
   });
 
-  let res = await doFetch(tokens.accessToken);
+  // About to expire: refresh first, so the request doesn't 401.
+  // (Only when the expiry is readable: an unreadable token is just tried.)
+  let token = tokens.accessToken;
+  const expiresAt = accessTokenExpiresAt(token);
+  if (expiresAt && expiresAt - Date.now() <= REFRESH_AHEAD_MS && await refreshAccessToken(token)) {
+    token = (await getAuthTokens())?.accessToken || token;
+  }
+
+  let res = await doFetch(token);
 
   if (res.status === 401) {
-    const refreshed = await refreshAccessToken();
+    const refreshed = await refreshAccessToken(token);
     if (!refreshed) throw new Error('Session expired');
     const newTokens = await getAuthTokens();
     res = await doFetch(newTokens.accessToken);
@@ -241,7 +295,10 @@ export async function updateProfile(updates) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || 'Update failed');
   }
-  const data = await res.json();
+  const { session, ...data } = await res.json();
+  // A password or email change ends every other session; this device gets
+  // a fresh one in the response (server/src/lib/sessions.js).
+  if (session?.accessToken) await saveAuthTokens(session);
   await saveAuthUser(data);
   return data;
 }

@@ -19,6 +19,10 @@ export async function authenticate(c, next) {
   if (!user) {
     return c.json({ error: 'User not found' }, 401);
   }
+  // Sessions ended by a password/email change or reset (lib/sessions.js).
+  if ((Number(payload.tv) || 0) !== (Number(user.tokenVersion) || 0)) {
+    return c.json({ error: 'Session ended' }, 401);
+  }
 
   c.set('userId', user.userId);
   c.set('role', user.role);
