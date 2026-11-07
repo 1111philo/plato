@@ -233,15 +233,25 @@ To serve the app from a custom domain:
 
 1. Create a CloudFront distribution with the Lambda Function URL as a **Custom Origin** (HTTPS-only)
 2. Set the Origin Request Policy to **AllViewerExceptHostHeader** (required for Lambda Function URLs)
-3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
-4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
-5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
-6. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+3. Set the default behavior's Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
+4. Add a `/assets/*` behavior: Cache Policy **CachingOptimized**, compression on, GET/HEAD, the same **AllViewerExceptHostHeader** origin request policy. Built assets have hashed names and `immutable`, so they need no invalidation; this saves a Lambda call per asset
+5. Origin read timeout **60 s** (the default 30 s turns a slow first AI reply into a 504 while Lambda keeps working)
+6. Optional: a WAF web ACL (scope CloudFront, us-east-1) with a rate rule on URI paths starting with `/v1/auth/`, per IP. Size it for a room of learners on one Wi-Fi address (prod uses 10,000 per 5 minutes)
+7. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
+8. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+9. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
    email links are built from it, so a stale value sends learners to the old host
 
 The CloudFront distribution and ACM certificate are **not** managed by
 `template.yaml`; they're provisioned once by hand and outlive stack updates. SAM
 only owns the Lambda Function URL that CloudFront points at.
+
+**Prod today** (`E18E92K4YHSX4B`, plato.courses; applied 2026-11-07): steps 3–6,
+with WAF web ACL `plato-prod` (rule `auth-rate-per-ip`, 10,000 requests per IP
+per 5 minutes on `/v1/auth/*`, blocked with a 429). Playground
+(`E2CS7J98JXT998`) has the defaults (no `/assets/*` behavior, 30 s, no WAF).
+Point-in-time recovery is on for prod's tables and off for playground's; it's a
+console setting because the deploy role can't manage continuous backups.
 
 ### Renaming a live domain
 

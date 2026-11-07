@@ -35,10 +35,12 @@ Service Quotas the week before; ask AWS for more if the expected load is close.
    the first request). Provisioned concurrency on the stream function (300–500
    for the event window, roughly $25 for three hours) removes that; it's set on
    the function alias in the console or deploy repo. *Decision for the owner.*
-5. **CloudFront** (console, prod distribution). Recommended, not yet applied:
-   cache and compress `/assets/*` (hashed files, `CachingOptimized`); raise the
-   origin read timeout from 30 s to 60 s (slow first replies otherwise end in a
-   504 while Lambda keeps working); a WAF rate rule on `/v1/auth/*`.
+5. **CloudFront** (prod distribution; applied 2026-11-07, details in
+   `docs/DEPLOY.md`): `/assets/*` cached, origin read timeout 60 s, WAF rate
+   rule on `/v1/auth/*` (10,000 per IP per 5 minutes, sized for a room on one
+   Wi-Fi). *Check* they're still in place. Plato's own per-IP limits are sized
+   the same way (`AUTH_IP_LIMITS`, wait-list 60), and wrong passwords lock the
+   account, not the room.
 6. **Alarms.** None page anyone today. Recommended (needs an SNS topic that
    reaches a person): Lambda `Throttles` / `Errors` / `Duration` p99, DynamoDB
    `ThrottledRequests` per table, Bedrock `InvocationThrottles` /
@@ -71,5 +73,12 @@ the number here: _not measured yet_.
 
 ## Known limits (from the scale review)
 
-Fixed or in progress before launch are tracked on #451. What remains a
-limit is listed in `docs/POST_LAUNCH.md`.
+Fixed before launch (#516–#520): shared data cached for 30 s on learner paths
+and parsed lessons list, so a classroom refocusing at once doesn't overload
+the `_system` partition; time estimates precomputed; one-read setup check;
+each save written once and one AI call per coach turn; the AI endpoint locked
+to plato's model with per-user limits; reset links can't be used as sessions;
+the refresh race that could sign a whole cohort out at the 15-minute mark.
+What remains is listed in `docs/POST_LAUNCH.md`. The per-user AI limits and
+per-IP limits count per Lambda container, so they're best-effort; the WAF rule
+is the exact one for sign-in.
