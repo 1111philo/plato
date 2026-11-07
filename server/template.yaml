@@ -74,11 +74,14 @@ Resources:
                 - ses:SendRawEmail
               Resource: '*'
         - Statement:
+            # plato's one model only (CLAUDE.md: `LLM` in ai-provider.js),
+            # invoked by its bare model id, so no other model on this shared
+            # account can be reached through plato.
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
-              Resource: '*'
+              Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/qwen.qwen3-vl-235b-a22b"
         - Statement:
             # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow
@@ -153,11 +156,14 @@ Resources:
                 - ses:SendRawEmail
               Resource: '*'
         - Statement:
+            # plato's one model only (CLAUDE.md: `LLM` in ai-provider.js),
+            # invoked by its bare model id, so no other model on this shared
+            # account can be reached through plato.
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
-              Resource: '*'
+              Resource: !Sub "arn:aws:bedrock:${AWS::Region}::foundation-model/qwen.qwen3-vl-235b-a22b"
         - Statement:
             # FilterLogEvents supports per-group resource scoping.
             - Effect: Allow

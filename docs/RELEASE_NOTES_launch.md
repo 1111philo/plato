@@ -76,6 +76,11 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #513 | User Fields dialog: rows with a one-line summary, edit in place, one "who can see it" choice (Everyone / Learners, after signup / Admins only), delete behind a confirmation; fits phones | #364 |
 | #514 | Bulk update in Admin → Users: select users (or all matching), then set or clear their group or one user field | #362 |
 | #515 | Scale review ops: tables kept on delete/replace (`Retain`), `DEPLOY_FREEZE` for prod auto-deploys, event-day runbook | ops |
+| #516 | Scale review: the AI endpoint accepts only plato's model, with size caps and per-user limits; typed throttle errors, client backoff, and a Send countdown | review |
+| #517 | Scale review: reset links can't be used as sessions; current password to change password or email, other sessions signed out; refresh race fixed; sign-in limits and lockout | review |
+| #518 | Scale review: 30 s cache for shared data on learner paths; parsed lessons list; precomputed time estimates; faster cold starts | review |
+| #519 | Scale review: each save written once; profile updates only on explicit coach tags; admin stats and email jobs scale; no double emails from overlapping jobs | review |
+| #520 | Scale review follow-ups: per-IP sign-in limits sized for a room on one Wi-Fi; setup check reads one item; Bedrock access limited to plato's model | review |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

@@ -11,7 +11,7 @@ const waitlist = new Hono();
 // container (best-effort; a keyed outside form is exempt). Once the
 // wait-list confirmation is on, each join can send an email, so one source
 // mustn't be able to spray them. clientIp: see lib/rate-limit.js.
-export const JOIN_LIMIT = 5;
+export const JOIN_LIMIT = 60; // per IP: a room of people on one Wi-Fi may join together
 export const JOIN_WINDOW_MS = 10 * 60 * 1000;
 const joins = createLimiter({ limit: JOIN_LIMIT, windowMs: JOIN_WINDOW_MS });
 const overLimit = (ip) => joins.hit(ip);

@@ -5,6 +5,7 @@ import { normalizeRole } from '../lib/permissions.js';
 import { generateUserId, hashToken } from '../lib/crypto.js';
 import { hashPassword, comparePassword } from '../lib/password.js';
 import { clientIp, createLimiter, readJson } from '../lib/rate-limit.js';
+import { isSetUp, markSetUp } from '../lib/setup-state.js';
 import {
   issueSession, exchangeRefreshToken, issueResetToken, resetTokenUser, revokeSessions,
   signInLocked, recordFailedSignIn, clearFailedSignIns, LOGIN_MAX_FAILURES, LOGIN_LOCK_MS,
@@ -46,14 +47,18 @@ async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
 const auth = new Hono();
 
 // Per-IP limits on the public auth endpoints (best-effort, per container;
-// lib/rate-limit.js). Generous for real people, tight for scripts.
+// lib/rate-limit.js). These are flood guards only: a whole room of learners
+// often shares one public IP (venue or campus Wi-Fi), so they must allow an
+// event's worth of people signing in or up from one address. Password
+// guessing is stopped per account (LOGIN_MAX_FAILURES), not here.
 const TEN_MIN = 10 * 60 * 1000;
+export const AUTH_IP_LIMITS = { login: 1000, refresh: 3000, forgot: 100, reset: 200, signup: 500, setup: 10 };
 const limits = {
-  login: createLimiter({ limit: 30, windowMs: TEN_MIN }),
-  refresh: createLimiter({ limit: 120, windowMs: TEN_MIN }),
-  forgot: createLimiter({ limit: 5, windowMs: TEN_MIN }),
-  reset: createLimiter({ limit: 10, windowMs: TEN_MIN }),
-  signup: createLimiter({ limit: 10, windowMs: TEN_MIN }),
+  login: createLimiter({ limit: AUTH_IP_LIMITS.login, windowMs: TEN_MIN }),
+  refresh: createLimiter({ limit: AUTH_IP_LIMITS.refresh, windowMs: TEN_MIN }),
+  forgot: createLimiter({ limit: AUTH_IP_LIMITS.forgot, windowMs: TEN_MIN }),
+  reset: createLimiter({ limit: AUTH_IP_LIMITS.reset, windowMs: TEN_MIN }),
+  signup: createLimiter({ limit: AUTH_IP_LIMITS.signup, windowMs: TEN_MIN }),
   setup: createLimiter({ limit: 10, windowMs: TEN_MIN }),
 };
 // Wrong sign-ins for a name or email no account has, counted like a real
@@ -65,8 +70,8 @@ const limited = (c, name) => limits[name].hit(clientIp(c));
 
 // GET /v1/auth/setup-status — check if initial setup is needed
 auth.get('/v1/auth/setup-status', async (c) => {
-  const count = await db.countUsers();
-  return c.json({ needsSetup: count === 0 });
+  // Runs on every SPA boot: one read at most, then remembered (lib/setup-state.js).
+  return c.json({ needsSetup: !(await isSetUp()) });
 });
 
 // POST /v1/auth/setup — create the first admin account (only works when no users exist)
@@ -109,6 +114,7 @@ auth.post('/v1/auth/setup', async (c) => {
     ...nameInput.fields,
     role: 'admin',
   });
+  markSetUp();
 
   // Emit userCreated so plugins can react. Errors in handlers are caught and
   // logged inside emit() — never bubble up to the user-facing request.

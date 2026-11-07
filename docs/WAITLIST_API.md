@@ -131,7 +131,7 @@ from the wait list"** email when an admin removes their entry.
 
 ### Limits
 
-Requests **without** the key are limited to 5 per client IP address per 10
+Requests **without** the key are limited to 60 per client IP address per 10
 minutes (`429 {"error":"Too many requests…"}` beyond that). The address is
 the one plato's CDN saw, so a sender going through plato's address can't get
 around the limit by setting its own `X-Forwarded-For`. Requests with the
