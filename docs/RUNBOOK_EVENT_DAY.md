@@ -41,10 +41,11 @@ Service Quotas the week before; ask AWS for more if the expected load is close.
    Wi-Fi). *Check* they're still in place. Plato's own per-IP limits are sized
    the same way (`AUTH_IP_LIMITS`, wait-list 60), and wrong passwords lock the
    account, not the room.
-6. **Alarms.** None page anyone today. Recommended (needs an SNS topic that
-   reaches a person): Lambda `Throttles` / `Errors` / `Duration` p99, DynamoDB
-   `ThrottledRequests` per table, Bedrock `InvocationThrottles` /
-   `InvocationServerErrors`, CloudFront 5xx rate, SES bounce and complaint rate.
+6. **Alarms** (prod; created 2026-11-07, details in `docs/DEPLOY.md`) email
+   b3b@uic.edu through SNS topic `plato-prod-alarms`. *Check* the
+   subscriptions are confirmed and the alarms are `OK`:
+   `aws cloudwatch describe-alarms --alarm-name-prefix plato-prod` (us-east-2,
+   and us-east-1 for CloudFront).
 7. **Tell the facilitators** to stagger "open plato now" over a few minutes
    (e.g. by table or group) if they can. A synchronized start is the worst case.
 
