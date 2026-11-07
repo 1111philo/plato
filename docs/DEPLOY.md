@@ -253,6 +253,26 @@ per 5 minutes on `/v1/auth/*`, blocked with a 429). Playground
 Point-in-time recovery is on for prod's tables and off for playground's; it's a
 console setting because the deploy role can't manage continuous backups.
 
+**Alarms (prod; created 2026-11-07 with the CLI, not in `template.yaml`).** The
+deploy role can't create SNS topics or CloudWatch alarms, so these live outside
+the stack. SNS topic `plato-prod-alarms` in us-east-2 (and one of the same name
+in us-east-1, for CloudFront metrics) emails **b3b@uic.edu**. Every alarm also
+notifies on recovery (OK), and missing data counts as OK.
+
+| Alarm | Fires when |
+|---|---|
+| `plato-prod-lambda-stream-errors` / `-api-errors` | 10+ errors in 5 minutes |
+| `plato-prod-lambda-stream-throttles` / `-api-throttles` | any throttled invocation in 5 minutes |
+| `plato-prod-lambda-stream-duration-p99` | p99 duration over 100 s (timeout 120 s) for 10 minutes |
+| `plato-prod-bedrock-invocationthrottles` / `-invocationservererrors` | 5+ for `qwen.qwen3-vl-235b-a22b` in 5 minutes |
+| `plato-prod-dynamodb-throttles` | any read or write throttle event on any of the five tables |
+| `plato-prod-ses-bounce-rate` / `-complaint-rate` | account bounce rate over 5% / complaint rate over 0.1% |
+| `plato-prod-cloudfront-5xx` (us-east-1) | 5xx rate over 5% for 10 minutes on plato.courses |
+
+Lambda function names change if the functions are ever replaced; update the
+two Lambda alarms' dimensions then. Moving these into `template.yaml` needs
+`sns:*` and `cloudwatch:PutMetricAlarm` / `DeleteAlarms` on the deploy role.
+
 ### Renaming a live domain
 
 To move an already-live deployment to a new hostname without breaking sessions,
