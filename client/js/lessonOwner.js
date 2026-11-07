@@ -23,7 +23,10 @@ export async function loadLessons() {
     if (resp.ok) {
       const serverLessons = await resp.json();
       for (const lesson of serverLessons) {
-        if (lesson.markdown) {
+        // The list sends each lesson's fields already parsed (`parsed`,
+        // #451 scale review: not the whole catalog's markdown); an older
+        // server still sends `markdown`.
+        if (lesson.parsed || lesson.markdown) {
           // parseLessonPrompt only knows about fields encoded inside the
           // markdown (name, description, exemplar, objectives). Top-level
           // server fields need to be carried forward explicitly so they
@@ -31,7 +34,9 @@ export async function loadLessons() {
           // UI and the coach context builder: `unit` and `program` (the
           // Course → Unit → Lesson placement and order, #408) and the legacy
           // `course` block, which is the unit.
-          const parsed = parseLessonPrompt(lesson.lessonId, lesson.markdown);
+          const parsed = lesson.parsed
+            ? { lessonId: lesson.lessonId, ...lesson.parsed }
+            : parseLessonPrompt(lesson.lessonId, lesson.markdown);
           if (lesson.course) parsed.course = lesson.course;
           if (lesson.unit) parsed.unit = lesson.unit;
           if (lesson.program) parsed.program = lesson.program;

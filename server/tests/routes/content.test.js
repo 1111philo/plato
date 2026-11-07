@@ -1,7 +1,9 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import content, { _resetTimeStatsCache } from '../../src/routes/content.js';
+import content from '../../src/routes/content.js';
+import { computeLessonTimeStats, _resetTimeStatsRefreshThrottle } from '../../src/lib/lesson-time-stats.js';
+import { whenJobsIdle } from '../../src/lib/jobs.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
 
@@ -24,6 +26,21 @@ describe('GET /v1/lessons — visibility filtering', () => {
     { dataKey: 'lesson:priv-2', data: { name: 'Private Other', markdown: '# PO', status: 'private', sharedWith: ['usr_2'] }, updatedAt: '2025-01-01' },
     { dataKey: 'lesson:priv-3', data: { name: 'Private No Share', markdown: '# PN', status: 'private' }, updatedAt: '2025-01-01' },
   ];
+
+  it('sends each lesson\u2019s parsed fields, not its markdown; the lesson itself still has it (#451 B1)', async () => {
+    const md = '# Public Lesson\n\nA short one.\n\n## Exemplar\n\nWhat good looks like.\n\n## Learning Objectives\n\n- Can do one\n- Can do two\n\n## Coach Directive\n\nBe brief.';
+    db.getAllSyncData = async () => [{ dataKey: 'lesson:pub-1', data: { name: 'Public Lesson', markdown: md, status: 'public' }, updatedAt: '2025-01-01' }];
+    db.getSyncData = async () => ({ data: { name: 'Public Lesson', markdown: md, status: 'public' }, version: 1 });
+    const app = new Hono(); app.route('/', content);
+    const [l] = await (await userReq(app, 'GET', '/v1/lessons', 'usr_1')).json();
+    assert.equal(l.markdown, undefined);
+    assert.deepEqual(l.parsed, {
+      name: 'Public Lesson', description: 'A short one.', exemplar: 'What good looks like.',
+      learningObjectives: ['Can do one', 'Can do two'], coachDirective: 'Be brief.',
+    });
+    const one = await (await userReq(app, 'GET', '/v1/lessons/pub-1', 'usr_1')).json();
+    assert.equal(one.markdown, md);
+  });
 
   it('returns public lessons and private lessons shared with user', async () => {
     db.getAllSyncData = async () => lessons;
@@ -159,12 +176,19 @@ describe('GET /v1/lessons/time-stats', () => {
     return items;
   }
 
-  beforeEach(() => {
-    _resetTimeStatsCache();
+  // The learner route only reads the stored record (#451 scale review, B2);
+  // the job computes it. `computed` is what computeLessonTimeStats returns.
+  let computed;
+  let stored;
+  let scans;
+  beforeEach(async () => {
+    _resetTimeStatsRefreshThrottle();
     db.getUserById = async (id) => ({ userId: id, role: 'user', name: 'User' });
     const allKbItems = buildKbItems();
     const userIds = [...new Set(allKbItems.map(i => i.userId))];
-    db.listAllUsers = async () => userIds.map(uid => ({ userId: uid, role: 'user' }));
+    scans = 0;
+    db.listAllUsers = async () => { scans++; return userIds.map(uid => ({ userId: uid, role: 'user' })); };
+    db.getSyncDataByPrefix = async (uid, prefix) => allKbItems.filter(i => i.userId === uid && i.dataKey.startsWith(prefix));
     db.getAllSyncData = async (uid) => {
       if (uid === '_system') {
         return [
@@ -175,6 +199,29 @@ describe('GET /v1/lessons/time-stats', () => {
       }
       return allKbItems.filter(i => i.userId === uid);
     };
+    computed = await computeLessonTimeStats({ db });
+    scans = 0;
+    stored = { data: { computedAt: new Date().toISOString(), byLesson: computed }, version: 1 };
+    db.getSyncData = async (uid, key) => (uid === '_system' && key === 'stats:timeStats' ? stored : null);
+    db.putSyncData = async (_u, key, data) => { if (key === 'stats:timeStats') stored = { data, version: 2 }; };
+  });
+
+  it('the job computes p20/p80/sampleSize for lessons with >=3 completions', () => {
+    assert.deepEqual(computed['pub-1'], { p20: 6, p80: 16, sampleSize: 8 });
+    assert.deepEqual(computed['priv-1'], { p20: 10, p80: 12, sampleSize: 3 });
+    assert.equal(computed['too-few'], undefined, 'lessons with <3 completions are omitted');
+  });
+
+  it('a learner request never scans users; a missing record means {} and asks the job once', async () => {
+    stored = null;
+    const app = new Hono(); app.route('/', content);
+    const res = await userReq(app, 'GET', '/v1/lessons/time-stats', 'usr_1');
+    assert.deepEqual(await res.json(), {});
+    assert.equal(scans, 0, 'the request itself read no users');
+    await whenJobsIdle(); // the job ran in-process (no Lambda here) and stored the record
+    assert.deepEqual(stored.data.byLesson['pub-1'], { p20: 6, p80: 16, sampleSize: 8 });
+    const again = await (await userReq(app, 'GET', '/v1/lessons/time-stats', 'usr_1')).json();
+    assert.deepEqual(again['pub-1'], { p20: 6, p80: 16, sampleSize: 8 });
   });
 
   it('returns p20/p80/sampleSize for lessons with >=3 completions, visible to user', async () => {

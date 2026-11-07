@@ -25,6 +25,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import defaultDb from './db.js';
+import { systemItemsByPrefix } from './system-cache.js';
 import { normalizeRole, ROLES } from './permissions.js';
 import { nameFields } from './names.js';
 import { APP_URL } from '../config.js';
@@ -127,8 +128,9 @@ export async function createMessage(message, actor, db = defaultDb, { requestId 
 
 export async function listMessages(db = defaultDb) {
   // Prefix query: the bell calls this on every load, and _system also holds
-  // every lesson, prompt, and the knowledge base.
-  const items = await db.getSyncDataByPrefix('_system', 'message:');
+  // every lesson, prompt, and the knowledge base. Cached in-container
+  // (lib/system-cache.js); creating or sending a message clears it.
+  const items = await systemItemsByPrefix('message:', { db });
   return items
     .map((i) => ({ id: i.dataKey.slice('message:'.length), ...i.data }))
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));

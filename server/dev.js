@@ -2,6 +2,9 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
+// Same in-container `_system` read cache as on Lambda (lib/system-cache.js).
+process.env.PLATO_SYSTEM_CACHE ??= 'on';
+
 // Point DynamoDB at local instance
 process.env.AWS_REGION = 'us-east-1';
 process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';

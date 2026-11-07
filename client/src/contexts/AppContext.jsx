@@ -3,6 +3,7 @@ import { getPreferences } from '../../js/storage.js';
 import { loadLessons, invalidateLessonsCache } from '../../js/lessonOwner.js';
 import * as sync from '../../js/sync.js';
 import { useAuth } from './AuthContext.jsx';
+import { markFullSync, shouldResyncOnRefocus } from '../lib/refocusSync.js';
 
 const AppContext = createContext(null);
 
@@ -35,6 +36,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!loggedIn) return;
     async function load() {
+      markFullSync();
       try { await sync.loadAll(); } catch { /* offline or error */ }
       const lessons = await loadLessons();
       const preferences = await getPreferences();
@@ -48,6 +50,7 @@ export function AppProvider({ children }) {
     if (!loggedIn) return;
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return;
+      if (!shouldResyncOnRefocus()) return;
       try {
         await sync.loadAll();
         invalidateLessonsCache();

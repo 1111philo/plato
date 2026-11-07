@@ -13,12 +13,15 @@ import { pluginRegistry } from '../lib/plugins/registry.js';
 import { listEvents, emit as emitHook } from '../lib/plugins/hooks.js';
 import { STATIC_CAPABILITIES } from '../lib/plugins/capabilities.js';
 import { PLUGIN_API_VERSION } from '../lib/plugins/version.js';
+import { systemItem } from '../lib/system-cache.js';
 import {
   getFieldDefinitions, mergeFieldValues, missingRequiredFields, visibleFieldValues, learnerFields,
 } from '../lib/user-fields.js';
 
+// Read-only here (every classroom load asks for /v1/me and /v1/me/fields), so
+// served from the in-container `_system` cache (lib/system-cache.js).
 async function loadFieldDefinitions() {
-  const settings = await db.getSyncData('_system', 'settings');
+  const settings = await systemItem('settings');
   return getFieldDefinitions(settings?.data);
 }
 

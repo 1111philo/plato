@@ -34,20 +34,26 @@ export async function seedDefaultContent() {
   const promptsDir = join(clientDir, 'prompts');
   if (existsSync(promptsDir)) {
     const promptFiles = readdirSync(promptsDir).filter(f => f.endsWith('.md'));
-    for (const file of promptFiles) {
+    // In parallel: on a cold start these ~14 reads used to run one after
+    // another before the first request was served (#451 scale review, B3).
+    // Still compared on every cold start, not skipped behind a "seeded" marker:
+    // a rollback to an older release re-seeds its own prompts, and the next
+    // upgrade must put these back.
+    const results = await Promise.all(promptFiles.map(async (file) => {
       const name = file.replace(/\.md$/, '');
       const content = readFileSync(join(promptsDir, file), 'utf-8');
       const existing = await db.getSyncData('_system', `prompt:${name}`);
-      if (!existing || existing.data.content !== content) {
-        // Another container starting at the same time may have just written it.
-        try {
-          await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, existing?.version || 0);
-          seeded++;
-        } catch (err) {
-          if (err.name !== 'ConditionalCheckFailedException') throw err;
-        }
+      if (existing && existing.data.content === content) return 0;
+      // Another container starting at the same time may have just written it.
+      try {
+        await db.putSyncData('_system', `prompt:${name}`, { content, updatedBy: 'setup' }, existing?.version || 0);
+        return 1;
+      } catch (err) {
+        if (err.name !== 'ConditionalCheckFailedException') throw err;
+        return 0;
       }
-    }
+    }));
+    seeded += results.reduce((a, b) => a + b, 0);
   }
 
   // Seed plugin-contributed prompts. Stored under prompt:plugin:<id>:<name> so they

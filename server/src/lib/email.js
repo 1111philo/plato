@@ -1,6 +1,6 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SES_FROM_EMAIL, APP_URL } from '../config.js';
-import db from './db.js';
+import { systemItem } from './system-cache.js';
 
 const ses = new SESClient({});
 
@@ -28,7 +28,8 @@ export function fromHeader(name, address = SES_FROM_EMAIL) {
 }
 
 export async function getClassroom() {
-  const item = await db.getSyncData('_system', 'settings');
+  // Read-only (every email, and the bell on every load): in-container cache.
+  const item = await systemItem('settings');
   const s = item?.data || {};
   return {
     // classroomName is canonical; logoAlt is its legacy mirror (admin.js PUT /theme)
