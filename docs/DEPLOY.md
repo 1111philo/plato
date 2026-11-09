@@ -335,10 +335,20 @@ on playground, instead of being console-only config that exists in prod alone.
 
 ## Backups
 
-Production DynamoDB tables are protected by two backup layers:
+Production DynamoDB tables are protected by three backup layers:
 
 - **Point-in-Time Recovery (PITR)** — enabled on all 5 prod tables, allowing restore to any second in the last 35 days. Handles accidental deletes, data corruption, or bugs discovered after the fact.
 - **Pre-deploy snapshots** — the CI/CD deploy workflow automatically creates on-demand backups of all prod tables before each deploy. Old backups are pruned to keep the last 5 per table. These provide named restore points tied to specific deploys.
+- **Scheduled backups (AWS Backup, set up 2026-11-09)** — plan `plato-prod-tables` backs up all five prod tables into vault `plato-prod` (us-east-2) **daily at 08:00 UTC, kept 35 days**, and **weekly on Sunday at 09:00 UTC, kept one year**, whether or not anything deploys. It uses the account's `AWSBackupDefaultServiceRole`. Failed or expired backup jobs (and completed restores) email b3b@uic.edu through SNS topic `plato-prod-alarms`. A full set is about 383 MB (sync-data is nearly all of it), so the retained copies cost roughly $3–4 a month. Created with the CLI, not in `template.yaml` (the deploy role can't manage AWS Backup). First run verified by hand: all five tables backed up in about 3 minutes.
+
+To check the scheduled backups:
+
+```bash
+aws backup list-recovery-points-by-backup-vault --region us-east-2 --backup-vault-name plato-prod \
+  --query 'RecoveryPoints[].[ResourceArn,Status,CreationDate]' --output table
+```
+
+To restore one: AWS Console → AWS Backup → Backup vaults → `plato-prod` → pick the recovery point → Restore (to a new table name), or `aws backup start-restore-job`.
 
 To restore from a pre-deploy snapshot, use the AWS Console (DynamoDB > Backups) or the CLI:
 
