@@ -23,6 +23,27 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
+### Stack parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `Stage` | `prod` | `prod` or `playground` |
+| `EmailAllowlist` | empty | Comma-separated addresses and `@domain`s that **notification** emails (automations and admin messages) may go to. Empty means anyone on `prod` and **no one** on any other stage, so a staging copy of real users can't be emailed by accident. Invite and password-reset emails aren't affected. Set it with `--parameter-overrides EmailAllowlist=you@example.org,@your-team.org`. For the playground stack, the private deploy fork's workflow must pass it; until it does, playground sends no notification email. |
+
+### Scheduled jobs
+
+Learner emails (#400) need no scheduler resource and no extra deploy
+permissions. The first request after 15:00 UTC dispatches the day's
+inactivity reminder, and on Mondays the weekly digest (`server/src/lib/schedule.js`;
+one container claims each run). Both do nothing until an admin turns them on
+in Admin → Notifications → Automations. To run one now:
+
+```bash
+aws lambda invoke --function-name <stack>-PlatoApiFunction-<id> --invocation-type Event \
+  --cli-binary-format raw-in-base64-out \
+  --payload '{"__platoInternal":"platoJob","job":"weekly-digest"}' /dev/null
+```
+
 ## 2. Configure SAM
 
 Copy the example config and customize it for your AWS account:
@@ -138,9 +159,12 @@ jobs:
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - run: cd server && npm ci && npm test
 
   deploy:
@@ -155,9 +179,12 @@ jobs:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
           fetch-depth: 0  # need history + tags so we can read the latest Beta-RC-* tag
+      # Match Node to the template's Lambda runtime (sam build requires it)
+      - id: runtime
+        run: echo "node=$(grep -m1 -oE 'nodejs[0-9]+' server/template.yaml | tr -dc 0-9)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ steps.runtime.outputs.node }}
       - uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
@@ -206,15 +233,45 @@ To serve the app from a custom domain:
 
 1. Create a CloudFront distribution with the Lambda Function URL as a **Custom Origin** (HTTPS-only)
 2. Set the Origin Request Policy to **AllViewerExceptHostHeader** (required for Lambda Function URLs)
-3. Set the Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
-4. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
-5. Point your DNS (CNAME or alias) to the CloudFront distribution domain
-6. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+3. Set the default behavior's Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
+4. Add a `/assets/*` behavior: Cache Policy **CachingOptimized**, compression on, GET/HEAD, the same **AllViewerExceptHostHeader** origin request policy. Built assets have hashed names and `immutable`, so they need no invalidation; this saves a Lambda call per asset
+5. Origin read timeout **60 s** (the default 30 s turns a slow first AI reply into a 504 while Lambda keeps working)
+6. Optional: a WAF web ACL (scope CloudFront, us-east-1) with a rate rule on URI paths starting with `/v1/auth/`, per IP. Size it for a room of learners on one Wi-Fi address (prod uses 10,000 per 5 minutes)
+7. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
+8. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+9. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
    email links are built from it, so a stale value sends learners to the old host
 
 The CloudFront distribution and ACM certificate are **not** managed by
 `template.yaml`; they're provisioned once by hand and outlive stack updates. SAM
 only owns the Lambda Function URL that CloudFront points at.
+
+**Prod today** (`E18E92K4YHSX4B`, plato.courses; applied 2026-11-07): steps 3–6,
+with WAF web ACL `plato-prod` (rule `auth-rate-per-ip`, 10,000 requests per IP
+per 5 minutes on `/v1/auth/*`, blocked with a 429). Playground
+(`E2CS7J98JXT998`) has the defaults (no `/assets/*` behavior, 30 s, no WAF).
+Point-in-time recovery is on for prod's tables and off for playground's; it's a
+console setting because the deploy role can't manage continuous backups.
+
+**Alarms (prod; created 2026-11-07 with the CLI, not in `template.yaml`).** The
+deploy role can't create SNS topics or CloudWatch alarms, so these live outside
+the stack. SNS topic `plato-prod-alarms` in us-east-2 (and one of the same name
+in us-east-1, for CloudFront metrics) emails **b3b@uic.edu**. Every alarm also
+notifies on recovery (OK), and missing data counts as OK.
+
+| Alarm | Fires when |
+|---|---|
+| `plato-prod-lambda-stream-errors` / `-api-errors` | 10+ errors in 5 minutes |
+| `plato-prod-lambda-stream-throttles` / `-api-throttles` | any throttled invocation in 5 minutes |
+| `plato-prod-lambda-stream-duration-p99` | p99 duration over 100 s (timeout 120 s) for 10 minutes |
+| `plato-prod-bedrock-invocationthrottles` / `-invocationservererrors` | 5+ for `qwen.qwen3-vl-235b-a22b` in 5 minutes |
+| `plato-prod-dynamodb-throttles` | any read or write throttle event on any of the five tables |
+| `plato-prod-ses-bounce-rate` / `-complaint-rate` | account bounce rate over 5% / complaint rate over 0.1% |
+| `plato-prod-cloudfront-5xx` (us-east-1) | 5xx rate over 5% for 10 minutes on plato.courses |
+
+Lambda function names change if the functions are ever replaced; update the
+two Lambda alarms' dimensions then. Moving these into `template.yaml` needs
+`sns:*` and `cloudwatch:PutMetricAlarm` / `DeleteAlarms` on the deploy role.
 
 ### Renaming a live domain
 
@@ -278,10 +335,20 @@ on playground, instead of being console-only config that exists in prod alone.
 
 ## Backups
 
-Production DynamoDB tables are protected by two backup layers:
+Production DynamoDB tables are protected by three backup layers:
 
 - **Point-in-Time Recovery (PITR)** — enabled on all 5 prod tables, allowing restore to any second in the last 35 days. Handles accidental deletes, data corruption, or bugs discovered after the fact.
 - **Pre-deploy snapshots** — the CI/CD deploy workflow automatically creates on-demand backups of all prod tables before each deploy. Old backups are pruned to keep the last 5 per table. These provide named restore points tied to specific deploys.
+- **Scheduled backups (AWS Backup, set up 2026-11-09)** — plan `plato-prod-tables` backs up all five prod tables into vault `plato-prod` (us-east-2) **daily at 08:00 UTC, kept 35 days**, and **weekly on Sunday at 09:00 UTC, kept one year**, whether or not anything deploys. It uses the account's `AWSBackupDefaultServiceRole`. Failed or expired backup jobs (and completed restores) email b3b@uic.edu through SNS topic `plato-prod-alarms`. A full set is about 383 MB (sync-data is nearly all of it), so the retained copies cost roughly $3–4 a month. Created with the CLI, not in `template.yaml` (the deploy role can't manage AWS Backup). First run verified by hand: all five tables backed up in about 3 minutes.
+
+To check the scheduled backups:
+
+```bash
+aws backup list-recovery-points-by-backup-vault --region us-east-2 --backup-vault-name plato-prod \
+  --query 'RecoveryPoints[].[ResourceArn,Status,CreationDate]' --output table
+```
+
+To restore one: AWS Console → AWS Backup → Backup vaults → `plato-prod` → pick the recovery point → Restore (to a new table name), or `aws backup start-restore-job`.
 
 To restore from a pre-deploy snapshot, use the AWS Console (DynamoDB > Backups) or the CLI:
 

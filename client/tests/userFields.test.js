@@ -68,3 +68,19 @@ describe('fieldTypeLabel', () => {
     assert.equal(fieldTypeLabel('weird'), 'weird');
   });
 });
+
+describe('field visibility (one choice, two stored flags)', async () => {
+  const { fieldVisibility, visibilityFlags, fieldSummary, FIELD_VISIBILITY } = await import('../src/lib/userFields.js');
+  it('maps the three choices to the flags and back', () => {
+    for (const { value } of FIELD_VISIBILITY) assert.equal(fieldVisibility(visibilityFlags(value)), value);
+    assert.deepEqual(visibilityFlags('everyone'), { hideFromLearner: false, hideFromApi: false });
+    assert.deepEqual(visibilityFlags('learners'), { hideFromLearner: false, hideFromApi: true });
+    assert.deepEqual(visibilityFlags('admins'), { hideFromLearner: true, hideFromApi: true });
+    assert.equal(fieldVisibility({ hideFromLearner: true }), 'admins', 'admins-only wins, whatever hideFromApi says');
+  });
+  it('summarizes a field in one line', () => {
+    assert.equal(fieldSummary({ type: 'dropdown', required: true }), 'Dropdown · Required · Everyone');
+    assert.equal(fieldSummary({ type: 'text', hideFromApi: true }), 'Text · After signup');
+    assert.equal(fieldSummary({ type: 'textarea', required: true, hideFromLearner: true }), 'Text area · Admins only');
+  });
+});

@@ -86,6 +86,29 @@ You have a new error or failure condition. Ask, in order:
 When unsure between A and B, ask: *if this fires once, has someone definitely
 lost something?* Yes → A. No → B.
 
+## Codes added in the launch release
+
+| Code | Level | Tier | Means |
+|---|---|---|---|
+| `migration_applied` | warn | — | a data migration ran (`{ scanned, updated, skipped, errors }`); `errors > 0` is retried next cold start |
+| `migrations_failed`, `migrations_startup_budget_exceeded` | error / warn | B | the runner failed or ran past its 20 s startup budget |
+| `migration_failed` | error | B | one migration finished with item errors (`migration`, counts); it isn't recorded as applied, so it retries on the next cold start |
+| `job_completed` | warn | — | a background job finished, with its counts |
+| `job_failed`, `job_unknown`, `job_dispatch_failed` | error | B | a background job threw, wasn't registered, or couldn't be invoked |
+| `schedule_check_failed` | error | B | the traffic-driven schedule check (`lib/schedule.js`) threw |
+| `learner_email_failed` | error | B | SES refused a reminder or digest; its claim was released for the next run |
+| `waitlist_confirmation_failed` | error | B | the wait-list confirmation didn't send (the join still succeeded) |
+| `waitlist_removed_email_failed` | error | B | the "removed from the wait list" email didn't send (the entry was still removed) |
+| `ai_stream_failed` | error | B | an AI reply stream failed (Bedrock error, throttle, or the 115 s timeout; `code` says which); the learner sees an error, a busy service holds Send with a countdown, and the turn isn't saved |
+| `ai_invoke_failed` | error | B | a non-streamed AI call failed (background agents: learner profile, unit notes, lesson creation, extractors); the caller gets a typed error (`code`: throttled / overloaded / timeout / failed) |
+| `ai_rate_limited` | warn | B | one user went over the AI proxy's per-user limit (30 calls a minute or 4 in flight, per container); they got a 429 with `retryAfterMs`. Many at once means a script, or limits set too low |
+| `email_template_invalid` | error | B | a stored email template that needs a link button has no `{{link}}` in its body (or has one in the subject); plato sent its default copy instead (`{ template, problem }`). Fix the template in Admin → Notifications → Automations |
+| `coach_tags_recovered` | warn | B | a coach reply came without `[PROGRESS]` or `[KB_UPDATE]` and the tag-repair call filled it in (reported by the client via `POST /v1/ai/events`); the rate is the model's tag-drop rate |
+| `coach_tags_unrecovered` | warn | B | the same, but the repair didn't help: that turn recorded no progress (or no checklist/notes). A rising count means the coach prompt or model needs attention |
+| `conversation_too_long` | warn | A | a lesson's conversation is past the 340 KB budget even after trimming, so new turns aren't saved (progress still is). Reported by the client; the record is never sent |
+| `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |
+| `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
+
 ## How to add a check
 
 ### Step 0 — always: give the error a meaningful `code`

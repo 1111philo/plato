@@ -17,7 +17,7 @@ globalThis.localStorage = {
 };
 globalThis.fetch = async () => ({ ok: false, status: 404 });
 
-const { assertImageWithinBedrockLimit, normalizeImageDataUrls } = await import('../src/lib/lessonEngine.js');
+const { assertImageWithinBedrockLimit, normalizeImageDataUrls, recoverMissingTags, parseCoachResponse } = await import('../src/lib/lessonEngine.js');
 
 // Build a data URL whose base64 body decodes (per length*3/4) to exactly
 // `bytes` bytes. The guard uses the same math so the round-trip is exact.
@@ -94,5 +94,41 @@ describe('normalizeImageDataUrls', () => {
 
   it('returns an empty array for an empty input array', () => {
     assert.deepEqual(normalizeImageDataUrls([]), []);
+  });
+});
+
+// Testers saw the coach say "you've met all three" while nothing was recorded:
+// the reply had no tags. recoverMissingTags asks for them (#451 tester QA;
+// third review R2/R3: also when only KB_UPDATE is missing, and a failed
+// repair is flagged so "Behind this response" doesn't show a score).
+describe('recoverMissingTags', () => {
+  const noTags = parseCoachResponse('You have covered all three objectives. Well done.');
+  it('leaves a reply that has both tags alone, without asking', async () => {
+    let asked = false;
+    const tagged = parseCoachResponse('Good.\n\n[PROGRESS: 4]\n[KB_UPDATE: {"insights": []}]');
+    const r = await recoverMissingTags(tagged, async () => { asked = true; return ''; });
+    assert.equal(asked, false);
+    assert.deepEqual([r.progress, r.tagsRepairTried, r.tagsRecovered, r.tagsMissing], [4, false, false, false]);
+  });
+  it('fills in progress, the KB update, and the profile update from the repair', async () => {
+    const r = await recoverMissingTags(noTags, async () => '[PROGRESS: 10]\n[KB_UPDATE: {"insights": ["x"], "objectivesMet": [1, 2, 3]}]\n[PROFILE_UPDATE: {"observation": "y"}]');
+    assert.equal(r.progress, 10);
+    assert.deepEqual(r.kbUpdate.objectivesMet, [1, 2, 3]);
+    assert.equal(r.profileUpdate.observation, 'y');
+    assert.deepEqual([r.tagsRepairTried, r.tagsRecovered, r.tagsMissing], [true, true, false]);
+    assert.equal(r.text, noTags.text, 'the learner-visible text is unchanged');
+  });
+  it('repairs a missing KB update but keeps the reply\u2019s own progress', async () => {
+    const onlyProgress = parseCoachResponse('Objective 2 is met.\n\n[PROGRESS: 6]');
+    const r = await recoverMissingTags(onlyProgress, async () => '[PROGRESS: 9]\n[KB_UPDATE: {"objectivesMet": [2]}]');
+    assert.equal(r.progress, 6, 'the reply decided progress; the repair only fills gaps');
+    assert.deepEqual(r.kbUpdate.objectivesMet, [2]);
+    assert.equal(r.tagsRecovered, true);
+  });
+  it('never throws: a failed or tagless repair keeps the reply as it was, flagged as missing', async () => {
+    for (const repair of [async () => { throw new Error('boom'); }, async () => 'no tags here']) {
+      const r = await recoverMissingTags(noTags, repair);
+      assert.deepEqual([r.progress, r.tagsRecovered, r.tagsMissing], [null, false, true]);
+    }
   });
 });

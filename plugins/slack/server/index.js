@@ -16,6 +16,7 @@ import {
   requireAdmin,
   generateInviteToken,
   APP_URL,
+  getUserMeta,
 } from '../../../src/lib/plugins/sdk.js';
 import {
   testSlackConnection,
@@ -24,6 +25,7 @@ import {
   listChannelMembers,
   sendSlackDM,
 } from './slack-client.js';
+import { autoInvite, onUserCreated, needsRetry } from './auto-invite.js';
 
 const routes = new Hono();
 
@@ -138,10 +140,13 @@ routes.post('/admin/invites', async (c) => {
 
       const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
       // Compose so the fallback doesn't double-up "you" (was: "You've been invited you...").
+      // Escape Slack mrkdwn control characters, so a name like "<!channel>"
+      // is text, not a mention.
+      const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const opener = adminUser.name
-        ? `${adminUser.name} has invited you`
+        ? `${esc(adminUser.name)} has invited you`
         : `You've been invited`;
-      const message = `${opener} to join *${classroom}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
+      const message = `${opener} to join *${esc(classroom)}*.\n\n<${signupUrl}|Create your account>\n\nThis invite expires in 7 days.`;
 
       await sendSlackDM(token, u.slackUserId, message);
       results.push({ email, slackUserId: u.slackUserId, status: 'sent' });
@@ -183,8 +188,52 @@ async function migrateLegacySettings(ctx) {
   }
 }
 
+// ── Auto-invite to a channel (#379) ──
+async function getSlackSettings() {
+  const item = await db.getSyncData('_system', 'plugins:activation');
+  return item?.data?.slack?.settings || {};
+}
+
+// GET /v1/plugins/slack/admin/auto-invite — everyone with a recorded result, newest first
+routes.get('/admin/auto-invite', async (c) => {
+  const users = await db.listAllUsers();
+  const rows = [];
+  for (const u of users) {
+    const meta = await getUserMeta(u.userId, 'slack');
+    if (meta?.autoInvite) rows.push({ userId: u.userId, name: u.name || u.email, email: u.email, ...meta.autoInvite });
+  }
+  rows.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  return c.json({ results: rows.slice(0, 100) });
+});
+
+// POST /v1/plugins/slack/admin/auto-invite/retry — body { userId } or { all: true }
+// (retries everyone not yet invited). Already-invited users are skipped.
+routes.post('/admin/auto-invite/retry', async (c) => {
+  const settings = await getSlackSettings();
+  if (!settings.autoInviteEnabled || !settings.autoInviteChannelId) return c.json({ error: 'Turn on auto-invite and choose a channel first' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const users = await db.listAllUsers();
+  const targets = body.all
+    ? users
+    : users.filter((u) => u.userId === body.userId);
+  if (!targets.length) return c.json({ error: 'User not found' }, 404);
+  const counts = { invited: 0, not_in_workspace: 0, failed: 0, skipped: 0 };
+  for (const u of targets) {
+    if (body.all) {
+      const meta = await getUserMeta(u.userId, 'slack');
+      if (!needsRetry(meta)) { counts.skipped++; continue; }
+    }
+    const r = await autoInvite({ userId: u.userId, email: u.email }, settings);
+    counts[r ? r.status : 'skipped']++;
+  }
+  return c.json(counts);
+});
+
 export default {
   routes,
+  hooks: {
+    userCreated: onUserCreated,
+  },
   async onActivate(ctx) {
     await migrateLegacySettings(ctx);
   },

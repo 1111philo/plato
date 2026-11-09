@@ -43,12 +43,22 @@ jobs:
           SHA: ${{ github.sha }}
           EVENT_NAME: ${{ github.event_name }}
           TARGET: ${{ inputs.target }}
+          FREEZE: ${{ vars.DEPLOY_FREEZE }}
         run: |
           if [ -z "$TOKEN" ]; then
             echo "::error::DEPLOY_DISPATCH_TOKEN secret is not set — cannot trigger deploy."
             echo "Add a fine-grained PAT with contents:write on UIC-OSF/plato-deploy"
             echo "as a repository secret named DEPLOY_DISPATCH_TOKEN."
             exit 1
+          fi
+
+          # Deploy freeze (event days): set the repository variable
+          # DEPLOY_FREEZE=true to stop automatic prod deploys on push to main.
+          # A manual run (workflow_dispatch) still deploys, for a deliberate
+          # hotfix or rollback. See docs/RUNBOOK_EVENT_DAY.md.
+          if [ "$FREEZE" = "true" ] && [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" = "main" ]; then
+            echo "::warning::DEPLOY_FREEZE is on: not deploying $SHA to prod. Run this workflow manually to deploy anyway."
+            exit 0
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then

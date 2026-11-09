@@ -100,8 +100,27 @@ describe('db-sqlite', () => {
     });
 
     it('lists users', async () => {
-      const list = await db.listUsers();
+      const list = await db.listAllUsers();
       assert.ok(list.some(u => u.userId === userId));
+    });
+
+    it('stores first/last name; setUserNameSplitIf is conditional and leaves updatedAt (#402)', async () => {
+      const id = `${userId}_n`;
+      await db.createUser({ userId: id, email: 'names@example.com', passwordHash: 'x', name: 'Mary Ann Evans', role: 'learner' });
+      const before = await db.getUserById(id);
+      assert.equal(before.firstName, null);
+      assert.equal(await db.setUserNameSplitIf(id, 'Someone Else', { firstName: 'S', lastName: 'E', nameSource: 'auto' }), false, 'name changed: no write');
+      assert.equal(await db.setUserNameSplitIf(id, 'Mary Ann Evans', { firstName: 'Mary', lastName: 'Ann Evans', nameSource: 'auto' }), true);
+      assert.equal(await db.setUserNameSplitIf(id, 'Mary Ann Evans', { firstName: 'X', lastName: 'Y', nameSource: 'auto' }), false, 'already split: no write');
+      const after = await db.getUserById(id);
+      assert.deepEqual([after.firstName, after.lastName, after.nameSource, after.name], ['Mary', 'Ann Evans', 'auto', 'Mary Ann Evans']);
+      assert.equal(after.updatedAt, before.updatedAt);
+
+      const id2 = `${userId}_n2`;
+      await db.createUser({ userId: id2, email: 'names2@example.com', passwordHash: 'x', name: 'Ada King', firstName: 'Ada', lastName: 'King', nameSource: 'user', role: 'learner' });
+      const u2 = await db.getUserById(id2);
+      assert.deepEqual([u2.firstName, u2.lastName, u2.nameSource], ['Ada', 'King', 'user']);
+      await db.deleteUser(id); await db.deleteUser(id2);
     });
 
     it('deletes a user', async () => {
@@ -166,6 +185,13 @@ describe('db-sqlite', () => {
       assert.equal(await db.getInviteByEmail('wait@test.com'), null);
     });
 
+    it('createWaitlistEntry is create-only', async () => {
+      const t = `inv_wlc_${Date.now()}`;
+      await db.createWaitlistEntry({ inviteToken: t, email: 'dup@test.com', profile });
+      await assert.rejects(db.createWaitlistEntry({ inviteToken: t, email: 'dup@test.com', profile: { ...profile, name: 'Other' } }), { name: 'ConditionalCheckFailedException' });
+      assert.deepEqual((await db.getInvite(t)).profile, profile);
+    });
+
     it('edits an entry in place, only while it is still an entry', async () => {
       const t = `inv_wle_${Date.now()}`;
       await db.createWaitlistEntry({ inviteToken: t, email: 'edit-me@test.com', profile });
@@ -189,6 +215,16 @@ describe('db-sqlite', () => {
       await db.createInvite({ inviteToken: inv, email: 'p@test.com', invitedBy: 'usr_admin', profile });
       assert.deepEqual((await db.getInvite(inv)).profile, profile);
       assert.deepEqual((await db.listInvites()).find(i => i.inviteToken === inv).profile, profile);
+      // By email too: resend and account invites read it this way.
+      assert.deepEqual((await db.getInviteByEmail('p@test.com')).profile, profile);
+      await db.deleteInvite(inv);
+    });
+
+    it('stores the account an invite is for (forUserId)', async () => {
+      const inv = `inv_acct_${Date.now()}`;
+      await db.createInvite({ inviteToken: inv, email: 'acct@test.com', invitedBy: 'usr_admin', profile, forUserId: 'usr_acct' });
+      assert.equal((await db.getInvite(inv)).forUserId, 'usr_acct');
+      assert.equal((await db.getInviteByEmail('acct@test.com')).forUserId, 'usr_acct');
       await db.deleteInvite(inv);
     });
   });
@@ -206,6 +242,26 @@ describe('db-sqlite', () => {
     it('deletes a refresh token', async () => {
       await db.deleteRefreshToken(hash);
       assert.equal(await db.getRefreshToken(hash), null);
+    });
+    it('refuses a reset token as a refresh token (#451 scale review S1)', async () => {
+      const resetHash = 'asreset_' + Date.now();
+      await db.storeResetToken(resetHash, 'usr_test');
+      assert.equal(await db.getRefreshToken(resetHash), null);
+      await db.deleteResetToken(resetHash);
+    });
+
+    it('stores the session version, marks rotation once, and refuses expired items', async () => {
+      const h = 'rot_' + Date.now();
+      await db.storeRefreshToken(h, 'usr_test', { tokenVersion: 3 });
+      assert.equal((await db.getRefreshToken(h)).tokenVersion, 3);
+      await db.markRefreshTokenRotated(h, 30);
+      const first = (await db.getRefreshToken(h)).rotatedAt;
+      assert.ok(first);
+      await db.markRefreshTokenRotated(h, 30);
+      assert.equal((await db.getRefreshToken(h)).rotatedAt, first, 'the first rotation time is kept');
+      await db.markRefreshTokenRotated(h, -1); // grace already over
+      assert.equal(await db.getRefreshToken(h), null);
+      await db.deleteRefreshToken(h);
     });
   });
 
@@ -235,6 +291,15 @@ describe('db-sqlite', () => {
   describe('sync data', () => {
     const userId = 'usr_sync_test';
 
+    it('getSyncDataExcept skips one key prefix (GET /v1/sync leaves screenshots out)', async () => {
+      const u = 'usr_except_test';
+      await db.putSyncData(u, 'profile', { a: 1 }, 0);
+      await db.putSyncData(u, 'screenshot:k1', 'data:image/png;base64,AAA', 0);
+      await db.putSyncData(u, 'userMeta:x', { b: 2 }, 0);
+      const keys = (await db.getSyncDataExcept(u, 'screenshot:')).map((i) => i.dataKey).sort();
+      assert.deepEqual(keys, ['profile', 'userMeta:x']);
+    });
+
     it('puts and gets sync data', async () => {
       const result = await db.putSyncData(userId, 'profile', { name: 'Blake' }, 0);
       assert.equal(result.version, 1);
@@ -242,6 +307,13 @@ describe('db-sqlite', () => {
       const item = await db.getSyncData(userId, 'profile');
       assert.deepEqual(item.data, { name: 'Blake' });
       assert.equal(item.version, 1);
+    });
+
+    it('createSyncData creates once, then refuses to overwrite', async () => {
+      const created = await db.createSyncData(userId, 'create-only', { n: 1 });
+      assert.equal(created.version, 1);
+      await assert.rejects(db.createSyncData(userId, 'create-only', { n: 2 }), { name: 'ConditionalCheckFailedException' });
+      assert.deepEqual((await db.getSyncData(userId, 'create-only')).data, { n: 1 });
     });
 
     it('increments version on update', async () => {

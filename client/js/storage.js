@@ -107,7 +107,7 @@ export async function getPreferences() {
 }
 
 export async function savePreferences(prefs) {
-  await putSyncData('preferences', prefs);
+  return putSyncData('preferences', prefs);
 }
 
 // -- Learner profile ----------------------------------------------------------
@@ -117,7 +117,7 @@ export async function getLearnerProfile() {
 }
 
 export async function saveLearnerProfile(profile) {
-  await putSyncData('profile', profile);
+  return putSyncData('profile', profile);
 }
 
 export async function getLearnerProfileSummary() {
@@ -126,7 +126,7 @@ export async function getLearnerProfileSummary() {
 }
 
 export async function saveLearnerProfileSummary(summary) {
-  await putSyncData('profileSummary', summary);
+  return putSyncData('profileSummary', summary);
 }
 
 // -- Lesson KB ----------------------------------------------------------------
@@ -136,7 +136,7 @@ export async function getLessonKB(lessonId) {
 }
 
 export async function saveLessonKB(lessonId, kb) {
-  await putSyncData(`lessonKB:${lessonId}`, kb);
+  return putSyncData(`lessonKB:${lessonId}`, kb);
 }
 
 export async function deleteLessonKB(lessonId) {
@@ -153,7 +153,7 @@ export async function getCourseProgress(courseId) {
 }
 
 export async function saveCourseProgress(courseId, progress) {
-  await putSyncData(`courseProgress:${courseId}`, progress);
+  return putSyncData(`courseProgress:${courseId}`, progress);
 }
 
 // -- Activity KB --------------------------------------------------------------
@@ -256,9 +256,39 @@ export async function saveLessonMessages(lessonId, msgs) {
   let all = _cache.get(key);
   if (!Array.isArray(all)) all = await getLessonMessages(lessonId);
   const withTimestamps = msgs.map(m => ({ ...m, timestamp: m.timestamp || Date.now() }));
-  all = [...all, ...withTimestamps];
+  all = fitMessages([...all, ...withTimestamps]);
   _cache.set(key, all);
-  await putSyncData(key, all);
+  // Past the budget even after trimming: the server would refuse it (413) on
+  // this and every later turn. Don't send it; say why instead.
+  if (byteSize(all) > MESSAGES_BUDGET) return 'too_long';
+  return putSyncData(key, all);
+}
+
+// The conversation is one DynamoDB item (400 KB cap; the server refuses over
+// 380 KB). The "Behind this response" detail (`metadata.agents`, ~1 KB a
+// reply) is the part we can drop: oldest replies first, until the record
+// fits. The conversation text itself is never trimmed.
+export const MESSAGES_BUDGET = 340 * 1024;
+const byteSize = (m) => new TextEncoder().encode(JSON.stringify(m)).length;
+export function fitMessages(msgs, budget = MESSAGES_BUDGET) {
+  const size = byteSize;
+  if (size(msgs) <= budget) return msgs;
+  const out = msgs.slice();
+  for (let i = 0; i < out.length && size(out) > budget; i++) {
+    if (!out[i]?.metadata?.agents) continue;
+    const { agents: _agents, ...rest } = out[i].metadata;
+    out[i] = { ...out[i], metadata: Object.keys(rest).length ? rest : null };
+  }
+  return out;
+}
+
+/**
+ * True when the cached conversation is over the budget even after trimming:
+ * the text alone is too long, so every later save will be refused too.
+ */
+export function conversationTooLong(lessonId) {
+  const all = _cache.get(`messages:${lessonId}`);
+  return Array.isArray(all) && byteSize(all) > MESSAGES_BUDGET;
 }
 
 /**

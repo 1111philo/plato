@@ -136,6 +136,19 @@ review. Only one automated reviewer should be active at a time; if the hosted
 Claude GitHub App is also installed with auto-review enabled, disable it there to
 prevent duplicate reviews.
 
+## Tests, lint, and accessibility (`test.yml`, `lint.yml`, `a11y.yml`)
+
+Run on every PR (drafts included) and on pushes to `main` / `playground`, on
+Node 24 to match the Lambda runtime.
+- **`test.yml`**: `npm test` for client and server. The server job fetches
+  the `Beta-RC-232` tag for the upgrade gate
+  (`server/tests/migrations/upgrade-from-rc232.test.js`).
+- **`lint.yml`**: ESLint for both.
+- **`a11y.yml`**: the Playwright + axe suite in `e2e/` against a fresh
+  `dev-sqlite` with `AI_PROVIDER=mock`. It fails on any serious or critical
+  WCAG 2.1 A/AA violation on any page or dialog, or a broken keyboard flow.
+  On failure the Playwright report is uploaded as an artifact.
+
 ## Deploy dispatch & environments
 
 Deploy workflows live only in the private fork (UIC-OSF/plato-deploy),
@@ -145,6 +158,11 @@ to `main` triggers `.github/workflows/trigger-deploy.yml`, which fires a
 `deploy-playground`. The private fork's `deploy.yml` / `deploy-playground.yml`
 listen for those events, check this repo out at the dispatched SHA, and run SAM
 deploy.
+
+**Deploy freeze.** Setting the repository variable `DEPLOY_FREEZE=true` stops
+the automatic prod deploy on push to `main` (the workflow logs a warning and
+exits). A manual run (`workflow_dispatch`) still deploys, for a deliberate fix
+or rollback. Use it around event days (`docs/RUNBOOK_EVENT_DAY.md`).
 
 One-time setup: a `DEPLOY_DISPATCH_TOKEN` secret on this repo (fine-grained PAT
 with `contents:write` on the deploy fork). Manual deploy: run `Trigger Deploy`

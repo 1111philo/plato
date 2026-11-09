@@ -133,6 +133,19 @@ if (hasCustomFields.count === 0) {
   sqlite.exec('ALTER TABLE users ADD COLUMN customFields TEXT');
 }
 
+// First/last name (#402). `name` stays, derived from them (lib/names.js).
+for (const col of ['firstName', 'lastName', 'nameSource']) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
+}
+
+// Sign-in security (#451 scale review): session version, failed sign-ins,
+// and the latest reset link (lib/sessions.js).
+for (const [col, type] of [['tokenVersion', 'INTEGER DEFAULT 0'], ['failedLogins', 'INTEGER DEFAULT 0'], ['lockedUntil', 'TEXT'], ['resetTokenHash', 'TEXT'], ['resetRequestedAt', 'TEXT']]) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} ${type}`);
+}
+
 // Add slackUserId column to invites if missing
 const hasSlackInvite = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'slackUserId'"
@@ -205,6 +218,23 @@ if (hasInviteProfile.count === 0) {
   sqlite.exec('ALTER TABLE invites ADD COLUMN profile TEXT');
 }
 
+// Invite for an existing account (#363): the user it's for
+const hasInviteForUser = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'forUserId'"
+).get();
+if (hasInviteForUser.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN forUserId TEXT');
+}
+
+// Refresh tokens: session version at issue, and when one was exchanged (grace)
+for (const [col, type] of [['tokenVersion', 'INTEGER DEFAULT 0'], ['rotatedAt', 'TEXT']]) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('refresh_tokens') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE refresh_tokens ADD COLUMN ${col} ${type}`);
+}
+
+/** An item whose `ttl` (epoch seconds) has passed. */
+const expired = (item) => typeof item?.ttl === 'number' && item.ttl < Math.floor(Date.now() / 1000);
+
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
 function cleanupExpired() {
@@ -250,13 +280,13 @@ function rowToUser(row) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
     const now = new Date().toISOString();
     const customJson = customFields && Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, userGroup || null, role, slackUserId || null, customJson, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 
@@ -306,12 +336,26 @@ const db = {
     ).run(`$."${fieldId}"`, userId);
   },
 
-  async listUsers() {
-    return sqlite.prepare("SELECT * FROM users WHERE role = 'user'").all().map(rowToUser);
+  // Migration helper (same contract as db-dynamodb.js setUserRoleIf).
+  async setUserRoleIf(userId, from, to) {
+    return sqlite.prepare('UPDATE users SET role = ? WHERE userId = ? AND role = ?').run(to, userId, from).changes > 0;
+  },
+
+  // Migration helper (same contract as db-dynamodb.js setUserNameSplitIf):
+  // only while `name` is still `expectedName` and no split exists yet.
+  // Leaves updatedAt alone.
+  async setUserNameSplitIf(userId, expectedName, { firstName, lastName, nameSource }) {
+    return sqlite.prepare(
+      'UPDATE users SET firstName = ?, lastName = ?, nameSource = ? WHERE userId = ? AND name IS ? AND firstName IS NULL'
+    ).run(firstName, lastName, nameSource, userId, expectedName).changes > 0;
   },
 
   async listAllUsers() {
     return sqlite.prepare('SELECT * FROM users').all().map(rowToUser);
+  },
+
+  async hasAnyUser() {
+    return !!sqlite.prepare('SELECT 1 FROM users LIMIT 1').get();
   },
 
   async countUsers() {
@@ -321,12 +365,12 @@ const db = {
 
   // ── Invites ──
 
-  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null }) {
+  async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
     const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages, profile)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages, profile, forUserId)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       inviteToken,
       email ? email.toLowerCase() : null,
@@ -337,16 +381,19 @@ const db = {
       isLink ? 1 : 0,
       usageCount,
       maxUsages,
-      profile ? JSON.stringify(profile) : null
+      profile ? JSON.stringify(profile) : null,
+      forUserId || null
     );
   },
 
   // Wait-list entries (#363): status 'waitlist' and no ttl, so they never expire.
   async createWaitlistEntry({ inviteToken, email, profile }) {
-    sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, status, createdAt, profile)
+    const result = sqlite.prepare(
+      `INSERT OR IGNORE INTO invites (inviteToken, email, status, createdAt, profile)
        VALUES (?, ?, 'waitlist', ?, ?)`
     ).run(inviteToken, email.toLowerCase(), new Date().toISOString(), JSON.stringify(profile));
+    // Create-only, like DynamoDB's attribute_not_exists condition.
+    if (result.changes === 0) throw conditionalCheckFailed('Wait-list entry already exists');
   },
 
   // Replace an invite / wait-list entry's stored profile (used when a custom
@@ -371,9 +418,9 @@ const db = {
   },
 
   async getInviteByEmail(email) {
-    return sqlite.prepare(
+    return rowToInvite(sqlite.prepare(
       "SELECT * FROM invites WHERE email = ? AND status = 'pending' ORDER BY createdAt DESC LIMIT 1"
-    ).get(email.toLowerCase()) || null;
+    ).get(email.toLowerCase()));
   },
 
   async getInvite(inviteToken) {
@@ -434,16 +481,25 @@ const db = {
 
   // ── Refresh Tokens ──
 
-  async storeRefreshToken(tokenHash, userId) {
+  // Same contract as db-dynamodb.js: reset tokens and expired items are refused.
+  async storeRefreshToken(tokenHash, userId, { tokenVersion = 0 } = {}) {
     const ttl = Math.floor(Date.now() / 1000) + REFRESH_TOKEN_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO refresh_tokens (tokenHash, userId, type, createdAt, ttl)
-       VALUES (?, ?, 'refresh', ?, ?)`
-    ).run(tokenHash, userId, new Date().toISOString(), ttl);
+      `INSERT INTO refresh_tokens (tokenHash, userId, type, createdAt, ttl, tokenVersion)
+       VALUES (?, ?, 'refresh', ?, ?, ?)`
+    ).run(tokenHash, userId, new Date().toISOString(), ttl, tokenVersion);
   },
 
   async getRefreshToken(tokenHash) {
-    return sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash) || null;
+    const item = sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash);
+    if (!item || item.type === 'reset' || expired(item)) return null;
+    return item;
+  },
+
+  async markRefreshTokenRotated(tokenHash, graceSeconds) {
+    sqlite.prepare(
+      'UPDATE refresh_tokens SET rotatedAt = COALESCE(rotatedAt, ?), ttl = ? WHERE tokenHash = ?'
+    ).run(new Date().toISOString(), Math.floor(Date.now() / 1000) + graceSeconds, tokenHash);
   },
 
   async deleteRefreshToken(tokenHash) {
@@ -462,7 +518,7 @@ const db = {
 
   async getResetToken(tokenHash) {
     const item = sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash);
-    if (!item || item.type !== 'reset') return null;
+    if (!item || item.type !== 'reset' || expired(item)) return null;
     return item;
   },
 
@@ -489,9 +545,23 @@ const db = {
   // Mirror of the DynamoDB sort-key prefix query: fetch only sync-data records
   // whose dataKey begins with `prefix` (e.g. 'lessonKB:'), so admin stats skip
   // the large screenshot:*/messages:* records.
+  async hasSyncDataWithPrefix(userId, prefix) {
+    return !!sqlite.prepare(
+      'SELECT 1 FROM sync_data WHERE userId = ? AND dataKey LIKE ? ESCAPE ? LIMIT 1'
+    ).get(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+  },
+
   async getSyncDataByPrefix(userId, prefix) {
     const rows = sqlite.prepare(
       'SELECT * FROM sync_data WHERE userId = ? AND dataKey LIKE ? ESCAPE ?'
+    ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+    return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
+  },
+
+  // Same contract as db-dynamodb.js getSyncDataExcept.
+  async getSyncDataExcept(userId, prefix) {
+    const rows = sqlite.prepare(
+      'SELECT * FROM sync_data WHERE userId = ? AND dataKey NOT LIKE ? ESCAPE ?'
     ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
@@ -519,6 +589,16 @@ const db = {
     ).run(userId, dataKey, jsonData, newVersion, now, jsonData, newVersion, now);
 
     return { version: newVersion, updatedAt: now };
+  },
+
+  // Create-only write (same contract as db-dynamodb.js createSyncData).
+  async createSyncData(userId, dataKey, data) {
+    const now = new Date().toISOString();
+    const result = sqlite.prepare(
+      'INSERT OR IGNORE INTO sync_data (userId, dataKey, data, version, updatedAt) VALUES (?, ?, ?, 1, ?)'
+    ).run(userId, dataKey, JSON.stringify(data), now);
+    if (result.changes === 0) throw conditionalCheckFailed('Record already exists');
+    return { version: 1, updatedAt: now };
   },
 
   async deleteSyncData(userId, dataKey) {

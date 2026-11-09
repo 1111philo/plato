@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
-import links from '../../src/routes/links.js';
+import links, { _resetLinkLimit, LINK_FETCHES_PER_MINUTE } from '../../src/routes/links.js';
 import { _net } from '../../src/lib/link-extractor.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
@@ -34,9 +34,24 @@ const PAGE = '<html><head><title>Fetched Page</title></head><body><article><h1>H
 describe('POST /v1/links/fetch', () => {
   beforeEach(() => {
     db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    _resetLinkLimit();
   });
   afterEach(() => {
     _net.fetch = realNetFetch;
+  });
+
+  it('limits each user to a burst of fetches a minute (#451 scale review)', async () => {
+    _net.fetch = async () => htmlResponse(PAGE);
+    const app = new Hono();
+    app.route('/', links);
+    for (let i = 0; i < LINK_FETCHES_PER_MINUTE; i++) {
+      assert.equal((await authedReq(app, { url: 'http://93.184.216.34/post' })).status, 200);
+    }
+    const res = await authedReq(app, { url: 'http://93.184.216.34/post' });
+    assert.equal(res.status, 429);
+    const data = await res.json();
+    assert.equal(data.code, 'rate_limited');
+    assert.ok(data.retryAfterMs > 0);
   });
 
   it('requires authentication', async () => {

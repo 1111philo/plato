@@ -29,7 +29,10 @@ import { toConverseRequest, fromConverseResponse, fromConverseStreamEvent } from
 // (120 s) so errors propagate cleanly rather than causing a hard Lambda kill.
 const BEDROCK_TIMEOUT_MS = 115_000;
 
-const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-2' });
+// Adaptive retries: the SDK backs off on throttles and slows its own sending
+// rate when Bedrock pushes back, instead of retrying at full speed (#451 scale
+// review H3). What's left after its attempts reaches the route as a typed error.
+const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-2', retryMode: 'adaptive', maxAttempts: 3 });
 
 // Map friendly model IDs to Bedrock model / inference-profile IDs. Open-weight
 // models are invoked by bare model ID (no `us.` cross-region prefix); Anthropic
@@ -39,6 +42,17 @@ const MODEL_MAP = {
   'claude-haiku-4-5-20251001': 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
   'claude-sonnet-4-6': 'us.anthropic.claude-sonnet-4-6',
 };
+
+/**
+ * The Bedrock id for a model plato may call. Only `LLM` (or its Bedrock id):
+ * the AI proxy is open to every signed-in user, so passing any other id
+ * through would make it a free gateway to every model on the account.
+ */
+function resolveModel(model) {
+  const id = MODEL_MAP[LLM] || LLM;
+  if (model === LLM || model === id) return id;
+  throw Object.assign(new Error(`Model not allowed: ${String(model).slice(0, 80)}`), { name: 'ModelNotAllowed' });
+}
 
 /** Anthropic models use the legacy InvokeModel body; everything else Converse. */
 function usesLegacyInvoke(modelId) {
@@ -56,7 +70,7 @@ function withTimeout(label) {
 
 const ai = {
   async invoke(model, body) {
-    const modelId = MODEL_MAP[model] || model;
+    const modelId = resolveModel(model);
     const { abortSignal, clear } = withTimeout('invoke');
     try {
       if (usesLegacyInvoke(modelId)) {
@@ -78,7 +92,7 @@ const ai = {
   },
 
   async *invokeStream(model, body) {
-    const modelId = MODEL_MAP[model] || model;
+    const modelId = resolveModel(model);
     const { abortSignal, clear } = withTimeout('stream');
     try {
       if (usesLegacyInvoke(modelId)) {
@@ -130,6 +144,14 @@ const ai = {
  */
 export const LLM = 'qwen3-vl-235b';
 
-console.log(`AI provider: bedrock (${MODEL_MAP[LLM] || LLM})`);
+// AI_PROVIDER=mock swaps in a deterministic stand-in for e2e/accessibility
+// tests (ai-mock.js). Never on Lambda: a stray env var must not turn prod's
+// coach into canned replies.
+const wantsMock = process.env.AI_PROVIDER === 'mock';
+const onLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+if (wantsMock && onLambda) console.error('AI_PROVIDER=mock ignored on Lambda; using Bedrock');
+const provider = wantsMock && !onLambda ? (await import('./ai-mock.js')).default : ai;
 
-export default ai;
+console.log(`AI provider: ${provider === ai ? `bedrock (${MODEL_MAP[LLM] || LLM})` : 'mock (AI_PROVIDER=mock)'}`);
+
+export default provider;

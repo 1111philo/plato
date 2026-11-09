@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { can } from '../lib/permissions.js';
 import * as authModule from '../../js/auth.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import { clearCache } from '../../js/storage.js';
@@ -21,11 +22,13 @@ export function AuthProvider({ children }) {
       if (result) {
         const u = await authModule.getCurrentUser();
         setUser(u);
+        // Pick up a role change since login (#435) without blocking first paint.
+        authModule.refreshCurrentUser().then((fresh) => { if (fresh) setUser(fresh); });
         // Restore impersonation only if the logged-in user is admin.
         // A non-admin should never have impersonation state lingering;
         // clear defensively if found.
         const stashed = authModule.getImpersonation();
-        if (stashed && u?.role === 'admin') {
+        if (stashed && can(u, 'impersonation.use')) {
           setImpersonatedUserState(stashed);
         } else if (stashed) {
           authModule.setImpersonation(null);

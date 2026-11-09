@@ -630,6 +630,69 @@ describe('GET /v1/admin/stats/lessons', () => {
     assert.equal(data.totalCompletions, 7);
   });
 
+  // #451 scale review H5: one background recompute at a time, and stats never
+  // read every conversation.
+  it('a stale cache claims one background refresh; a recent claim means no second one', async () => {
+    const stale = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    db.getSyncData = async () => ({ version: 4, data: { computedAt: stale, stats: { totalCompletions: 1 } } });
+    const app = new Hono();
+    app.route('/', admin);
+    await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal(putCalls.length, 1, 'claimed');
+    assert.equal(typeof putCalls[0].data.refreshingAt, 'string');
+    assert.equal(putCalls[0].data.stats.totalCompletions, 1, 'the stats are kept while it refreshes');
+
+    putCalls.length = 0;
+    db.getSyncData = async () => ({ version: 5, data: { computedAt: stale, stats: { totalCompletions: 1 }, refreshingAt: new Date().toISOString() } });
+    const res = await adminReq(app, 'GET', '/v1/admin/stats/lessons');
+    assert.equal((await res.json()).totalCompletions, 1, 'still served');
+    assert.equal(putCalls.length, 0, 'no second claim while one is in progress');
+  });
+
+  it('an expired cache is served stale when a background refresh is available', async () => {
+    process.env.JOBS_FUNCTION = 'plato-test-api';
+    const { LambdaClient } = await import('@aws-sdk/client-lambda');
+    const send = LambdaClient.prototype.send;
+    LambdaClient.prototype.send = async () => ({});
+    try {
+      db.getSyncData = async () => ({ version: 1, data: { computedAt: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), stats: { totalCompletions: 3 } } });
+      let computeRan = false;
+      db.listAllUsers = async () => { computeRan = true; return []; };
+      const app = new Hono();
+      app.route('/', admin);
+      const data = await (await adminReq(app, 'GET', '/v1/admin/stats/lessons')).json();
+      assert.deepEqual([data.totalCompletions, data.stale], [3, true]);
+      assert.equal(computeRan, false, 'no synchronous recompute');
+    } finally {
+      delete process.env.JOBS_FUNCTION;
+      LambdaClient.prototype.send = send;
+    }
+  });
+
+  it('reads a conversation only for a legacy completed KB without timestamps', async () => {
+    db.listAllUsers = async () => [{ userId: 'u1', role: 'user' }];
+    db.getAllSyncData = async (uid) => (uid === '_system' ? [
+      { dataKey: 'lesson:a', data: { status: 'public', markdown: '#' } },
+      { dataKey: 'lesson:b', data: { status: 'public', markdown: '#' } },
+    ] : [
+      { dataKey: 'lessonKB:a', data: { status: 'completed', activitiesCompleted: 4, startedAt: 1000, completedAt: 601000 } },
+      { dataKey: 'lessonKB:b', data: { status: 'completed', activitiesCompleted: 4 } },
+    ]);
+    const prefixes = [];
+    db.getSyncDataByPrefix = async (uid, prefix) => { prefixes.push(prefix); return (await db.getAllSyncData(uid)).filter((i) => i.dataKey.startsWith(prefix)); };
+    const reads = [];
+    db.getSyncData = async (uid, key) => {
+      reads.push(key);
+      return key === 'messages:b' ? { data: [{ timestamp: 1000 }, { timestamp: 1201000 }] } : null;
+    };
+    const app = new Hono();
+    app.route('/', admin);
+    const data = await (await adminReq(app, 'GET', '/v1/admin/stats/lessons')).json();
+    assert.equal(prefixes.includes('messages:'), false, 'no conversation prefix scan');
+    assert.deepEqual(reads.filter((k) => k.startsWith('messages:')), ['messages:b']);
+    assert.equal(data.avgDurationMinutes, 15, 'a: 10 min, b: 20 min from its messages');
+  });
+
   it('recomputes synchronously when cache is older than MAX_AGE (>24h)', async () => {
     const expiredAgeMs = 25 * 60 * 60 * 1000; // 25 hours
     db.getSyncData = async () => ({
@@ -1473,5 +1536,64 @@ describe('custom user fields admin API (#364)', () => {
     // Edits that don't touch customFields are unaffected.
     const nameOnly = await adminReq(makeApp(), 'PATCH', '/v1/admin/users/usr_2', { name: 'B2' });
     assert.equal(nameOnly.status, 200);
+  });
+});
+
+describe('PATCH /v1/admin/users/:userId email', () => {
+  let updates;
+  beforeEach(() => {
+    updates = [];
+    db.getUserById = async (id) => (id === 'usr_admin' ? { userId: 'usr_admin', role: 'admin' } : { userId: id, role: 'user', email: 'a@x.com' });
+    db.getUserByEmail = async (email) => (email === 'taken@x.com' ? { userId: 'usr_other' } : email === 'a@x.com' ? { userId: 'usr_a' } : null);
+    db.getUserByUsername = async () => null;
+    db.updateUser = async (userId, u) => { updates.push({ userId, ...u }); };
+  });
+  const app = () => { const a = new Hono(); a.route('/', admin); return a; };
+
+  it("refuses an email that belongs to another account", async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: 'Taken@X.com' });
+    assert.equal(res.status, 409);
+    assert.equal(updates.length, 0);
+  });
+
+  it('allows keeping (or re-casing) the user\'s own email, stored lowercase and trimmed', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: ' A@X.com ' });
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].email, 'a@x.com');
+  });
+
+  it('rejects a malformed email', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { email: 'not-an-email' });
+    assert.equal(res.status, 400);
+  });
+});
+
+describe('PATCH /v1/admin/users/:userId name (#402)', () => {
+  let updates;
+  beforeEach(() => {
+    updates = [];
+    db.getUserById = async (id) => (id === 'usr_admin'
+      ? { userId: 'usr_admin', role: 'admin' }
+      : { userId: id, role: 'learner', email: 'a@x.com', name: 'Mary Ann Evans' }); // pre-m005: no parts yet
+    db.updateUser = async (userId, u) => { updates.push(u); };
+  });
+  const app = () => { const a = new Hono(); a.route('/', admin); return a; };
+
+  it('the part not sent comes from the stored name, split on read', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { lastName: 'Evans' });
+    assert.equal(res.status, 200);
+    // splitName('Mary Ann Evans') gives first name 'Mary'.
+    assert.deepEqual(updates, [{ firstName: 'Mary', lastName: 'Evans', name: 'Mary Evans', nameSource: 'user' }]);
+  });
+
+  it('sets both parts', async () => {
+    await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { firstName: 'Mary Ann', lastName: 'Evans' });
+    assert.deepEqual(updates, [{ firstName: 'Mary Ann', lastName: 'Evans', name: 'Mary Ann Evans', nameSource: 'user' }]);
+  });
+
+  it('refuses an empty first name', async () => {
+    const res = await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { firstName: '', lastName: 'Evans' });
+    assert.equal(res.status, 400);
+    assert.equal(updates.length, 0);
   });
 });

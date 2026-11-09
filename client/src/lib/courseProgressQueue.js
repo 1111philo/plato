@@ -12,7 +12,7 @@
 import { getCourseProgress, saveCourseProgress } from '../../js/storage.js';
 import { getLessonsInCourse } from '../../js/lessonOwner.js';
 import * as orchestrator from '../../js/orchestrator.js';
-import { syncInBackground } from './syncDebounce.js';
+import { syncIfUnsaved } from './syncDebounce.js';
 
 let _courseProgressQueue = Promise.resolve();
 
@@ -80,12 +80,11 @@ export function updateCourseProgressOnCompletionInBackground(lessonKB, lesson) {
       result.completedLessonIds,
       lesson.lessonId,
     );
-    await saveCourseProgress(courseId, {
+    syncIfUnsaved(await saveCourseProgress(courseId, {
       courseId,
       summary: result.summary,
       completedLessonIds,
       updatedAt: Date.now(),
-    });
-    syncInBackground(`courseProgress:${courseId}`);
+    }), `courseProgress:${courseId}`);
   });
 }

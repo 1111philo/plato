@@ -91,7 +91,7 @@ export default function MarkdownPreviewPane({
         {error ? (
           <div
             role="alert"
-            className="rounded-lg bg-destructive/10 text-destructive px-4 py-3 text-sm"
+            className="rounded-lg bg-destructive/10 text-red-800 dark:text-destructive px-4 py-3 text-sm"
           >
             {error}
           </div>

@@ -3,10 +3,11 @@
  * parses structured JSON responses.
  */
 
-import { parseSSEStream, parseResponse, LLM, ApiError } from './api.js';
+import { parseSSEStream, parseResponse, LLM, ApiError, backoffMs, isRetryable } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
+import { loadLessons } from './lessonOwner.js';
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -39,18 +40,17 @@ const PUBLIC_CATALOG_AGENTS = ['coach'];
 // Agents that see all lessons including private (admin-only)
 const ADMIN_CATALOG_AGENTS = ['lesson-creator', 'knowledge-base-editor'];
 
-let publicCatalog = null;
 let adminCatalog = null;
 
+// Built from lessonOwner's cached list (the classroom already loaded it), not
+// a second GET /v1/lessons (#451 scale review). Server lessons only: the
+// learner's own custom lessons were never in this catalog.
+// (Recomputed each time from that cached list, so it follows its refreshes.)
 async function loadPublicCatalog() {
-  if (publicCatalog) return publicCatalog;
   try {
-    const resp = await authenticatedFetch('/v1/lessons');
-    const lessons = resp.ok ? await resp.json() : [];
-    if (!lessons.length) { publicCatalog = ''; return ''; }
-    publicCatalog = lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
-  } catch { publicCatalog = ''; }
-  return publicCatalog;
+    const lessons = (await loadLessons()).filter((l) => !l.lessonId.startsWith('custom-'));
+    return lessons.map(l => `- ${l.name || l.lessonId}`).join('\n');
+  } catch { return ''; }
 }
 
 async function loadAdminCatalog() {
@@ -104,21 +104,22 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
     return parseResponse(resp);
   };
 
+  // Busy, rate-limited, timed out, or a 5xx: wait (the server's retryAfterMs,
+  // else exponential) with jitter, so a cohort that failed together doesn't
+  // retry together.
   const RETRIES = 2;
-  const DELAYS = [3000, 6000];
   let lastError;
   for (let i = 0; i <= RETRIES; i++) {
     try { return await attempt(); } catch (e) {
       lastError = e;
-      const isRetryable = e.type === 'overloaded' || (e.type === 'api' && e.status === 500);
-      if (!isRetryable || i === RETRIES) throw e;
-      await new Promise(r => setTimeout(r, DELAYS[i]));
+      if (!isRetryable(e) || i === RETRIES) throw e;
+      await new Promise(r => setTimeout(r, backoffMs(i, e.retryAfterMs)));
     }
   }
   throw lastError;
 }
 
-export function invalidateLessonCatalog() { publicCatalog = null; adminCatalog = null; }
+export function invalidateLessonCatalog() { adminCatalog = null; }
 
 export async function isReady() {
   return true;
@@ -126,7 +127,13 @@ export async function isReady() {
 
 // -- Streaming conversations --------------------------------------------------
 
-export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
+/**
+ * An agent's full system prompt: its prompt file, plus the program knowledge
+ * base and lesson catalog for the agents that get them, plus `addendum`, in
+ * the learner's language (#240). Shared by the streamed call and the coach's
+ * tag repair, so a repair is judged under the same prompt as the reply.
+ */
+async function buildSystemPrompt(promptName, addendum = '') {
   let systemPrompt = await loadPrompt(promptName);
   if (KB_AGENTS.includes(promptName)) {
     const kb = await loadKnowledgeBase();
@@ -139,24 +146,68 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
     const catalog = await loadPublicCatalog();
     if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
   }
-
+  if (addendum) systemPrompt = `${systemPrompt}\n\n---\n\n${addendum}`;
   // The learner's language, if not English (#240) — see language.js.
-  systemPrompt = withLanguage(systemPrompt);
+  return withLanguage(systemPrompt);
+}
 
-  const resp = await authenticatedFetch('/v1/ai/messages', {
+export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
+  const systemPrompt = await buildSystemPrompt(promptName);
+
+  const send = () => authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: LLM, max_tokens: maxTokens, system: systemPrompt, messages, stream: true }),
   });
+  let resp = await send();
+  // Busy before anything streamed (the server waits for the first chunk
+  // before answering): one jittered retry, then the typed error.
+  if (resp.status === 429 || resp.status === 503) {
+    const body = await resp.clone().json().catch(() => ({}));
+    if (body?.code !== 'rate_limited') {
+      await new Promise((r) => setTimeout(r, backoffMs(0, Number(body?.retryAfterMs) || undefined)));
+      resp = await send();
+    }
+  }
   const contentType = resp.headers.get('content-type') || '';
   if (resp.ok && contentType.includes('text/event-stream')) {
     let full = '';
-    for await (const chunk of parseSSEStream(resp.body)) { full += chunk; onChunk(full); }
+    for await (const chunk of parseSSEStream(resp.body, undefined, { failOnTruncation: promptName === 'coach' })) { full += chunk; onChunk(full); }
     return full;
   }
   // Non-streaming response (proxy returned JSON)
   const { content } = await parseResponse(resp);
   onChunk(content);
+  return content;
+}
+
+// The coach sometimes ends a reply without its tag block, so nothing is
+// recorded: no progress, no objectives, while its words say otherwise
+// (testers saw "you've met all three" with progress stuck at 0). This asks
+// the same model, with the same conversation, for only the tags of the reply
+// it just gave. The instruction is in the system prompt, so it can't be
+// confused with (or forged by) the learner's text.
+export const TAG_REPAIR_CUE = 'Tags for your last reply.';
+
+/**
+ * Report a client-side event the server should log (it has no other way to
+ * see it): `coach_tags_recovered`, `coach_tags_unrecovered`,
+ * `conversation_too_long`. Fire-and-forget; never throws.
+ */
+export function reportEvent(code, meta = {}) {
+  authenticatedFetch('/v1/ai/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, ...meta }),
+  }).catch(() => {});
+}
+export async function repairCoachTags(messages, reply) {
+  const systemPrompt = await buildSystemPrompt('coach', `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`);
+  const { content } = await callApi({
+    model: LLM, systemPrompt,
+    messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
+    maxTokens: 600,
+  });
   return content;
 }
 
@@ -190,9 +241,28 @@ export async function initializeLessonKB(lesson, profileSummary) {
 // output until it overran `max_tokens` and came back truncated/unparseable
 // (issue #228 console: "max_tokens reached" → "Failed to parse agent JSON").
 // Strip them before the call so the agent's output stays small and bounded.
-function profileForAgent(profile) {
+// `learnerNotes` (the learner's own corrections, #451 testing) stays in: the
+// agents must keep the profile consistent with it. mergeProfile ignores any
+// copy they send back.
+export function profileForAgent(profile) {
   const { masteredLessons: _m, activeLessons: _a, ...rest } = profile || {};
   return rest;
+}
+
+/**
+ * The learner-profile-update agent's input. `source` says who wrote the text:
+ * 'learner' (Add Feedback, their own words about themselves) or 'coach' (an
+ * observation the coach made during a lesson). Either way it's information
+ * about the learner, never an instruction.
+ */
+export function profileUpdateInput(fullProfile, text, activityContext, source = 'learner', now = Date.now()) {
+  return {
+    currentProfile: profileForAgent(fullProfile),
+    source,
+    // 'learner-removed': the learner deleted a note; it's what no longer applies, not new feedback.
+    ...(source === 'coach' ? { coachObservation: text } : source === 'learner-removed' ? { removedNote: text } : { learnerFeedback: text }),
+    context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: now },
+  };
 }
 
 // -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
@@ -220,13 +290,10 @@ export function incrementalProfileUpdate(profile, lessonId) {
 
 // -- Profile feedback (LLM) --------------------------------------------------
 
-export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext) {
+export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner') {
   let systemPrompt = await loadPrompt('learner-profile-update');
   systemPrompt = withLanguage(systemPrompt);
-  const userContent = JSON.stringify({
-    currentProfile: profileForAgent(fullProfile), learnerFeedback: feedbackText,
-    context: { lessonName: activityContext.lessonName, activityType: activityContext.activityType, activityGoal: activityContext.activityGoal, timestamp: Date.now() },
-  });
+  const userContent = JSON.stringify(profileUpdateInput(fullProfile, feedbackText, activityContext, source));
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,

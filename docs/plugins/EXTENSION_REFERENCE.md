@@ -116,12 +116,19 @@ Available since Plugin API 1.2.0.
 
 ## Hooks
 
+**`ctx.settings` can lag behind a save.** Each Lambda container keeps the
+settings it read at startup and refreshes them only on writes it handles
+itself. After an admin saves, other warm containers use the old settings
+until they restart. A hook whose behavior depends on current settings, like
+Slack auto-invite's channel, should read them fresh: the activation record
+is `_system:plugins:activation`, readable with the SDK's `db`.
+
 The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any event name works. Plugins MAY emit/subscribe to arbitrary names following the convention `<plugin-id>.<event>`. Core emits a known subset (this list).
 
 ### `userCreated`
 
 - **Capability:** `hook.userCreated`
-- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'educator' | 'learner' | 'tester' }` (normalized; accounts stored as `user` before API 1.4.0 report `learner`)
 - **Emit point:** `server/src/routes/auth.js` after `db.createUser` — both the bootstrap-admin path (`POST /v1/auth/bootstrap-admin`) and the invite-accept signup path (`POST /v1/auth/signup`)
 - **Fires:** AFTER the user record is persisted. Observe-only; handlers can't abort. Errors in handlers are logged but don't fail the user-facing request.
 - **Phase:** 1.1
@@ -166,7 +173,7 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `userDeleted`
 
 - **Capability:** `hook.userDeleted`
-- **Payload:** `{ userId: string, email: string, role: 'admin' | 'user' }`
+- **Payload:** `{ userId: string, email: string, role: 'admin' | 'educator' | 'learner' | 'tester' }` (normalized; accounts stored as `user` before API 1.4.0 report `learner`)
 - **Emit point:** `server/src/routes/me.js` DELETE `/v1/me`; `server/src/routes/admin.js` DELETE `/v1/admin/users/:id`
 - **Fires:** BEFORE the cascade. Plugins can read their own `userMeta:<id>` records before they're deleted by the cascade. The host awaits all handlers before proceeding to delete the user's sync-data and user record.
 - **Phase:** 1.1
@@ -316,7 +323,7 @@ Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activa
 
 ### `GET /v1/plugins`
 
-Authenticated. Returns enabled plugins with sanitized settings (writeOnly fields stripped). Used by the client loader.
+Authenticated. Returns enabled plugins with sanitized settings (writeOnly fields stripped). Used by the client loader. Because writeOnly values never reach the client, `PUT /v1/admin/plugins/:id/settings` keeps a stored writeOnly value when the body leaves it out; send `null` to clear it (API 1.5.1).
 
 ### `GET /v1/plugins/extension-points`
 

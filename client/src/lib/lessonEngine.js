@@ -8,7 +8,7 @@
  */
 
 import {
-  getLearnerProfileSummary, getPreferences,
+  getLearnerProfileSummary, getPreferences, getAuthUser,
   getLessonKB, saveLessonKB, getCourseProgress,
   saveScreenshot, getScreenshot,
   saveLessonMessages, getLessonMessages, replaceLessonMessages,
@@ -16,10 +16,12 @@ import {
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
 import { compressImageDataUrl } from './imageCompression.js';
-import { syncInBackground } from './syncDebounce.js';
+import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
+import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 
 function ts() { return Date.now(); }
 
@@ -103,6 +105,39 @@ function stripTags(text) {
   return (tagStart !== -1 ? text.slice(0, tagStart) : text).trim();
 }
 
+/**
+ * When a coach reply came back without `[PROGRESS]` or without `[KB_UPDATE]`
+ * (where `objectivesMet` lives), ask for its tags
+ * (orchestrator.repairCoachTags) and fill in only what's missing. `repair`
+ * returns the raw tag text. Never throws. Returns the parsed response plus
+ * `tagsRepairTried`, `tagsRecovered` (something missing was filled in), and
+ * `tagsMissing` (still no progress: the turn records none, and "Behind this
+ * response" says so).
+ */
+export async function recoverMissingTags(parsed, repair) {
+  if (parsed.progress != null && parsed.kbUpdate) {
+    return { ...parsed, tagsRepairTried: false, tagsRecovered: false, tagsMissing: false };
+  }
+  let tags = {};
+  try { tags = parseCoachResponse(await repair()); } catch { /* the reply stands as parsed */ }
+  const progress = parsed.progress ?? tags.progress ?? null;
+  const kbUpdate = parsed.kbUpdate || tags.kbUpdate || null;
+  return {
+    ...parsed,
+    progress,
+    kbUpdate,
+    profileUpdate: parsed.profileUpdate || tags.profileUpdate || null,
+    tagsRepairTried: true,
+    tagsRecovered: (parsed.progress == null && progress != null) || (!parsed.kbUpdate && !!kbUpdate),
+    tagsMissing: progress == null,
+  };
+}
+
+/** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
+export function shouldUpdateProfile(parsed) {
+  return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
+}
+
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
@@ -161,8 +196,6 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
   lessonKB.name = lesson.name;
   lessonKB.progress = 0;
   lessonKB.startedAt = ts();
-  await saveLessonKB(lessonId, lessonKB);
-  syncInBackground(`lessonKB:${lessonId}`);
 
   // Emit lessonStarted hook and collect enrichments from plugins
   let enrichments = [];
@@ -192,19 +225,17 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
     console.warn('[startLesson] Failed to collect enrichments:', err);
   }
 
-  // Save enrichments (if any) BEFORE starting coach to avoid race condition
-  // where coach's progress update could overwrite enrichments
-  if (enrichments.length > 0) {
-    lessonKB.enrichments = enrichments;
-    await saveLessonKB(lessonId, lessonKB);
-    syncInBackground(`lessonKB:${lessonId}`);
-  }
+  // One KB write before the coach opens, with the enrichments in it (a later
+  // write would race the coach's progress update). It used to be written up
+  // to three times, each re-sent in the background (#451 scale review H2).
+  if (enrichments.length > 0) lessonKB.enrichments = enrichments;
+  syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
 
   // Coach opens the conversation
   if (onProgress) onProgress('starting');
-  const prefs = await getPreferences();
+  const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
   const coachMsg = await orchestrator.converseStream(
     'coach',
     [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
@@ -214,17 +245,23 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
 
   const { text, progress } = parseCoachResponse(coachMsg);
 
-  if (progress != null) {
-    lessonKB.progress = progress;
-    await saveLessonKB(lessonId, lessonKB);
+  // The opener is scored like any turn (clamped 0–10), but it can't finish
+  // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
+  // completes lessons. A lesson's Coach Directive can't change that.
+  const opening = openingProgress(progress);
+  if (opening != null && opening !== lessonKB.progress) {
+    lessonKB.progress = opening;
+    syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
   }
 
+  const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
   ];
 
-  await saveLessonMessages(lessonId, messages);
-  syncInBackground(`lessonKB:${lessonId}`, `messages:${lessonId}`);
+  const savedMessages = await saveLessonMessages(lessonId, messages);
+  // Retry the opener once in the background if it didn't land ('too_long' was never sent; there's nothing to retry).
+  if (savedMessages !== 'too_long') syncIfUnsaved(savedMessages, `messages:${lessonId}`);
   return { messages, lessonKB, phase: LESSON_PHASES.LEARNING };
 }
 
@@ -306,36 +343,50 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   const userParts = buildUserParts(text, imageDataUrls, linkList);
 
   // Always include context as first message so coach has lesson + profile info
-  const prefs = await getPreferences();
+  const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, prefs.name, courseProgress);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
 
+  // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
+  // "The reply was cut off", since the tags come last).
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
     cleanStream(onStream),
-    1024
+    2048
   );
 
-  const parsed = parseCoachResponse(coachMsg);
+  const parsed = await recoverMissingTags(
+    parseCoachResponse(coachMsg),
+    () => orchestrator.repairCoachTags(messages, stripTags(coachMsg)),
+  );
+  // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
+  if (parsed.tagsRepairTried) {
+    orchestrator.reportEvent(parsed.progress != null && parsed.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
+  }
 
-  const applied = applyCoachResponseToKB(lessonKB, parsed, { now: ts });
+  const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
+  // The objectives checklist (#438) first, against the KB as it was, so the
+  // turn that completes the lesson can still check off what it showed.
+  // Informational only: applyCoachResponseToKB alone decides completion.
+  const metBefore = new Set(lessonKB.objectivesMet || []);
+  const withMet = mergeObjectivesMet(lessonKB, parsed.kbUpdate);
+  const newlyMet = (withMet.objectivesMet || []).filter((i) => !metBefore.has(i))
+    .map((i) => withMet.objectives?.[i]?.objective).filter(Boolean);
+  const applied = applyCoachResponseToKB(withMet, parsed, { now: ts });
   lessonKB = applied.lessonKB;
   const { achieved, phase } = applied;
 
-  await saveLessonKB(lessonId, lessonKB);
-  syncInBackground(`lessonKB:${lessonId}`);
+  syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
 
-  // Profile updates — from explicit tag or from KB insights as fallback
-  if (parsed.profileUpdate?.observation) {
+  // The profile is updated from the coach's explicit [PROFILE_UPDATE] only
+  // (and on completion). Treating every turn's KB insights as a profile
+  // signal made most turns cost a second model call (#451 scale review H2).
+  if (shouldUpdateProfile(parsed)) {
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
-  } else if (parsed.kbUpdate?.insights?.length) {
-    // Use KB insights as a profile signal if no explicit profile update
-    const insightText = parsed.kbUpdate.insights.join('. ');
-    updateProfileFromObservation(lessonKB, insightText);
   }
   if (achieved) {
     updateProfileOnCompletionInBackground(lessonKB, lesson);
@@ -361,15 +412,29 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     msgType: MSG_TYPES.USER, phase,
     metadata, timestamp: ts(),
   };
-  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
+  // What each agent read and did on this turn (#411), for "Behind this response".
+  const agents = coachTurnActivity({
+    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet,
+    images: imageDataUrls.length, links: linkList.length,
+    hasUnitNote: !!courseProgress,
+    unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
+  });
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
 
-  await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
-  syncInBackground(`messages:${lessonId}`);
+  // true = saved. false = the server refused it; 'too_long' = not sent (past
+  // the size budget). Either way tell the learner, and don't retry in the
+  // background: it would send the same record. (The cache keeps the turn, so
+  // the next save tries it again.)
+  const saved = await saveLessonMessages(lessonId, [persistedUserMsg, assistantMsg]);
 
   const userMsg = imageDataUrls.length > 0
     ? { ...persistedUserMsg, metadata: { ...persistedUserMsg.metadata, imageDataUrls: [...imageDataUrls] } }
     : persistedUserMsg;
-  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase };
+  // 'too_long': the conversation itself is past the size limit, so later
+  // turns won't save either (saveLessonMessages doesn't even send it).
+  const saveFailed = saved === 'too_long' ? 'too_long' : saved === false;
+  if (saveFailed === 'too_long') orchestrator.reportEvent('conversation_too_long', { lessonId });
+  return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase, saveFailed };
 }
 
 /**
@@ -475,6 +540,12 @@ export async function resumeLesson(lessonId) {
 /** Progress is a 0–10 signal; a lesson completes at MAX_PROGRESS. */
 const MAX_PROGRESS = 10;
 
+/** The lesson opener's score: clamped 0–10 and never 10 (it can't complete a lesson). */
+export function openingProgress(progress) {
+  const p = clampProgress(progress);
+  return p == null ? null : Math.min(p, MAX_PROGRESS - 1);
+}
+
 /**
  * Coerce a coach-reported progress score into the 0–10 range.
  * Returns null for anything non-numeric so callers can treat it as "no score".
@@ -547,6 +618,19 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
 }
 
 /**
+ * The learner's first name for the coach (#402): from the signed-in account,
+ * which `/v1/me` refreshes on every load, so it's set from signup on. Falls
+ * back to the old `preferences.name`, which was blank until the learner saved
+ * Settings.
+ */
+async function learnerFirstName() {
+  const user = await getAuthUser().catch(() => null);
+  if (user?.firstName) return user.firstName;
+  const prefs = await getPreferences().catch(() => null);
+  return (prefs?.name || user?.name || '').trim().split(/\s+/)[0] || '';
+}
+
+/**
  * Fetch the distilled cross-lesson progress note for a lesson's course, if any.
  * Returns undefined when the lesson has no course or no note exists yet (so
  * buildContext omits it). Within a session this value only changes via OTHER
@@ -578,6 +662,9 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // Objectives the coach has already marked as shown (#438), 1-based.
+  const met = objectivesMetForContext(lessonKB);
+  if (met) context.objectivesMet = met;
   // Optional author-supplied coach directive: high-priority runtime guidance
   // the lesson author baked into the lesson markdown (`## Coach Directive`),
   // e.g. "reference the learner's portfolio project" or "offer this code".
@@ -587,14 +674,19 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
   if (lesson.coachDirective) {
     context.coachDirective = lesson.coachDirective;
   }
-  // Optional course taxonomy: when a lesson belongs to a wider course, the
-  // server inlines `lesson.course = { id, name }`. Surface the name so the
-  // coach can frame this lesson within the course's arc. When a cross-lesson
-  // progress note exists for this learner, attach it as `progress` so the coach
-  // can connect threads — informational only; it never touches completion.
-  if (lesson.course && lesson.course.name) {
-    context.course = { name: lesson.course.name };
-    if (courseProgress) context.course.progress = courseProgress;
+  // Optional placement (#408): the server inlines the lesson's unit (still
+  // stored as `lesson.course`) and the course above it (`lesson.program`).
+  // Surface the names so the coach can frame this lesson within that arc.
+  // The cross-lesson progress note is per unit (`courseProgress:<unitId>`);
+  // it rides on `unit.progress` and is informational only; it never touches
+  // completion.
+  const unitName = lesson.unit?.name || lesson.course?.name;
+  if (unitName) {
+    context.unit = { name: unitName };
+    if (courseProgress) context.unit.progress = courseProgress;
+  }
+  if (lesson.program?.name) {
+    context.course = { name: lesson.program.name };
   }
   // Optional enrichment context: plugins can enrich lessons at start time by
   // providing additional reference material (e.g., WordPress docs, React API
