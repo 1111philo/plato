@@ -29,6 +29,8 @@ Service Quotas the week before; ask AWS for more if the expected load is close.
    recovery is on for prod (set in the console; the deploy role can't manage
    it, so it isn't in `template.yaml`). *Check* it's still `ENABLED`:
    `aws dynamodb describe-continuous-backups --table-name plato-sync-data`.
+   Daily and weekly AWS Backup copies run on their own (vault `plato-prod`;
+   `docs/DEPLOY.md` → Backups); *check* last night's completed.
 3. **Use the right link.** Share `https://plato.courses`. `learn.ai-leaders.org`
    is a registrar redirect, one extra hop.
 4. **Warm up.** Most containers at the start of an event are cold (~2 s for
