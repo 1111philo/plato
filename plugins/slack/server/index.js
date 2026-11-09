@@ -207,7 +207,8 @@ routes.get('/admin/auto-invite', async (c) => {
 });
 
 // POST /v1/plugins/slack/admin/auto-invite/retry — body { userId } or { all: true }
-// (retries everyone not yet invited). Already-invited users are skipped.
+// (retries everyone not yet invited, and links invited users who aren't
+// linked yet). Already-invited, linked users are skipped.
 routes.post('/admin/auto-invite/retry', async (c) => {
   const settings = await getSlackSettings();
   if (!settings.autoInviteEnabled || !settings.autoInviteChannelId) return c.json({ error: 'Turn on auto-invite and choose a channel first' }, 400);
@@ -221,9 +222,9 @@ routes.post('/admin/auto-invite/retry', async (c) => {
   for (const u of targets) {
     if (body.all) {
       const meta = await getUserMeta(u.userId, 'slack');
-      if (!needsRetry(meta)) { counts.skipped++; continue; }
+      if (!needsRetry(meta, u)) { counts.skipped++; continue; }
     }
-    const r = await autoInvite({ userId: u.userId, email: u.email }, settings);
+    const r = await autoInvite({ userId: u.userId, email: u.email, slackUserId: u.slackUserId || null }, settings);
     counts[r ? r.status : 'skipped']++;
   }
   return c.json(counts);
