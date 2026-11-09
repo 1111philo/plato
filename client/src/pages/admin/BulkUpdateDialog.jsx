@@ -12,7 +12,8 @@ const SELECT_CLASS = 'h-10 w-full rounded-lg border border-input bg-transparent 
 const people = (n) => `${n} ${n === 1 ? 'user' : 'users'}`;
 
 /**
- * Admin → Users → select users → "Update…": one change for everyone selected,
+ * Admin → Users → select users → "Update…": one change for everyone selected
+ * (signed-up users and wait-list entries; someone who is both gets it on both),
  * either their group or one user field (any field, including admin-only ones).
  * Set it to a value or clear it; the sentence under the controls says exactly
  * what will happen before Apply. Server: POST /v1/admin/users/bulk-update,
@@ -24,14 +25,16 @@ const people = (n) => `${n} ${n === 1 ? 'user' : 'users'}`;
  */
 const SLACK = '__slack';
 
-export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, userFields, slackConnected = false, onDone }) {
+export default function BulkUpdateDialog({ open, onOpenChange, userIds, waitlistTokens = [], groups, userFields, slackConnected = false, onDone }) {
   const [field, setField] = useState('userGroup');
   const [mode, setMode] = useState('set'); // 'set' | 'clear'
   const [value, setValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const count = userIds.length;
+  const count = userIds.length + waitlistTokens.length;
+  // Slack links accounts only; wait-list entries have none yet.
+  const canSlack = slackConnected && userIds.length > 0;
   const isSlack = field === SLACK;
   const def = field === 'userGroup' || isSlack ? null : userFields.find((f) => f.id === field);
   const label = isSlack ? 'Slack link' : def ? def.label : 'Group';
@@ -48,7 +51,7 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
   }
 
   const sentence = isSlack
-    ? `Links ${people(count)} to the Slack member with the same email. Existing links stay, and nobody is added to a channel.`
+    ? `Links ${people(userIds.length)} to the Slack member with the same email. Existing links stay, and nobody is added to a channel.${waitlistTokens.length ? ` Wait-list entries are skipped.` : ''}`
     : mode === 'clear'
     ? `Clears ${label} for ${people(count)}.${def?.required ? ' It’s required, so learners will be asked for it again.' : ''}`
     : trimmed ? `Sets ${label} to “${trimmed}” for ${people(count)}.` : `Choose the new ${label.toLowerCase()}.`;
@@ -67,7 +70,7 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
         return;
       }
       const result = await adminApi('POST', '/v1/admin/users/bulk-update', {
-        userIds, set: { field, value: mode === 'clear' ? null : trimmed },
+        userIds, waitlistTokens, set: { field, value: mode === 'clear' ? null : trimmed },
       });
       onDone(result, { label, cleared: mode === 'clear', value: trimmed });
       reset();
@@ -92,7 +95,7 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
             <select id="bulk-field" className={SELECT_CLASS} value={field} onChange={(e) => choose(e.target.value)}>
               <option value="userGroup">Group</option>
               {userFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-              {slackConnected && <option value={SLACK}>Slack link</option>}
+              {canSlack && <option value={SLACK}>Slack link</option>}
             </select>
           </div>
 
@@ -127,7 +130,7 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
         </form>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" form="bulk-update-form" disabled={saving || !ready}>{saving ? (isSlack ? 'Linking…' : 'Updating…') : isSlack ? `Link ${people(count)}` : `Update ${people(count)}`}</Button>
+          <Button type="submit" form="bulk-update-form" disabled={saving || !ready}>{saving ? (isSlack ? 'Linking…' : 'Updating…') : isSlack ? `Link ${people(userIds.length)}` : `Update ${people(count)}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

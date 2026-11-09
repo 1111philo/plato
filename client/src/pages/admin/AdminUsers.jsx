@@ -671,8 +671,14 @@ export default function AdminUsers() {
   const canBulk = can(currentUser, 'users.write');
   const scopeKey = JSON.stringify([filters, search]);
   const selectedIds = selection.key === scopeKey ? selection.ids : new Set();
-  const matchingUserIds = sortedList.filter((i) => i._type === 'user').map((i) => i._user.userId);
-  const pageUserIds = pageItems.filter((i) => i._type === 'user').map((i) => i._user.userId);
+  // Signed-up users and wait-list entries can be selected (by row key:
+  // userId or the entry's invite token); pending invites can't.
+  const selectable = (i) => i._type === 'user' || i._type === 'waitlist';
+  const matchingUserIds = sortedList.filter(selectable).map((i) => i._key);
+  const pageUserIds = pageItems.filter(selectable).map((i) => i._key);
+  const selectedItems = combinedList.filter((i) => selectable(i) && selectedIds.has(i._key));
+  const selectedUserIds = selectedItems.filter((i) => i._type === 'user').map((i) => i._key);
+  const selectedWaitlist = selectedItems.filter((i) => i._type === 'waitlist').map((i) => i._key);
   const pageAllSelected = pageUserIds.length > 0 && pageUserIds.every((id) => selectedIds.has(id));
   const pageSomeSelected = pageUserIds.some((id) => selectedIds.has(id));
   function changeSelection(next, note) {
@@ -1026,14 +1032,14 @@ export default function AdminUsers() {
                     : item._type === 'user' ? () => openEditUser(item._user) : null;
                   return (
                     <TableRow key={item._key} className={open ? 'cursor-pointer hover:bg-muted/50' : undefined} onClick={open || undefined}
-                      data-state={item._type === 'user' && selectedIds.has(item._user.userId) ? 'selected' : undefined}>
+                      data-state={selectable(item) && selectedIds.has(item._key) ? 'selected' : undefined}>
                       {canBulk && (
                         <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                          {item._type === 'user' && (
+                          {selectable(item) && (
                             <input type="checkbox" className="h-4 w-4 accent-primary align-middle"
                               aria-label={`Select ${item.name || item.email}`}
-                              checked={selectedIds.has(item._user.userId)}
-                              onChange={(e) => toggleUser(item._user.userId, e.target.checked)} />
+                              checked={selectedIds.has(item._key)}
+                              onChange={(e) => toggleUser(item._key, e.target.checked)} />
                           )}
                         </TableCell>
                       )}
@@ -1316,7 +1322,8 @@ export default function AdminUsers() {
       <BulkUpdateDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}
-        userIds={[...selectedIds]}
+        userIds={selectedUserIds}
+        waitlistTokens={selectedWaitlist}
         groups={groups}
         userFields={userFields}
         slackConnected={slackConnected}
