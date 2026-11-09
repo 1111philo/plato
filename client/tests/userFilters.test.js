@@ -49,3 +49,25 @@ describe('user filters', () => {
     ]);
   });
 });
+
+describe('Slack filter', () => {
+  const list = [
+    { _type: 'user', email: 'a', _user: { slackUserId: 'U1' } },
+    { _type: 'user', email: 'b', _user: {} },
+    { _type: 'invite', email: 'c' },
+    { _type: 'waitlist', email: 'd' },
+  ];
+  it('is offered only when Slack is connected', () => {
+    assert.equal(buildFacets({ items: list }).some((f) => f.key === 'slack'), false);
+    assert.equal(buildFacets({ items: list, slack: true }).some((f) => f.key === 'slack'), true);
+  });
+  it('splits signed-up users into Linked and Not linked; invites and the wait list match neither', () => {
+    const f = buildFacets({ items: list, slack: true });
+    const slack = f.find((x) => x.key === 'slack');
+    assert.deepEqual(slack.options.map((o) => [o.label, o.count]), [['Linked', 1], ['Not linked', 1]]);
+    const pickS = (v) => list.filter((i) => matchesFilters(i, { slack: v }, f)).map((i) => i.email);
+    assert.deepEqual(pickS(['linked']), ['a']);
+    assert.deepEqual(pickS(['unlinked']), ['b']);
+    assert.deepEqual(describeFilters({ slack: ['unlinked'] }, f), [{ key: 'slack', label: 'Slack', values: ['Not linked'] }]);
+  });
+});

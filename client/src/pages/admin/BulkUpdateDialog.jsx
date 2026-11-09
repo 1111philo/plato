@@ -17,8 +17,14 @@ const people = (n) => `${n} ${n === 1 ? 'user' : 'users'}`;
  * Set it to a value or clear it; the sentence under the controls says exactly
  * what will happen before Apply. Server: POST /v1/admin/users/bulk-update,
  * which validates the change once and applies it per user.
+ *
+ * With the Slack plugin connected, "Slack link" links each account to the
+ * workspace member with the same email (POST /v1/plugins/slack/admin/link);
+ * existing links stay and nobody is added to a channel.
  */
-export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, userFields, onDone }) {
+const SLACK = '__slack';
+
+export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, userFields, slackConnected = false, onDone }) {
   const [field, setField] = useState('userGroup');
   const [mode, setMode] = useState('set'); // 'set' | 'clear'
   const [value, setValue] = useState('');
@@ -26,11 +32,12 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
   const [error, setError] = useState('');
 
   const count = userIds.length;
-  const def = field === 'userGroup' ? null : userFields.find((f) => f.id === field);
-  const label = def ? def.label : 'Group';
+  const isSlack = field === SLACK;
+  const def = field === 'userGroup' || isSlack ? null : userFields.find((f) => f.id === field);
+  const label = isSlack ? 'Slack link' : def ? def.label : 'Group';
   const options = field === 'userGroup' ? groups : def?.type === 'dropdown' ? def.options : null;
   const trimmed = value.trim();
-  const ready = mode === 'clear' || !!trimmed;
+  const ready = isSlack || mode === 'clear' || !!trimmed;
 
   function reset() {
     setField('userGroup'); setMode('set'); setValue(''); setError(''); setSaving(false);
@@ -40,7 +47,9 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
     setField(next); setValue(''); setError('');
   }
 
-  const sentence = mode === 'clear'
+  const sentence = isSlack
+    ? `Links ${people(count)} to the Slack member with the same email. Existing links stay, and nobody is added to a channel.`
+    : mode === 'clear'
     ? `Clears ${label} for ${people(count)}.${def?.required ? ' It’s required, so learners will be asked for it again.' : ''}`
     : trimmed ? `Sets ${label} to “${trimmed}” for ${people(count)}.` : `Choose the new ${label.toLowerCase()}.`;
 
@@ -50,6 +59,13 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
     setSaving(true);
     setError('');
     try {
+      if (isSlack) {
+        const result = await adminApi('POST', '/v1/plugins/slack/admin/link', { userIds });
+        onDone(result, { label, slack: true });
+        reset();
+        onOpenChange(false);
+        return;
+      }
       const result = await adminApi('POST', '/v1/admin/users/bulk-update', {
         userIds, set: { field, value: mode === 'clear' ? null : trimmed },
       });
@@ -76,10 +92,11 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
             <select id="bulk-field" className={SELECT_CLASS} value={field} onChange={(e) => choose(e.target.value)}>
               <option value="userGroup">Group</option>
               {userFields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+              {slackConnected && <option value={SLACK}>Slack link</option>}
             </select>
           </div>
 
-          <fieldset className="space-y-2">
+          {!isSlack && <fieldset className="space-y-2">
             <legend className="sr-only">New {label.toLowerCase()}</legend>
             <label className="flex items-center gap-2 text-sm">
               <input type="radio" name="bulk-mode" className="h-4 w-4 shrink-0 accent-primary" checked={mode === 'set'} onChange={() => setMode('set')} />
@@ -104,13 +121,13 @@ export default function BulkUpdateDialog({ open, onOpenChange, userIds, groups, 
               <input type="radio" name="bulk-mode" className="h-4 w-4 shrink-0 accent-primary" checked={mode === 'clear'} onChange={() => setMode('clear')} />
               {field === 'userGroup' ? 'Remove from their group' : 'Clear it'}
             </label>
-          </fieldset>
+          </fieldset>}
 
           <p className="rounded-md bg-muted/50 px-3 py-2 text-sm" aria-live="polite">{sentence}</p>
         </form>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" form="bulk-update-form" disabled={saving || !ready}>{saving ? 'Updating…' : `Update ${people(count)}`}</Button>
+          <Button type="submit" form="bulk-update-form" disabled={saving || !ready}>{saving ? (isSlack ? 'Linking…' : 'Updating…') : isSlack ? `Link ${people(count)}` : `Update ${people(count)}`}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

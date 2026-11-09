@@ -1590,6 +1590,10 @@ must exist; the value must pass the field's rules), applies it per user,
 skips people who already have it, reports `{ updated, unchanged, failed }`,
 and writes one `users_bulk_updated` audit entry. Required fields aren't
 enforced there: clearing one just means those learners are asked for it again.
+With the Slack plugin connected, **Update…** also offers **Slack link**: it
+links each selected account to the workspace member with the same email
+(`POST /v1/plugins/slack/admin/link`), keeping existing links and adding
+nobody to a channel, and reports linked / already linked / not found.
 
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list
@@ -1608,9 +1612,10 @@ logic in `client/src/lib/userFilters.js`) replaced the single-choice
 All / Active / Staff / Invited / Wait List buttons and the one custom-field
 filter.
 - It has one group of checkbox items per facet: Status (Signed up, Invited,
-  Wait list), Role, Group (plus No group), and every custom field (its
-  dropdown options plus Empty, or Has a value / Empty). Each option shows its
-  count.
+  Wait list), Role, Group (plus No group), Slack (Linked / Not linked, only
+  while the Slack plugin is connected; signed-up users only), and every
+  custom field (its dropdown options plus Empty, or Has a value / Empty).
+  Each option shows its count.
 - Filters combine as **OR within a facet, AND across facets**. Each facet has
   Select all and Clear.
 - Facets that don't apply drop an item: a role filter leaves out invites and

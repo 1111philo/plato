@@ -1149,7 +1149,8 @@ admin.put('/v1/admin/theme', async (c) => {
 // GET /v1/admin/plugins — list all known plugins, including disabled and load-failed.
 // writeOnly settings (e.g. Slack's bot token) are stripped from responses; the host
 // is the source of truth for those values, the client never needs them back.
-admin.get('/v1/admin/plugins', (c) => {
+admin.get('/v1/admin/plugins', async (c) => {
+  await pluginRegistry.sync();
   return c.json(pluginRegistry.list().map((e) => {
     const view = pluginRegistry.publicView(e);
     return { ...view, settings: pluginRegistry.sanitizeSettings(e) };
@@ -1158,6 +1159,7 @@ admin.get('/v1/admin/plugins', (c) => {
 
 // PUT /v1/admin/plugins/:id/activation — enable/disable a plugin.
 admin.put('/v1/admin/plugins/:id/activation', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try {
@@ -1183,6 +1185,7 @@ admin.put('/v1/admin/plugins/:id/activation', async (c) => {
 // must type the plugin id to confirm, mirroring GitHub's repo-deletion gate.
 // Audit-logged.
 admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try { body = await c.req.json(); } catch { return c.json({ error: 'JSON body required' }, 400); }
@@ -1208,6 +1211,7 @@ admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
 
 // PUT /v1/admin/plugins/:id/settings — update plugin settings.
 admin.put('/v1/admin/plugins/:id/settings', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try {
