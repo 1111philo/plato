@@ -129,7 +129,7 @@ describe('send-message job', () => {
     const msg = await m.createMessage(m.validateMessage(draft({ email: true, audience: { type: 'role', roles: ['learner'] } })).message, admin, db);
     assert.equal(msg.status, 'sending');
     const counts = await m.sendMessageEmails({ id: msg.id }, { db });
-    assert.deepEqual(counts, { recipients: 2, emailed: 1, optedOut: 1, blocked: 0, skipped: 0, failed: 0 });
+    assert.deepEqual(counts, { recipients: 2, emailed: 1, optedOut: 1, blocked: 0, suppressed: 0, skipped: 0, failed: 0 });
     assert.equal(mails.length, 1);
     assert.match(mails[0], /^To: ada@x\.com$/m);
     assert.match(mails[0], /^Subject: Hello Ada$/m);
@@ -153,6 +153,22 @@ describe('send-message job', () => {
     const counts = await m.sendMessageEmails({ id: msg.id }, { db });
     assert.equal(mails.length - before, 1, 'only the person whose send failed gets a retry');
     assert.equal(counts.emailed, 2);
+  });
+
+  it('a bounced address is counted as suppressed, not failed, and SES is never called', async () => {
+    const supp = await import('../../src/lib/email-suppression.js');
+    supp._resetSuppression();
+    process.env.SUPPRESSED_EMAILS = 'ada@x.com:BOUNCE';
+    try {
+      const msg = await m.createMessage(m.validateMessage(draft({ email: true, audience: { type: 'role', roles: ['learner'] } })).message, admin, db);
+      const counts = await m.sendMessageEmails({ id: msg.id }, { db });
+      assert.equal(counts.suppressed, 1);
+      assert.equal(counts.failed, 0);
+      assert.ok(!mails.some((raw) => /^To: ada@x\.com$/m.test(raw)));
+    } finally {
+      delete process.env.SUPPRESSED_EMAILS;
+      supp._resetSuppression();
+    }
   });
 
   it('an in-app-only message is sent at once and never emails', async () => {

@@ -8,7 +8,7 @@ For a quick local development setup, see the [main README](../README.md#quick-st
 
 - AWS SAM CLI
 - An AWS account with permissions for Lambda, DynamoDB, API Gateway, IAM, S3, and SES
-- A verified SES sender email/domain
+- A verified SES sender email/domain. Turn on SES **account-level suppression** for bounces and complaints (Account dashboard → Suppression list); plato reads that list before every send and shows admins which addresses bounced (`docs/ARCHITECTURE.md`, Notifications). Both functions' roles get `ses:GetSuppressedDestination`, `ses:ListSuppressedDestinations`, and `ses:DeleteSuppressedDestination` on `Resource: '*'` (those actions can't be scoped to a resource). The list is account-wide, so on a shared account plato only ever shows or removes its own users', invites', and wait-list addresses. Without the permissions plato fails open and sends as before.
 - Amazon Bedrock access, with model access enabled for `qwen.qwen3-vl-235b-a22b`
 
 ## 1. SSM parameters

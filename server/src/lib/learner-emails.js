@@ -82,7 +82,7 @@ export async function inBatches(items, fn, { size = BATCH_SIZE, deadline = Infin
 
 export async function runInactivityNudges({ db = defaultDb, now = Date.now(), deadline = Infinity, clock = Date.now } = {}) {
   if (!(await readAutomations(db)).inactivityNudge) return { off: true };
-  const counts = { learners: 0, nudged: 0, optedOut: 0, notSent: 0, errors: 0 };
+  const counts = { learners: 0, nudged: 0, optedOut: 0, suppressed: 0, notSent: 0, errors: 0 };
   const system = await db.getAllSyncData('_system');
   const remaining = await inBatches(await learners(db), (u) => nudgeOne(u).catch((err) => {
     counts.errors++;
@@ -132,7 +132,8 @@ export async function runInactivityNudges({ db = defaultDb, now = Date.now(), de
       }, db).catch(() => {});
       return { failed: true };
     });
-    if (r.sent) counts.nudged++; else counts.notSent++;
+    // Bounced/complained: skipped, not failed. The claim stays (no retry storm).
+    if (r.sent) counts.nudged++; else if (r.suppressed) counts.suppressed++; else counts.notSent++;
   }
 }
 
@@ -160,7 +161,7 @@ export function digestContent({ items, lessons, now }) {
 
 export async function runWeeklyDigest({ db = defaultDb, now = Date.now(), deadline = Infinity, clock = Date.now } = {}) {
   if (!(await readAutomations(db)).weeklyDigest) return { off: true };
-  const counts = { learners: 0, sent: 0, nothingToSay: 0, optedOut: 0, notSent: 0, errors: 0 };
+  const counts = { learners: 0, sent: 0, nothingToSay: 0, optedOut: 0, suppressed: 0, notSent: 0, errors: 0 };
   const system = await db.getAllSyncData('_system');
   const remaining = await inBatches(await learners(db), (u) => digestOne(u).catch((err) => {
     counts.errors++;
@@ -189,7 +190,7 @@ export async function runWeeklyDigest({ db = defaultDb, now = Date.now(), deadli
       await claimFor(u.userId, (st) => (st.lastDigestAt === stamp ? { ...st, lastDigestAt: null } : null), db).catch(() => {});
       return { failed: true };
     });
-    if (r.sent) counts.sent++; else counts.notSent++;
+    if (r.sent) counts.sent++; else if (r.suppressed) counts.suppressed++; else counts.notSent++;
   }
 }
 

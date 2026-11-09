@@ -37,6 +37,8 @@ export default defineConfig({
       SQLITE_PATH: DB_PATH,
       AI_PROVIDER: 'mock',
       SKIP_EMAIL: 'true',
+      // Stands in for SES's bounce/complaint list (lib/email-suppression.js).
+      SUPPRESSED_EMAILS: 'bounced@example.com:BOUNCE,spam@example.com:COMPLAINT',
       ADMIN_EMAIL: 'admin@plato.dev',
       ADMIN_PASSWORD: 'admin123',
       JWT_SECRET: 'e2e-secret',

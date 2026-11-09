@@ -28,6 +28,8 @@ const ROLE_HELP = {
   tester: 'Can open every classroom and dashboard page, but can’t change anything.',
 };
 import WaitlistDialog from './WaitlistDialog.jsx';
+import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
+import { SUPPRESSION_LABEL, suppressionMap, suppressionReason, notSentText } from '../../lib/emailSuppression.js';
 import WaitlistEntryEdit from './WaitlistEntryEdit.jsx';
 import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, missingRequired } from '../../lib/userFields.js';
@@ -77,6 +79,17 @@ const SORT_KEY_FNS = {
  * stays clickable for the mouse. The button stops propagation so the click
  * doesn't fire twice.
  */
+// SES won't deliver to this address (it bounced, or the person marked our
+// email as spam). The badge text is the accessible name; the date is a title.
+function SuppressedBadge({ s }) {
+  if (!s) return null;
+  return (
+    <Badge variant="outline" className="ml-2 border-destructive/40 text-red-800 dark:text-destructive" title={suppressionReason(s)}>
+      {SUPPRESSION_LABEL[s.reason] || SUPPRESSION_LABEL.BOUNCE}
+    </Badge>
+  );
+}
+
 function RowOpenButton({ onClick, srPrefix, children }) {
   return (
     <button
@@ -199,17 +212,23 @@ export default function AdminUsers() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkGenerating, setLinkGenerating] = useState(false);
 
+  // Bounced / spam-flagged addresses, `{ [email]: { reason, since } }`.
+  const [suppression, setSuppression] = useState({});
+  const [unsuppressOpen, setUnsuppressOpen] = useState(false);
+
   // `quiet` refreshes without the page spinner, which would unmount an open dialog.
   const loadData = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
     try {
-      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes] = await Promise.all([
+      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes, suppressionRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users?include=stats'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
         adminApi('GET', '/v1/admin/plugins').catch(() => []),
         adminApi('GET', '/v1/admin/invites/link').catch(() => null),
         adminApi('GET', '/v1/admin/waitlist').catch(() => null),
+        // Quiet: no list (SES unreachable, or no permission) just means no badges.
+        adminApi('GET', '/v1/admin/email-suppression').catch(() => null),
       ]);
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setPendingInvites(Array.isArray(invitesRes) ? invitesRes.filter(x => x.status === 'pending') : []);
@@ -218,6 +237,7 @@ export default function AdminUsers() {
       setLinkInvite(linkRes);
       setWaitlistEntries(Array.isArray(waitlistRes?.entries) ? waitlistRes.entries : []);
       setWaitlistSettings({ open: !!waitlistRes?.open, hasApiKey: !!waitlistRes?.hasApiKey });
+      setSuppression(suppressionMap(suppressionRes));
       // Slack connection status comes from the plugin's settings, not legacy _system:settings.slack.
       // The Slack tab is hidden when the plugin is disabled OR not connected.
       const slack = Array.isArray(pluginsRes) ? pluginsRes.find((entry) => entry.id === 'slack') : null;
@@ -318,9 +338,14 @@ export default function AdminUsers() {
     try {
       const data = await adminApi('POST', '/v1/admin/invites/bulk', { emails: emailQueue });
       const parts = [];
+      const notSent = (data.results || []).filter((r) => r.status === 'suppressed');
+      const skipped = (data.skipped || 0) - notSent.length;
       if (data.sent > 0) parts.push(`${data.sent} invite(s) sent`);
-      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
-      setMessage({ text: parts.join('. ') + '.', type: data.sent > 0 ? 'success' : 'error' });
+      if (skipped > 0) parts.push(`${skipped} skipped`);
+      let text = parts.length ? parts.join('. ') + '.' : '';
+      if (notSent.length === 1) text = `${text} ${notSentText(notSent[0].email, notSent[0])}`.trim();
+      else if (notSent.length > 1) text = `${text} Not sent to ${notSent.length} addresses that bounced or marked our email as spam: ${notSent.map((r) => r.email).join(', ')}.`.trim();
+      setMessage({ text, type: data.sent > 0 && !notSent.length ? 'success' : 'error' });
       setEmailQueue([]);
       setInviteOpen(false);
       loadData();
@@ -470,8 +495,8 @@ export default function AdminUsers() {
 
   async function resendInvite(email) {
     try {
-      await adminApi('POST', '/v1/admin/invites/resend', { email });
-      setMessage({ text: `Invite resent to ${email}.`, type: 'success' });
+      const r = await adminApi('POST', '/v1/admin/invites/resend', { email });
+      setMessage(r?.suppressed ? { text: notSentText(email, r), type: 'error' } : { text: `Invite resent to ${email}.`, type: 'success' });
       loadData();
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
@@ -479,7 +504,7 @@ export default function AdminUsers() {
   async function inviteFromWaitlist(token, email) {
     try {
       const r = await adminApi('POST', `/v1/admin/waitlist/${token}/invite`);
-      setMessage({
+      setMessage(r.suppressed ? { text: notSentText(email, r), type: 'error' } : {
         text: r.existingAccount
           ? `Invite sent to ${email}. They already have an account, so they’ll accept it in the classroom.`
           : `Invite sent to ${email}.`,
@@ -517,8 +542,8 @@ export default function AdminUsers() {
   async function resetUserPassword(userId, email) {
     if (!confirm(`Send a password reset email to ${email}?`)) return;
     try {
-      await adminApi('POST', `/v1/admin/users/${userId}/reset-password`);
-      setMessage({ text: `Password reset email sent to ${email}.`, type: 'success' });
+      const r = await adminApi('POST', `/v1/admin/users/${userId}/reset-password`);
+      setMessage(r?.suppressed ? { text: notSentText(email, r), type: 'error' } : { text: `Password reset email sent to ${email}.`, type: 'success' });
     } catch (e) {
       setMessage({ text: e.message, type: 'error' });
     }
@@ -555,6 +580,14 @@ export default function AdminUsers() {
     setEditUser(u);
     setEditForm({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
   }, [paramUserId, users, navigate]);
+
+  async function removeFromBounceList(email) {
+    try {
+      await adminApi('DELETE', `/v1/admin/email-suppression/${encodeURIComponent(email)}`);
+      setMessage({ text: `${email} removed from the bounce list.`, type: 'success' });
+      loadData({ quiet: true });
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
 
   async function saveEditUser() {
     if (!editUser) return;
@@ -741,6 +774,7 @@ export default function AdminUsers() {
   if (editUser) {
     const isSelf = editUser.userId === currentUser?.userId;
     const canEditUser = shows('users.write');
+    const editSuppression = editUser.email ? suppression[editUser.email.toLowerCase()] : null;
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -752,6 +786,26 @@ export default function AdminUsers() {
             {message.text}
           </div>
         )}
+        {editSuppression && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 px-4 py-3 mb-4 text-sm" role="note" aria-label="Email delivery">
+            <span>
+              <span className="font-medium">{SUPPRESSION_LABEL[editSuppression.reason] || SUPPRESSION_LABEL.BOUNCE}.</span>{' '}
+              {editUser.email} {suppressionReason(editSuppression)}, so emails to it aren’t sent.
+            </span>
+            {can(currentUser, 'users.write') && (
+              <Button variant="outline" size="sm" onClick={() => setUnsuppressOpen(true)}>Remove from the bounce list</Button>
+            )}
+          </div>
+        )}
+        <ConfirmModal
+          open={unsuppressOpen}
+          onOpenChange={setUnsuppressOpen}
+          title="Remove from the bounce list?"
+          message={`Emails to ${editUser.email} will be sent again. If it bounces again, it goes back on the list.`}
+          confirmLabel="Remove"
+          variant="default"
+          onConfirm={() => { setUnsuppressOpen(false); removeFromBounceList(editUser.email); }}
+        />
         <Card>
           <CardContent className="space-y-4">
             <NameFields
@@ -834,7 +888,9 @@ export default function AdminUsers() {
         : item._type === 'user' ? <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">{item.name || item.email}</RowOpenButton>
           : DASH
     ) },
-    { id: 'email', label: 'Email', sortKey: 'email', cell: (item) => item.email },
+    { id: 'email', label: 'Email', sortKey: 'email', cell: (item) => (
+      <>{item.email}<SuppressedBadge s={item.email ? suppression[item.email.toLowerCase()] : null} /></>
+    ) },
     { id: 'username', label: 'Username', sortKey: 'username', cell: (item) => (item._type === 'user' && item.username) || DASH },
     { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => (item._type !== 'invite' && item.userGroup) || DASH },
     { id: 'role', label: 'Role', sortKey: 'role', cell: (item) => (

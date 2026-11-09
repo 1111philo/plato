@@ -20,6 +20,11 @@ describe('template.yaml', () => {
       assert.match(fn(name), /- ses:SendRawEmail/);
       assert.match(fn(name), /- ses:SendEmail/);
     });
+    it(`${name} may read the SES suppression list and clear plato's addresses from it`, () => {
+      for (const action of ['GetSuppressedDestination', 'ListSuppressedDestinations', 'DeleteSuppressedDestination']) {
+        assert.match(fn(name), new RegExp(`- ses:${action}\\b`), action);
+      }
+    });
   }
   for (const name of ['UsersTable', 'InvitesTable', 'RefreshTokensTable', 'SyncDataTable', 'AuditLogTable']) {
     it(`${name} is kept if the resource is removed or replaced`, () => {

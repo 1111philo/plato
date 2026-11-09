@@ -1808,6 +1808,41 @@ Only the password-reset email stays in `email.js`.
   - `SKIP_EMAIL=true` logs instead of sending.
   - `EMAIL_ALLOWLIST` (the `EmailAllowlist` stack parameter) limits recipients.
     When it's empty: anyone on prod, no one on other stages.
+- **Bounced and spam-flagged addresses** (`server/src/lib/email-suppression.js`).
+  The SES account has account-level suppression on for `BOUNCE` and
+  `COMPLAINT`: once an address hard-bounces or the person marks our email as
+  spam, SES *accepts* every later send to it and silently drops it. So plato
+  asks first.
+  - Every send (`sendNotificationEmail`, so every template, invitation, and
+    message, plus `sendResetEmail`) calls `getSuppression(email)`
+    (`GetSuppressedDestination`). On a hit it skips SES, logs warn
+    `email_suppressed` `{ template, reason }` (never the address), and returns
+    `{ suppressed: true, reason, since }`. The check runs after the allowlist
+    and before `SKIP_EMAIL`, so dev and e2e show the real outcome.
+  - Lookups are cached per container: 5 minutes for a hit, 1 minute for a
+    miss. Any SES error **fails open** (the email goes out as before) and logs
+    `email_suppression_check_failed` once per container.
+  - Callers: the invite routes return `suppressed` with the reason (bulk
+    marks that address `status: 'suppressed'` and counts it); the invite
+    record is still created. Admin password reset returns `{ ok, suppressed,
+    reason, since }`. Forgot-password keeps its generic response, so the list
+    is never revealed publicly. Reminders, digests, and messages count it as
+    `suppressed` (skipped, not failed) and keep their claim, so it isn't
+    retried every run.
+  - The list is **account-wide**: other apps share the AWS account.
+    `GET /v1/admin/email-suppression` (`users.read`) returns only addresses
+    that belong to a plato user, pending invite, or wait-list entry;
+    `DELETE /v1/admin/email-suppression/:email` (`users.write`, audit
+    `email_suppression_removed`) only removes those. If the address bounces
+    again, SES puts it back.
+  - Admin → Users badges those rows "Email bounced" / "Marked as spam", says
+    "Not sent: … bounced on Mar 22, 2026. Check the address." instead of
+    "Invite sent", and Edit User has **Remove from the bounce list** (confirm
+    first). A failed list fetch just means no badges.
+  - Dev and e2e: off Lambda, with `SKIP_EMAIL=true` or no AWS credentials (and
+    under `node --test`), the list is `SUPPRESSED_EMAILS`
+    (`a@x.com,b@y.com:COMPLAINT`; the reason defaults to `BOUNCE`). It's
+    ignored on Lambda, like `AI_PROVIDER=mock`.
 - **Unsubscribe** uses tokens that are HMAC-signed per user and kind (`nudge`,
   `digest`, `messages`; the key is derived from `JWT_SECRET`).
   - `GET /v1/unsubscribe?token=` shows a confirm button, so link scanners can't
