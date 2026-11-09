@@ -23,12 +23,16 @@ export function planLinks(users, members) {
   return plan;
 }
 
-/** Apply a plan. Returns `{ linked, alreadyLinked, notInWorkspace, failed }`. */
-export async function linkAccounts(users, members, link) {
+/**
+ * Apply a plan, 10 writes at a time. Returns `{ linked, alreadyLinked,
+ * notInWorkspace, failed }`.
+ */
+export async function linkAccounts(users, members, link, { concurrency = 10 } = {}) {
   const plan = planLinks(users, members);
   const result = { linked: 0, alreadyLinked: plan.alreadyLinked, notInWorkspace: plan.notInWorkspace, failed: 0 };
-  for (const { userId, slackUserId } of plan.toLink) {
-    try { await link(userId, slackUserId); result.linked++; } catch { result.failed++; }
+  for (let i = 0; i < plan.toLink.length; i += concurrency) {
+    await Promise.all(plan.toLink.slice(i, i + concurrency).map(({ userId, slackUserId }) =>
+      link(userId, slackUserId).then(() => { result.linked++; }, () => { result.failed++; })));
   }
   return result;
 }

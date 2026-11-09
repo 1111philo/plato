@@ -1593,7 +1593,10 @@ unchanged, failed }`, and writes one `users_bulk_updated` audit entry.
 Wait-list entries get the change in their answers (`profile`), which signup
 and account-invite acceptance carry over. Someone who is both a user and a
 wait-list entry (same email) gets it on both records, whichever row was
-selected, and counts once. Required fields aren't
+selected, and counts once. It reads everyone with two scans (users, invites) and
+writes 10 people at a time (`lib/batches.js`), so 1000 people finish well
+inside the 60 s CloudFront timeout (before, it made about three database calls
+per person, one person at a time). Re-running a change is safe: people who already have it are skipped. Required fields aren't
 enforced there: clearing one just means those learners are asked for it again.
 With the Slack plugin connected, **Update…** also offers **Slack link**: it
 links each selected account to the workspace member with the same email

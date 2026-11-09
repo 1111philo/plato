@@ -21,6 +21,7 @@ import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh, canRefreshAsync } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
+import { inBatches } from '../lib/batches.js';
 import {
   readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey, validateWaitlistEntry,
 } from '../lib/waitlist.js';
@@ -548,6 +549,7 @@ admin.delete('/v1/admin/waitlist/:token', async (c) => {
 // `{ updated, unchanged, failed: [{ userId | waitlistToken, error }] }` and
 // writes one `users_bulk_updated` audit entry.
 export const BULK_MAX_USERS = 1000;
+const BULK_CONCURRENCY = 10;
 admin.post('/v1/admin/users/bulk-update', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const strings = (a) => (Array.isArray(a) ? [...new Set(a.filter((x) => typeof x === 'string' && x))] : []);
@@ -585,45 +587,41 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
   // One person can be both a user and a wait-list entry (same email: they
   // joined the list, then got an account another way). Whichever row was
   // selected, the change goes to both records, and the person counts once.
+  // Everyone is read with two scans up front, and writes run a few at a time,
+  // so a 1000-person change finishes well inside the request timeout.
+  const [allUsers, allInvites] = await Promise.all([db.listAllUsers(), db.listInvites()]);
+  const usersById = new Map(allUsers.map((u) => [u.userId, u]));
+  const usersByEmail = new Map(allUsers.filter((u) => u.email).map((u) => [u.email.toLowerCase(), u]));
+  const entries = allInvites.filter((i) => i.status === 'waitlist');
+  const entriesByToken = new Map(entries.map((e) => [e.inviteToken, e]));
+  const entriesByEmail = new Map(entries.filter((e) => e.email).map((e) => [e.email.toLowerCase(), e]));
+
   const people = new Map(); // email (or id) -> { user, entry }
   const result = { updated: 0, unchanged: 0, failed: [] };
   for (const userId of ids) {
-    try {
-      const user = await db.getUserById(userId);
-      if (!user) { result.failed.push({ userId, error: 'User not found' }); continue; }
-      const key = user.email ? user.email.toLowerCase() : `id:${userId}`;
-      const p = people.get(key) || {};
-      p.user = user;
-      if (!p.entry && user.email) p.entry = await db.getWaitlistEntryByEmail(user.email);
-      people.set(key, p);
-    } catch (e) {
-      result.failed.push({ userId, error: e?.message || 'Update failed' });
-    }
+    const user = usersById.get(userId);
+    if (!user) { result.failed.push({ userId, error: 'User not found' }); continue; }
+    const key = user.email ? user.email.toLowerCase() : `id:${userId}`;
+    people.set(key, { user, entry: user.email ? entriesByEmail.get(key) || null : null });
   }
   for (const waitlistToken of tokens) {
-    try {
-      const entry = await db.getInvite(waitlistToken);
-      if (!entry || entry.status !== 'waitlist') { result.failed.push({ waitlistToken, error: 'Wait-list entry not found' }); continue; }
-      const key = entry.email.toLowerCase();
-      const p = people.get(key) || {};
-      p.entry = entry;
-      if (!p.user) p.user = await db.getUserByEmail(entry.email);
-      people.set(key, p);
-    } catch (e) {
-      result.failed.push({ waitlistToken, error: e?.message || 'Update failed' });
-    }
+    const entry = entriesByToken.get(waitlistToken);
+    if (!entry) { result.failed.push({ waitlistToken, error: 'Wait-list entry not found' }); continue; }
+    const key = entry.email.toLowerCase();
+    if (!people.has(key)) people.set(key, { user: usersByEmail.get(key) || null, entry });
   }
 
   let waitlistUpdated = 0;
-  for (const { user, entry } of people.values()) {
+  await inBatches([...people.values()], async ({ user, entry }) => {
     let changed = false;
+    let failed = false;
     if (user) {
       try {
         const updates = apply(user);
         if (updates) { await db.updateUser(user.userId, updates); changed = true; }
       } catch (e) {
         result.failed.push({ userId: user.userId, error: e?.message || 'Update failed' });
-        continue;
+        failed = true;
       }
     }
     if (entry) {
@@ -639,11 +637,14 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
         // Invited or removed between the read and the write.
         const error = e?.name === 'ConditionalCheckFailedException' ? 'Wait-list entry not found' : (e?.message || 'Update failed');
         result.failed.push({ waitlistToken: entry.inviteToken, error });
-        continue;
+        failed = true;
       }
     }
-    if (changed) result.updated++; else result.unchanged++;
-  }
+    // A person whose account changed counts as updated even if their
+    // wait-list entry couldn't be (that failure is still reported).
+    if (changed) result.updated++;
+    else if (!failed) result.unchanged++;
+  }, { size: BULK_CONCURRENCY });
   await db.createAuditLog({
     action: 'users_bulk_updated', userId: null, performedBy: c.get('user').userId,
     details: { field, label, cleared: !value, count: result.updated, waitlist: waitlistUpdated, failed: result.failed.length },
