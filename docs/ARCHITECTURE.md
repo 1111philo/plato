@@ -1577,18 +1577,23 @@ region. Deleting refreshes Admin → Users quietly (the page spinner would
 unmount the open dialog).
 
 **Bulk update** (Admin → Users). Admins (`users.write`) get a checkbox on
-each user row and a header checkbox for the page; once a whole page is
+each user and wait-list row (not pending invites) and a header checkbox for
+the page; once a whole page is
 selected, "Select all N matching users" extends it to everyone the search and
 filters match. The selection is tied to the search and filters it was made
 under, so changing either empties it and a change can't reach people the
 admin can no longer see. **Update…** changes one thing for everyone selected:
 the group, or any one user field (including admin-only ones), set to a value
 or cleared, with a sentence saying exactly what will happen.
-`POST /v1/admin/users/bulk-update { userIds (≤ 1000), set: { field:
-'userGroup' | '<field id>', value } }` validates the change once (the group
-must exist; the value must pass the field's rules), applies it per user,
-skips people who already have it, reports `{ updated, unchanged, failed }`,
-and writes one `users_bulk_updated` audit entry. Required fields aren't
+`POST /v1/admin/users/bulk-update { userIds, waitlistTokens (≤ 1000
+together), set: { field: 'userGroup' | '<field id>', value } }` validates the
+change once (the group must exist; the value must pass the field's rules),
+applies it per person, skips people who already have it, reports `{ updated,
+unchanged, failed }`, and writes one `users_bulk_updated` audit entry.
+Wait-list entries get the change in their answers (`profile`), which signup
+and account-invite acceptance carry over. Someone who is both a user and a
+wait-list entry (same email) gets it on both records, whichever row was
+selected, and counts once. Required fields aren't
 enforced there: clearing one just means those learners are asked for it again.
 With the Slack plugin connected, **Update…** also offers **Slack link**: it
 links each selected account to the workspace member with the same email

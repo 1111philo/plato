@@ -13,7 +13,7 @@ const FIELDS = [
   { id: 'fld_org', label: 'Organization', type: 'text', required: true },
   { id: 'fld_role', label: 'Role', type: 'dropdown', required: false, options: ['Teacher', 'Student'] },
 ];
-let users, updates, audits;
+let users, updates, audits, invites;
 
 async function bulk(body, role = 'admin') {
   const token = await signAccessToken(role === 'admin' ? 'usr_admin' : 'usr_ed', role);
@@ -34,6 +34,18 @@ beforeEach(() => {
   db.getUserById = async (id) => users[id] || null;
   db.updateUser = async (id, u) => { updates.push([id, u]); users[id] = { ...users[id], ...u }; };
   db.createAuditLog = async (a) => { audits.push(a); };
+  invites = {
+    wl_1: { inviteToken: 'wl_1', status: 'waitlist', email: 'w1@x.com', profile: { firstName: 'W', userGroup: null, customFields: { fld_org: 'UIC' } } },
+    wl_2: { inviteToken: 'wl_2', status: 'waitlist', email: 'w2@x.com', profile: { firstName: 'V', customFields: { fld_role: 'Student' } } },
+    inv_p: { inviteToken: 'inv_p', status: 'pending', email: 'p@x.com' },
+  };
+  db.getInvite = async (t) => invites[t] || null;
+  db.getWaitlistEntryByEmail = async (e) => Object.values(invites).find((i) => i.status === 'waitlist' && i.email === e.toLowerCase()) || null;
+  db.getUserByEmail = async (e) => Object.values(users).find((u) => u.email === e.toLowerCase()) || null;
+  db.updateWaitlistEntry = async (t, { email, profile }) => {
+    if (invites[t]?.status !== 'waitlist') throw Object.assign(new Error('gone'), { name: 'ConditionalCheckFailedException' });
+    invites[t] = { ...invites[t], email, profile };
+  };
 });
 
 describe('bulk user update', () => {
@@ -42,7 +54,7 @@ describe('bulk user update', () => {
     assert.deepEqual(await res.json(), { updated: 1, unchanged: 1, failed: [] });
     assert.deepEqual(updates, [['usr_b', { userGroup: 'Cohort A' }]]);
     assert.equal(audits[0].action, 'users_bulk_updated');
-    assert.deepEqual(audits[0].details, { field: 'userGroup', label: 'Group', cleared: false, count: 1, failed: 0 });
+    assert.deepEqual(audits[0].details, { field: 'userGroup', label: 'Group', cleared: false, count: 1, waitlist: 0, failed: 0 });
   });
 
   it('clears a group, sets and clears a field, keeping every other field', async () => {
@@ -74,6 +86,51 @@ describe('bulk user update', () => {
   it('reports unknown users and keeps going', async () => {
     const res = await bulk({ userIds: ['usr_x', 'usr_b'], set: { field: 'userGroup', value: 'Cohort B' } });
     assert.deepEqual(await res.json(), { updated: 1, unchanged: 0, failed: [{ userId: 'usr_x', error: 'User not found' }] });
+  });
+
+  it('updates wait-list entries’ answers too, keeping the rest of their answers', async () => {
+    const res = await bulk({ userIds: ['usr_a'], waitlistTokens: ['wl_1', 'wl_2'], set: { field: 'fld_role', value: 'Teacher' } });
+    assert.deepEqual(await res.json(), { updated: 3, unchanged: 0, failed: [] });
+    assert.deepEqual(invites.wl_1.profile, { firstName: 'W', userGroup: null, customFields: { fld_org: 'UIC', fld_role: 'Teacher' } });
+    assert.deepEqual(invites.wl_2.profile.customFields, { fld_role: 'Teacher' });
+    assert.equal(invites.wl_1.email, 'w1@x.com');
+    assert.equal(audits[0].details.waitlist, 2);
+    // Groups, and only the wait list.
+    const g = await bulk({ waitlistTokens: ['wl_1', 'wl_2'], set: { field: 'userGroup', value: 'Cohort B' } });
+    assert.equal((await g.json()).updated, 2);
+    assert.equal(invites.wl_2.profile.userGroup, 'Cohort B');
+    assert.equal(invites.wl_2.profile.firstName, 'V');
+  });
+
+  it('skips entries that already have it, and reports ones invited or removed', async () => {
+    const res = await bulk({ waitlistTokens: ['wl_1', 'inv_p', 'wl_gone'], set: { field: 'fld_org', value: 'UIC' } });
+    assert.deepEqual(await res.json(), {
+      updated: 0, unchanged: 1,
+      failed: [{ waitlistToken: 'inv_p', error: 'Wait-list entry not found' }, { waitlistToken: 'wl_gone', error: 'Wait-list entry not found' }],
+    });
+    // Invited between the read and the write.
+    db.updateWaitlistEntry = async () => { throw Object.assign(new Error('x'), { name: 'ConditionalCheckFailedException' }); };
+    const raced = await bulk({ waitlistTokens: ['wl_2'], set: { field: 'fld_org', value: 'MIT' } });
+    assert.deepEqual((await raced.json()).failed, [{ waitlistToken: 'wl_2', error: 'Wait-list entry not found' }]);
+  });
+
+  it('someone who is both a user and on the wait list gets it on both, counted once', async () => {
+    users.usr_a.email = 'w1@x.com'; // usr_a also joined the wait list as wl_1
+    for (const [body, value] of [[{ userIds: ['usr_a'] }, 'Teacher'], [{ waitlistTokens: ['wl_1'] }, 'Student'], [{ userIds: ['usr_a'], waitlistTokens: ['wl_1'] }, 'Teacher']]) {
+      const res = await bulk({ ...body, set: { field: 'fld_role', value } });
+      assert.deepEqual(await res.json(), { updated: 1, unchanged: 0, failed: [] }, JSON.stringify(body));
+      assert.equal(users.usr_a.customFields.fld_role, value);
+      assert.equal(invites.wl_1.profile.customFields.fld_role, value);
+    }
+    // Already set on both: unchanged, once.
+    const same = await bulk({ userIds: ['usr_a'], waitlistTokens: ['wl_1'], set: { field: 'fld_org', value: 'UIC' } });
+    assert.deepEqual(await same.json(), { updated: 0, unchanged: 1, failed: [] });
+  });
+
+  it('counts users and entries together against the limit', async () => {
+    const many = Array.from({ length: 600 }, (_, i) => `x${i}`);
+    const res = await bulk({ userIds: many, waitlistTokens: many.map((x) => `w${x}`), set: { field: 'userGroup', value: null } });
+    assert.equal(res.status, 400);
   });
 
   it('is admin-only (educators can’t edit users)', async () => {

@@ -234,7 +234,7 @@ routes.post('/admin/auto-invite/retry', async (c) => {
 // POST /v1/plugins/slack/admin/link — body { userIds }. Links each account to
 // the workspace member with the same email (see link-accounts.js). Existing
 // links stay; nobody is added to a channel.
-const MAX_LINK = 5000;
+const MAX_LINK = 1000; // same cap as bulk update
 routes.post('/admin/link', async (c) => {
   const token = await getSlackToken();
   if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
