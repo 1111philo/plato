@@ -69,3 +69,25 @@ Fixed before launch in #515–#521. Left for after:
 - **S5 (policy):** learners can mark a lesson complete through `PUT /v1/sync`. At minimum, log a completion that has no conversation.
 - **S6:** gate `issue-intake.yml` on author association, and SHA-pin its actions.
 - **PITR on playground** (off), and in IaC once the deploy role can manage continuous backups.
+
+## Bounced and complained email addresses (Nov 9)
+
+SES already protects sender reputation: the account has account-level suppression on for bounces and complaints, so SES stops delivering to those addresses (verified 2026-11-09; status HEALTHY; one suppressed address, not plato's). The gap is that **plato doesn't know**: an invite to a suppressed address still says "Invite sent".
+
+Post-launch fix (draft PR, built and tested, held until #451 merges):
+- check suppression before every send and say "Not sent" instead
+- a "Bounced" / "Marked as spam" badge in Admin → Users
+- "Remove from the bounce list" in Edit User
+- three SES suppression permissions on plato's Lambda roles
+
+Kept out of the launch PR on purpose: it touches the invite and reset send paths and IAM.
+
+## Considered and not pursued: Campaign Monitor (Nov 9)
+
+We scoped replacing plato's email and in-app notifications with a Campaign Monitor plugin (Smart Emails for transactional mail, journeys and campaigns for engagement, contact sync from plato hooks), about two weeks plus setup. We decided to keep notifications in plato:
+- it's built and tested
+- no learner data goes to a third party
+- one tool for admins
+- it works for self-hosted installs
+
+**Revisit if** there's real demand for campaign-style email (A/B tests, drip sequences, engagement analytics). If that happens, the cheaper option is a one-way contact sync to a Campaign Monitor list alongside plato's notifications, not a replacement. Keep password reset off third-party click tracking.
