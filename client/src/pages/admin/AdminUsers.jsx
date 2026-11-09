@@ -609,7 +609,7 @@ export default function AdminUsers() {
     for (const i of combinedList) if (i._type !== 'invite' && i.userGroup) counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
     return counts;
   }, [combinedList]);
-  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields }), [combinedList, groups, userFields]);
+  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected }), [combinedList, groups, userFields, slackConnected]);
   const filterChips = describeFilters(filters, facets);
 
   const filteredList = useMemo(() => {
@@ -689,7 +689,17 @@ export default function AdminUsers() {
     for (const id of pageUserIds) { if (on) next.add(id); else next.delete(id); }
     changeSelection(next);
   }
-  function onBulkDone(result, { label, cleared, value }) {
+  function onBulkDone(result, { label, cleared, value, slack }) {
+    if (slack) {
+      const parts = [`Linked ${result.linked} ${result.linked === 1 ? 'user' : 'users'} to Slack.`];
+      if (result.alreadyLinked) parts.push(`${result.alreadyLinked} already linked.`);
+      if (result.notInWorkspace) parts.push(`${result.notInWorkspace} not found in Slack by email.`);
+      if (result.failed) parts.push(`${result.failed} couldn’t be updated.`);
+      setMessage({ text: parts.join(' '), type: result.failed ? 'error' : 'success' });
+      changeSelection(new Set(), 'Selection cleared.');
+      loadData({ quiet: true });
+      return;
+    }
     const what = cleared ? `Cleared ${label}` : `Set ${label} to “${value}”`;
     const parts = [`${what} for ${result.updated} ${result.updated === 1 ? 'user' : 'users'}.`];
     if (result.unchanged) parts.push(`${result.unchanged} already had it.`);
@@ -1309,6 +1319,7 @@ export default function AdminUsers() {
         userIds={[...selectedIds]}
         groups={groups}
         userFields={userFields}
+        slackConnected={slackConnected}
         onDone={onBulkDone}
       />
 

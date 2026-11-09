@@ -51,7 +51,23 @@ const state = {
   // id -> { manifest, dir, serverModule|null, enabled, settings, loadError|null, hookUnsubs: Function[] }
   entries: new Map(),
   booted: false,
+  syncedAt: 0,
 };
+
+/**
+ * Turn a loaded plugin's hooks on or off to match `enabled`, without running
+ * lifecycle hooks (used when another container changed the stored state).
+ */
+function applyEnabled(id, entry, enabled) {
+  if (entry.enabled === enabled) return;
+  entry.enabled = enabled;
+  if (enabled) {
+    entry.hookUnsubs = subscribeHooks(id, entry.serverModule);
+  } else {
+    for (const unsub of entry.hookUnsubs || []) { try { unsub(); } catch { /* noop */ } }
+    entry.hookUnsubs = [];
+  }
+}
 
 function db_view() {
   return {
@@ -161,6 +177,7 @@ export const pluginRegistry = {
     let activation;
     try {
       activation = await readActivation();
+      state.syncedAt = Date.now();
     } catch (err) {
       logger.error('plugin_activation_read_failed', { error: err?.message });
       activation = { record: {}, version: 0 };
@@ -251,6 +268,34 @@ export const pluginRegistry = {
     }
   },
 
+  /**
+   * Re-read `_system:plugins:activation` into the in-memory entries. Each
+   * Lambda container boots its own copy, so a save or toggle handled by one
+   * container is invisible to the others until they sync. Admin plugin routes
+   * sync before every read and write (maxAgeMs 0); other traffic syncs at
+   * most every `maxAgeMs` so hooks and plugin routes follow on/off within
+   * that window. A failed read keeps the current state.
+   */
+  async sync({ maxAgeMs = 0 } = {}) {
+    if (!state.booted || (maxAgeMs > 0 && Date.now() - state.syncedAt < maxAgeMs)) return;
+    let record;
+    try {
+      ({ record } = await readActivation());
+    } catch (err) {
+      logger.warn('plugin_activation_sync_failed', { error: err?.message });
+      return;
+    }
+    state.syncedAt = Date.now();
+    for (const [id, entry] of state.entries) {
+      if (!entry.manifest || entry.loadError) continue;
+      const persisted = record[id];
+      entry.hasStoredState = !!persisted;
+      entry.settings = (persisted?.settings && typeof persisted.settings === 'object') ? persisted.settings : {};
+      const enabled = typeof persisted?.enabled === 'boolean' ? persisted.enabled : Boolean(entry.manifest.defaultEnabled);
+      applyEnabled(id, entry, enabled);
+    }
+  },
+
   /** Returns the in-memory entry (or undefined). */
   get(id) {
     return state.entries.get(id);
@@ -268,10 +313,14 @@ export const pluginRegistry = {
     if (entry.loadError) throw new Error(`plugin "${id}" failed to load: ${entry.loadError}`);
     if (entry.enabled === enabled) return entry;
 
+    // Build on the stored record, not this container's copy, which can be
+    // older than a save made through another container.
     const { record, version } = await readActivation();
-    record[id] = { ...(record[id] || {}), enabled, settings: entry.settings };
+    const settings = record[id]?.settings && typeof record[id].settings === 'object' ? record[id].settings : (entry.settings || {});
+    record[id] = { ...(record[id] || {}), enabled, settings };
     await writeActivation(record, version);
 
+    entry.settings = settings;
     entry.enabled = enabled;
     entry.hasStoredState = true;
     if (enabled) {
@@ -323,8 +372,10 @@ export const pluginRegistry = {
       throw new Error('settings must be an object');
     }
     const { record, version } = await readActivation();
-    record[id] = { ...(record[id] || {}), enabled: entry.enabled, settings: nextSettings };
+    const enabled = typeof record[id]?.enabled === 'boolean' ? record[id].enabled : entry.enabled;
+    record[id] = { ...(record[id] || {}), enabled, settings: nextSettings };
     await writeActivation(record, version);
+    applyEnabled(id, entry, enabled);
     entry.settings = nextSettings;
     entry.hasStoredState = true;
     return entry;
@@ -374,8 +425,16 @@ export const pluginRegistry = {
     return settings;
   },
 
+  /** Test-only: mark booted with these entries (`{ id: entry }`), no discovery. */
+  _load(entries) {
+    state.booted = true;
+    state.syncedAt = Date.now();
+    state.entries = new Map(Object.entries(entries));
+  },
+
   /** Test-only: clear state. Does NOT touch DB. */
   _reset() {
+    state.syncedAt = 0;
     state.pluginsDir = null;
     state.entries.clear();
     state.booted = false;

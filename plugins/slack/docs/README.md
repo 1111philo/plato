@@ -46,6 +46,14 @@ not in the workspace is recorded as "Not in the workspace".
   Lambda nothing may run after the response is sent, so the result is always
   recorded before signup finishes; a timeout shows as Failed, with Retry.
 
+## Slack links in Admin → Users
+
+- **Filter:** Filters → Slack → Linked / Not linked.
+- **Link existing accounts:** select users, then **Update… → Slack link**.
+  Each account is matched to a workspace member by email and gets
+  `user.slackUserId`. Existing links stay, and nobody is added to a channel.
+  Needs `users:read.email`.
+
 ## Routes (admin-only)
 
 - `POST /v1/plugins/slack/admin/test` — validate a bot token (no persistence)
@@ -53,6 +61,7 @@ not in the workspace is recorded as "Not in the workspace".
 - `GET  /v1/plugins/slack/admin/channels` — list public channels
 - `GET  /v1/plugins/slack/admin/channels/:id/members` — list channel members
 - `POST /v1/plugins/slack/admin/invites` — send DMs (max 200 per batch)
+- `POST /v1/plugins/slack/admin/link` — `{ userIds }`: link accounts by email; returns `{ linked, alreadyLinked, notInWorkspace, failed }`
 - `GET  /v1/plugins/slack/admin/auto-invite` — recent auto-invite results
 - `POST /v1/plugins/slack/admin/auto-invite/retry` — `{ userId }` or `{ all: true }`
 
