@@ -33,6 +33,13 @@ not in the workspace is recorded as "Not in the workspace".
   (`invited` / `not_in_workspace` / `failed`, with Slack's error code). The
   settings panel lists recent results with **Retry**, and **Retry everyone
   not added** picks up people who joined the workspace later.
+- **Slack linked:** when the email matches a member, their Slack id is saved
+  on the plato account (`user.slackUserId`), which shows as "Slack linked" in
+  Admin → Users. This happens even if they're already in the channel or the
+  channel invite fails. An account that's already linked (from a Slack
+  invite) keeps its link and skips the email lookup. **Retry everyone not
+  added** also links people added before linking existed, without inviting
+  them again.
 - **Never twice:** someone already added to the current channel is skipped,
   and Slack's `already_in_channel` counts as done.
 - **Signup waits for the invite** (each Slack call gets one 4 s try). On
