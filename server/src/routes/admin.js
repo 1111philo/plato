@@ -21,6 +21,7 @@ import { pluginRegistry } from '../lib/plugins/registry.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh, canRefreshAsync } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
+import { inBatches } from '../lib/batches.js';
 import {
   readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey, validateWaitlistEntry,
 } from '../lib/waitlist.js';
@@ -537,19 +538,25 @@ admin.delete('/v1/admin/waitlist/:token', async (c) => {
 });
 
 // PATCH /v1/admin/users/:userId — update user fields
-// POST /v1/admin/users/bulk-update — one change for many users at once:
-// body `{ userIds, set: { field: 'userGroup' | '<custom field id>', value } }`.
-// `value` null or '' clears it. The change is validated once (a group must
-// exist; a field value must pass its rules), then applied per user; required
-// fields aren't enforced here (clearing one just means those learners are
-// asked for it again). Returns `{ updated, unchanged, failed: [{ userId, error }] }`
-// and writes one `users_bulk_updated` audit entry.
+// POST /v1/admin/users/bulk-update — one change for many people at once:
+// body `{ userIds, waitlistTokens, set: { field: 'userGroup' | '<custom field id>', value } }`.
+// Wait-list entries (by invite token) get the change in their answers
+// (`profile`), which signup carries over. Someone who is both a user and a
+// wait-list entry (same email) gets it on both, counted once. `value` null or '' clears it. The
+// change is validated once (a group must exist; a field value must pass its
+// rules), then applied per person; required fields aren't enforced here
+// (clearing one just means those learners are asked for it again). Returns
+// `{ updated, unchanged, failed: [{ userId | waitlistToken, error }] }` and
+// writes one `users_bulk_updated` audit entry.
 export const BULK_MAX_USERS = 1000;
+const BULK_CONCURRENCY = 10;
 admin.post('/v1/admin/users/bulk-update', async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const ids = Array.isArray(body.userIds) ? [...new Set(body.userIds.filter((x) => typeof x === 'string'))] : [];
-  if (!ids.length) return c.json({ error: 'Choose at least one user' }, 400);
-  if (ids.length > BULK_MAX_USERS) return c.json({ error: `Update at most ${BULK_MAX_USERS} users at a time` }, 400);
+  const strings = (a) => (Array.isArray(a) ? [...new Set(a.filter((x) => typeof x === 'string' && x))] : []);
+  const ids = strings(body.userIds);
+  const tokens = strings(body.waitlistTokens);
+  if (!ids.length && !tokens.length) return c.json({ error: 'Choose at least one user' }, 400);
+  if (ids.length + tokens.length > BULK_MAX_USERS) return c.json({ error: `Update at most ${BULK_MAX_USERS} people at a time` }, 400);
   const field = body.set?.field;
   const raw = body.set?.value;
   if (raw != null && typeof raw !== 'string') return c.json({ error: 'The new value must be text' }, 400);
@@ -577,22 +584,70 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
     };
   }
 
+  // One person can be both a user and a wait-list entry (same email: they
+  // joined the list, then got an account another way). Whichever row was
+  // selected, the change goes to both records, and the person counts once.
+  // Everyone is read with two scans up front, and writes run a few at a time,
+  // so a 1000-person change finishes well inside the request timeout.
+  const [allUsers, allInvites] = await Promise.all([db.listAllUsers(), db.listInvites()]);
+  const usersById = new Map(allUsers.map((u) => [u.userId, u]));
+  const usersByEmail = new Map(allUsers.filter((u) => u.email).map((u) => [u.email.toLowerCase(), u]));
+  const entries = allInvites.filter((i) => i.status === 'waitlist');
+  const entriesByToken = new Map(entries.map((e) => [e.inviteToken, e]));
+  const entriesByEmail = new Map(entries.filter((e) => e.email).map((e) => [e.email.toLowerCase(), e]));
+
+  const people = new Map(); // email (or id) -> { user, entry }
   const result = { updated: 0, unchanged: 0, failed: [] };
   for (const userId of ids) {
-    try {
-      const user = await db.getUserById(userId);
-      if (!user) { result.failed.push({ userId, error: 'User not found' }); continue; }
-      const updates = apply(user);
-      if (!updates) { result.unchanged++; continue; }
-      await db.updateUser(userId, updates);
-      result.updated++;
-    } catch (e) {
-      result.failed.push({ userId, error: e?.message || 'Update failed' });
-    }
+    const user = usersById.get(userId);
+    if (!user) { result.failed.push({ userId, error: 'User not found' }); continue; }
+    const key = user.email ? user.email.toLowerCase() : `id:${userId}`;
+    people.set(key, { user, entry: user.email ? entriesByEmail.get(key) || null : null });
   }
+  for (const waitlistToken of tokens) {
+    const entry = entriesByToken.get(waitlistToken);
+    if (!entry) { result.failed.push({ waitlistToken, error: 'Wait-list entry not found' }); continue; }
+    const key = entry.email.toLowerCase();
+    if (!people.has(key)) people.set(key, { user: usersByEmail.get(key) || null, entry });
+  }
+
+  let waitlistUpdated = 0;
+  await inBatches([...people.values()], async ({ user, entry }) => {
+    let changed = false;
+    let failed = false;
+    if (user) {
+      try {
+        const updates = apply(user);
+        if (updates) { await db.updateUser(user.userId, updates); changed = true; }
+      } catch (e) {
+        result.failed.push({ userId: user.userId, error: e?.message || 'Update failed' });
+        failed = true;
+      }
+    }
+    if (entry) {
+      try {
+        const profile = entry.profile || {};
+        const updates = apply({ userGroup: profile.userGroup, customFields: profile.customFields });
+        if (updates) {
+          await db.updateWaitlistEntry(entry.inviteToken, { email: entry.email, profile: { ...profile, ...updates } });
+          changed = true;
+          waitlistUpdated++;
+        }
+      } catch (e) {
+        // Invited or removed between the read and the write.
+        const error = e?.name === 'ConditionalCheckFailedException' ? 'Wait-list entry not found' : (e?.message || 'Update failed');
+        result.failed.push({ waitlistToken: entry.inviteToken, error });
+        failed = true;
+      }
+    }
+    // A person whose account changed counts as updated even if their
+    // wait-list entry couldn't be (that failure is still reported).
+    if (changed) result.updated++;
+    else if (!failed) result.unchanged++;
+  }, { size: BULK_CONCURRENCY });
   await db.createAuditLog({
     action: 'users_bulk_updated', userId: null, performedBy: c.get('user').userId,
-    details: { field, label, cleared: !value, count: result.updated, failed: result.failed.length },
+    details: { field, label, cleared: !value, count: result.updated, waitlist: waitlistUpdated, failed: result.failed.length },
   });
   return c.json(result);
 });
@@ -1149,7 +1204,8 @@ admin.put('/v1/admin/theme', async (c) => {
 // GET /v1/admin/plugins — list all known plugins, including disabled and load-failed.
 // writeOnly settings (e.g. Slack's bot token) are stripped from responses; the host
 // is the source of truth for those values, the client never needs them back.
-admin.get('/v1/admin/plugins', (c) => {
+admin.get('/v1/admin/plugins', async (c) => {
+  await pluginRegistry.sync();
   return c.json(pluginRegistry.list().map((e) => {
     const view = pluginRegistry.publicView(e);
     return { ...view, settings: pluginRegistry.sanitizeSettings(e) };
@@ -1158,6 +1214,7 @@ admin.get('/v1/admin/plugins', (c) => {
 
 // PUT /v1/admin/plugins/:id/activation — enable/disable a plugin.
 admin.put('/v1/admin/plugins/:id/activation', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try {
@@ -1183,6 +1240,7 @@ admin.put('/v1/admin/plugins/:id/activation', async (c) => {
 // must type the plugin id to confirm, mirroring GitHub's repo-deletion gate.
 // Audit-logged.
 admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try { body = await c.req.json(); } catch { return c.json({ error: 'JSON body required' }, 400); }
@@ -1208,6 +1266,7 @@ admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
 
 // PUT /v1/admin/plugins/:id/settings — update plugin settings.
 admin.put('/v1/admin/plugins/:id/settings', async (c) => {
+  await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
   let body;
   try {

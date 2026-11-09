@@ -13,6 +13,7 @@ const statusOf = (i) => (i._type === 'user' ? 'active' : i._type === 'invite' ? 
 function valuesOf(item, facet) {
   if (facet.key === 'status') return [statusOf(item)];
   if (facet.key === 'role') return item._type === 'user' ? [normalizeRole(item.role)] : null;
+  if (facet.key === 'slack') return item._type === 'user' ? [item._user?.slackUserId ? 'linked' : 'unlinked'] : null;
   if (facet.key === 'group') return item._type === 'invite' ? [NO_GROUP] : [item.userGroup || NO_GROUP];
   if (facet.field) {
     if (item._type === 'invite') return null; // invites have no answers
@@ -24,9 +25,11 @@ function valuesOf(item, facet) {
 /**
  * The facets to offer, with counts over `items`:
  * `[{ key, label, options: [{ value, label, count }] }]`. Custom fields offer
- * their dropdown options (plus Empty), or Has a value / Empty.
+ * their dropdown options (plus Empty), or Has a value / Empty. `slack` adds
+ * Slack: Linked / Not linked (signed-up users only), shown when the Slack
+ * plugin is connected.
  */
-export function buildFacets({ items, groups = [], userFields = [] }) {
+export function buildFacets({ items, groups = [], userFields = [], slack = false }) {
   const facets = [
     { key: 'status', label: 'Status', options: [
       { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'waitlist', label: 'Wait list' },
@@ -36,6 +39,9 @@ export function buildFacets({ items, groups = [], userFields = [] }) {
   if (groups.length || items.some((i) => i.userGroup)) {
     const names = [...new Set([...groups, ...items.map((i) => i.userGroup).filter(Boolean)])];
     facets.push({ key: 'group', label: 'Group', options: [...names.map((g) => ({ value: g, label: g })), { value: NO_GROUP, label: 'No group' }] });
+  }
+  if (slack) {
+    facets.push({ key: 'slack', label: 'Slack', options: [{ value: 'linked', label: 'Linked' }, { value: 'unlinked', label: 'Not linked' }] });
   }
   for (const f of userFields) {
     const options = f.type === 'dropdown'

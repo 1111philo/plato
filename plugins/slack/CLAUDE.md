@@ -9,6 +9,7 @@ Lets admins invite learners via Slack DM, and adds new accounts to a chosen chan
 - All admin routes are mounted under `/v1/plugins/slack/admin/*`. Don't re-register Slack routes on the core `admin` router.
 - The settings panel saves with `{ ...settings, … }`. The client never sees `botToken`, and the host keeps a writeOnly value the body leaves out (send `null` to clear it, as Disconnect does).
 - Auto-invite never invites twice: check `userMeta:slack.autoInvite` for the current channel first, and treat `already_in_channel` as success.
+- A workspace member found by auto-invite is linked on the user record (`user.slackUserId`, the Admin → Users "Slack linked" column). Never overwrite an existing link.
 
 ## When changing this plugin
 - If you change the manifest's `capabilities`, update `docs/plugins/CAPABILITIES.md` if you add a new capability not yet in the vocabulary.

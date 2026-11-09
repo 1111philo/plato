@@ -83,6 +83,9 @@ server.use('*', async (c, next) => {
       logger.error('plugin_registry_boot_failed', { error: err?.message, stack: err?.stack });
     }
   }
+  // Plugin on/off and settings saved through another container: pick them up
+  // within 30 s (lib/plugins/registry.js sync). Admin plugin routes sync fully.
+  await pluginRegistry.sync({ maxAgeMs: 30_000 });
   // Scheduled learner emails (#400): traffic checks whether one is due, at
   // most every 10 minutes per container (lib/schedule.js). Never fails or
   // slows the request beyond a quick read.

@@ -197,7 +197,8 @@ function AutoInvite({ settings, onSave }) {
     } catch (e) { setStatus(e.message); } finally { setBusy(false); }
   }
 
-  const pending = results.filter((r) => r.status !== 'invited').length;
+  // Not added yet, or added but not linked to the plato account (#529).
+  const pending = results.filter((r) => r.status !== 'invited' || r.linked === false).length;
   return (
     <section className="space-y-3 border-t pt-4" aria-labelledby="slack-auto-invite">
       <h3 id="slack-auto-invite" className="text-sm font-medium">Add new accounts to a channel</h3>

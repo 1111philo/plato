@@ -33,11 +33,26 @@ not in the workspace is recorded as "Not in the workspace".
   (`invited` / `not_in_workspace` / `failed`, with Slack's error code). The
   settings panel lists recent results with **Retry**, and **Retry everyone
   not added** picks up people who joined the workspace later.
+- **Slack linked:** when the email matches a member, their Slack id is saved
+  on the plato account (`user.slackUserId`), which shows as "Slack linked" in
+  Admin → Users. This happens even if they're already in the channel or the
+  channel invite fails. An account that's already linked (from a Slack
+  invite) keeps its link and skips the email lookup. **Retry everyone not
+  added** also links people added before linking existed, without inviting
+  them again.
 - **Never twice:** someone already added to the current channel is skipped,
   and Slack's `already_in_channel` counts as done.
 - **Signup waits for the invite** (each Slack call gets one 4 s try). On
   Lambda nothing may run after the response is sent, so the result is always
   recorded before signup finishes; a timeout shows as Failed, with Retry.
+
+## Slack links in Admin → Users
+
+- **Filter:** Filters → Slack → Linked / Not linked.
+- **Link existing accounts:** select users, then **Update… → Slack link**.
+  Each account is matched to a workspace member by email and gets
+  `user.slackUserId`. Existing links stay, and nobody is added to a channel.
+  Needs `users:read.email`.
 
 ## Routes (admin-only)
 
@@ -46,6 +61,7 @@ not in the workspace is recorded as "Not in the workspace".
 - `GET  /v1/plugins/slack/admin/channels` — list public channels
 - `GET  /v1/plugins/slack/admin/channels/:id/members` — list channel members
 - `POST /v1/plugins/slack/admin/invites` — send DMs (max 200 per batch)
+- `POST /v1/plugins/slack/admin/link` — `{ userIds }`: link accounts by email; returns `{ linked, alreadyLinked, notInWorkspace, failed }`
 - `GET  /v1/plugins/slack/admin/auto-invite` — recent auto-invite results
 - `POST /v1/plugins/slack/admin/auto-invite/retry` — `{ userId }` or `{ all: true }`
 
