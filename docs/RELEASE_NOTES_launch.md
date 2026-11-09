@@ -201,7 +201,23 @@ in startup order, against `plato-rehearsal-*` restored from PITR at
 2026-10-30 (all 0 errors). All 11 users' name parts rejoin exactly to their
 unchanged `name`.
 
-**Before Blake merges (not done yet):** take on-demand backups of the five
-prod tables (command in "Upgrading from Beta-RC-232" above) and record the
-ARNs here. This is done right before the merge on purpose, so the backup is
-as fresh as possible.
+## Shipped to prod (2026-11-09, Beta-RC-237)
+
+#451 merged at 21:45 UTC (merge commit `4219cab`) and auto-deployed.
+
+**On-demand backups taken right before the merge** (us-east-2, all `AVAILABLE`):
+
+| Table | Backup ARN |
+|---|---|
+| plato-audit-log | `arn:aws:dynamodb:us-east-2:380610849750:table/plato-audit-log/backup/01794260714278-cddbfdcb` |
+| plato-invites | `arn:aws:dynamodb:us-east-2:380610849750:table/plato-invites/backup/01794260714936-05e7e885` |
+| plato-refresh-tokens | `arn:aws:dynamodb:us-east-2:380610849750:table/plato-refresh-tokens/backup/01794260715590-b0befeae` |
+| plato-sync-data | `arn:aws:dynamodb:us-east-2:380610849750:table/plato-sync-data/backup/01794260716173-b779b5b7` |
+| plato-users | `arn:aws:dynamodb:us-east-2:380610849750:table/plato-users/backup/01794260716838-7f4732e4` |
+
+**Migrations on prod** (first cold start, 21:50 UTC; all 0 errors, matching the rehearsal):
+- `m003_role_learner`: 186 users scanned, 179 updated, 7 skipped.
+- `m004_default_program`: created Course "Plato" with the 5 existing units.
+- `m005_name_split`: 186 scanned, 184 updated, 2 skipped.
+
+No error logs or alarms after the deploy.

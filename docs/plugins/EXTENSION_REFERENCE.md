@@ -116,12 +116,13 @@ Available since Plugin API 1.2.0.
 
 ## Hooks
 
-**`ctx.settings` can lag behind a save.** Each Lambda container keeps the
-settings it read at startup and refreshes them only on writes it handles
-itself. After an admin saves, other warm containers use the old settings
-until they restart. A hook whose behavior depends on current settings, like
-Slack auto-invite's channel, should read them fresh: the activation record
-is `_system:plugins:activation`, readable with the SDK's `db`.
+**`ctx.settings` can lag behind a save by up to 30 s.** Each Lambda
+container keeps its own copy of every plugin's on/off state and settings.
+The registry re-reads `_system:plugins:activation` before every admin plugin
+read or write (so the Plugins page and saves always use the stored record),
+and on other requests at most every 30 s (`pluginRegistry.sync`). A hook
+that must see a save immediately, like Slack auto-invite's channel, should
+read the activation record fresh with the SDK's `db`.
 
 The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any event name works. Plugins MAY emit/subscribe to arbitrary names following the convention `<plugin-id>.<event>`. Core emits a known subset (this list).
 

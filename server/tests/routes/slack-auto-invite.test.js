@@ -10,13 +10,16 @@ const SETTINGS = { botToken: 'xoxb-1', autoInviteEnabled: true, autoInviteChanne
 
 function deps(overrides = {}) {
   const meta = new Map();
+  const links = new Map();
   const calls = { lookup: 0, invite: 0 };
   return {
-    meta, calls,
+    meta, links, calls,
     lookup: async (_t, email) => { calls.lookup++; return email === 'in@x.com' ? 'U1' : null; },
     invite: async () => { calls.invite++; },
     getMeta: async (u) => meta.get(u) || null,
     putMeta: async (u, _p, data) => { meta.set(u, data); },
+    getUser: async (u) => ({ userId: u, slackUserId: links.get(u) }),
+    link: async (u, id) => { links.set(u, id); },
     ...overrides,
   };
 }
@@ -31,6 +34,54 @@ describe('Slack auto-invite', () => {
     assert.equal(d.meta.get('usr_1').autoInvite.status, 'invited');
     assert.equal(await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, SETTINGS, d), null);
     assert.equal(d.calls.invite, 1);
+  });
+
+  it('links the plato account to the Slack user it found', async () => {
+    const r = await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, SETTINGS, d);
+    assert.equal(d.links.get('usr_1'), 'U1');
+    assert.equal(r.slackUserId, 'U1');
+    // Already in the channel counts as invited, and still links.
+    const inChannel = deps({ invite: async () => {} });
+    await autoInvite({ userId: 'usr_2', email: 'in@x.com' }, SETTINGS, inChannel);
+    assert.equal(inChannel.links.get('usr_2'), 'U1');
+    // Not in the workspace: nothing to link.
+    await autoInvite({ userId: 'usr_3', email: 'out@x.com' }, SETTINGS, d);
+    assert.equal(d.links.has('usr_3'), false);
+  });
+
+  it('links even when the channel invite fails', async () => {
+    const failing = deps({ invite: async () => { throw Object.assign(new Error('x'), { data: { error: 'channel_not_found' } }); } });
+    const r = await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, SETTINGS, failing);
+    assert.equal(r.status, 'failed');
+    assert.equal(failing.links.get('usr_1'), 'U1');
+  });
+
+  it('keeps an existing link and uses it instead of the email lookup', async () => {
+    d.links.set('usr_1', 'U_FROM_INVITE');
+    let invited;
+    d.invite = async (_t, _c, id) => { invited = id; };
+    await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, SETTINGS, d);
+    assert.equal(d.calls.lookup, 0);
+    assert.equal(invited, 'U_FROM_INVITE');
+    assert.equal(d.links.get('usr_1'), 'U_FROM_INVITE');
+  });
+
+  it('Retry all links people invited before linking existed, without inviting again', async () => {
+    const at = '2026-11-01T00:00:00.000Z';
+    d.meta.set('usr_1', { autoInvite: { status: 'invited', channelId: 'C1', channelName: 'cohort', at } });
+    assert.equal(needsRetry(d.meta.get('usr_1'), { slackUserId: undefined }), true);
+    assert.equal(needsRetry(d.meta.get('usr_1'), { slackUserId: 'U1' }), false);
+    const r = await autoInvite({ userId: 'usr_1', email: 'in@x.com', slackUserId: null }, SETTINGS, d);
+    assert.equal(d.calls.invite, 0);
+    assert.equal(d.links.get('usr_1'), 'U1');
+    assert.deepEqual([r.status, r.at, r.slackUserId], ['invited', at, 'U1']);
+    // Once linked, it's done.
+    assert.equal(await autoInvite({ userId: 'usr_1', email: 'in@x.com' }, SETTINGS, d), null);
+    // A failed lookup leaves the earlier invite as it was.
+    d.meta.set('usr_2', { autoInvite: { status: 'invited', channelId: 'C1', at } });
+    const down = { ...d, lookup: async () => { throw new Error('timeout'); } };
+    assert.equal((await autoInvite({ userId: 'usr_2', email: 'in@x.com', slackUserId: null }, SETTINGS, down)).status, 'failed');
+    assert.equal(d.meta.get('usr_2').autoInvite.status, 'invited');
   });
 
   it('a new channel means a new invite', async () => {

@@ -26,6 +26,7 @@ import {
   sendSlackDM,
 } from './slack-client.js';
 import { autoInvite, onUserCreated, needsRetry } from './auto-invite.js';
+import { linkAccounts } from './link-accounts.js';
 
 const routes = new Hono();
 
@@ -200,14 +201,15 @@ routes.get('/admin/auto-invite', async (c) => {
   const rows = [];
   for (const u of users) {
     const meta = await getUserMeta(u.userId, 'slack');
-    if (meta?.autoInvite) rows.push({ userId: u.userId, name: u.name || u.email, email: u.email, ...meta.autoInvite });
+    if (meta?.autoInvite) rows.push({ userId: u.userId, name: u.name || u.email, email: u.email, linked: !!u.slackUserId, ...meta.autoInvite });
   }
   rows.sort((a, b) => (b.at || '').localeCompare(a.at || ''));
   return c.json({ results: rows.slice(0, 100) });
 });
 
 // POST /v1/plugins/slack/admin/auto-invite/retry — body { userId } or { all: true }
-// (retries everyone not yet invited). Already-invited users are skipped.
+// (retries everyone not yet invited, and links invited users who aren't
+// linked yet). Already-invited, linked users are skipped.
 routes.post('/admin/auto-invite/retry', async (c) => {
   const settings = await getSlackSettings();
   if (!settings.autoInviteEnabled || !settings.autoInviteChannelId) return c.json({ error: 'Turn on auto-invite and choose a channel first' }, 400);
@@ -221,12 +223,33 @@ routes.post('/admin/auto-invite/retry', async (c) => {
   for (const u of targets) {
     if (body.all) {
       const meta = await getUserMeta(u.userId, 'slack');
-      if (!needsRetry(meta)) { counts.skipped++; continue; }
+      if (!needsRetry(meta, u)) { counts.skipped++; continue; }
     }
-    const r = await autoInvite({ userId: u.userId, email: u.email }, settings);
+    const r = await autoInvite({ userId: u.userId, email: u.email, slackUserId: u.slackUserId || null }, settings);
     counts[r ? r.status : 'skipped']++;
   }
   return c.json(counts);
+});
+
+// POST /v1/plugins/slack/admin/link — body { userIds }. Links each account to
+// the workspace member with the same email (see link-accounts.js). Existing
+// links stay; nobody is added to a channel.
+const MAX_LINK = 1000; // same cap as bulk update
+routes.post('/admin/link', async (c) => {
+  const token = await getSlackToken();
+  if (!token) return c.json({ error: 'Slack integration not configured' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const ids = Array.isArray(body.userIds) ? [...new Set(body.userIds.filter((x) => typeof x === 'string'))] : [];
+  if (!ids.length) return c.json({ error: 'Choose at least one user' }, 400);
+  if (ids.length > MAX_LINK) return c.json({ error: `At most ${MAX_LINK} users at a time` }, 400);
+  const wanted = new Set(ids);
+  const users = (await db.listAllUsers()).filter((u) => wanted.has(u.userId));
+  let members;
+  try { members = await searchSlackUsers(token, ''); } catch (e) {
+    return c.json({ error: 'Couldn’t read the Slack workspace', detail: e?.data?.error || e.message }, 502);
+  }
+  const result = await linkAccounts(users, members, (userId, slackUserId) => db.updateUser(userId, { slackUserId }));
+  return c.json(result);
 });
 
 export default {

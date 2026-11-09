@@ -25,6 +25,7 @@ import { nameFields } from './names.js';
 import { readAutomations, readNotifyState, updateNotifyState, sendTemplated } from './notifications.js';
 import { registerJob, dispatchJob } from './jobs.js';
 import { logger } from './logger.js';
+import { inBatches as runInBatches } from './batches.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 export const NUDGE_AFTER_DAYS = 7;
@@ -71,13 +72,9 @@ export const BATCH_SIZE = 8;
 export const RUN_BUDGET_MS = 240_000;
 export const MAX_CONTINUATIONS = 5;
 
-/** Run `fn` over `items` in concurrent batches; returns how many were left when the deadline passed. */
-export async function inBatches(items, fn, { size = BATCH_SIZE, deadline = Infinity, clock = Date.now } = {}) {
-  for (let i = 0; i < items.length; i += size) {
-    if (clock() > deadline) return items.length - i;
-    await Promise.all(items.slice(i, i + size).map(fn));
-  }
-  return 0;
+/** Run `fn` over `items` in concurrent batches (lib/batches.js); returns how many were left when the deadline passed. */
+export function inBatches(items, fn, { size = BATCH_SIZE, ...opts } = {}) {
+  return runInBatches(items, fn, { size, ...opts });
 }
 
 export async function runInactivityNudges({ db = defaultDb, now = Date.now(), deadline = Infinity, clock = Date.now } = {}) {
