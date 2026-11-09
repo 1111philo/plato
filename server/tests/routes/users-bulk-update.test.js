@@ -39,9 +39,12 @@ beforeEach(() => {
     wl_2: { inviteToken: 'wl_2', status: 'waitlist', email: 'w2@x.com', profile: { firstName: 'V', customFields: { fld_role: 'Student' } } },
     inv_p: { inviteToken: 'inv_p', status: 'pending', email: 'p@x.com' },
   };
-  db.getInvite = async (t) => invites[t] || null;
-  db.getWaitlistEntryByEmail = async (e) => Object.values(invites).find((i) => i.status === 'waitlist' && i.email === e.toLowerCase()) || null;
-  db.getUserByEmail = async (e) => Object.values(users).find((u) => u.email === e.toLowerCase()) || null;
+  // Everyone is read with two scans; per-person lookups would be one read
+  // each and too slow for 1000 people.
+  db.listAllUsers = async () => Object.values(users);
+  db.listInvites = async () => Object.values(invites);
+  const perPerson = () => { throw new Error('bulk update must not read people one at a time'); };
+  db.getInvite = perPerson; db.getWaitlistEntryByEmail = perPerson; db.getUserByEmail = perPerson;
   db.updateWaitlistEntry = async (t, { email, profile }) => {
     if (invites[t]?.status !== 'waitlist') throw Object.assign(new Error('gone'), { name: 'ConditionalCheckFailedException' });
     invites[t] = { ...invites[t], email, profile };
@@ -125,6 +128,32 @@ describe('bulk user update', () => {
     // Already set on both: unchanged, once.
     const same = await bulk({ userIds: ['usr_a'], waitlistTokens: ['wl_1'], set: { field: 'fld_org', value: 'UIC' } });
     assert.deepEqual(await same.json(), { updated: 0, unchanged: 1, failed: [] });
+  });
+
+  it('a person whose account changed counts as updated even if their entry couldn’t be', async () => {
+    users.usr_a.email = 'w1@x.com';
+    db.updateWaitlistEntry = async () => { throw Object.assign(new Error('x'), { name: 'ConditionalCheckFailedException' }); };
+    const res = await bulk({ userIds: ['usr_a'], set: { field: 'fld_role', value: 'Teacher' } });
+    assert.deepEqual(await res.json(), { updated: 1, unchanged: 0, failed: [{ waitlistToken: 'wl_1', error: 'Wait-list entry not found' }] });
+    assert.equal(users.usr_a.customFields.fld_role, 'Teacher');
+  });
+
+  it('1000 people: two reads, writes 10 at a time', async () => {
+    users = {};
+    for (let i = 0; i < 1000; i++) users[`usr_${i}`] = { userId: `usr_${i}`, email: `u${i}@x.com`, role: 'learner', customFields: {} };
+    users.usr_admin = { userId: 'usr_admin', role: 'admin' };
+    let inFlight = 0; let peak = 0; let reads = 0;
+    const scan = db.listAllUsers;
+    db.listAllUsers = async () => { reads++; return scan(); };
+    db.updateUser = async (id, u) => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      users[id] = { ...users[id], ...u }; inFlight--;
+    };
+    const res = await bulk({ userIds: Array.from({ length: 1000 }, (_, i) => `usr_${i}`), set: { field: 'userGroup', value: 'Cohort B' } });
+    assert.deepEqual(await res.json(), { updated: 1000, unchanged: 0, failed: [] });
+    assert.equal(reads, 1);
+    assert.equal(peak, 10);
   });
 
   it('counts users and entries together against the limit', async () => {
