@@ -36,6 +36,10 @@ test('an invite to a bounced address says it wasn’t sent, and the row is badge
   await expect(page.getByRole('row').filter({ hasText: 'bounced@example.com' })).toHaveCount(0);
 });
 
+// Removing the address changes the server's stand-in list for the rest of the
+// run, so a retry would start from the wrong state: don't retry this one.
+test.describe('removing an address from the bounce list', () => {
+  test.describe.configure({ retries: 0 });
 test('Edit User shows the spam flag; an admin can take the address off the list', async ({ page }) => {
   execFileSync(process.execPath, ['scripts/create-dev-user.js', 'spam@example.com', 'spam-pass-123', 'Sam Spam'], {
     cwd: new URL('../../server/', import.meta.url),
@@ -64,4 +68,5 @@ test('Edit User shows the spam flag; an admin can take the address off the list'
   } finally {
     await api('DELETE', `/v1/admin/users/${userId}`, accessToken);
   }
+});
 });

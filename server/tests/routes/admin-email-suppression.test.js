@@ -89,6 +89,8 @@ describe('sending to a suppressed address', () => {
 
   it('an admin password reset reports it', async () => {
     db.updateUser = async () => {};
+    db.storeResetToken = async () => {};
+    db.deleteResetToken = async () => {};
     db.getUserById = async (id) => (id === 'usr_b' ? { userId: 'usr_b', email: 'bounced@example.com', role: 'learner' } : { userId: id, role: ROLES[id] });
     const res = await req('usr_admin', 'POST', '/v1/admin/users/usr_b/reset-password');
     assert.equal(res.status, 200);
