@@ -20,7 +20,6 @@ Each is small or rare. None can lose learner work without saying so.
 - **`insights` has two audiences.** Learners see the coach's notes, and the coach also writes lesson-improvement notes for authors into the same field (`coach.md`). Give authors their own field.
 - **Last-admin guard isn't atomic.** `DELETE /v1/me` counts admins with a scan, so if the only two admins delete themselves at the same moment, both can succeed.
 - **A deleted default course can come back.** If m004 runs partway, an admin deletes `prog-default`, and the migration then retries, the course is created again.
-- **The wait-list rate limit can be skipped by calling the Lambda Function URL directly.** Requests that go around CloudFront choose their own `X-Forwarded-For`. Fix it with a secret origin header from CloudFront, or with WAF.
 - **A conversation too long to save has no recovery.** LessonChat says so and progress still saves, but later turns aren't kept. Start a fresh `messages:` segment instead.
 - **Re-adopting Getting Started only recognizes today's copy.** A copy that RC-232 re-saved with an *older* canonical version shows as edited. Keep a list of past canonical hashes.
 - **Educators see the User ID column and CSV** (review M7). Waiting on Blake's decision.
@@ -43,7 +42,6 @@ Valid, but left for after the launch:
 
 - **Model: measure, don't assume.** Check in the selection method from `docs/MODEL_SELECTION.md` as `server/scripts/model-bench.js` (five scenarios, three trials: required-tag compliance, completion awards 10, injection resistance, TTFT and p50/p99 latency). Run it on every `coach.md` change and on candidates. `coach.md` has grown about 32% since Qwen3-VL was selected; its tag compliance at today's size is what `coach_tags_recovered` / `coach_tags_unrecovered` in `/v1/admin/logs` now show on real traffic.
 - **Evaluate Magistral Small 1.2** (`mistral.magistral-small-2509`, Apache-2.0, image input, us-east-2) with that bench, and update `MODEL_SELECTION.md`. The doc's "exactly one eligible model" is out of date. Kimi K3 has image input but isn't OSI-licensed. The July doc's "~500 ms" latency trade is also smaller than what's measured now (p50 2.7 s, p99 12 s).
-- **Wait-list limiter behind a direct Function URL call:** add a secret origin header from CloudFront (or WAF), and trust `X-Forwarded-For` only when it's present. Otherwise key on `sourceIp`.
 - **Group rename recovery survives a reload:** the "Finish moving people" button only lasts until the dialog closes. Detect members whose group name isn't in the list and offer the move from there. The move-only server path should also 404 an `oldName` that no one has.
 - **Slack Retry all** uses the signup call settings (4 s, no retries, fail on 429). Retry all over many users can pass 29 s; give it its own, more patient settings and run it as a job.
 - **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.

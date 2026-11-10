@@ -24,12 +24,17 @@ import { runDueJobs } from './lib/schedule.js';
 import './lib/learner-emails.js'; // registers the scheduled email jobs (#400)
 import './lib/messages.js'; // registers send-message (#389)
 import { viewAsReadOnly } from './middleware/viewAsReadOnly.js';
+import { originVerify } from './middleware/originVerify.js';
 import { logger } from './lib/logger.js';
 import { pluginRegistry } from './lib/plugins/registry.js';
 import { makePluginDispatcher, makeSlackLegacyShim } from './lib/plugins/dispatcher.js';
 import { isSelfInvokeEvent } from './lib/lesson-stats-cache.js';
 
 const server = new Hono();
+
+// Only CloudFront may reach the app (middleware/originVerify.js). First, so a
+// direct hit costs nothing else.
+server.use('*', originVerify);
 
 server.use('*', cors({
   origin: '*',
