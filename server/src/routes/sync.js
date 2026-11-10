@@ -64,6 +64,48 @@ async function readOldLessonKBStatus(userId, dataKey) {
   }
 }
 
+// A lesson is completed through a conversation with the coach (S5). Refuse a
+// write that *transitions* a lessonKB to 'completed' unless the learner's
+// `messages:<lessonId>` record exists and holds the coach's opening message.
+//
+// Why "the opener" and not "N learner messages": on the completing turn the
+// client writes the lessonKB BEFORE it appends that turn to `messages:` (true
+// of every client since Beta-RC-232; see sendMessage in lessonEngine.js), and
+// the coach can award 10 on the learner's first reply. So the stored record a
+// legit first-turn completion sees holds only the coach's opener (startLesson
+// saves it before the learner can type). Requiring any learner message would
+// refuse real completions.
+//
+// Only the transition is checked: an already-completed lessonKB (the
+// post-completion feedback thread) keeps accepting writes, and nothing else
+// is read on the hot path. `oldStatus` comes from readOldLessonKBStatus; when
+// that pre-read failed it is null, so the check runs and passes on the real
+// conversation. A failed messages read fails open: the learner's write must
+// not fail on an ancillary read. Returns null (allow) or the refusal body.
+async function completionRefusal(userId, dataKey, oldStatus, data) {
+  if (!dataKey.startsWith('lessonKB:')) return null;
+  if (data?.status !== 'completed' || oldStatus === 'completed') return null;
+  const lessonId = dataKey.slice('lessonKB:'.length);
+  let messages;
+  try {
+    messages = (await db.getSyncData(userId, `messages:${lessonId}`))?.data;
+  } catch (err) {
+    logger.warn('completion_check_failed', { error: err?.message });
+    return null;
+  }
+  if (Array.isArray(messages) && messages.some((m) => m?.role === 'assistant')) return null;
+  // Tier B (docs/OBSERVABILITY.md): nothing is lost, and a real client never
+  // gets here. No ids or content: just enough to tell a script from a bug.
+  logger.warn('completion_without_conversation', {
+    custom: lessonId.startsWith('custom-'),
+    messagesRecord: Array.isArray(messages) ? messages.length : null,
+  });
+  return {
+    error: 'A lesson is completed in a conversation with the coach',
+    code: 'completion_without_conversation',
+  };
+}
+
 /**
  * Resolve which userId a request should read on behalf of.
  *
@@ -176,6 +218,8 @@ sync.put('/v1/sync/batch', async (c) => {
     }
     try {
       const oldStatus = await readOldLessonKBStatus(userId, item.dataKey);
+      const refusal = await completionRefusal(userId, item.dataKey, oldStatus, item.data);
+      if (refusal) return { dataKey: item.dataKey, status: 'error', ...refusal };
       const result = await db.putSyncData(userId, item.dataKey, item.data, item.version || 0);
       await applyActivityEffects(userId, item.dataKey, oldStatus, item.data);
       return { dataKey: item.dataKey, status: 'ok', version: result.version };
@@ -232,6 +276,9 @@ sync.put('/v1/sync/:dataKey', async (c) => {
 
   try {
     const oldStatus = await readOldLessonKBStatus(userId, dataKey);
+    // 400, not 409: the client treats 409 as a version conflict and re-sends.
+    const refusal = await completionRefusal(userId, dataKey, oldStatus, data);
+    if (refusal) return c.json(refusal, 400);
     const result = await db.putSyncData(userId, dataKey, data, version || 0);
     await applyActivityEffects(userId, dataKey, oldStatus, data);
     return c.json({ dataKey, version: result.version, updatedAt: result.updatedAt });

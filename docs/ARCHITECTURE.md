@@ -1327,6 +1327,45 @@ or malforms the tag — both caught by tests during implementation.
 The pure helper `applyCoachResponseToKB` in `lessonEngine.js` is the **single
 owner** of this invariant.
 
+### No completion without a conversation (S5)
+
+`lessonKB:*` is ordinary sync data, so a learner could once mark a lesson
+complete with one `PUT /v1/sync/lessonKB:<id>` and never talk to the coach.
+The sync route (`completionRefusal` in `server/src/routes/sync.js`, single and
+batch paths) now refuses a write that **transitions** a lessonKB to
+`completed` unless the learner's `messages:<lessonId>` record exists and holds
+at least one coach (`role: 'assistant'`) message. The refusal is a 400 with
+`{ error, code: 'completion_without_conversation' }` (400, not 409: the client
+reads 409 as a version conflict and re-sends), logged as a Tier B warn with no
+ids or content. It isn't a completion rule (`applyCoachResponseToKB` still
+owns that); it only says a completion must come from a conversation.
+
+Why the bar is "the coach's opener", not "N learner messages": on the
+completing turn, `sendMessage` writes the lessonKB **before** it appends that
+turn to `messages:` (true since Beta-RC-232), and nothing stops the coach from
+awarding 10 on the learner's first reply. So on a first-turn completion the
+stored record holds only the opener, which `startLesson` saves before the
+learner can type. Requiring a learner message would refuse real completions
+from every deployed client. Against someone forging requests, a learner
+message is no harder to forge than a coach one, so a higher bar would cost
+real learners and stop no one.
+
+- Only the transition is checked. An already-completed lessonKB (the feedback
+  thread) keeps accepting writes, and other writes are untouched. The status
+  comes from the pre-read `applyActivityEffects` already does, and the
+  conversation is read only on a completing write.
+- Fails open: if the conversation read fails, the write goes through
+  (`completion_check_failed`, warn). If the status pre-read failed, the check
+  runs and passes on the real conversation.
+- A refused write fails safe on the client: `putSyncData` returns `false`, the
+  cache keeps the completed KB, `syncIfUnsaved` re-sends it 500 ms later, and
+  the next turn re-sends it too, by which time the turn's messages are stored.
+- Custom lessons follow the same rule (they complete the same way). Writes
+  while viewing as a user were already refused.
+- Limit: the conversation record is client-written too, so a learner who
+  forges one can still complete. Closing that needs the server to record coach
+  turns itself (`docs/POST_LAUNCH.md`).
+
 ## Denormalization policy
 
 plato's source of truth for learner activity is the `sync-data` table
