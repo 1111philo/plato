@@ -74,6 +74,31 @@ Redeploy the previous release with "Trigger Deploy" (manual run, target
 `server/scripts/rollback-roles.js`). *Time it once on playground* and write
 the number here: _not measured yet_.
 
+## Load test (playground, 2026-11-10)
+
+Scripts and how to rerun them: `scripts/loadtest/README.md`. From one test
+machine, through CloudFront, against playground (Beta-RC-240 plus #546):
+
+- **900 learners, no AI** (sign-in over 2 min, then a save every 60–90 s):
+  30,027 requests, 0 errors, p50 ~150 ms and p99 ~300–600 ms on every
+  endpoint (sign-in p99 588 ms). Lambda peaked at 32 concurrent; 78 cold
+  starts at 1.2–1.6 s init. No DynamoDB or Lambda throttles.
+- **900 sign-ins in 30 s:** 17,068 requests, 2 client-side timeouts; server
+  time stayed p50 14 ms, p99 320 ms (the slower client numbers were the test
+  machine's bandwidth, not plato). Peak concurrency 81.
+- **Real Bedrock**, 50 then 100 coach streams at once (350 calls): all
+  completed, no throttles. Time to first token p50 0.7 s, p95 1.6 s, p99
+  3.5 s; full reply p50 3.2 s, p99 7.4 s.
+
+**The time-estimate job runs once per warm container when it goes stale.**
+`stats:timeStats` goes stale an hour after it's computed. Every container that
+then serves `GET /v1/lessons/time-stats` asks for a refresh, so a cohort
+loading at once starts dozens of copies of the same full-table job (37 in
+seconds on the test). Three logged `job_failed` ("The conditional request
+failed") because they lost the version race. DynamoDB on demand absorbed it,
+so it's harmless, but don't page anyone over `job_failed` for
+`lesson-time-stats` during the event.
+
 ## Known limits (from the scale review)
 
 Fixed before launch (#516–#520): shared data cached for 30 s on learner paths
