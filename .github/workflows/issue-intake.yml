@@ -45,11 +45,48 @@ jobs:
       pull-requests: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      # Only maintainers' issues reach the AI intake agent (#451 scale review
+      # S6). Intake can label an issue `ready-for-pilot`, and plato-pilot then
+      # writes code from it, so text from anyone outside the project must not
+      # be able to steer that by prompt injection. Trusted: OWNER, MEMBER,
+      # COLLABORATOR, for the issue author and for any newer non-bot reply.
+      # A human running workflow_dispatch can triage any issue (the sweep and
+      # rescan backstops dispatch as github-actions[bot] and get the same check).
+      - name: Check the author is a maintainer
+        id: trust
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          ISSUE_ASSOC: ${{ github.event.issue.author_association }}
+          COMMENT_ASSOC: ${{ github.event.comment.author_association }}
+        run: |
+          trusted() { case "$1" in OWNER|MEMBER|COLLABORATOR) return 0 ;; *) return 1 ;; esac; }
+          ok=false
+          if [ "$EVENT" = workflow_dispatch ] && [ "${ACTOR%\[bot\]}" = "$ACTOR" ]; then
+            ok=true  # a person asked for this issue explicitly
+          elif [ "$EVENT" = issues ]; then
+            trusted "$ISSUE_ASSOC" && ok=true
+          elif [ "$EVENT" = issue_comment ]; then
+            trusted "$COMMENT_ASSOC" && trusted "$ISSUE_ASSOC" && ok=true
+          else
+            # Bot dispatch (sweep / rescan): look the issue and its replies up.
+            ISSUE=$(gh api "repos/${{ github.repository }}/issues/$ISSUE_NUMBER" --jq .author_association)
+            LAST=$(gh api "repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments?per_page=100" \
+              --jq '[.[] | select(.user.type != "Bot")] | last | .author_association // "NONE_NEEDED"')
+            if trusted "$ISSUE" && { [ "$LAST" = NONE_NEEDED ] || trusted "$LAST"; }; then ok=true; fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          [ "$ok" = true ] || echo "::notice::Issue #$ISSUE_NUMBER is from outside the project; leaving it for a maintainer (run this workflow by hand to triage it)."
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: steps.trust.outputs.ok == 'true'
         with:
           fetch-depth: 1
 
       - name: Ensure intake labels exist
+        if: steps.trust.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -58,14 +95,16 @@ jobs:
           gh label create needs-decomposition --color FBCA04 --description "Real request, but too broad to act on as one PR — break into smaller issues" 2>/dev/null || true
 
       - name: Configure AWS credentials (Bedrock OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        if: steps.trust.outputs.ok == 'true'
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           role-to-assume: ${{ secrets.AWS_BEDROCK_ROLE_ARN }}
           # Names the session so Bedrock logs and CloudTrail show which repo and workflow spent what.
           role-session-name: plato-issue-intake
           aws-region: us-east-2
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1
+        if: steps.trust.outputs.ok == 'true'
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         with:
