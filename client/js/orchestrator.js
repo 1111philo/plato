@@ -7,6 +7,7 @@ import { parseSSEStream, parseResponse, LLM, ApiError, backoffMs, isRetryable } 
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
+import { screenLearnerNotes, learnerNoteFlag, LEARNER_TEXT_FRAMING } from './learnerNoteFilter.js';
 import { loadLessons } from './lessonOwner.js';
 
 const promptCache = {};
@@ -243,9 +244,12 @@ export async function initializeLessonKB(lesson, profileSummary) {
 // Strip them before the call so the agent's output stays small and bounded.
 // `learnerNotes` (the learner's own corrections, #451 testing) stays in: the
 // agents must keep the profile consistent with it. mergeProfile ignores any
-// copy they send back.
+// copy they send back. Notes that read as instructions or authority claims
+// (learnerNoteFilter.js) are left out of the agent's copy; the stored list is
+// untouched, so the learner still sees and can remove them.
 export function profileForAgent(profile) {
   const { masteredLessons: _m, activeLessons: _a, ...rest } = profile || {};
+  if (Array.isArray(rest.learnerNotes)) rest.learnerNotes = screenLearnerNotes(rest.learnerNotes);
   return rest;
 }
 
@@ -257,6 +261,7 @@ export function profileForAgent(profile) {
  */
 export function profileUpdateInput(fullProfile, text, activityContext, source = 'learner', now = Date.now()) {
   return {
+    untrustedText: LEARNER_TEXT_FRAMING,
     currentProfile: profileForAgent(fullProfile),
     source,
     // 'learner-removed': the learner deleted a note; it's what no longer applies, not new feedback.
@@ -270,7 +275,7 @@ export function profileUpdateInput(fullProfile, text, activityContext, source = 
 export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
   let systemPrompt = await loadPrompt('learner-profile-owner');
   systemPrompt = withLanguage(systemPrompt);
-  const userContent = JSON.stringify({ currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
+  const userContent = JSON.stringify({ untrustedText: LEARNER_TEXT_FRAMING, currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
@@ -291,6 +296,10 @@ export function incrementalProfileUpdate(profile, lessonId) {
 // -- Profile feedback (LLM) --------------------------------------------------
 
 export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner') {
+  // A learner note that reads as instructions never reaches the agent, whether
+  // it's being added or removed (it was never shown, so there's nothing to
+  // undo). The note itself is already saved; the profile is left as it was.
+  if (source !== 'coach' && learnerNoteFlag(feedbackText)) return null;
   let systemPrompt = await loadPrompt('learner-profile-update');
   systemPrompt = withLanguage(systemPrompt);
   const userContent = JSON.stringify(profileUpdateInput(fullProfile, feedbackText, activityContext, source));
