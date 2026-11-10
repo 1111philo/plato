@@ -72,7 +72,40 @@ Redeploy the previous release with "Trigger Deploy" (manual run, target
 `prod`) on the prior tag, then follow "If you need to roll back" in
 `docs/RELEASE_NOTES_launch.md` (roles back to Beta-RC-232's names with
 `server/scripts/rollback-roles.js`). *Time it once on playground* and write
-the number here: _not measured yet_.
+the number here: **measured on playground 2026-11-10: 3 min 21 s** from
+starting "Trigger Deploy" on `Beta-RC-239` to the site serving the old release
+(deploy 3 min 18 s + first healthy response), and **3 min 23 s** to roll
+forward again. Budget ~4 minutes. The release is live when the deploy run
+finishes; check `https://plato.courses/v1/auth/setup-status` returns 200.
+
+During the event, **don't roll back across Beta-RC-242** (2026-11-10) unless
+you have to: anything older accepts direct Lambda and API Gateway URL calls
+again (no origin check) and lets a lesson complete without a conversation.
+
+## Load test (playground, 2026-11-10)
+
+Scripts and how to rerun them: `scripts/loadtest/README.md`. From one test
+machine, through CloudFront, against playground (Beta-RC-240 plus #546):
+
+- **900 learners, no AI** (sign-in over 2 min, then a save every 60–90 s):
+  30,027 requests, 0 errors, p50 ~150 ms and p99 ~300–600 ms on every
+  endpoint (sign-in p99 588 ms). Lambda peaked at 32 concurrent; 78 cold
+  starts at 1.2–1.6 s init. No DynamoDB or Lambda throttles.
+- **900 sign-ins in 30 s:** 17,068 requests, 2 client-side timeouts; server
+  time stayed p50 14 ms, p99 320 ms (the slower client numbers were the test
+  machine's bandwidth, not plato). Peak concurrency 81.
+- **Real Bedrock**, 50 then 100 coach streams at once (350 calls): all
+  completed, no throttles. Time to first token p50 0.7 s, p95 1.6 s, p99
+  3.5 s; full reply p50 3.2 s, p99 7.4 s.
+
+**The time-estimate job runs once per warm container when it goes stale.**
+`stats:timeStats` goes stale an hour after it's computed. Every container that
+then serves `GET /v1/lessons/time-stats` asks for a refresh, so a cohort
+loading at once starts dozens of copies of the same full-table job (37 in
+seconds on the test). Three logged `job_failed` ("The conditional request
+failed") because they lost the version race. DynamoDB on demand absorbed it,
+so it's harmless, but don't page anyone over `job_failed` for
+`lesson-time-stats` during the event.
 
 ## Known limits (from the scale review)
 

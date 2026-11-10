@@ -73,6 +73,10 @@ scale review, B1). Now:
 an hour old, asks for the job (at most once per container per 10 minutes). A
 learner's request never scans users (B2: a cold container used to read the
 whole database while the learner waited). Until the first run, no estimates.
+The job claims the record first (a version-checked `refreshingAt` write; a
+claim older than 5 minutes is abandoned), so when many containers see it stale
+at once, one computes and the rest skip without an error (load test
+2026-11-10: 37 started together and 3 logged `job_failed`).
 
 **Cold start** (`server/src/index.js`, first request in a container): the
 admin bootstrap asks `isSetUp()` (`lib/setup-state.js`: `hasAnyUser`, one item,
