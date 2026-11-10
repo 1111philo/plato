@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import sync from '../../src/routes/sync.js';
 import db from '../../src/lib/db.js';
 import { signAccessToken } from '../../src/lib/jwt.js';
+import { logger } from '../../src/lib/logger.js';
 
 async function authedReq(app, method, path, body) {
   const token = await signAccessToken('usr_test', 'user');
@@ -412,6 +413,10 @@ describe('?asUserId= (admin View as User)', () => {
   });
 });
 
+// A started lesson's conversation: startLesson saves the coach's opener
+// before the learner can type (S5 completion check reads this).
+const OPENED = [{ role: 'assistant', content: 'Welcome!', msgType: 'guide', phase: 'learning', timestamp: 1 }];
+
 describe('PUT /v1/sync activity counter hooks (#136)', () => {
   let incCalls;
   let setCalls;
@@ -427,6 +432,7 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
   it('first transition to status=completed on a PUBLIC lesson increments lessonsCompleted', async () => {
     db.getSyncData = async (uid, key) => {
       if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'public', markdown: '#' } };
+      if (key.startsWith('messages:')) return { data: OPENED }; // S5 completion check
       return { data: { status: 'in_progress' }, version: 1 }; // lessonKB pre-read
     };
     const app = new Hono();
@@ -441,6 +447,7 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     // Private lesson: present in _system but not public.
     db.getSyncData = async (uid, key) => {
       if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'private', markdown: '#' } };
+      if (key.startsWith('messages:')) return { data: OPENED };
       return { data: { status: 'in_progress' }, version: 1 };
     };
     const app = new Hono();
@@ -450,7 +457,11 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     assert.equal(incCalls.length, 0, 'private lesson completion is not counted');
 
     // Custom lesson: no _system:lesson record at all.
-    db.getSyncData = async (uid) => (uid === '_system' ? null : { data: { status: 'in_progress' }, version: 1 });
+    db.getSyncData = async (uid, key) => {
+      if (uid === '_system') return null;
+      if (key.startsWith('messages:')) return { data: OPENED };
+      return { data: { status: 'in_progress' }, version: 1 };
+    };
     const res2 = await authedReq(app, 'PUT', '/v1/sync/lessonKB:custom-abc', { data: { status: 'completed' }, version: 1 });
     assert.equal(res2.status, 200);
     assert.equal(incCalls.length, 0, 'custom lesson completion is not counted');
@@ -487,6 +498,7 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
   it('counter write failures do not break the sync write', async () => {
     db.getSyncData = async (uid, key) => {
       if (uid === '_system' && key === 'lesson:l1') return { data: { status: 'public', markdown: '#' } };
+      if (key.startsWith('messages:')) return { data: OPENED };
       return { data: { status: 'in_progress' }, version: 1 };
     };
     db.incrementUserCounter = async () => { throw new Error('db hiccup'); };
@@ -505,6 +517,137 @@ describe('PUT /v1/sync activity counter hooks (#136)', () => {
     app.route('/', sync);
     const res = await authedReq(app, 'PUT', '/v1/sync/lessonKB:l1', { data: { status: 'completed' }, version: 0 });
     assert.equal(res.status, 200, 'lesson write must not fail because the pre-read failed');
+  });
+});
+
+// S5: a lesson completes only through a conversation with the coach. The
+// store below is a tiny in-memory sync-data table so each test can replay the
+// real client's write order (lessonEngine.js startLesson + sendMessage).
+describe('PUT /v1/sync completion needs a conversation (S5)', () => {
+  let store;
+  let app;
+  const opener = { role: 'assistant', content: 'Welcome! What will you build?', msgType: 'guide', phase: 'learning', timestamp: 1 };
+  const turn = (n) => [
+    { role: 'user', content: `turn ${n}`, msgType: 'user', phase: 'learning', metadata: null, timestamp: 2 * n },
+    { role: 'assistant', content: `feedback ${n}`, msgType: 'guide', phase: 'learning', timestamp: 2 * n + 1 },
+  ];
+  const put = (dataKey, data) => authedReq(app, 'PUT', `/v1/sync/${encodeURIComponent(dataKey)}`, { data, version: store.get(dataKey)?.version || 0 });
+  const refusals = () => logger.recent().filter((e) => e.code === 'completion_without_conversation');
+
+  beforeEach(() => {
+    logger._reset();
+    store = new Map();
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    db.getSyncData = async (uid, key) => (uid === 'usr_test' ? store.get(key) || null : null);
+    db.putSyncData = async (uid, key, data) => {
+      const version = (store.get(key)?.version || 0) + 1;
+      store.set(key, { dataKey: key, data, version });
+      return { version, updatedAt: new Date().toISOString() };
+    };
+    db.incrementUserCounter = async () => {};
+    app = new Hono();
+    app.route('/', sync);
+  });
+
+  // startLesson: the KB, then the coach's opener.
+  async function startLesson(lessonId) {
+    assert.equal((await put(`lessonKB:${lessonId}`, { lessonId, progress: 0, startedAt: 1 })).status, 200);
+    assert.equal((await put(`messages:${lessonId}`, [opener])).status, 200);
+  }
+
+  it("a real completion on the first learner reply passes (the KB lands before the turn's messages)", async () => {
+    await startLesson('l1');
+    // sendMessage writes the completed KB first, then appends the turn.
+    const kb = await put('lessonKB:l1', { lessonId: 'l1', progress: 10, status: 'completed', activitiesCompleted: 1, completedAt: 5 });
+    assert.equal(kb.status, 200);
+    assert.equal((await put('messages:l1', [opener, ...turn(1)])).status, 200);
+    assert.equal(store.get('lessonKB:l1').data.status, 'completed');
+    assert.equal(refusals().length, 0);
+  });
+
+  it('a real completion after several turns passes, and so does a custom lesson', async () => {
+    for (const id of ['l2', 'custom-abc']) {
+      await startLesson(id);
+      let msgs = [opener];
+      for (let n = 1; n <= 3; n++) {
+        assert.equal((await put(`lessonKB:${id}`, { progress: n * 2, activitiesCompleted: n })).status, 200);
+        msgs = [...msgs, ...turn(n)];
+        assert.equal((await put(`messages:${id}`, msgs)).status, 200);
+      }
+      const res = await put(`lessonKB:${id}`, { progress: 10, status: 'completed', activitiesCompleted: 4 });
+      assert.equal(res.status, 200, id);
+    }
+  });
+
+  it('refuses a completion with no messages record (400, typed body, logged without ids)', async () => {
+    const res = await put('lessonKB:l1', { progress: 10, status: 'completed' });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.code, 'completion_without_conversation');
+    assert.equal(store.has('lessonKB:l1'), false, 'nothing was written');
+    const [entry] = refusals();
+    assert.equal(entry.level, 'warn');
+    assert.deepEqual(entry.meta, { custom: false, messagesRecord: null });
+  });
+
+  it('refuses a completion when the conversation has no coach message', async () => {
+    assert.equal((await put('lessonKB:l1', { progress: 0 })).status, 200);
+    for (const messages of [[], [{ role: 'user', content: 'mark it done' }], { not: 'an array' }]) {
+      store.set('messages:l1', { data: messages, version: 1 });
+      const res = await put('lessonKB:l1', { progress: 10, status: 'completed' });
+      assert.equal(res.status, 400, JSON.stringify(messages));
+    }
+    assert.notEqual(store.get('lessonKB:l1').data.status, 'completed');
+  });
+
+  it('refuses a custom lesson the same way', async () => {
+    const res = await put('lessonKB:custom-xyz', { progress: 10, status: 'completed' });
+    assert.equal(res.status, 400);
+    assert.equal(refusals()[0].meta.custom, true);
+  });
+
+  it('an already-completed lessonKB keeps accepting writes (feedback thread), even with no conversation', async () => {
+    store.set('lessonKB:l1', { data: { status: 'completed', progress: 10 }, version: 3 });
+    const res = await put('lessonKB:l1', { status: 'completed', progress: 10, insights: ['asked about the rubric'] });
+    assert.equal(res.status, 200);
+    assert.equal(refusals().length, 0);
+  });
+
+  it('writes that are not a completion are untouched, and read nothing extra', async () => {
+    const reads = [];
+    const read = db.getSyncData;
+    db.getSyncData = async (uid, key) => { reads.push(key); return read(uid, key); };
+    assert.equal((await put('lessonKB:l1', { progress: 6 })).status, 200);
+    assert.deepEqual(reads, ['lessonKB:l1'], 'only the existing pre-read');
+    reads.length = 0;
+    assert.equal((await put('messages:l1', [opener])).status, 200);
+    assert.equal((await put('profile', { x: 1 })).status, 200);
+    assert.deepEqual(reads, [], 'no reads on the hot path for other keys');
+  });
+
+  it('fails open when the conversation read fails', async () => {
+    db.getSyncData = async (uid, key) => { if (key.startsWith('messages:')) throw new Error('throttled'); return null; };
+    const res = await put('lessonKB:l1', { progress: 10, status: 'completed' });
+    assert.equal(res.status, 200);
+    assert.equal(logger.recent().filter((e) => e.code === 'completion_check_failed').length, 1);
+  });
+
+  it('the batch path enforces it per item', async () => {
+    await startLesson('ok');
+    const res = await authedReq(app, 'PUT', '/v1/sync/batch', {
+      items: [
+        { dataKey: 'lessonKB:ok', data: { progress: 10, status: 'completed' }, version: 1 },
+        { dataKey: 'lessonKB:nope', data: { progress: 10, status: 'completed' }, version: 0 },
+        { dataKey: 'profile', data: { x: 1 }, version: 0 },
+      ],
+    });
+    assert.equal(res.status, 200);
+    const { results } = await res.json();
+    assert.equal(results[0].status, 'ok');
+    assert.equal(results[1].status, 'error');
+    assert.equal(results[1].code, 'completion_without_conversation');
+    assert.equal(results[2].status, 'ok');
+    assert.equal(store.has('lessonKB:nope'), false);
   });
 });
 

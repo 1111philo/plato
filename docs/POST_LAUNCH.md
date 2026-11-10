@@ -65,7 +65,7 @@ Fixed before launch in #515–#521. Left for after:
 - **Audit log:** a TTL, and a `userId` index for `listAuditLogsForUser` (a full Scan; nothing calls it yet).
 - **Compression for `/assets/*`:** cached at CloudFront but not showing as compressed yet.
 - **`shadcn` to devDependencies** in the client.
-- **S5 (policy):** learners can mark a lesson complete through `PUT /v1/sync`. At minimum, log a completion that has no conversation.
+- **S5 shipped (pre-event security sprint, Nov 10):** `PUT /v1/sync` (single and batch) now refuses a write that turns a `lessonKB` to `completed` unless the lesson's `messages:` record holds the coach's opener (400 `completion_without_conversation`, logged). What's left: the conversation record is itself written by the client, so a learner who forges one can still complete. Closing that needs the server to record coach turns itself (the AI proxy sees every coach call).
 - **S6:** gate `issue-intake.yml` on author association, and SHA-pin its actions.
 - **PITR on playground** (off), and in IaC once the deploy role can manage continuous backups.
 
