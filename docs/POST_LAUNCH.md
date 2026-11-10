@@ -49,7 +49,7 @@ Valid, but left for after the launch:
 - **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.
 - **Publishing Getting Started lowers dashboard completion rates** on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
 - **Policy (Blake):** a bundled lesson added in a *future* release goes public automatically if Getting Started lesson 1 is public. The recorded decision is "bundled content arrives private for review". Keep the auto-publish (no half-published course) or always arrive private?
-- **`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.
+- ~~**`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.~~ Done in the pre-event security sprint: `client/js/learnerNoteFilter.js` keeps notes with plato tags, role markers, or English instruction/approval phrases away from the profile agents, and every profile-agent input frames learner text as untrusted (`docs/ARCHITECTURE.md`, learner notes). English phrases only; injections in other languages are still left to the prompts.
 
 ## From the scale review (900 concurrent learners, Nov 7)
 
