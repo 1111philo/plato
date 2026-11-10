@@ -72,7 +72,15 @@ Redeploy the previous release with "Trigger Deploy" (manual run, target
 `prod`) on the prior tag, then follow "If you need to roll back" in
 `docs/RELEASE_NOTES_launch.md` (roles back to Beta-RC-232's names with
 `server/scripts/rollback-roles.js`). *Time it once on playground* and write
-the number here: _not measured yet_.
+the number here: **measured on playground 2026-11-10: 3 min 21 s** from
+starting "Trigger Deploy" on `Beta-RC-239` to the site serving the old release
+(deploy 3 min 18 s + first healthy response), and **3 min 23 s** to roll
+forward again. Budget ~4 minutes. The release is live when the deploy run
+finishes; check `https://plato.courses/v1/auth/setup-status` returns 200.
+
+During the event, **don't roll back across Beta-RC-242** (2026-11-10) unless
+you have to: anything older accepts direct Lambda and API Gateway URL calls
+again (no origin check) and lets a lesson complete without a conversation.
 
 ## Load test (playground, 2026-11-10)
 
