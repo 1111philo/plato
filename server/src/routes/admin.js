@@ -10,6 +10,7 @@ import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, hashToken } from '../lib/crypto.js';
 import { issueResetToken } from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
+import { listSuppressed, getSuppression, removeSuppression } from '../lib/email-suppression.js';
 import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
@@ -264,15 +265,17 @@ admin.post('/v1/admin/invites/bulk', async (c) => {
         invitedBy: adminUser.userId,
       });
       const emailResult = await sendInviteEmail(trimmed, inviteToken, adminUser.name);
-      results.push({ email: trimmed, status: 'sent', ...emailResult });
+      // Bounced/complained before: the invite exists, but SES would drop the email.
+      results.push({ email: trimmed, ...emailResult, status: emailResult.suppressed ? 'suppressed' : 'sent' });
     } catch (err) {
       results.push({ email: trimmed, status: 'error', reason: err.message });
     }
   }
 
   const sent = results.filter(r => r.status === 'sent').length;
+  const suppressed = results.filter(r => r.status === 'suppressed').length;
   const skipped = results.filter(r => r.status !== 'sent').length;
-  return c.json({ sent, skipped, total: results.length, results }, 201);
+  return c.json({ sent, skipped, suppressed, total: results.length, results }, 201);
 });
 
 // GET /v1/admin/invites
@@ -751,7 +754,52 @@ admin.post('/v1/admin/users/:userId/reset-password', async (c) => {
   }
   // An admin can always send one (no cooldown); only the newest link works.
   const token = await issueResetToken(user, { force: true });
-  await sendResetEmail(user.email, token);
+  const r = await sendResetEmail(user.email, token);
+  if (r?.suppressed) return c.json({ ok: true, suppressed: true, reason: r.reason, since: r.since });
+  return c.json({ ok: true });
+});
+
+// Addresses that belong to plato: users, pending invites, wait-list entries.
+// The SES suppression list is account-wide (other apps share the account),
+// so only these are ever shown or removable here.
+async function platoAddresses() {
+  const [users, invites] = await Promise.all([db.listAllUsers(), db.listInvites()]);
+  return new Set([
+    ...users.map((u) => u.email),
+    ...invites.filter((i) => i.status === 'pending' || i.status === 'waitlist').map((i) => i.email),
+  ].filter(Boolean).map((e) => String(e).toLowerCase()));
+}
+
+// GET /v1/admin/email-suppression — plato's addresses that SES won't deliver
+// to (bounced, or marked as spam). Empty when SES can't be asked.
+admin.get('/v1/admin/email-suppression', async (c) => {
+  const [list, ours] = await Promise.all([listSuppressed(), platoAddresses()]);
+  const suppressed = (list || []).filter((s) => ours.has(s.email))
+    .map(({ email, reason, since }) => ({ email, reason, since }));
+  return c.json({ suppressed });
+});
+
+// DELETE /v1/admin/email-suppression/:email — take one of plato's addresses
+// off the list, e.g. after the person fixed their mailbox. SES suppresses it
+// again if it bounces again.
+admin.delete('/v1/admin/email-suppression/:email', async (c) => {
+  const email = (c.req.param('email') || '').trim().toLowerCase();
+  if (!email || !(await platoAddresses()).has(email)) return c.json({ error: 'Not found' }, 404);
+  const current = await getSuppression(email);
+  try {
+    await removeSuppression(email);
+  } catch (err) {
+    logger.error('email_suppression_remove_failed', { error: err?.name || err?.message || String(err) });
+    return c.json({ error: 'Couldn’t update the bounce list. Try again.' }, 502);
+  }
+  const user = await db.getUserByEmail(email);
+  await db.createAuditLog({
+    action: 'email_suppression_removed',
+    userId: user?.userId || null,
+    email,
+    performedBy: c.get('user').userId,
+    details: { reason: current?.reason || null },
+  });
   return c.json({ ok: true });
 });
 

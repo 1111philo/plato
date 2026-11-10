@@ -24,6 +24,7 @@ import { JWT_SECRET, SES_FROM_EMAIL, APP_URL } from '../config.js';
 import defaultDb from './db.js';
 import { escapeHtml, safeColor, emailWrapper, getClassroom } from './email.js';
 import { logger } from './logger.js';
+import { getSuppression, logSuppressed } from './email-suppression.js';
 
 let ses = null;
 const sesClient = () => (ses ||= new SESClient({}));
@@ -338,7 +339,9 @@ export function buildMime({ fromName, fromAddress, to, subject, text, html, head
 }
 
 /**
- * Send one notification email. Returns `{ sent | skipped | blocked: true }`.
+ * Send one notification email. Returns `{ sent | skipped | blocked: true }`,
+ * or `{ suppressed: true, reason, since }` when SES has the address on its
+ * bounce/complaint list (SES would accept the send and drop it).
  * `unsubscribe` (a URL) adds the List-Unsubscribe headers. `allowlist: false`
  * skips EMAIL_ALLOWLIST, for invitations only: an admin chose that address.
  */
@@ -349,10 +352,15 @@ function isThrottle(err) {
   return /Throttl/i.test(name) || err?.$metadata?.httpStatusCode === 429 || /Maximum sending rate exceeded/i.test(err?.message || '');
 }
 
-export async function sendNotificationEmail({ to, subject, text, html, classroom, unsubscribe = null, send = transport, allowlist = true }) {
+export async function sendNotificationEmail({ to, subject, text, html, classroom, unsubscribe = null, send = transport, allowlist = true, template = null }) {
   if (allowlist && !emailAllowed(to)) {
     logger.warn('email_not_allowlisted', { to: String(to).replace(/^[^@]*/, '***') });
     return { blocked: true };
+  }
+  const suppression = await getSuppression(to);
+  if (suppression) {
+    logSuppressed(template || 'notification', suppression);
+    return { suppressed: true, ...suppression };
   }
   if (process.env.SKIP_EMAIL === 'true') {
     console.log(`[SKIP_EMAIL] ${subject} → ${to}`);
@@ -402,7 +410,7 @@ export async function sendTemplated(id, { to, userId = null, kind = null, vars =
       footerHtml: `<p style="color: #777; font-size: 12px; line-height: 1.5; margin: 16px 0 0;">Don’t want the ${escapeHtml(label)}? <a href="${escapeHtml(unsubscribe)}" style="color: #777;">Unsubscribe</a>.</p>`,
     } : {}),
   });
-  return sendNotificationEmail({ to, ...rendered, classroom, unsubscribe, send, allowlist });
+  return sendNotificationEmail({ to, ...rendered, classroom, unsubscribe, send, allowlist, template: id });
 }
 
 // ── Invitations ──────────────────────────────────────────────────────────
@@ -421,7 +429,7 @@ async function sendInvitation(id, to, link, inviterName, firstName, opts) {
   }, { ...opts, allowlist: false });
 }
 
-/** The signup invite. Returns `{ sent | skipped, signupUrl }`. */
+/** The signup invite. Returns `{ sent | skipped | suppressed, signupUrl }`. */
 export async function sendInviteEmail(to, inviteToken, inviterName, { firstName = null, ...opts } = {}) {
   const signupUrl = `${APP_URL}/signup?token=${inviteToken}`;
   const r = await sendInvitation('invite', to, signupUrl, inviterName, firstName, opts);

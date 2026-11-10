@@ -335,7 +335,7 @@ function TemplateEditor({ template, canWrite, onNotice, onSaved }) {
   });
   const test = () => run('test', async () => {
     const r = await adminApi('POST', `/v1/admin/notifications/templates/${id}/test`, { subject, body });
-    onNotice({ text: r.sent ? `Test sent to ${r.to}.` : r.blocked ? `Not sent: ${r.to} isn’t on this site’s email allowlist.` : `Email is turned off here, so nothing was sent to ${r.to}.`, type: r.sent ? 'success' : 'error' });
+    onNotice({ text: r.sent ? `Test sent to ${r.to}.` : r.blocked ? `Not sent: ${r.to} isn’t on this site’s email allowlist.` : r.suppressed ? `Not sent: ${r.to} is on the bounce list.` : `Email is turned off here, so nothing was sent to ${r.to}.`, type: r.sent ? 'success' : 'error' });
   });
 
   return (
@@ -388,7 +388,7 @@ function History({ messages }) {
           {messages.map((m) => {
             const c = m.counts || {};
             const emailLine = m.email
-              ? (m.status === 'sending' ? 'Emailing…' : `${c.emailed ?? 0} emailed${c.optedOut ? `, ${c.optedOut} opted out` : ''}${c.blocked ? `, ${c.blocked} not allowlisted` : ''}${c.failed ? `, ${c.failed} failed` : ''}`)
+              ? (m.status === 'sending' ? 'Emailing…' : `${c.emailed ?? 0} emailed${c.optedOut ? `, ${c.optedOut} opted out` : ''}${c.blocked ? `, ${c.blocked} not allowlisted` : ''}${c.suppressed ? `, ${c.suppressed} bounced` : ''}${c.failed ? `, ${c.failed} failed` : ''}`)
               : null;
             return (
               <TableRow key={m.id}>

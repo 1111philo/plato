@@ -243,3 +243,42 @@ describe('sendNotificationEmail and SES throttling', async () => {
     n._setThrottleRetryMs(300);
   });
 });
+
+// SES drops mail to bounced/complained addresses without an error; plato
+// checks first and says so instead of reporting "sent" (email-suppression.js).
+describe('suppressed addresses', async () => {
+  const supp = await import('../../src/lib/email-suppression.js');
+  const { logger } = await import('../../src/lib/logger.js');
+  const { sendResetEmail } = await import('../../src/lib/email.js');
+  beforeEach(() => { supp._resetSuppression(); logger._reset(); process.env.SUPPRESSED_EMAILS = 'gone@x.com:BOUNCE,spam@x.com:COMPLAINT'; });
+  after(() => { delete process.env.SUPPRESSED_EMAILS; supp._resetSuppression(); });
+
+  it('skip SES and return the reason; the log has the template, not the address', async () => {
+    const r = await n.sendTemplated('waitlist-confirmation', { to: 'Gone@x.com', vars: {} }, { db });
+    assert.deepEqual(r, { suppressed: true, reason: 'BOUNCE', since: null });
+    assert.equal(sent.length, 0);
+    const [entry] = logger.recent().filter((e) => e.code === 'email_suppressed');
+    assert.deepEqual(entry.meta, { template: 'waitlist-confirmation', reason: 'BOUNCE' });
+    assert.ok(!JSON.stringify(entry).includes('gone@'));
+  });
+  it('apply to invitations too (they ignore the allowlist, not the bounce list), still returning the signup link', async () => {
+    const r = await n.sendInviteEmail('spam@x.com', 'inv_q', 'Ann');
+    assert.equal(r.suppressed, true);
+    assert.equal(r.reason, 'COMPLAINT');
+    assert.match(r.signupUrl, /signup\?token=inv_q$/);
+    assert.equal((await n.sendAccountInviteEmail('gone@x.com', 'Ann')).suppressed, true);
+    assert.equal(sent.length, 0);
+  });
+  it('win over SKIP_EMAIL, so dev and e2e show the real outcome', async () => {
+    process.env.SKIP_EMAIL = 'true';
+    assert.equal((await n.sendTemplated('waitlist-confirmation', { to: 'gone@x.com', vars: {} }, { db })).suppressed, true);
+  });
+  it('the password reset is skipped too', async () => {
+    const r = await sendResetEmail('gone@x.com', 'tok');
+    assert.equal(r.suppressed, true);
+    assert.match(r.resetUrl, /reset=tok$/);
+  });
+  it('other addresses send as before', async () => {
+    assert.deepEqual(await n.sendTemplated('waitlist-confirmation', { to: 'fine@x.com', vars: {} }, { db }), { sent: true });
+  });
+});
