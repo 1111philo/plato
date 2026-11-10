@@ -44,10 +44,35 @@ export async function computeLessonTimeStats({ db = defaultDb } = {}) {
   return byLesson;
 }
 
+// A refresh claims the record first, so when many containers see it stale at
+// once (an event's first minutes) only one computes and the rest skip quietly
+// (load test 2026-11-10: 37 started together and 3 logged job_failed on the
+// final write). A claim older than CLAIM_TTL_MS is treated as abandoned.
+export const CLAIM_TTL_MS = 5 * 60 * 1000;
+const conflict = (err) => err?.name === 'ConditionalCheckFailedException';
+
 export async function refreshLessonTimeStats({ db = defaultDb, now = () => new Date() } = {}) {
-  const byLesson = await computeLessonTimeStats({ db });
   const current = await db.getSyncData('_system', 'stats:timeStats');
-  await db.putSyncData('_system', 'stats:timeStats', { computedAt: now().toISOString(), byLesson }, current?.version || 0);
+  const at = now().getTime();
+  const computedAt = Date.parse(current?.data?.computedAt || '');
+  const claimedAt = Date.parse(current?.data?.refreshingAt || '');
+  if (Number.isFinite(computedAt) && at - computedAt <= STALE_AFTER_MS) return { skipped: 'fresh' };
+  if (Number.isFinite(claimedAt) && at - claimedAt < CLAIM_TTL_MS) return { skipped: 'running' };
+  let version;
+  try {
+    const claimed = await db.putSyncData('_system', 'stats:timeStats', { ...(current?.data || {}), refreshingAt: new Date(at).toISOString() }, current?.version || 0);
+    version = claimed?.version ?? (current?.version || 0) + 1;
+  } catch (err) {
+    if (conflict(err)) return { skipped: 'claimed' };
+    throw err;
+  }
+  const byLesson = await computeLessonTimeStats({ db });
+  try {
+    await db.putSyncData('_system', 'stats:timeStats', { computedAt: now().toISOString(), byLesson }, version);
+  } catch (err) {
+    if (conflict(err)) return { skipped: 'superseded' };
+    throw err;
+  }
   return { lessons: Object.keys(byLesson).length };
 }
 
