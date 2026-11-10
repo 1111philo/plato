@@ -53,6 +53,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          ORIGIN_VERIFY: !Sub '{{resolve:ssm:/plato/${Stage}/origin-verify}}'
           EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
@@ -145,6 +146,7 @@ Resources:
           ADMIN_PASSWORD: !Sub '{{resolve:ssm:/plato/${Stage}/admin-password}}'
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
+          ORIGIN_VERIFY: !Sub '{{resolve:ssm:/plato/${Stage}/origin-verify}}'
           EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:

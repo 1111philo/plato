@@ -20,6 +20,7 @@ Create these in AWS Systems Manager Parameter Store before deploying. Replace `{
 | `/plato/{stage}/jwt-secret` | SecureString | JWT signing secret |
 | `/plato/{stage}/ses-from-email` | String | Verified SES sender email |
 | `/plato/{stage}/app-url` | String | Public URL (for invite/reset links) |
+| `/plato/{stage}/origin-verify` | String | **Required.** Secret CloudFront sends as `X-Plato-Origin-Verify`; requests without it get a 403, so the Function URL and API Gateway URL can't be called directly (that skipped the WAF and let callers pick their own IP). Use a long random value (`openssl rand -hex 32`), or `off` for an install without CloudFront. Upgrading: create it before deploying, then add the header to CloudFront (step 3 of CloudFront below). |
 | `/plato/{stage}/admin-email` | String | Bootstrap admin email (optional — setup UI handles this) |
 | `/plato/{stage}/admin-password` | SecureString | Bootstrap admin password (optional) |
 
@@ -233,13 +234,14 @@ To serve the app from a custom domain:
 
 1. Create a CloudFront distribution with the Lambda Function URL as a **Custom Origin** (HTTPS-only)
 2. Set the Origin Request Policy to **AllViewerExceptHostHeader** (required for Lambda Function URLs)
-3. Set the default behavior's Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
-4. Add a `/assets/*` behavior: Cache Policy **CachingOptimized**, compression on, GET/HEAD, the same **AllViewerExceptHostHeader** origin request policy. Built assets have hashed names and `immutable`, so they need no invalidation; this saves a Lambda call per asset
-5. Origin read timeout **60 s** (the default 30 s turns a slow first AI reply into a 504 while Lambda keeps working)
-6. Optional: a WAF web ACL (scope CloudFront, us-east-1) with a rate rule on URI paths starting with `/v1/auth/`, per IP. Size it for a room of learners on one Wi-Fi address (prod uses 10,000 per 5 minutes)
-7. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
-8. Point your DNS (CNAME or alias) to the CloudFront distribution domain
-9. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
+3. Add an origin **custom header** `X-Plato-Origin-Verify` whose value is SSM `/plato/{stage}/origin-verify` (`server/src/middleware/originVerify.js`). Add it to CloudFront *before* deploying a stack that enforces it. To rotate: set SSM to `old,new`, redeploy, switch CloudFront to `new`, then set SSM to `new` and redeploy.
+4. Set the default behavior's Cache Policy to **CachingDisabled** (the Lambda handles caching headers)
+5. Add a `/assets/*` behavior: Cache Policy **CachingOptimized**, compression on, GET/HEAD, the same **AllViewerExceptHostHeader** origin request policy. Built assets have hashed names and `immutable`, so they need no invalidation; this saves a Lambda call per asset
+6. Origin read timeout **60 s** (the default 30 s turns a slow first AI reply into a 504 while Lambda keeps working)
+7. Optional: a WAF web ACL (scope CloudFront, us-east-1) with a rate rule on URI paths starting with `/v1/auth/`, per IP. Size it for a room of learners on one Wi-Fi address (prod uses 10,000 per 5 minutes)
+8. Add your domain as a CloudFront alternate domain name and attach an ACM certificate (must be in us-east-1)
+9. Point your DNS (CNAME or alias) to the CloudFront distribution domain
+10. Set SSM `/plato/{stage}/app-url` to the new URL — invite and password-reset
    email links are built from it, so a stale value sends learners to the old host
 
 The CloudFront distribution and ACM certificate are **not** managed by
