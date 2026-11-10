@@ -22,7 +22,7 @@ Each is small or rare. None can lose learner work without saying so.
 - **A deleted default course can come back.** If m004 runs partway, an admin deletes `prog-default`, and the migration then retries, the course is created again.
 - **A conversation too long to save has no recovery.** LessonChat says so and progress still saves, but later turns aren't kept. Start a fresh `messages:` segment instead.
 - **Re-adopting Getting Started only recognizes today's copy.** A copy that RC-232 re-saved with an *older* canonical version shows as edited. Keep a list of past canonical hashes.
-- **Educators see the User ID column and CSV** (review M7). Waiting on Blake's decision.
+- **Educators see the User ID column and CSV** (review M7). Decided 2026-11-10 (Blake): keep it; educators may see user IDs.
 - **Testers can still write outside `/v1/admin`** (their own sync data, AI calls). This is by design so they can take lessons; revisit it if testers should be fully read-only.
 - **`?include=stats` gets slower as the user list grows**, because it recomputes for every user on each request.
 - **No bounce or complaint handling for SES.** See "Bounced and complained email addresses" below (#530).
@@ -45,8 +45,8 @@ Valid, but left for after the launch:
 - **Group rename recovery survives a reload:** the "Finish moving people" button only lasts until the dialog closes. Detect members whose group name isn't in the list and offer the move from there. The move-only server path should also 404 an `oldName` that no one has.
 - **Slack Retry all** uses the signup call settings (4 s, no retries, fail on 429). Retry all over many users can pass 29 s; give it its own, more patient settings and run it as a job.
 - **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.
-- **Publishing Getting Started lowers dashboard completion rates** on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
-- **Policy (Blake):** a bundled lesson added in a *future* release goes public automatically if Getting Started lesson 1 is public. The recorded decision is "bundled content arrives private for review". Keep the auto-publish (no half-published course) or always arrive private?
+- **Publishing Getting Started lowers dashboard completion rates** (left as is with the decision above) on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
+- **Bundled lessons in future releases** go public automatically when Getting Started lesson 1 is public. Decided 2026-11-10 (Blake): keep this behavior; don't change how Getting Started works.
 - ~~**`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.~~ Done in the pre-event security sprint: `client/js/learnerNoteFilter.js` keeps notes with plato tags, role markers, or English instruction/approval phrases away from the profile agents, and every profile-agent input frames learner text as untrusted (`docs/ARCHITECTURE.md`, learner notes). English phrases only; injections in other languages are still left to the prompts.
 
 ## From the scale review (900 concurrent learners, Nov 7)
