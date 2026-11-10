@@ -60,6 +60,7 @@ const R = [
   // Content: lessons and courses
   ['GET', '/v1/admin/lessons', 'content.read'],
   ['GET', '/v1/admin/lessons/:lessonId', 'content.read'],
+  ['POST', '/v1/admin/lessons/bulk-update', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId/conversation', 'content.write'],
   ['DELETE', '/v1/admin/lessons/:lessonId', 'content.write'],
