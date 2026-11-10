@@ -1215,16 +1215,11 @@ describes what plato actually does:
 - no AI-writing detectors
 - the read-only, logged staff view
 
-**Policy only people can set** is shown as "To be decided by the program
-team" notes. Update the page when these are decided:
-1. When learners may use AI tools to make the work they submit, and how they
-   say so.
-2. Whether people review completed lessons (spot-checks), and how a learner
-   asks for a result to be reviewed (appeals).
-3. What completing a course certifies, and each course's competencies, the
-   evidence each needs, and their basis. This is deployment-specific, so it
-   belongs in the classroom's own content (course and unit descriptions,
-   lessons), not in plato's code.
+The page describes only what the system does, in plain language (Blake,
+2026-11-10: "just technically how the assessments work"). No policy
+placeholders: no human sign-off on completion, disagreements go to the coach in
+the chat, and plato records completions without grades or certificates. Keep it
+in step with the coach prompt and `applyCoachResponseToKB`.
 
 The coach prompt backs this up (#414). When a response could have come from
 anyone, the coach asks for a personal example or the learner's own
