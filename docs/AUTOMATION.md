@@ -105,6 +105,17 @@ Vague reports go to `needs-info` with ≤3 clarifying questions — a false-posi
 `needs-info` is cheap, a false-positive `ready-for-pilot` fuels pilot loops.
 Non-bug issues get no label, no comment. Idempotent via the labels.
 
+**Maintainers only.** The agent only reads issues and replies whose authors are
+`OWNER`, `MEMBER`, or `COLLABORATOR` (the first step checks GitHub's
+`author_association`; for the sweep and rescan's bot dispatches it looks the
+issue and its newest non-bot reply up). Intake can label an issue
+`ready-for-pilot`, and pilot writes code from it, so text from outside the
+project must not be able to steer that by prompt injection. Issues from anyone
+else (including past `CONTRIBUTOR`s) get no automatic triage; a maintainer can
+run the workflow by hand (`gh workflow run issue-intake.yml -f
+issue_number=<n>`) or label it themselves. The workflow's actions are pinned to
+commit SHAs.
+
 **Backstop:** `issue-intake-sweep.yml` runs every 6 hours. If an on-open intake
 run *fails* (e.g. a transient `claude-code-action` internal error, which is what
 left #193 un-triaged and invisible to the pilot), the issue keeps no intake label
