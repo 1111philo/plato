@@ -1120,6 +1120,84 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   return c.json({ lessonId, ok: true });
 });
 
+// POST /v1/admin/lessons/bulk-update — one visibility change for many lessons
+// (#526): body `{ lessonIds (≤ 500), status: 'public' | 'private',
+// share?: { mode: 'add' | 'replace', userIds } }`. Same rules as the
+// single-lesson PUT: true drafts can't change here (they have no lesson yet),
+// going public validates the markdown and stamps `publishedAt` once, a public
+// lesson's `sharedWith` is emptied, and the bundled marker stays. Everything
+// else on the record is kept. Reads every lesson once and writes 10 at a time.
+// Returns `{ updated, unchanged, failed: [{ lessonId, name, error }] }` and
+// writes one `lessons_bulk_updated` audit entry.
+export const LESSONS_BULK_MAX = 500;
+admin.post('/v1/admin/lessons/bulk-update', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = Array.isArray(body.lessonIds) ? [...new Set(body.lessonIds.filter((x) => typeof x === 'string' && x))] : [];
+  if (!ids.length) return c.json({ error: 'Choose at least one lesson' }, 400);
+  if (ids.length > LESSONS_BULK_MAX) return c.json({ error: `Update at most ${LESSONS_BULK_MAX} lessons at a time` }, 400);
+  const status = body.status;
+  if (status !== 'public' && status !== 'private') return c.json({ error: 'Choose public or private' }, 400);
+  const share = body.share;
+  if (share !== undefined && share !== null) {
+    if (status !== 'private') return c.json({ error: 'Only private lessons are shared with people' }, 400);
+    if (!['add', 'replace'].includes(share.mode) || !Array.isArray(share.userIds) || !share.userIds.every((x) => typeof x === 'string')) {
+      return c.json({ error: 'share needs a mode (add or replace) and a list of user ids' }, 400);
+    }
+  }
+  const shareIds = share ? [...new Set(share.userIds)] : [];
+  if (shareIds.length) {
+    const known = new Set((await db.listAllUsers()).map((u) => u.userId));
+    const unknown = shareIds.filter((id) => !known.has(id));
+    if (unknown.length) return c.json({ error: `Unknown user: ${unknown[0]}` }, 400);
+  }
+
+  const adminUser = c.get('user');
+  const items = new Map((await db.getAllSyncData('_system'))
+    .filter((i) => i.dataKey.startsWith('lesson:'))
+    .map((i) => [i.dataKey.slice('lesson:'.length), i]));
+  const result = { updated: 0, unchanged: 0, failed: [] };
+  const now = new Date().toISOString();
+  await inBatches(ids, async (lessonId) => {
+    const item = items.get(lessonId);
+    if (!item) { result.failed.push({ lessonId, error: 'Lesson not found' }); return; }
+    const data = item.data || {};
+    const name = data.name || lessonId;
+    const current = normalizeStatus(data.status, !!data.markdown);
+    if (current === 'draft') { result.failed.push({ lessonId, name, error: 'Still a draft: finish creating it first' }); return; }
+    if (status === 'public' && current !== 'public') {
+      const mdError = validateLessonMarkdown(data.markdown);
+      if (mdError) { result.failed.push({ lessonId, name, error: mdError }); return; }
+    }
+    const before = data.sharedWith || [];
+    const sharedWith = status === 'public' ? []
+      : !share ? before
+        : share.mode === 'replace' ? shareIds
+          : [...new Set([...before, ...shareIds])];
+    const same = current === status && sharedWith.length === before.length && sharedWith.every((id) => before.includes(id));
+    if (same) { result.unchanged++; return; }
+    const next = {
+      ...data,
+      status,
+      sharedWith,
+      updatedBy: adminUser.userId,
+      updatedByName: adminUser.username || adminUser.email,
+      ...(!data.publishedAt && status === 'public' ? { publishedAt: now } : {}),
+    };
+    try {
+      await db.putSyncData('_system', `lesson:${lessonId}`, next, item.version || 0);
+      result.updated++;
+    } catch (e) {
+      // Changed by someone else since the read (version check).
+      result.failed.push({ lessonId, name, error: e?.name === 'ConditionalCheckFailedException' || /version/i.test(e?.message || '') ? 'Changed by someone else; try again' : (e?.message || 'Update failed') });
+    }
+  }, { size: 10 });
+  await db.createAuditLog({
+    action: 'lessons_bulk_updated', userId: null, performedBy: adminUser.userId,
+    details: { status, share: share ? { mode: share.mode, count: shareIds.length } : null, count: result.updated, failed: result.failed.length },
+  });
+  return c.json(result);
+});
+
 // PUT /v1/admin/lessons/:lessonId/conversation — auto-save conversation without requiring markdown
 admin.put('/v1/admin/lessons/:lessonId/conversation', async (c) => {
   const lessonId = c.req.param('lessonId');

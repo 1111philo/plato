@@ -1650,6 +1650,24 @@ change is announced.
 (sortable and searchable) and the last CSV column, as a stable key for
 research and reporting. It's shown to staff only (everyone with `users.read`: admins, educators, testers, including the CSV download); learners never see it.
 
+**Admin → Lessons: filters and bulk visibility (#526, #527).** The same
+Filters menu, with facets from `client/src/lib/lessonFilters.js`: Status
+(Public, Private, Draft), Course, Unit (plus No course / No unit), and Created
+by. Chips and the "N of M lessons" count work as on Users. Admins and
+educators (`content.write`) get a checkbox on every lesson except true
+drafts, which have no lesson to show yet. **Update…** (`BulkLessonsDialog.jsx`)
+makes the selected lessons public, or private and optionally shared with
+chosen people, either added to who each is shared with or replacing it.
+`POST /v1/admin/lessons/bulk-update { lessonIds (≤ 500), status, share?:
+{ mode: 'add' | 'replace', userIds } }` follows the single-lesson PUT's rules:
+going public validates the markdown and stamps `publishedAt` once, a public
+lesson's `sharedWith` is emptied, and the bundled marker is kept. Unlike that
+PUT, it starts from the stored record, so nothing else on it changes
+(including `isBuiltIn`). It reads every lesson in one `_system` query, writes
+10 at a time with a version check (a lesson changed meanwhile is reported, not
+overwritten), and writes one `lessons_bulk_updated` audit entry. Share-with
+user ids must exist. Testers see the filters but no checkboxes.
+
 ## User groups (#434)
 
 Group names live in `_system:settings.userGroups`. Membership is the name on
