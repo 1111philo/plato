@@ -1,16 +1,16 @@
 # After the launch: what's left on partly-done issues
 
 The launch release (#451) shipped to prod on 2026-11-09 as Beta-RC-237. It
-delivered part of each issue below. This is what remains, so the next person
+delivered part of each issue below. The originals and Milestones 2 and 3 were closed on 2026-11-10; what's left continues in the follow-up issues. This is what remains, so the next person
 (or plato-pilot) starts in the right place.
 
-| Issue | Done in the launch | Left |
+| Issue | Done in the launch | Left (follow-up issue) |
 |---|---|---|
-| #257 How assessment works | Public `/how-assessment-works` page describing what plato actually does; coach asks for learners' own thinking | The three "To be decided by the program team" policies on the page: AI-assisted work, human review and appeals, what course completion certifies (and each course's competencies, written in that classroom's own content) |
+| #257 How assessment works | Public `/how-assessment-works` page describing what plato actually does; coach asks for learners' own thinking | The three "To be decided by the program team" policies on the page: AI-assisted work, human review and appeals, what course completion certifies (and each course's competencies, written in that classroom's own content) (#541) |
 | #261 Lesson rewrites | Export/apply scripts; drafts for Foundations 1–3 and AI Leadership 1–7 (UIC-OSF/plato-deploy#6) | Review the drafts, compare before/after with an outside reader, apply with `server/scripts/apply-lessons.js`; then the remaining lessons |
-| #385 Admin table columns | Columns dialog (show, hide, reorder; saved per browser) for Users and Lessons; tables scroll instead of clipping | Column resizing |
-| #414 Originality feedback | Coach asks for personal examples and reasons, never accuses; the "Your work" checklist only counts evidence in the learner's own words | Any separate visual indicator, once the policy in #257 is set (no AI-text detector, per #272) |
-| #443 Getting Started | Bundled lesson, installed and kept current on every install; shown first | Requiring it before other lessons, once completion-based prerequisites (#442) exist |
+| #385 Admin table columns | Columns dialog (show, hide, reorder; saved per browser) for Users and Lessons; tables scroll instead of clipping | Column resizing (#544) |
+| #414 Originality feedback | Coach asks for personal examples and reasons, never accuses; the "Your work" checklist only counts evidence in the learner's own words | Any separate visual indicator, once the policy in #257 is set (no AI-text detector, per #272) (#542) |
+| #443 Getting Started | Bundled lesson, installed and kept current on every install; shown first | Requiring it before other lessons, once completion-based prerequisites (#442) exist (#543) |
 
 ## Known gaps from the launch reviews
 
@@ -20,10 +20,9 @@ Each is small or rare. None can lose learner work without saying so.
 - **`insights` has two audiences.** Learners see the coach's notes, and the coach also writes lesson-improvement notes for authors into the same field (`coach.md`). Give authors their own field.
 - **Last-admin guard isn't atomic.** `DELETE /v1/me` counts admins with a scan, so if the only two admins delete themselves at the same moment, both can succeed.
 - **A deleted default course can come back.** If m004 runs partway, an admin deletes `prog-default`, and the migration then retries, the course is created again.
-- **The wait-list rate limit can be skipped by calling the Lambda Function URL directly.** Requests that go around CloudFront choose their own `X-Forwarded-For`. Fix it with a secret origin header from CloudFront, or with WAF.
 - **A conversation too long to save has no recovery.** LessonChat says so and progress still saves, but later turns aren't kept. Start a fresh `messages:` segment instead.
 - **Re-adopting Getting Started only recognizes today's copy.** A copy that RC-232 re-saved with an *older* canonical version shows as edited. Keep a list of past canonical hashes.
-- **Educators see the User ID column and CSV** (review M7). Waiting on Blake's decision.
+- **Educators see the User ID column and CSV** (review M7). Decided 2026-11-10 (Blake): keep it; educators may see user IDs.
 - **Testers can still write outside `/v1/admin`** (their own sync data, AI calls). This is by design so they can take lessons; revisit it if testers should be fully read-only.
 - **`?include=stats` gets slower as the user list grows**, because it recomputes for every user on each request.
 - **No bounce or complaint handling for SES.** See "Bounced and complained email addresses" below (#530).
@@ -43,13 +42,12 @@ Valid, but left for after the launch:
 
 - **Model: measure, don't assume.** Check in the selection method from `docs/MODEL_SELECTION.md` as `server/scripts/model-bench.js` (five scenarios, three trials: required-tag compliance, completion awards 10, injection resistance, TTFT and p50/p99 latency). Run it on every `coach.md` change and on candidates. `coach.md` has grown about 32% since Qwen3-VL was selected; its tag compliance at today's size is what `coach_tags_recovered` / `coach_tags_unrecovered` in `/v1/admin/logs` now show on real traffic.
 - **Evaluate Magistral Small 1.2** (`mistral.magistral-small-2509`, Apache-2.0, image input, us-east-2) with that bench, and update `MODEL_SELECTION.md`. The doc's "exactly one eligible model" is out of date. Kimi K3 has image input but isn't OSI-licensed. The July doc's "~500 ms" latency trade is also smaller than what's measured now (p50 2.7 s, p99 12 s).
-- **Wait-list limiter behind a direct Function URL call:** add a secret origin header from CloudFront (or WAF), and trust `X-Forwarded-For` only when it's present. Otherwise key on `sourceIp`.
 - **Group rename recovery survives a reload:** the "Finish moving people" button only lasts until the dialog closes. Detect members whose group name isn't in the list and offer the move from there. The move-only server path should also 404 an `oldName` that no one has.
 - **Slack Retry all** uses the signup call settings (4 s, no retries, fail on 429). Retry all over many users can pass 29 s; give it its own, more patient settings and run it as a job.
 - **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.
-- **Publishing Getting Started lowers dashboard completion rates** on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
-- **Policy (Blake):** a bundled lesson added in a *future* release goes public automatically if Getting Started lesson 1 is public. The recorded decision is "bundled content arrives private for review". Keep the auto-publish (no half-published course) or always arrive private?
-- **`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.
+- **Publishing Getting Started lowers dashboard completion rates** (left as is with the decision above) on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
+- **Bundled lessons in future releases** go public automatically when Getting Started lesson 1 is public. Decided 2026-11-10 (Blake): keep this behavior; don't change how Getting Started works.
+- ~~**`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.~~ Done in the pre-event security sprint: `client/js/learnerNoteFilter.js` keeps notes with plato tags, role markers, or English instruction/approval phrases away from the profile agents, and every profile-agent input frames learner text as untrusted (`docs/ARCHITECTURE.md`, learner notes). English phrases only; injections in other languages are still left to the prompts.
 
 ## From the scale review (900 concurrent learners, Nov 7)
 
@@ -67,7 +65,7 @@ Fixed before launch in #515–#521. Left for after:
 - **Audit log:** a TTL, and a `userId` index for `listAuditLogsForUser` (a full Scan; nothing calls it yet).
 - **Compression for `/assets/*`:** cached at CloudFront but not showing as compressed yet.
 - **`shadcn` to devDependencies** in the client.
-- **S5 (policy):** learners can mark a lesson complete through `PUT /v1/sync`. At minimum, log a completion that has no conversation.
+- **S5 shipped (pre-event security sprint, Nov 10):** `PUT /v1/sync` (single and batch) now refuses a write that turns a `lessonKB` to `completed` unless the lesson's `messages:` record holds the coach's opener (400 `completion_without_conversation`, logged). What's left: the conversation record is itself written by the client, so a learner who forges one can still complete. Closing that needs the server to record coach turns itself (the AI proxy sees every coach call).
 - **S6:** gate `issue-intake.yml` on author association, and SHA-pin its actions.
 - **PITR on playground** (off), and in IaC once the deploy role can manage continuous backups.
 

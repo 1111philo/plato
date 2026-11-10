@@ -107,6 +107,8 @@ lost something?* Yes → A. No → B.
 | `coach_tags_unrecovered` | warn | B | the same, but the repair didn't help: that turn recorded no progress (or no checklist/notes). A rising count means the coach prompt or model needs attention |
 | `conversation_too_long` | warn | A | a lesson's conversation is past the 340 KB budget even after trimming, so new turns aren't saved (progress still is). Reported by the client; the record is never sent |
 | `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |
+| `completion_without_conversation` | warn | B | `PUT /v1/sync` refused a lessonKB write that would complete a lesson with no coach conversation stored (S5; `{ custom, messagesRecord }`, no ids). A real client doesn't send these; a few is someone trying, a spike after a deploy is a client bug |
+| `completion_check_failed` | warn | B | the conversation read behind that check failed, so the completion was let through (fail open) |
 | `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
 | `email_suppressed` | warn | C | an email wasn't sent because SES has the address on its bounce/complaint list (`{ template, reason }`, no address). The admin sees it in Admin → Users; a burst after a bulk invite means a bad list |
 | `email_suppression_check_failed` | warn | B | plato couldn't ask SES about the suppression list (`{ op, error }`), so it sent anyway (fail open). Logged once per container; usually a missing `ses:*SuppressedDestination*` permission |
