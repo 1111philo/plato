@@ -130,9 +130,13 @@ reviewed. The job still completes when skipped so the required `review` status
 check is satisfied. The reviewer prompt instructs the agent to submit exactly
 ONE `gh pr review` call. Reviewers must call out live-user impact explicitly and
 end every review body with a one-line `User impact:` summary — because merges
-auto-deploy to prod, the review is the last human-free checkpoint. A
-post-action verify step fails the job if the agent exits without posting a
-review. Only one automated reviewer should be active at a time; if the hosted
+auto-deploy to prod, the review is the last human-free checkpoint. The
+review context (PR metadata, diff, changed files, test output) and the prompt
+are written to `.review/` inside the checkout: the reviewer's Read tool is
+limited to the working directory, and a context file in `/tmp` was denied,
+so some runs quit after a few turns without reviewing. If the first attempt
+posts nothing, the job runs the reviewer once more, and a final verify step
+fails the job if there's still no review for the head commit. Only one automated reviewer should be active at a time; if the hosted
 Claude GitHub App is also installed with auto-review enabled, disable it there to
 prevent duplicate reviews.
 
