@@ -66,6 +66,23 @@ describe('inactivity nudge', () => {
     assert.equal((await runInactivityNudges({ db, now: t })).nudged, 1, 'not stuck for 14 days');
   });
 
+  it('a bounced address is skipped (counted, not failed) and keeps its claim', async () => {
+    const supp = await import('../../src/lib/email-suppression.js');
+    supp._resetSuppression();
+    process.env.SUPPRESSED_EMAILS = 'ada@x.com:BOUNCE';
+    try {
+      await writeAutomations({ inactivityNudge: true }, db);
+      const t = Date.now() + 8 * DAY;
+      const r = await runInactivityNudges({ db, now: t });
+      assert.deepEqual([r.nudged, r.suppressed, r.errors], [0, 1, 0]);
+      assert.equal(mails.length, 0);
+      assert.equal((await runInactivityNudges({ db, now: t })).suppressed, 0, 'not retried every run');
+    } finally {
+      delete process.env.SUPPRESSED_EMAILS;
+      supp._resetSuppression();
+    }
+  });
+
   it('skips completed lessons, lessons they can’t see, and opted-out learners', async () => {
     await writeAutomations({ inactivityNudge: true }, db);
     await db.putSyncData('usr_ada', 'lessonKB:les-a', { status: 'completed', progress: 10 }, 1);

@@ -10,6 +10,7 @@ import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, hashToken } from '../lib/crypto.js';
 import { issueResetToken } from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
+import { listSuppressed, getSuppression, removeSuppression } from '../lib/email-suppression.js';
 import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
 import { validateUsername } from './auth.js';
 import { nameFields, readNameInput } from '../lib/names.js';
@@ -264,15 +265,17 @@ admin.post('/v1/admin/invites/bulk', async (c) => {
         invitedBy: adminUser.userId,
       });
       const emailResult = await sendInviteEmail(trimmed, inviteToken, adminUser.name);
-      results.push({ email: trimmed, status: 'sent', ...emailResult });
+      // Bounced/complained before: the invite exists, but SES would drop the email.
+      results.push({ email: trimmed, ...emailResult, status: emailResult.suppressed ? 'suppressed' : 'sent' });
     } catch (err) {
       results.push({ email: trimmed, status: 'error', reason: err.message });
     }
   }
 
   const sent = results.filter(r => r.status === 'sent').length;
+  const suppressed = results.filter(r => r.status === 'suppressed').length;
   const skipped = results.filter(r => r.status !== 'sent').length;
-  return c.json({ sent, skipped, total: results.length, results }, 201);
+  return c.json({ sent, skipped, suppressed, total: results.length, results }, 201);
 });
 
 // GET /v1/admin/invites
@@ -751,7 +754,52 @@ admin.post('/v1/admin/users/:userId/reset-password', async (c) => {
   }
   // An admin can always send one (no cooldown); only the newest link works.
   const token = await issueResetToken(user, { force: true });
-  await sendResetEmail(user.email, token);
+  const r = await sendResetEmail(user.email, token);
+  if (r?.suppressed) return c.json({ ok: true, suppressed: true, reason: r.reason, since: r.since });
+  return c.json({ ok: true });
+});
+
+// Addresses that belong to plato: users, pending invites, wait-list entries.
+// The SES suppression list is account-wide (other apps share the account),
+// so only these are ever shown or removable here.
+async function platoAddresses() {
+  const [users, invites] = await Promise.all([db.listAllUsers(), db.listInvites()]);
+  return new Set([
+    ...users.map((u) => u.email),
+    ...invites.filter((i) => i.status === 'pending' || i.status === 'waitlist').map((i) => i.email),
+  ].filter(Boolean).map((e) => String(e).toLowerCase()));
+}
+
+// GET /v1/admin/email-suppression — plato's addresses that SES won't deliver
+// to (bounced, or marked as spam). Empty when SES can't be asked.
+admin.get('/v1/admin/email-suppression', async (c) => {
+  const [list, ours] = await Promise.all([listSuppressed(), platoAddresses()]);
+  const suppressed = (list || []).filter((s) => ours.has(s.email))
+    .map(({ email, reason, since }) => ({ email, reason, since }));
+  return c.json({ suppressed });
+});
+
+// DELETE /v1/admin/email-suppression/:email — take one of plato's addresses
+// off the list, e.g. after the person fixed their mailbox. SES suppresses it
+// again if it bounces again.
+admin.delete('/v1/admin/email-suppression/:email', async (c) => {
+  const email = (c.req.param('email') || '').trim().toLowerCase();
+  if (!email || !(await platoAddresses()).has(email)) return c.json({ error: 'Not found' }, 404);
+  const current = await getSuppression(email);
+  try {
+    await removeSuppression(email);
+  } catch (err) {
+    logger.error('email_suppression_remove_failed', { error: err?.name || err?.message || String(err) });
+    return c.json({ error: 'Couldn’t update the bounce list. Try again.' }, 502);
+  }
+  const user = await db.getUserByEmail(email);
+  await db.createAuditLog({
+    action: 'email_suppression_removed',
+    userId: user?.userId || null,
+    email,
+    performedBy: c.get('user').userId,
+    details: { reason: current?.reason || null },
+  });
   return c.json({ ok: true });
 });
 
@@ -1070,6 +1118,84 @@ admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   };
   await db.putSyncData('_system', `lesson:${lessonId}`, data, current?.version || 0);
   return c.json({ lessonId, ok: true });
+});
+
+// POST /v1/admin/lessons/bulk-update — one visibility change for many lessons
+// (#526): body `{ lessonIds (≤ 500), status: 'public' | 'private',
+// share?: { mode: 'add' | 'replace', userIds } }`. Same rules as the
+// single-lesson PUT: true drafts can't change here (they have no lesson yet),
+// going public validates the markdown and stamps `publishedAt` once, a public
+// lesson's `sharedWith` is emptied, and the bundled marker stays. Everything
+// else on the record is kept. Reads every lesson once and writes 10 at a time.
+// Returns `{ updated, unchanged, failed: [{ lessonId, name, error }] }` and
+// writes one `lessons_bulk_updated` audit entry.
+export const LESSONS_BULK_MAX = 500;
+admin.post('/v1/admin/lessons/bulk-update', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const ids = Array.isArray(body.lessonIds) ? [...new Set(body.lessonIds.filter((x) => typeof x === 'string' && x))] : [];
+  if (!ids.length) return c.json({ error: 'Choose at least one lesson' }, 400);
+  if (ids.length > LESSONS_BULK_MAX) return c.json({ error: `Update at most ${LESSONS_BULK_MAX} lessons at a time` }, 400);
+  const status = body.status;
+  if (status !== 'public' && status !== 'private') return c.json({ error: 'Choose public or private' }, 400);
+  const share = body.share;
+  if (share !== undefined && share !== null) {
+    if (status !== 'private') return c.json({ error: 'Only private lessons are shared with people' }, 400);
+    if (!['add', 'replace'].includes(share.mode) || !Array.isArray(share.userIds) || !share.userIds.every((x) => typeof x === 'string')) {
+      return c.json({ error: 'share needs a mode (add or replace) and a list of user ids' }, 400);
+    }
+  }
+  const shareIds = share ? [...new Set(share.userIds)] : [];
+  if (shareIds.length) {
+    const known = new Set((await db.listAllUsers()).map((u) => u.userId));
+    const unknown = shareIds.filter((id) => !known.has(id));
+    if (unknown.length) return c.json({ error: `Unknown user: ${unknown[0]}` }, 400);
+  }
+
+  const adminUser = c.get('user');
+  const items = new Map((await db.getAllSyncData('_system'))
+    .filter((i) => i.dataKey.startsWith('lesson:'))
+    .map((i) => [i.dataKey.slice('lesson:'.length), i]));
+  const result = { updated: 0, unchanged: 0, failed: [] };
+  const now = new Date().toISOString();
+  await inBatches(ids, async (lessonId) => {
+    const item = items.get(lessonId);
+    if (!item) { result.failed.push({ lessonId, error: 'Lesson not found' }); return; }
+    const data = item.data || {};
+    const name = data.name || lessonId;
+    const current = normalizeStatus(data.status, !!data.markdown);
+    if (current === 'draft') { result.failed.push({ lessonId, name, error: 'Still a draft: finish creating it first' }); return; }
+    if (status === 'public' && current !== 'public') {
+      const mdError = validateLessonMarkdown(data.markdown);
+      if (mdError) { result.failed.push({ lessonId, name, error: mdError }); return; }
+    }
+    const before = data.sharedWith || [];
+    const sharedWith = status === 'public' ? []
+      : !share ? before
+        : share.mode === 'replace' ? shareIds
+          : [...new Set([...before, ...shareIds])];
+    const same = current === status && sharedWith.length === before.length && sharedWith.every((id) => before.includes(id));
+    if (same) { result.unchanged++; return; }
+    const next = {
+      ...data,
+      status,
+      sharedWith,
+      updatedBy: adminUser.userId,
+      updatedByName: adminUser.username || adminUser.email,
+      ...(!data.publishedAt && status === 'public' ? { publishedAt: now } : {}),
+    };
+    try {
+      await db.putSyncData('_system', `lesson:${lessonId}`, next, item.version || 0);
+      result.updated++;
+    } catch (e) {
+      // Changed by someone else since the read (version check).
+      result.failed.push({ lessonId, name, error: e?.name === 'ConditionalCheckFailedException' || /version/i.test(e?.message || '') ? 'Changed by someone else; try again' : (e?.message || 'Update failed') });
+    }
+  }, { size: 10 });
+  await db.createAuditLog({
+    action: 'lessons_bulk_updated', userId: null, performedBy: adminUser.userId,
+    details: { status, share: share ? { mode: share.mode, count: shareIds.length } : null, count: result.updated, failed: result.failed.length },
+  });
+  return c.json(result);
 });
 
 // PUT /v1/admin/lessons/:lessonId/conversation — auto-save conversation without requiring markdown

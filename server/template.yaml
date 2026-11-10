@@ -74,6 +74,16 @@ Resources:
                 - ses:SendRawEmail
               Resource: '*'
         - Statement:
+            - Effect: Allow
+              # The account-level bounce/complaint list (lib/email-suppression.js):
+              # plato checks it before sending and lets admins clear its own
+              # addresses. These actions don't support resource-level scoping.
+              Action:
+                - ses:GetSuppressedDestination
+                - ses:ListSuppressedDestinations
+                - ses:DeleteSuppressedDestination
+              Resource: '*'
+        - Statement:
             # plato's one model only (CLAUDE.md: `LLM` in ai-provider.js),
             # invoked by its bare model id, so no other model on this shared
             # account can be reached through plato.
@@ -154,6 +164,16 @@ Resources:
               Action:
                 - ses:SendEmail
                 - ses:SendRawEmail
+              Resource: '*'
+        - Statement:
+            - Effect: Allow
+              # The account-level bounce/complaint list (lib/email-suppression.js):
+              # plato checks it before sending and lets admins clear its own
+              # addresses. These actions don't support resource-level scoping.
+              Action:
+                - ses:GetSuppressedDestination
+                - ses:ListSuppressedDestinations
+                - ses:DeleteSuppressedDestination
               Resource: '*'
         - Statement:
             # plato's one model only (CLAUDE.md: `LLM` in ai-provider.js),

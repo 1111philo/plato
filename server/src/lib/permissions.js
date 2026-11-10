@@ -60,6 +60,7 @@ const R = [
   // Content: lessons and courses
   ['GET', '/v1/admin/lessons', 'content.read'],
   ['GET', '/v1/admin/lessons/:lessonId', 'content.read'],
+  ['POST', '/v1/admin/lessons/bulk-update', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId', 'content.write'],
   ['PUT', '/v1/admin/lessons/:lessonId/conversation', 'content.write'],
   ['DELETE', '/v1/admin/lessons/:lessonId', 'content.write'],
@@ -91,6 +92,8 @@ const R = [
   ['DELETE', '/v1/admin/users/:userId', 'users.write'],
   ['POST', '/v1/admin/users/:userId/reset-password', 'users.write'],
   ['PUT', '/v1/admin/users/:userId/role', 'users.role'],
+  ['GET', '/v1/admin/email-suppression', 'users.read'],
+  ['DELETE', '/v1/admin/email-suppression/:email', 'users.write'],
   ['GET', '/v1/admin/stats/lessons', 'stats.read'],
   // Invites
   ['GET', '/v1/admin/invites', 'invites.read'],

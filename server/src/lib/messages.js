@@ -163,7 +163,7 @@ export async function sendMessageEmails({ id }, { db = defaultDb, send } = {}) {
   if (!item || !item.data.email || item.data.status === 'sent') return { skipped: true };
   const message = item.data;
   const [people, classroom] = await Promise.all([recipientsOf(message, db), getClassroom()]);
-  const counts = { recipients: people.length, emailed: 0, optedOut: 0, blocked: 0, skipped: 0, failed: 0 };
+  const counts = { recipients: people.length, emailed: 0, optedOut: 0, blocked: 0, suppressed: 0, skipped: 0, failed: 0 };
   const queue = [...people];
   async function worker() {
     for (let u = queue.shift(); u; u = queue.shift()) {
@@ -190,7 +190,7 @@ export async function sendMessageEmails({ id }, { db = defaultDb, send } = {}) {
         });
         let r;
         try {
-          r = await sendNotificationEmail({ to: u.email, ...rendered, classroom, unsubscribe, ...(send ? { send } : {}) });
+          r = await sendNotificationEmail({ to: u.email, ...rendered, classroom, unsubscribe, template: 'message', ...(send ? { send } : {}) });
         } catch (err) {
           // SES said no: release the claim so a retry can try this person
           // again. (A run killed mid-send keeps its claims: at most once.)
@@ -203,6 +203,7 @@ export async function sendMessageEmails({ id }, { db = defaultDb, send } = {}) {
         }
         if (r.sent) counts.emailed++;
         else if (r.blocked) counts.blocked++;
+        else if (r.suppressed) counts.suppressed++; // bounced/complained: skipped, claim kept
         else counts.skipped++;
       } catch {
         counts.failed++;

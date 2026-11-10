@@ -108,6 +108,9 @@ lost something?* Yes → A. No → B.
 | `conversation_too_long` | warn | A | a lesson's conversation is past the 340 KB budget even after trimming, so new turns aren't saved (progress still is). Reported by the client; the record is never sent |
 | `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |
 | `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
+| `email_suppressed` | warn | C | an email wasn't sent because SES has the address on its bounce/complaint list (`{ template, reason }`, no address). The admin sees it in Admin → Users; a burst after a bulk invite means a bad list |
+| `email_suppression_check_failed` | warn | B | plato couldn't ask SES about the suppression list (`{ op, error }`), so it sent anyway (fail open). Logged once per container; usually a missing `ses:*SuppressedDestination*` permission |
+| `email_suppression_remove_failed` | error | B | an admin's "Remove from the bounce list" failed at SES; they saw an error and can retry |
 
 ## How to add a check
 

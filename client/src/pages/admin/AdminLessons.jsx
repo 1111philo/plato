@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
@@ -27,6 +27,11 @@ import AssistantMessage from '../../components/chat/AssistantMessage.jsx';
 import UserMessage from '../../components/chat/UserMessage.jsx';
 import ThinkingSpinner from '../../components/chat/ThinkingSpinner.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
+import FiltersMenu from './FiltersMenu.jsx';
+import BulkLessonsDialog from './BulkLessonsDialog.jsx';
+import { buildLessonFacets } from '../../lib/lessonFilters.js';
+import { describeFilters } from '../../lib/userFilters.js';
+import { can } from '../../lib/permissions.js';
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 
 const LESSON_COLUMNS_KEY = 'plato:columns:lessons:v1';
@@ -53,6 +58,13 @@ export default function AdminLessons() {
   const [lessons, setLessons] = useState([]);
   const [courses, setCourses] = useState([]); // units (stored course:*)
   const [programNames, setProgramNames] = useState(new Map());
+  const [programs, setPrograms] = useState([]);
+  // Filters (#527) and the bulk selection (#526). The selection is tied to
+  // the filters it was made under, like Admin → Users.
+  const [filters, setFilters] = useState({});
+  const [selection, setSelection] = useState({ key: '', ids: new Set() });
+  const [selectionNote, setSelectionNote] = useState('');
+  const [bulkOpen, setBulkOpen] = useState(false);
   // Editor data for the lesson open at /plato/lessons/:lessonId/edit.
   const [editing, setEditing] = useState(null); // { lessonId, conversation, readiness, needsAgentReply, isDraft, initialCourse, markdown }
   const [editorLoading, setEditorLoading] = useState(false);
@@ -76,6 +88,8 @@ export default function AdminLessons() {
     }
   }, [isNewRoute, navigate]);
 
+  const lessonFilter = useMemo(() => buildLessonFacets({ lessons, units: courses, programs }), [lessons, courses, programs]);
+
   // Unit id → "Course › Unit" for the lessons table (#408; units are stored
   // as course:* and keep the lesson's `course` field).
   const unitLabelById = new Map(courses.map((u) => {
@@ -97,6 +111,7 @@ export default function AdminLessons() {
       ]);
       setCourses(Array.isArray(units) ? units : []);
       setProgramNames(new Map((programs.programs || []).map((p) => [p.programId, p.name])));
+      setPrograms(programs.programs || []);
     } catch { /* non-blocking — list still renders */ }
   }
 
@@ -277,6 +292,33 @@ export default function AdminLessons() {
       );
     } },
   ];
+  const canBulk = can(user, 'content.write');
+  const scopeKey = JSON.stringify(filters);
+  const selectedIds = selection.key === scopeKey ? selection.ids : new Set();
+  const visibleLessons = lessons.filter((l) => lessonFilter.match(l, filters));
+  // True drafts have no lesson yet, so they can't change visibility.
+  const selectableIds = visibleLessons.filter((l) => l.status !== 'draft').map((l) => l.lessonId);
+  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selectedIds.has(id));
+  const someSelected = selectableIds.some((id) => selectedIds.has(id));
+  const filterChips = describeFilters(filters, lessonFilter.facets);
+  function changeSelection(ids, note) {
+    setSelection({ key: scopeKey, ids });
+    setSelectionNote(note ?? `${ids.size} selected.`);
+  }
+  function toggleLesson(id, on) {
+    const next = new Set(selectedIds);
+    if (on) next.add(id); else next.delete(id);
+    changeSelection(next);
+  }
+  function onBulkDone(result, { status, shared }) {
+    const what = status === 'public' ? 'Made public' : shared ? `Made private and shared with ${shared} ${shared === 1 ? 'person' : 'people'}` : 'Made private';
+    const parts = [`${what}: ${result.updated} ${result.updated === 1 ? 'lesson' : 'lessons'}.`];
+    if (result.unchanged) parts.push(`${result.unchanged} already were.`);
+    if (result.failed?.length) parts.push(`Not changed: ${result.failed.map((f) => `${f.name || f.lessonId} (${f.error})`).join('; ')}.`);
+    setMessage({ text: parts.join(' '), type: result.failed?.length ? 'error' : 'success' });
+    changeSelection(new Set(), 'Selection cleared.');
+    loadLessons();
+  }
   const shownColumns = visibleColumns(allColumns, columnPrefs);
   const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
 
@@ -327,29 +369,81 @@ export default function AdminLessons() {
 
       <BundledLessonNotices onChanged={loadLessons} onMessage={setMessage} />
 
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <FiltersMenu facets={lessonFilter.facets} filters={filters} onChange={setFilters} />
+        <span className="text-sm text-muted-foreground" role="status" aria-live="polite">
+          {visibleLessons.length === lessons.length ? `${lessons.length} lessons` : `${visibleLessons.length} of ${lessons.length} lessons`}
+        </span>
+      </div>
+      {filterChips.length > 0 && (
+        <ul className="flex flex-wrap items-center gap-2 mb-4" aria-label="Filters on">
+          {filterChips.map((chip) => (
+            <li key={chip.key} className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-3 py-1 text-xs">
+              <span><span className="font-medium">{chip.label}:</span> {chip.values.join(', ')}</span>
+              <button type="button" className="ml-1 leading-none hover:opacity-70" aria-label={`Remove the ${chip.label} filter`}
+                onClick={() => setFilters((prev) => ({ ...prev, [chip.key]: [] }))}>&times;</button>
+            </li>
+          ))}
+          <li><Button variant="ghost" size="xs" onClick={() => setFilters({})}>Clear all</Button></li>
+        </ul>
+      )}
+
+      <p className="sr-only" role="status" aria-live="polite">{selectionNote}</p>
+      {canBulk && selectedIds.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm" role="region" aria-label="Selected lessons">
+          <span className="font-medium">{selectedIds.size} selected</span>
+          <span className="flex-1" />
+          <Button size="sm" onClick={() => setBulkOpen(true)}>Update…</Button>
+          <Button size="sm" variant="ghost" onClick={() => changeSelection(new Set(), 'Selection cleared.')}>Clear selection</Button>
+        </div>
+      )}
+
       <Card className="p-0 overflow-hidden">
         <Table aria-label="Lessons">
           <TableHeader>
             <TableRow>
+              {canBulk && (
+                <TableHead className="w-10">
+                  <input type="checkbox" className="h-4 w-4 accent-primary align-middle" aria-label="Select all lessons shown"
+                    disabled={selectableIds.length === 0} checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    onChange={(e) => changeSelection(e.target.checked ? new Set(selectableIds) : new Set(), e.target.checked ? `All ${selectableIds.length} lessons shown selected.` : 'Selection cleared.')} />
+                </TableHead>
+              )}
               {shownColumns.map((col) => (
                 <TableHead key={col.id}>{col.id === 'actions' ? <span className="sr-only">Actions</span> : col.label}</TableHead>
               ))}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {lessons.map((c) => (
-              <TableRow key={c.lessonId}>
+            {visibleLessons.map((c) => (
+              <TableRow key={c.lessonId} data-state={selectedIds.has(c.lessonId) ? 'selected' : undefined}>
+                {canBulk && (
+                  <TableCell className="w-10">
+                    {c.status !== 'draft' && (
+                      <input type="checkbox" className="h-4 w-4 accent-primary align-middle" aria-label={`Select ${c.name || c.lessonId}`}
+                        checked={selectedIds.has(c.lessonId)} onChange={(e) => toggleLesson(c.lessonId, e.target.checked)} />
+                    )}
+                  </TableCell>
+                )}
                 {shownColumns.map((col) => <TableCell key={col.id} className={col.cellClass}>{col.cell(c)}</TableCell>)}
               </TableRow>
             ))}
-            {lessons.length === 0 && (
+            {visibleLessons.length === 0 && (
               <TableRow>
-                <TableCell colSpan={shownColumns.length} className="text-center py-6 text-muted-foreground">No lessons yet.</TableCell>
+                <TableCell colSpan={shownColumns.length + (canBulk ? 1 : 0)} className="text-center py-6 text-muted-foreground">{lessons.length ? 'No matching lessons.' : 'No lessons yet.'}</TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+
+      <BulkLessonsDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        lessonIds={[...selectedIds]}
+        onDone={onBulkDone}
+      />
 
       <ColumnsDialog
         open={columnsOpen}

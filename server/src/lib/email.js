@@ -1,6 +1,7 @@
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SES_FROM_EMAIL, APP_URL } from '../config.js';
 import { systemItem } from './system-cache.js';
+import { getSuppression, logSuppressed } from './email-suppression.js';
 
 const ses = new SESClient({});
 
@@ -77,6 +78,13 @@ export function resetEmailHtml(classroom, resetUrl) {
 
 export async function sendResetEmail(toEmail, resetToken) {
   const resetUrl = `${APP_URL}/reset-password?reset=${resetToken}`;
+
+  // SES would accept this and drop it (bounce/complaint list).
+  const suppression = await getSuppression(toEmail);
+  if (suppression) {
+    logSuppressed('password-reset', suppression);
+    return { suppressed: true, ...suppression, resetUrl };
+  }
 
   if (process.env.SKIP_EMAIL === 'true') {
     console.log(`[SKIP_EMAIL] Reset for ${toEmail}: ${resetUrl}`);
