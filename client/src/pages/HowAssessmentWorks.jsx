@@ -5,19 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
 /**
- * Public "How assessment works" page (#257): what plato's assessment actually
- * does, in plain language. Policy only people can set (human review, appeals,
- * AI-assisted work, what completion certifies) is marked "To be decided" until
- * the program team writes it; those notes are listed in docs/ARCHITECTURE.md
- * so they can't be forgotten. Same shell as the Privacy page.
+ * Public "How assessment works" page (#257): how plato's assessment works,
+ * technically, in plain language a learner can follow. It describes only what
+ * the system does; keep it in step with the coach prompt and completion code
+ * (docs/ARCHITECTURE.md). Same shell as the Privacy page.
  */
-function ToBeDecided({ children }) {
-  return (
-    <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
-      <strong className="font-semibold">To be decided by the program team:</strong> {children}
-    </p>
-  );
-}
 
 export default function HowAssessmentWorks() {
   const navigate = useNavigate();
@@ -100,7 +92,10 @@ export default function HowAssessmentWorks() {
               Instead, the coach looks for understanding: your own examples, your reasons, and your answers to its
               follow-up questions.
             </p>
-            <ToBeDecided>when and how you may use AI tools to help make the work you submit, and how to say that you did.</ToBeDecided>
+            <p className="text-muted-foreground">
+              Whatever tools you use, the coach checks off an objective only when you can explain the work yourself, so
+              expect it to ask about your choices.
+            </p>
           </section>
 
           <section className="space-y-2">
@@ -109,8 +104,10 @@ export default function HowAssessmentWorks() {
               Your classroom&rsquo;s team can read lesson conversations and progress to support you. They use a read-only
               view, and each use is recorded.
             </p>
-            <ToBeDecided>whether people review completed lessons (for example, spot-checks), and how you can ask for a
-              lesson&rsquo;s result to be reviewed if you think the coach got it wrong.</ToBeDecided>
+            <p className="text-muted-foreground">
+              The coach decides when a lesson is complete; no one has to approve it first. If you think the coach got
+              something wrong, say so in the chat: it will explain its reasoning, and you can add more evidence.
+            </p>
           </section>
 
           <section className="space-y-2">
@@ -119,8 +116,9 @@ export default function HowAssessmentWorks() {
               Lessons are grouped into units and courses. Completing a course means completing every lesson in it.
               Each course&rsquo;s lessons list the skills it covers.
             </p>
-            <ToBeDecided>what completing a course certifies, the competencies each course measures and the evidence each
-              requires, and the research or industry standards they&rsquo;re based on.</ToBeDecided>
+            <p className="text-muted-foreground">
+              plato records which lessons you&rsquo;ve completed. It doesn&rsquo;t give grades or certificates.
+            </p>
           </section>
 
           <section className="pt-4 border-t">
