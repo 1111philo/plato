@@ -116,3 +116,41 @@ test('wait-list entries can be selected and updated; someone on the list with an
     await api('POST', '/v1/admin/users/bulk-update', admin, { userIds: [learner.userId], set: { field: org.id, value: null } });
   }
 });
+
+test('admins invite selected wait-list entries in one go', async ({ page }) => {
+  const api = async (method, path, token, body) => {
+    const res = await page.request.fetch(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, data: body });
+    expect(res.ok(), `${method} ${path}`).toBe(true);
+    return res.json();
+  };
+  const { accessToken: admin } = await api('POST', '/v1/auth/login', null, { email: ADMIN.email, password: ADMIN.password });
+  await api('PUT', '/v1/admin/waitlist/settings', admin, { open: true });
+  for (const n of [1, 2, 3]) await api('POST', '/v1/waitlist', null, { name: `Bulk Invitee ${n}`, email: `bulk-invitee-${n}@example.com` });
+  await api('PUT', '/v1/admin/waitlist/settings', admin, { open: false });
+  try {
+    await login(page, ADMIN);
+    await page.goto('/plato/users');
+    await page.getByRole('button', { name: /^Filters/ }).click();
+    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Wait list/ }).click();
+    await page.keyboard.press('Escape');
+    const table = page.getByRole('table', { name: 'Users and invites' });
+    await table.getByRole('checkbox', { name: 'Select all users on this page' }).check();
+    const bar = page.getByRole('region', { name: 'Selected users' });
+    await bar.getByRole('button', { name: 'Invite 3 from the wait list' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Invite 3 from the wait list?' }).or(page.getByRole('dialog', { name: 'Invite 3 from the wait list?' }));
+    await expect(confirm).toBeVisible();
+    await confirm.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    await expectAccessible(page, { label: 'bulk invite confirm' });
+    await confirm.getByRole('button', { name: 'Invite 3' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Invited 3 people from the wait list.' })).toBeVisible();
+    const invites = await api('GET', '/v1/admin/invites', admin);
+    for (const n of [1, 2, 3]) expect((Array.isArray(invites) ? invites : invites.invites).some((i) => i.email === `bulk-invitee-${n}@example.com` && i.status === 'pending')).toBe(true);
+  } finally {
+    const invites = await api('GET', '/v1/admin/invites', admin);
+    for (const i of (Array.isArray(invites) ? invites : invites.invites).filter((x) => /^bulk-invitee-/.test(x.email))) {
+      await page.request.fetch(`/v1/admin/invites/${i.inviteToken}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } });
+    }
+    const { entries } = await api('GET', '/v1/admin/waitlist', admin);
+    for (const e of entries.filter((x) => /^bulk-invitee-/.test(x.email))) await api('DELETE', `/v1/admin/waitlist/${e.inviteToken}`, admin);
+  }
+});
