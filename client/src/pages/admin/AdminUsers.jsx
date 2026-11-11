@@ -515,6 +515,39 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); return false; }
   }
 
+  // Invite the selected wait-list entries (Users → select → Invite). Sent in
+  // batches of 25 so a large selection never nears the request timeout; the
+  // server sends 5 emails at a time (POST /v1/admin/waitlist/invite-bulk).
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  const [bulkInviting, setBulkInviting] = useState(false);
+  async function inviteSelectedWaitlist(tokens) {
+    setBulkInviting(true);
+    const all = [];
+    try {
+      for (let i = 0; i < tokens.length; i += 25) {
+        const { results } = await adminApi('POST', '/v1/admin/waitlist/invite-bulk', { tokens: tokens.slice(i, i + 25) });
+        all.push(...results);
+        setSelectionNote(`Invited ${Math.min(i + 25, tokens.length)} of ${tokens.length}…`);
+      }
+    } catch (e) {
+      all.push({ status: 'failed', error: e.message });
+    }
+    const invited = all.filter((r) => r.status === 'invited' && !r.suppressed).length;
+    const bounced = all.filter((r) => r.suppressed).length;
+    const skipped = all.filter((r) => r.status === 'skipped').length;
+    const failed = all.filter((r) => r.status === 'failed');
+    const left = tokens.length - all.length;
+    const parts = [`Invited ${invited} ${invited === 1 ? 'person' : 'people'} from the wait list.`];
+    if (bounced) parts.push(`${bounced} not sent (address bounced or marked as spam).`);
+    if (skipped) parts.push(`${skipped} already had an invite.`);
+    if (failed.length) parts.push(`${failed.length} failed${failed[0]?.error ? ` (${failed[0].error})` : ''}.`);
+    if (left > 0) parts.push(`${left} not attempted; select them and try again.`);
+    setMessage({ text: parts.join(' '), type: failed.length || left > 0 || bounced ? 'error' : 'success' });
+    setBulkInviting(false);
+    changeSelection(new Set(), 'Selection cleared.');
+    loadData({ quiet: true });
+  }
+
   async function removeFromWaitlist(token, email) {
     if (!confirm(`Remove ${email} from the wait list?`)) return false;
     try { await adminApi('DELETE', `/v1/admin/waitlist/${token}`); loadData(); return true; }
@@ -1055,6 +1088,11 @@ export default function AdminUsers() {
             </Button>
           )}
           <span className="flex-1" />
+          {selectedWaitlist.length > 0 && can(currentUser, 'waitlist.invite') && (
+            <Button size="sm" variant="outline" disabled={bulkInviting} onClick={() => setBulkInviteOpen(true)}>
+              {bulkInviting ? 'Inviting…' : `Invite ${selectedWaitlist.length} from the wait list`}
+            </Button>
+          )}
           <Button size="sm" onClick={() => setBulkOpen(true)}>Update…</Button>
           <Button size="sm" variant="ghost" onClick={() => changeSelection(new Set(), 'Selection cleared.')}>Clear selection</Button>
         </div>
@@ -1373,6 +1411,16 @@ export default function AdminUsers() {
           // quietly: the page spinner would unmount the open dialog.
           if (next.length < userFields.length) loadData({ quiet: true });
         }}
+      />
+
+      <ConfirmModal
+        open={bulkInviteOpen}
+        onOpenChange={setBulkInviteOpen}
+        title={`Invite ${selectedWaitlist.length} from the wait list?`}
+        message={`Each person gets an invite email, and leaves the wait list. Anyone who already has an account gets an invite to accept in the classroom.${selectedUserIds.length ? ' Selected users who already signed up aren’t affected.' : ''}`}
+        confirmLabel={`Invite ${selectedWaitlist.length}`}
+        variant="default"
+        onConfirm={() => { const tokens = [...selectedWaitlist]; setBulkInviteOpen(false); inviteSelectedWaitlist(tokens); }}
       />
 
       <BulkUpdateDialog

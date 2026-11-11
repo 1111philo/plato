@@ -465,27 +465,61 @@ admin.delete('/v1/admin/waitlist/key', async (c) => {
 // the email already has an account, the invite is tied to it (`forUserId`):
 // the person sees it in the classroom and by email, and accepting merges the
 // answers into their account (lib/account-invites.js).
-admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
-  const entry = await db.getInvite(c.req.param('token'));
-  if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
-
+// One invite from the wait list: { status, body }. Shared by the single and
+// bulk routes so they can't drift.
+async function inviteWaitlistEntry(entry, adminUser) {
+  if (!entry || entry.status !== 'waitlist') return { status: 404, body: { error: 'Wait-list entry not found' } };
   if (await db.getInviteByEmail(entry.email)) {
-    return c.json({ error: 'A pending invite already exists for this email' }, 409);
+    return { status: 409, body: { error: 'A pending invite already exists for this email' } };
   }
   const account = await db.getUserByEmail(entry.email);
-
-  const adminUser = c.get('user');
   const inviteToken = generateInviteToken();
   await db.createInvite({
     inviteToken, email: entry.email, invitedBy: adminUser.userId, profile: entry.profile || null,
     ...(account ? { forUserId: account.userId } : {}),
   });
   await db.deleteInvite(entry.inviteToken);
-
   const result = account
     ? await sendAccountInviteEmail(entry.email, adminUser.name, { firstName: nameFields(account).firstName })
     : await sendInviteEmail(entry.email, inviteToken, adminUser.name, { firstName: entry.profile?.firstName });
-  return c.json({ inviteToken, email: entry.email, existingAccount: !!account, ...result }, 201);
+  return { status: 201, body: { inviteToken, email: entry.email, existingAccount: !!account, ...result } };
+}
+
+admin.post('/v1/admin/waitlist/:token/invite', async (c) => {
+  const entry = await db.getInvite(c.req.param('token'));
+  const { status, body } = await inviteWaitlistEntry(entry, c.get('user'));
+  return c.json(body, status);
+});
+
+// POST /v1/admin/waitlist/invite-bulk — body { tokens } (≤ 50 per call; the
+// client sends larger selections in batches so no request nears the 60 s
+// timeout). Same rules as the single invite, 5 sends at a time (SES allows
+// 14/s). Returns { results: [{ token, email?, status: 'invited' | 'skipped' |
+// 'failed', existingAccount?, suppressed?, error? }] } and writes one
+// `waitlist_bulk_invited` audit entry.
+export const WAITLIST_INVITE_BATCH = 50;
+admin.post('/v1/admin/waitlist/invite-bulk', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const tokens = Array.isArray(body.tokens) ? [...new Set(body.tokens.filter((t) => typeof t === 'string' && t))] : [];
+  if (!tokens.length) return c.json({ error: 'Choose at least one wait-list entry' }, 400);
+  if (tokens.length > WAITLIST_INVITE_BATCH) return c.json({ error: `Invite at most ${WAITLIST_INVITE_BATCH} at a time` }, 400);
+  const adminUser = c.get('user');
+  const results = [];
+  await inBatches(tokens, async (token) => {
+    try {
+      const entry = await db.getInvite(token);
+      const { status, body: r } = await inviteWaitlistEntry(entry, adminUser);
+      if (status === 201) results.push({ token, email: r.email, status: 'invited', existingAccount: r.existingAccount, ...(r.suppressed ? { suppressed: true } : {}) });
+      else results.push({ token, email: entry?.email, status: status === 409 ? 'skipped' : 'failed', error: r.error });
+    } catch (err) {
+      results.push({ token, status: 'failed', error: err?.message || 'Invite failed' });
+    }
+  }, { size: 5 });
+  await db.createAuditLog({
+    action: 'waitlist_bulk_invited', userId: null, performedBy: adminUser.userId,
+    details: { count: results.filter((r) => r.status === 'invited').length, skipped: results.filter((r) => r.status === 'skipped').length, failed: results.filter((r) => r.status === 'failed').length },
+  });
+  return c.json({ results });
 });
 
 // PUT /v1/admin/waitlist/:token — edit an entry's name, email, group, and
