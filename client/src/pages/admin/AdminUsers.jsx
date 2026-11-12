@@ -548,6 +548,36 @@ export default function AdminUsers() {
     loadData({ quiet: true });
   }
 
+  // Resend the selected invites, expired or not: each gets a fresh 7-day link
+  // with the same details (POST /v1/admin/invites/resend-bulk, batches of 25).
+  const [bulkResendOpen, setBulkResendOpen] = useState(false);
+  const [bulkResending, setBulkResending] = useState(false);
+  async function resendSelectedInvites(emails) {
+    setBulkResending(true);
+    const all = [];
+    try {
+      for (let i = 0; i < emails.length; i += 25) {
+        const { results } = await adminApi('POST', '/v1/admin/invites/resend-bulk', { emails: emails.slice(i, i + 25) });
+        all.push(...results);
+        setSelectionNote(`Resent ${Math.min(i + 25, emails.length)} of ${emails.length}…`);
+      }
+    } catch (e) {
+      all.push({ status: 'failed', error: e.message });
+    }
+    const sent = all.filter((r) => r.status === 'sent' && !r.suppressed).length;
+    const bounced = all.filter((r) => r.suppressed).length;
+    const failed = all.filter((r) => r.status === 'failed');
+    const left = emails.length - all.length;
+    const parts = [`Resent ${sent} ${sent === 1 ? 'invite' : 'invites'} with a new 7-day link.`];
+    if (bounced) parts.push(`${bounced} not sent (address bounced or marked as spam).`);
+    if (failed.length) parts.push(`${failed.length} failed${failed[0]?.error ? ` (${failed[0].error})` : ''}.`);
+    if (left > 0) parts.push(`${left} not attempted; select them and try again.`);
+    setMessage({ text: parts.join(' '), type: failed.length || left > 0 || bounced ? 'error' : 'success' });
+    setBulkResending(false);
+    changeSelection(new Set(), 'Selection cleared.');
+    loadData({ quiet: true });
+  }
+
   async function removeFromWaitlist(token, email) {
     if (!confirm(`Remove ${email} from the wait list?`)) return false;
     try { await adminApi('DELETE', `/v1/admin/waitlist/${token}`); loadData(); return true; }
@@ -739,12 +769,13 @@ export default function AdminUsers() {
   const selectedIds = selection.key === scopeKey ? selection.ids : new Set();
   // Signed-up users and wait-list entries can be selected (by row key:
   // userId or the entry's invite token); pending invites can't.
-  const selectable = (i) => i._type === 'user' || i._type === 'waitlist';
+  const selectable = (i) => i._type === 'user' || i._type === 'waitlist' || (i._type === 'invite' && !i._invite.isLink && !!i.email);
   const matchingUserIds = sortedList.filter(selectable).map((i) => i._key);
   const pageUserIds = pageItems.filter(selectable).map((i) => i._key);
   const selectedItems = combinedList.filter((i) => selectable(i) && selectedIds.has(i._key));
   const selectedUserIds = selectedItems.filter((i) => i._type === 'user').map((i) => i._key);
   const selectedWaitlist = selectedItems.filter((i) => i._type === 'waitlist').map((i) => i._key);
+  const selectedInviteEmails = selectedItems.filter((i) => i._type === 'invite').map((i) => i.email);
   const pageAllSelected = pageUserIds.length > 0 && pageUserIds.every((id) => selectedIds.has(id));
   const pageSomeSelected = pageUserIds.some((id) => selectedIds.has(id));
   function changeSelection(next, note) {
@@ -953,7 +984,9 @@ export default function AdminUsers() {
       )
         : item._type === 'invite' ? (
           <>
-            <Badge variant="outline">Invited</Badge>
+            {item._invite.expired
+              ? <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-900">Invite expired</Badge>
+              : <Badge variant="outline">Invited</Badge>}
             {item._invite.existingAccount && <span className="block text-xs text-muted-foreground mt-1">Has an account</span>}
           </>
         )
@@ -1093,7 +1126,12 @@ export default function AdminUsers() {
               {bulkInviting ? 'Inviting…' : `Invite ${selectedWaitlist.length} from the wait list`}
             </Button>
           )}
-          <Button size="sm" onClick={() => setBulkOpen(true)}>Update…</Button>
+          {selectedInviteEmails.length > 0 && can(currentUser, 'invites.write') && (
+            <Button size="sm" variant="outline" disabled={bulkResending} onClick={() => setBulkResendOpen(true)}>
+              {bulkResending ? 'Resending…' : `Resend ${selectedInviteEmails.length} ${selectedInviteEmails.length === 1 ? 'invite' : 'invites'}`}
+            </Button>
+          )}
+          {selectedUserIds.length + selectedWaitlist.length > 0 && <Button size="sm" onClick={() => setBulkOpen(true)}>Update…</Button>}
           <Button size="sm" variant="ghost" onClick={() => changeSelection(new Set(), 'Selection cleared.')}>Clear selection</Button>
         </div>
       )}
@@ -1421,6 +1459,16 @@ export default function AdminUsers() {
         confirmLabel={`Invite ${selectedWaitlist.length}`}
         variant="default"
         onConfirm={() => { const tokens = [...selectedWaitlist]; setBulkInviteOpen(false); inviteSelectedWaitlist(tokens); }}
+      />
+
+      <ConfirmModal
+        open={bulkResendOpen}
+        onOpenChange={setBulkResendOpen}
+        title={`Resend ${selectedInviteEmails.length} ${selectedInviteEmails.length === 1 ? 'invite' : 'invites'}?`}
+        message="Each person gets a new invite email with a link that works for 7 days. Their old link stops working."
+        confirmLabel={`Resend ${selectedInviteEmails.length}`}
+        variant="default"
+        onConfirm={() => { const emails = [...selectedInviteEmails]; setBulkResendOpen(false); resendSelectedInvites(emails); }}
       />
 
       <BulkUpdateDialog

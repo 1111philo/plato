@@ -218,6 +218,16 @@ if (hasInviteProfile.count === 0) {
   sqlite.exec('ALTER TABLE invites ADD COLUMN profile TEXT');
 }
 
+// Email invites keep an `expiresAt` instead of `ttl`, so they survive expiry
+// (lib/invite-expiry.js). After the nullable-email rebuild above, which
+// recreates the table with a fixed column list.
+const hasExpiresAt = sqlite.prepare(
+  "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'expiresAt'"
+).get();
+if (hasExpiresAt.count === 0) {
+  sqlite.exec('ALTER TABLE invites ADD COLUMN expiresAt INTEGER');
+}
+
 // Invite for an existing account (#363): the user it's for
 const hasInviteForUser = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'forUserId'"
@@ -367,17 +377,18 @@ const db = {
 
   async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
-    const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
+    const expires = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     sqlite.prepare(
-      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, isLink, usageCount, maxUsages, profile, forUserId)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO invites (inviteToken, email, invitedBy, slackUserId, status, createdAt, ttl, expiresAt, isLink, usageCount, maxUsages, profile, forUserId)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       inviteToken,
       email ? email.toLowerCase() : null,
       invitedBy,
       slackUserId || null,
       now.toISOString(),
-      ttl,
+      isLink ? expires : null, // only link invites are deleted when they expire
+      isLink ? null : expires,
       isLink ? 1 : 0,
       usageCount,
       maxUsages,
@@ -425,6 +436,12 @@ const db = {
 
   async getInvite(inviteToken) {
     return rowToInvite(sqlite.prepare('SELECT * FROM invites WHERE inviteToken = ?').get(inviteToken));
+  },
+
+  // m006 (see db-dynamodb.js).
+  async keepInviteOnExpiry(inviteToken, ttl) {
+    const r = sqlite.prepare("UPDATE invites SET expiresAt = ttl, ttl = NULL WHERE inviteToken = ? AND status = 'pending' AND ttl = ?").run(inviteToken, ttl);
+    return r.changes > 0;
   },
 
   async markInviteUsed(inviteToken) {
