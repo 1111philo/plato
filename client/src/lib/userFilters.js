@@ -7,7 +7,7 @@ import { normalizeRole, ROLE_LABELS } from './permissions.js';
 import { matchesFieldFilter } from './userFields.js';
 
 const NO_GROUP = '__none';
-const statusOf = (i) => (i._type === 'user' ? 'active' : i._type === 'invite' ? 'invited' : 'waitlist');
+const statusOf = (i) => (i._type === 'user' ? 'active' : i._type === 'invite' ? (i._invite?.expired ? 'expired' : 'invited') : 'waitlist');
 
 /** The value(s) an item has for a facet; null means "this facet doesn't apply" (it's filtered out). */
 function valuesOf(item, facet) {
@@ -32,7 +32,7 @@ function valuesOf(item, facet) {
 export function buildFacets({ items, groups = [], userFields = [], slack = false }) {
   const facets = [
     { key: 'status', label: 'Status', options: [
-      { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'waitlist', label: 'Wait list' },
+      { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'expired', label: 'Invite expired' }, { value: 'waitlist', label: 'Wait list' },
     ] },
     { key: 'role', label: 'Role', options: ['admin', 'educator', 'learner', 'tester'].map((r) => ({ value: r, label: ROLE_LABELS[r] })) },
   ];

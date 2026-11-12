@@ -15,6 +15,7 @@ import { seedDefaultContent } from '../lib/seed.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
 import { nameFields, readNameInput } from '../lib/names.js';
+import { inviteExpired } from '../lib/invite-expiry.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -156,7 +157,7 @@ auth.get('/v1/auth/invite/:token', async (c) => {
   // An invite for an existing account (forUserId) is accepted in the
   // classroom, never through signup.
   if (!invite || invite.status !== 'pending' || invite.forUserId
-    || (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000))) {
+    || inviteExpired(invite)) {
     return c.json({ error: 'Invalid or expired invite' }, 404);
   }
   if (!invite.email) {
@@ -196,8 +197,8 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 
-  // Check TTL hasn't passed (DynamoDB TTL deletion is async)
-  if (invite.ttl && invite.ttl < Math.floor(Date.now() / 1000)) {
+  // Expired (lib/invite-expiry.js): kept for Resend, but the link no longer works.
+  if (inviteExpired(invite)) {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 

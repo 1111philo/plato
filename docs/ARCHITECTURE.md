@@ -638,13 +638,15 @@ refresh simply rotates the old way).
 
 ## Invite system
 
-Admins invite users via email or shareable link. Invites expire after 7 days (TTL enforced in DynamoDB/SQLite). All invite operations are audit-logged.
+Admins invite users via email or shareable link. An invite's link works for 7 days. All invite operations are audit-logged.
+
+**Expired email invites are kept** (`server/src/lib/invite-expiry.js`). Email invites store `expiresAt`, which DynamoDB doesn't act on, so an unused invite isn't deleted when it expires: it keeps the person's details (a wait-list invite's name, group, and answers; inviting removes the wait-list entry, so the invite is the only copy). An expired invite shows **Invite expired** in Admin → Users (also a Status filter); signup refuses its link. **Resend** (row button, or select invites → **Resend N invites**, `POST /v1/admin/invites/resend-bulk`, ≤ 50 per call, batches of 25 from the client, 5 sends at a time) replaces it with a fresh 7-day invite with the same details. Link invites still use `ttl` and are deleted on expiry. Migration `m006_keep_invites_on_expiry` moved existing pending email invites from `ttl` to `expiresAt` (2026-11-12 prod dry run: 1,287 invites). Before this, every unused invite was deleted after 7 days.
 
 ### Email invites
 
 - **Creation:** `POST /v1/admin/invites` (single) or `/v1/admin/invites/bulk` (up to 200). Bulk supports CSV upload.
 - **Delivery:** SES email (`server/src/lib/email.js`) with signup URL: `{APP_URL}/signup?token={inviteToken}`. Every interpolated value is escaped (`escapeHtml`), the theme color must be a hex color (`safeColor`), and the From display name is sanitized (`fromHeader`) — classroom and inviter names are admin-editable.
-- **Validation:** Invite token must exist, status `pending`, TTL not expired, and **email must match** the invite.
+- **Validation:** Invite token must exist, status `pending`, not expired (`inviteExpired`: `expiresAt`, or `ttl` on older and link invites), and **email must match** the invite.
 - **One-time:** Marked `used` on signup; cannot be reused.
 
 ### Link invites (shareable, reusable)

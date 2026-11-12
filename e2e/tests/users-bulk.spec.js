@@ -154,3 +154,46 @@ test('admins invite selected wait-list entries in one go', async ({ page }) => {
     for (const e of entries.filter((x) => /^bulk-invitee-/.test(x.email))) await api('DELETE', `/v1/admin/waitlist/${e.inviteToken}`, admin);
   }
 });
+
+test('an expired invite is kept, marked, and resent in bulk with a fresh link', async ({ page }) => {
+  const api = async (method, path, token, body) => {
+    const res = await page.request.fetch(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, data: body });
+    expect(res.ok(), `${method} ${path}`).toBe(true);
+    return res.json();
+  };
+  const { accessToken: admin } = await api('POST', '/v1/auth/login', null, { email: ADMIN.email, password: ADMIN.password });
+  const email = 'expired-invitee@example.com';
+  await api('POST', '/v1/admin/invites', admin, { email });
+  // Age it past its 7 days, straight in the e2e database.
+  const { execFileSync } = await import('node:child_process');
+  const { DB_PATH } = await import('../playwright.config.js');
+  execFileSync(process.execPath, ['-e', `const D=require('better-sqlite3');const d=new D(process.argv[1]);d.prepare("UPDATE invites SET expiresAt=? WHERE email=?").run(Math.floor(Date.now()/1000)-60, process.argv[2]);d.close();`, DB_PATH, email], { cwd: new URL('../../server/', import.meta.url) });
+  try {
+    await login(page, ADMIN);
+    await page.goto('/plato/users');
+    const table = page.getByRole('table', { name: 'Users and invites' });
+    const row = table.getByRole('row').filter({ hasText: email });
+    await expect(row).toContainText('Invite expired');
+    await page.getByRole('button', { name: /^Filters/ }).click();
+    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Invite expired/ }).click();
+    await page.keyboard.press('Escape');
+    await row.getByRole('checkbox', { name: `Select ${email}` }).check();
+    const bar = page.getByRole('region', { name: 'Selected users' });
+    await expect(bar.getByRole('button', { name: 'Update…' })).toHaveCount(0); // invites have no fields
+    await bar.getByRole('button', { name: 'Resend 1 invite' }).click();
+    const confirm = page.getByRole('alertdialog', { name: 'Resend 1 invite?' }).or(page.getByRole('dialog', { name: 'Resend 1 invite?' }));
+    await confirm.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    await expectAccessible(page, { label: 'bulk resend confirm' });
+    await confirm.getByRole('button', { name: 'Resend 1' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Resent 1 invite with a new 7-day link.' })).toBeVisible();
+    const list = await api('GET', '/v1/admin/invites', admin);
+    const fresh = (Array.isArray(list) ? list : list.invites).filter((i) => i.email === email && i.status === 'pending');
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0].expired).toBe(false);
+  } finally {
+    const list = await api('GET', '/v1/admin/invites', admin);
+    for (const i of (Array.isArray(list) ? list : list.invites).filter((x) => x.email === email)) {
+      await page.request.fetch(`/v1/admin/invites/${i.inviteToken}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } });
+    }
+  }
+});

@@ -153,6 +153,33 @@ export const MIGRATIONS = [
       return result;
     },
   },
+  {
+    // Pending email invites used DynamoDB's ttl, so an unused invite was
+    // deleted after 7 days, and with it a wait-list person's details
+    // (lib/invite-expiry.js). Move ttl to expiresAt: the link still expires,
+    // the invite stays for Resend. Conditional per invite (still pending,
+    // same ttl), so a retry or a concurrent use changes nothing. Rollback:
+    // older releases ignore expiresAt and treat these invites as not
+    // expiring, so nobody is lost either way.
+    id: 'm006_keep_invites_on_expiry',
+    description: 'keep pending email invites when they expire (ttl → expiresAt)',
+    async run({ db, dryRun }) {
+      const result = { scanned: 0, updated: 0, skipped: 0, errors: 0 };
+      for (const inv of await db.listInvites()) {
+        result.scanned++;
+        const isLink = inv.isLink === true || inv.isLink === 1;
+        if (inv.status !== 'pending' || isLink || !inv.email || typeof inv.ttl !== 'number') { result.skipped++; continue; }
+        if (dryRun) { result.updated++; continue; }
+        try {
+          if (await db.keepInviteOnExpiry(inv.inviteToken, inv.ttl)) result.updated++;
+          else result.skipped++;
+        } catch {
+          result.errors++;
+        }
+      }
+      return result;
+    },
+  },
 ];
 
 function emptyResult() {

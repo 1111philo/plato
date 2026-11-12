@@ -23,6 +23,7 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { classifyCache, kickoffAsyncRefresh, canRefreshAsync } from '../lib/lesson-stats-cache.js';
 import { normalizeStatus, publicLessonIds } from '../lib/lesson-visibility.js';
 import { inBatches } from '../lib/batches.js';
+import { inviteExpired, inviteExpiresAt } from '../lib/invite-expiry.js';
 import {
   readWaitlistConfig, writeWaitlistConfig, generateWaitlistApiKey, validateWaitlistEntry,
 } from '../lib/waitlist.js';
@@ -288,35 +289,68 @@ admin.get('/v1/admin/invites', async (c) => {
     isLink: !!inv.isLink,
     existingAccount: !!inv.forUserId,
     createdAt: inv.createdAt,
+    ...(inv.status === 'pending' && !inv.isLink ? {
+      expiresAt: inviteExpiresAt(inv) ? new Date(inviteExpiresAt(inv) * 1000).toISOString() : null,
+      expired: inviteExpired(inv),
+    } : {}),
   })));
 });
 
 // POST /v1/admin/invites/resend — resend invite to an email with a pending invite
-admin.post('/v1/admin/invites/resend', async (c) => {
-  const { email } = await c.req.json();
-  if (!email) return c.json({ error: 'Email is required' }, 400);
-
-  const pendingInvite = await db.getInviteByEmail(email.toLowerCase());
-  if (!pendingInvite) {
-    return c.json({ error: 'No pending invite found for this email' }, 404);
-  }
-
-  // Delete old invite and create a fresh one
+// One resend: { status, body }. A pending invite (expired or not) is replaced
+// by a fresh one with a new 7-day link, keeping the wait-list details.
+async function resendInvite(email, adminUser) {
+  const addr = String(email || '').toLowerCase();
+  const pendingInvite = addr ? await db.getInviteByEmail(addr) : null;
+  if (!pendingInvite) return { status: 404, body: { error: 'No pending invite found for this email' } };
   await db.deleteInvite(pendingInvite.inviteToken);
-  const adminUser = c.get('user');
   const inviteToken = generateInviteToken();
   await db.createInvite({
     inviteToken,
-    email: email.toLowerCase(),
+    email: addr,
     invitedBy: adminUser.userId,
     profile: pendingInvite.profile || null, // keep a wait-list entry's details
     ...(pendingInvite.forUserId ? { forUserId: pendingInvite.forUserId } : {}),
   });
-
   const result = pendingInvite.forUserId
-    ? await sendAccountInviteEmail(email.toLowerCase(), adminUser.name, { firstName: pendingInvite.profile?.firstName })
-    : await sendInviteEmail(email.toLowerCase(), inviteToken, adminUser.name, { firstName: pendingInvite.profile?.firstName });
-  return c.json({ inviteToken, email: email.toLowerCase(), ...result }, 201);
+    ? await sendAccountInviteEmail(addr, adminUser.name, { firstName: pendingInvite.profile?.firstName })
+    : await sendInviteEmail(addr, inviteToken, adminUser.name, { firstName: pendingInvite.profile?.firstName });
+  return { status: 201, body: { inviteToken, email: addr, ...result } };
+}
+
+admin.post('/v1/admin/invites/resend', async (c) => {
+  const { email } = await c.req.json();
+  if (!email) return c.json({ error: 'Email is required' }, 400);
+  const { status, body } = await resendInvite(email, c.get('user'));
+  return c.json(body, status);
+});
+
+// POST /v1/admin/invites/resend-bulk — body { emails } (≤ 50 per call; the
+// client batches). Each pending invite, expired or not, gets a fresh link,
+// 5 sends at a time. Returns { results: [{ email, status: 'sent' | 'failed',
+// suppressed?, error? }] } and writes one `invites_bulk_resent` audit entry.
+export const INVITE_RESEND_BATCH = 50;
+admin.post('/v1/admin/invites/resend-bulk', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const emails = Array.isArray(body.emails) ? [...new Set(body.emails.filter((e) => typeof e === 'string' && e).map((e) => e.toLowerCase()))] : [];
+  if (!emails.length) return c.json({ error: 'Choose at least one invite' }, 400);
+  if (emails.length > INVITE_RESEND_BATCH) return c.json({ error: `Resend at most ${INVITE_RESEND_BATCH} at a time` }, 400);
+  const adminUser = c.get('user');
+  const results = [];
+  await inBatches(emails, async (email) => {
+    try {
+      const { status, body: r } = await resendInvite(email, adminUser);
+      if (status === 201) results.push({ email, status: 'sent', ...(r.suppressed ? { suppressed: true } : {}) });
+      else results.push({ email, status: 'failed', error: r.error });
+    } catch (err) {
+      results.push({ email, status: 'failed', error: err?.message || 'Resend failed' });
+    }
+  }, { size: 5 });
+  await db.createAuditLog({
+    action: 'invites_bulk_resent', userId: null, performedBy: adminUser.userId,
+    details: { count: results.filter((r) => r.status === 'sent').length, failed: results.filter((r) => r.status === 'failed').length },
+  });
+  return c.json({ results });
 });
 
 // DELETE /v1/admin/invites/:token
