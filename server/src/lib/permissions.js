@@ -100,6 +100,7 @@ const R = [
   ['POST', '/v1/admin/invites', 'invites.write'],
   ['POST', '/v1/admin/invites/bulk', 'invites.write'],
   ['POST', '/v1/admin/invites/resend', 'invites.write'],
+  ['POST', '/v1/admin/invites/resend-bulk', 'invites.write'],
   ['DELETE', '/v1/admin/invites/:token', 'invites.write'],
   ['GET', '/v1/admin/invites/link', 'invites.read'],
   ['POST', '/v1/admin/invites/link', 'invites.write'],

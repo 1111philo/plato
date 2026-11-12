@@ -209,13 +209,15 @@ const db = {
 
   async createInvite({ inviteToken, email, invitedBy, slackUserId, isLink = false, usageCount = 0, maxUsages = null, profile = null, forUserId = null }) {
     const now = new Date();
-    const ttl = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
+    const expires = Math.floor(now.getTime() / 1000) + INVITE_TTL_DAYS * 86400;
     const item = {
       inviteToken,
       invitedBy,
       status: 'pending',
       createdAt: now.toISOString(),
-      ttl,
+      // Email invites are kept when they expire (lib/invite-expiry.js); only
+      // link invites use DynamoDB's ttl and get deleted.
+      ...(isLink ? { ttl: expires } : { expiresAt: expires }),
       isLink,
       usageCount,
     };
@@ -304,6 +306,25 @@ const db = {
       Key: { inviteToken },
     }));
     return result.Item || null;
+  },
+
+  // m006: keep a pending email invite when it expires. Moves `ttl` (which
+  // DynamoDB deletes on) to `expiresAt`, only if it's still pending with that ttl.
+  async keepInviteOnExpiry(inviteToken, ttl) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: INVITES_TABLE,
+        Key: { inviteToken },
+        UpdateExpression: 'SET expiresAt = :t REMOVE #ttl',
+        ConditionExpression: '#s = :pending AND #ttl = :t',
+        ExpressionAttributeNames: { '#s': 'status', '#ttl': 'ttl' },
+        ExpressionAttributeValues: { ':pending': 'pending', ':t': ttl },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
   },
 
   async markInviteUsed(inviteToken) {

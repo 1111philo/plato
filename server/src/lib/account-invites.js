@@ -10,6 +10,7 @@
  * valid. The name is never copied, and nothing already set is overwritten.
  */
 import defaultDb from './db.js';
+import { inviteExpired } from './invite-expiry.js';
 import { getFieldDefinitions, validateValue } from './user-fields.js';
 
 /** What accepting would change: `{ updates, userGroup, fields }`. Pure. */
@@ -29,7 +30,7 @@ export function mergeProfile(user, profile, settings) {
   return { updates, userGroup: updates.userGroup || null, fields };
 }
 
-const live = (inv) => inv && inv.status === 'pending' && !(inv.ttl && inv.ttl < Math.floor(Date.now() / 1000));
+const live = (inv) => inv && inv.status === 'pending' && !inviteExpired(inv);
 
 /** The user's pending account invite, or null. */
 export async function pendingInviteFor(user, { db = defaultDb } = {}) {

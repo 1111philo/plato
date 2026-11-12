@@ -71,3 +71,19 @@ describe('Slack filter', () => {
     assert.deepEqual(describeFilters({ slack: ['unlinked'] }, f), [{ key: 'slack', label: 'Slack', values: ['Not linked'] }]);
   });
 });
+
+describe('expired invites', () => {
+  const list = [
+    { _type: 'invite', email: 'a', _invite: { expired: true } },
+    { _type: 'invite', email: 'b', _invite: { expired: false } },
+    { _type: 'user', email: 'c', _user: {} },
+  ];
+  it('Status splits invites into Invited and Invite expired', () => {
+    const f = buildFacets({ items: list });
+    const status = f.find((x) => x.key === 'status');
+    const count = (v) => status.options.find((o) => o.value === v).count;
+    assert.equal(count('expired'), 1);
+    assert.equal(count('invited'), 1);
+    assert.deepEqual(list.filter((i) => matchesFilters(i, { status: ['expired'] }, f)).map((i) => i.email), ['a']);
+  });
+});
