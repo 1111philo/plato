@@ -40,6 +40,7 @@ import FiltersMenu from './FiltersMenu.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
 import GroupsDialog from './GroupsDialog.jsx';
 import BulkUpdateDialog from './BulkUpdateDialog.jsx';
+import ChangeInviteEmailDialog from './ChangeInviteEmailDialog.jsx';
 import NameFields from '../../components/NameFields.jsx';
 
 const PAGE_SIZE = 20;
@@ -551,6 +552,7 @@ export default function AdminUsers() {
   // Resend the selected invites, expired or not: each gets a fresh 7-day link
   // with the same details (POST /v1/admin/invites/resend-bulk, batches of 25).
   const [bulkResendOpen, setBulkResendOpen] = useState(false);
+  const [changeEmailInvite, setChangeEmailInvite] = useState(null); // { inviteToken, email }
   const [bulkResending, setBulkResending] = useState(false);
   async function resendSelectedInvites(emails) {
     setBulkResending(true);
@@ -1024,6 +1026,9 @@ export default function AdminUsers() {
       ) : item._type === 'invite' ? (
         <div className="flex gap-1">
           <Button variant="ghost" size="icon-xs" title="Resend" aria-label={`Resend invite to ${item.email}`} onClick={() => resendInvite(item.email)}>&#8635;</Button>
+          {!item._invite.existingAccount && can(currentUser, 'invites.write') && (
+            <Button variant="ghost" size="icon-xs" title="Change email" aria-label={`Change email for the invite to ${item.email}`} onClick={() => setChangeEmailInvite({ inviteToken: item._invite.inviteToken, email: item.email })}>&#9998;</Button>
+          )}
           <Button variant="ghost" size="icon-xs" title="Revoke" aria-label={`Revoke invite for ${item.email}`} onClick={() => revokeInvite(item._invite.inviteToken)}>&#10005;</Button>
         </div>
       ) : (
@@ -1459,6 +1464,17 @@ export default function AdminUsers() {
         confirmLabel={`Invite ${selectedWaitlist.length}`}
         variant="default"
         onConfirm={() => { const tokens = [...selectedWaitlist]; setBulkInviteOpen(false); inviteSelectedWaitlist(tokens); }}
+      />
+
+      <ChangeInviteEmailDialog
+        invite={changeEmailInvite}
+        onOpenChange={(open) => { if (!open) setChangeEmailInvite(null); }}
+        onDone={(r, oldEmail) => {
+          setMessage(r?.suppressed
+            ? { text: notSentText(r.email, r), type: 'error' }
+            : { text: `Invite moved from ${oldEmail} to ${r.email} and sent. The old link no longer works.`, type: 'success' });
+          loadData({ quiet: true });
+        }}
       />
 
       <ConfirmModal
