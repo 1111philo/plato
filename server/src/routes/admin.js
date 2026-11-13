@@ -325,6 +325,39 @@ admin.post('/v1/admin/invites/resend', async (c) => {
   return c.json(body, status);
 });
 
+// PUT /v1/admin/invites/:token/email — body { email }. Fixes a mistyped
+// address on a pending invite (expired or not): sends a fresh invite to the new
+// address with the same details (a wait-list invite's name, group, answers),
+// and the old link stops working at once, since it may have reached someone
+// else's inbox. Refused when the new address already has an account, a pending
+// invite, or a wait-list entry. Invites for an existing account (forUserId)
+// follow the account's email, so they're refused too. Audit: invite_email_changed.
+admin.put('/v1/admin/invites/:token/email', async (c) => {
+  const invite = await db.getInvite(c.req.param('token'));
+  if (!invite || invite.status !== 'pending' || invite.isLink || !invite.email) {
+    return c.json({ error: 'Pending invite not found' }, 404);
+  }
+  if (invite.forUserId) return c.json({ error: 'This invite is for an existing account: change the account’s email instead' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return c.json({ error: 'A valid email is required' }, 400);
+  if (email === invite.email.toLowerCase()) return c.json({ error: 'That’s already the invite’s address' }, 400);
+  if (await db.getUserByEmail(email)) return c.json({ error: 'A user with this email already exists' }, 409);
+  if (await db.getInviteByEmail(email)) return c.json({ error: 'A pending invite already exists for this email' }, 409);
+  if (await db.getWaitlistEntryByEmail(email)) return c.json({ error: 'This email is on the wait list: invite that entry instead' }, 409);
+
+  const adminUser = c.get('user');
+  const inviteToken = generateInviteToken();
+  await db.createInvite({ inviteToken, email, invitedBy: adminUser.userId, profile: invite.profile || null });
+  await db.deleteInvite(invite.inviteToken);
+  const result = await sendInviteEmail(email, inviteToken, adminUser.name, { firstName: invite.profile?.firstName });
+  await db.createAuditLog({
+    action: 'invite_email_changed', userId: null, email, performedBy: adminUser.userId,
+    details: { from: invite.email, to: email },
+  });
+  return c.json({ inviteToken, email, ...result });
+});
+
 // POST /v1/admin/invites/resend-bulk — body { emails } (≤ 50 per call; the
 // client batches). Each pending invite, expired or not, gets a fresh link,
 // 5 sends at a time. Returns { results: [{ email, status: 'sent' | 'failed',

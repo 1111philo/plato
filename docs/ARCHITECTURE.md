@@ -642,6 +642,8 @@ Admins invite users via email or shareable link. An invite's link works for 7 da
 
 **Expired email invites are kept** (`server/src/lib/invite-expiry.js`). Email invites store `expiresAt`, which DynamoDB doesn't act on, so an unused invite isn't deleted when it expires: it keeps the person's details (a wait-list invite's name, group, and answers; inviting removes the wait-list entry, so the invite is the only copy). An expired invite shows **Invite expired** in Admin → Users (also a Status filter); signup refuses its link. **Resend** (row button, or select invites → **Resend N invites**, `POST /v1/admin/invites/resend-bulk`, ≤ 50 per call, batches of 25 from the client, 5 sends at a time) replaces it with a fresh 7-day invite with the same details. Link invites still use `ttl` and are deleted on expiry. Migration `m006_keep_invites_on_expiry` moved existing pending email invites from `ttl` to `expiresAt` (2026-11-12 prod dry run: 1,287 invites). Before this, every unused invite was deleted after 7 days.
 
+**Changing an invite's email** (a mistyped address, often one that bounced): the invite row's **Change email** (`PUT /v1/admin/invites/:token/email`, `invites.write`) sends a fresh invite to the new address with the same details and deletes the old one, so the link that went to the wrong inbox stops working at once. It's refused when the new address already has an account, a pending invite, or a wait-list entry, and for invites tied to an existing account (`forUserId`: change the account's email instead). Audit: `invite_email_changed` with from/to.
+
 ### Email invites
 
 - **Creation:** `POST /v1/admin/invites` (single) or `/v1/admin/invites/bulk` (up to 200). Bulk supports CSV upload.
