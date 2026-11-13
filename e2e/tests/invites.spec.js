@@ -69,3 +69,36 @@ test('a username the server makes up is shown once after signup', async ({ page 
   await expect(page.getByRole('status').filter({ hasText: /^Your username is \S+\. You can change it in Settings\.$/ })).toBeVisible();
   await expectAccessible(page, { label: 'generated username notice' });
 });
+
+test('an invite sent to a mistyped address can be moved to the right one', async ({ page }) => {
+  const api = async (method, path, token, body) => {
+    const res = await page.request.fetch(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, data: body });
+    expect(res.ok(), `${method} ${path}`).toBe(true);
+    return res.json();
+  };
+  const { accessToken: admin } = await api('POST', '/v1/auth/login', null, { email: ADMIN.email, password: ADMIN.password });
+  const typo = 'moved-invitee@gmial.com';
+  const right = 'moved-invitee@gmail.com';
+  await api('POST', '/v1/admin/invites', admin, { email: typo });
+  const oldToken = (await api('GET', '/v1/admin/invites', admin)).find((i) => i.email === typo).inviteToken;
+  try {
+    await login(page, ADMIN);
+    await page.goto('/plato/users');
+    await page.getByRole('button', { name: `Change email for the invite to ${typo}` }).click();
+    const dialog = page.getByRole('dialog', { name: 'Change invite email' });
+    await expect(dialog).toContainText(typo);
+    await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    await expectAccessible(page, { include: '[role=dialog]', label: 'change invite email dialog' });
+    await dialog.getByLabel('New email').fill(right);
+    await dialog.getByRole('button', { name: 'Change and send' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: `Invite moved from ${typo} to ${right} and sent.` })).toBeVisible();
+    const table = page.getByRole('table', { name: 'Users and invites' });
+    await expect(table.getByRole('row').filter({ hasText: right })).toHaveCount(1);
+    await expect(table.getByRole('row').filter({ hasText: typo })).toHaveCount(0);
+    expect((await page.request.fetch(`/v1/auth/invite/${oldToken}`)).status()).toBe(404);
+  } finally {
+    for (const i of (await api('GET', '/v1/admin/invites', admin)).filter((x) => [typo, right].includes(x.email))) {
+      await page.request.fetch(`/v1/admin/invites/${i.inviteToken}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } });
+    }
+  }
+});
