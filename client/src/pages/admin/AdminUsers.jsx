@@ -704,10 +704,15 @@ export default function AdminUsers() {
   }, [users, pendingInvites, waitlistEntries]);
 
   // People (users, pending invites, and wait-list entries) per group, for the
-  // User Groups dialog. Renaming or deleting a group moves all three.
+  // User Groups dialog. Renaming or deleting a group moves all three. An
+  // invite for an existing account isn't counted: that person is already
+  // counted by their account's row.
   const groupCounts = useMemo(() => {
     const counts = {};
-    for (const i of combinedList) if (i.userGroup) counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
+    for (const i of combinedList) {
+      if (!i.userGroup || (i._type === 'invite' && i._invite.existingAccount)) continue;
+      counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
+    }
     return counts;
   }, [combinedList]);
   const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected }), [combinedList, groups, userFields, slackConnected]);
