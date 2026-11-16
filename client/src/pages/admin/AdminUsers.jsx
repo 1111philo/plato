@@ -35,6 +35,7 @@ import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, missingRequired } from '../../lib/userFields.js';
 import { toCsv, usersCsvRows } from '../../lib/csv.js';
 import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilters.js';
+import { countGroupMembers } from '../../lib/groupCounts.js';
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 import FiltersMenu from './FiltersMenu.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
@@ -703,18 +704,9 @@ export default function AdminUsers() {
     return items;
   }, [users, pendingInvites, waitlistEntries]);
 
-  // People (users, pending invites, and wait-list entries) per group, for the
-  // User Groups dialog. Renaming or deleting a group moves all three. An
-  // invite for an existing account isn't counted: that person is already
-  // counted by their account's row.
-  const groupCounts = useMemo(() => {
-    const counts = {};
-    for (const i of combinedList) {
-      if (!i.userGroup || (i._type === 'invite' && i._invite.existingAccount)) continue;
-      counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
-    }
-    return counts;
-  }, [combinedList]);
+  // Per group, for the User Groups dialog: people (users and wait-list
+  // entries) and, apart, invited people (lib/groupCounts.js).
+  const groupCounts = useMemo(() => countGroupMembers(combinedList), [combinedList]);
   const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected }), [combinedList, groups, userFields, slackConnected]);
   const filterChips = describeFilters(filters, facets);
 

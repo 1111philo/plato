@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Pencil from 'lucide-react/dist/esm/icons/pencil';
 import { adminApi } from './adminApi.js';
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
+import { describeGroupCount, describeGroupMembers } from '../../lib/groupCounts.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +17,9 @@ const people = (n) => `${n} ${n === 1 ? 'person' : 'people'}`;
  * entries, invites, and sent messages come along), and delete with a
  * confirmation. The server keeps the list sorted A–Z with None/Other last
  * (lib/groups.js). Errors show here, in the dialog, not behind it.
+ * `memberCounts` is `{ [group]: { people, invited } }` (lib/groupCounts.js):
+ * invited people show apart, so a batch of pending invites doesn't read as
+ * sign-ups.
  */
 export default function GroupsDialog({ open, onOpenChange, groups, memberCounts, onChanged }) {
   const [newName, setNewName] = useState('');
@@ -103,7 +107,7 @@ export default function GroupsDialog({ open, onOpenChange, groups, memberCounts,
                   ) : (
                     <>
                       <span className="flex-1 text-sm">{g}</span>
-                      <span className="text-xs text-muted-foreground">{people(memberCounts[g] || 0)}</span>
+                      <span className="text-xs text-muted-foreground">{describeGroupCount(memberCounts[g])}</span>
                       <Button variant="ghost" size="icon-xs" aria-label={`Rename group ${g}`} title="Rename" onClick={() => { setEditing(g); setDraft(g); setError(''); }}>
                         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
                       </Button>
@@ -128,7 +132,7 @@ export default function GroupsDialog({ open, onOpenChange, groups, memberCounts,
           open={!!deleting}
           onOpenChange={(o) => { if (!o) setDeleting(null); }}
           title={`Delete ${deleting || 'this group'}?`}
-          message={`${people(memberCounts[deleting] || 0)} will no longer be in a group. Messages already sent to it stay as they are.`}
+          message={`${describeGroupMembers(memberCounts[deleting])} will no longer be in a group. Messages already sent to it stay as they are.`}
           confirmLabel="Delete group"
           onConfirm={() => { const g = deleting; setDeleting(null); remove(g); }}
         />
