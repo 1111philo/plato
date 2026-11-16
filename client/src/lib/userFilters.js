@@ -14,9 +14,10 @@ function valuesOf(item, facet) {
   if (facet.key === 'status') return [statusOf(item)];
   if (facet.key === 'role') return item._type === 'user' ? [normalizeRole(item.role)] : null;
   if (facet.key === 'slack') return item._type === 'user' ? [item._user?.slackUserId ? 'linked' : 'unlinked'] : null;
-  if (facet.key === 'group') return item._type === 'invite' ? [NO_GROUP] : [item.userGroup || NO_GROUP];
+  if (facet.key === 'group') return [item.userGroup || NO_GROUP];
   if (facet.field) {
-    if (item._type === 'invite') return null; // invites have no answers
+    // A plain invite has no answers; one from the wait list keeps the entry's.
+    if (item._type === 'invite' && !item.customFields) return null;
     return facet.options.map((o) => o.value).filter((v) => matchesFieldFilter(item.customFields, facet.field, v));
   }
   return null;

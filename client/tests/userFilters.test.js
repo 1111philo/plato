@@ -72,6 +72,23 @@ describe('Slack filter', () => {
   });
 });
 
+describe('invites from the wait list', () => {
+  const wlItems = [
+    { _type: 'invite', email: 'p', _invite: {} },
+    { _type: 'invite', email: 'q', userGroup: 'A', customFields: { fld_org: 'UIC' }, _invite: {} },
+    { _type: 'user', email: 'r', role: 'learner', userGroup: 'A', customFields: { fld_org: 'MIT' } },
+  ];
+  const wlFacets = buildFacets({ items: wlItems, groups: ['A'], userFields: FIELDS });
+  const wlPick = (filters) => wlItems.filter((i) => matchesFilters(i, filters, wlFacets)).map((i) => i.email);
+
+  it('keep their group and answers for filtering; a plain invite still has neither', () => {
+    assert.deepEqual(wlPick({ group: ['A'] }), ['q', 'r']);
+    assert.deepEqual(wlPick({ group: ['__none'] }), ['p']);
+    assert.deepEqual(wlPick({ 'field:fld_org': ['UIC'] }), ['q']);
+    assert.deepEqual(wlPick({ 'field:fld_org': ['__empty'] }), [], 'a plain invite has no answers, so it is not "empty" either');
+  });
+});
+
 describe('expired invites', () => {
   const list = [
     { _type: 'invite', email: 'a', _invite: { expired: true } },

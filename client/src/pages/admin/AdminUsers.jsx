@@ -35,6 +35,7 @@ import CustomFieldInput from '../../components/CustomFieldInput.jsx';
 import { customFieldsMatch, missingRequired } from '../../lib/userFields.js';
 import { toCsv, usersCsvRows } from '../../lib/csv.js';
 import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilters.js';
+import { countGroupMembers } from '../../lib/groupCounts.js';
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 import FiltersMenu from './FiltersMenu.jsx';
 import ColumnsDialog from './ColumnsDialog.jsx';
@@ -689,7 +690,9 @@ export default function AdminUsers() {
     const items = [];
     for (const inv of pendingInvites) {
       if (!inv.isLink) {
-        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: null, firstName: null, lastName: null, username: null, userGroup: null, role: null, customFields: null, createdAt: inv.createdAt, _invite: inv });
+        // An invite from the wait list carries that entry's name, group, and
+        // answers (signup copies them onto the account); a plain invite has none.
+        items.push({ _type: 'invite', _key: inv.inviteToken, email: inv.email, name: inv.name || null, firstName: inv.firstName || null, lastName: inv.lastName || null, username: null, userGroup: inv.userGroup || null, role: null, customFields: inv.customFields || null, createdAt: inv.createdAt, _invite: inv });
       }
     }
     for (const w of waitlistEntries) {
@@ -701,12 +704,9 @@ export default function AdminUsers() {
     return items;
   }, [users, pendingInvites, waitlistEntries]);
 
-  // People (and wait-list entries) per group, for the User Groups dialog.
-  const groupCounts = useMemo(() => {
-    const counts = {};
-    for (const i of combinedList) if (i._type !== 'invite' && i.userGroup) counts[i.userGroup] = (counts[i.userGroup] || 0) + 1;
-    return counts;
-  }, [combinedList]);
+  // Per group, for the User Groups dialog: people (users and wait-list
+  // entries) and, apart, invited people (lib/groupCounts.js).
+  const groupCounts = useMemo(() => countGroupMembers(combinedList), [combinedList]);
   const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected }), [combinedList, groups, userFields, slackConnected]);
   const filterChips = describeFilters(filters, facets);
 
@@ -968,13 +968,13 @@ export default function AdminUsers() {
     { id: 'name', label: 'Name', fixed: true, sortKey: 'name', cell: (item) => (
       item._type === 'waitlist' ? <RowOpenButton onClick={() => navigate(`/plato/users/waitlist/${item._key}`)} srPrefix="Edit wait list entry: ">{item.name || item.email}</RowOpenButton>
         : item._type === 'user' ? <RowOpenButton onClick={() => openEditUser(item._user)} srPrefix="Edit ">{item.name || item.email}</RowOpenButton>
-          : DASH
+          : item.name || DASH
     ) },
     { id: 'email', label: 'Email', sortKey: 'email', cell: (item) => (
       <>{item.email}<SuppressedBadge s={item.email ? suppression[item.email.toLowerCase()] : null} /></>
     ) },
     { id: 'username', label: 'Username', sortKey: 'username', cell: (item) => (item._type === 'user' && item.username) || DASH },
-    { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => (item._type !== 'invite' && item.userGroup) || DASH },
+    { id: 'group', label: 'Group', sortKey: 'group', cell: (item) => item.userGroup || DASH },
     { id: 'role', label: 'Role', sortKey: 'role', cell: (item) => (
       item._type === 'waitlist' ? (
         <>
@@ -1003,7 +1003,7 @@ export default function AdminUsers() {
     { id: 'date', label: 'Date added', sortKey: 'date', cell: (item) => (item._type === 'waitlist' ? new Date(item.createdAt).toLocaleString() : new Date(item.createdAt).toLocaleDateString()) },
     ...userFields.map((f) => ({
       id: `field:${f.id}`, label: f.label, defaultHidden: true, cellClass: 'max-w-48 truncate',
-      cell: (item) => (item._type !== 'invite' && item.customFields?.[f.id]) || DASH,
+      cell: (item) => item.customFields?.[f.id] || DASH,
     })),
     ...(slackConnected ? [{ id: 'slack', label: 'Slack', cell: (item) => (item._type === 'user' && item._user.slackUserId ? (
       <span title={item._user.slackUserId} className="text-xs">
