@@ -280,8 +280,13 @@ admin.post('/v1/admin/invites/bulk', async (c) => {
 });
 
 // GET /v1/admin/invites
+// An invite made from a wait-list entry keeps the entry's `profile` (name,
+// group, answers) until signup copies it onto the new account. Return it, the
+// same shape as GET /v1/admin/waitlist, so the Users list doesn't show those
+// people as blank while their invite is pending.
 admin.get('/v1/admin/invites', async (c) => {
-  const invites = await db.listInvites();
+  const [invites, settings] = await Promise.all([db.listInvites(), db.getSyncData('_system', 'settings')]);
+  const fieldDefs = getFieldDefinitions(settings?.data);
   return c.json(invites.map((inv) => ({
     inviteToken: inv.inviteToken,
     email: inv.email,
@@ -292,6 +297,11 @@ admin.get('/v1/admin/invites', async (c) => {
     ...(inv.status === 'pending' && !inv.isLink ? {
       expiresAt: inviteExpiresAt(inv) ? new Date(inviteExpiresAt(inv) * 1000).toISOString() : null,
       expired: inviteExpired(inv),
+    } : {}),
+    ...(inv.profile ? {
+      ...((inv.profile.firstName || inv.profile.name) ? nameFields(inv.profile) : {}),
+      userGroup: inv.profile.userGroup || null,
+      customFields: visibleFieldValues(fieldDefs, inv.profile.customFields),
     } : {}),
   })));
 });
