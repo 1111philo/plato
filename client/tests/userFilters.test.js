@@ -72,6 +72,48 @@ describe('Slack filter', () => {
   });
 });
 
+describe('Sign-in filter (single sign-on)', () => {
+  const list = [
+    { _type: 'user', email: 'a', _user: { hasPassword: true, sso: null } },
+    { _type: 'user', email: 'b', _user: { hasPassword: false, sso: { provider: 'entra' } } },
+    { _type: 'user', email: 'c', _user: { hasPassword: true, sso: { provider: 'entra' } } },
+    { _type: 'invite', email: 'd' },
+    { _type: 'waitlist', email: 'e', _entry: { ssoVerified: 'entra' } },
+    { _type: 'waitlist', email: 'f', _entry: { ssoVerified: null } },
+  ];
+  it('is offered only when single sign-on is in play, and leaves Status alone otherwise', () => {
+    const off = buildFacets({ items: list });
+    assert.equal(off.some((f) => f.key === 'signin'), false);
+    assert.deepEqual(off.find((f) => f.key === 'status').options.map((o) => o.value), ['active', 'invited', 'expired', 'waitlist']);
+    assert.equal(buildFacets({ items: list, sso: true }).some((f) => f.key === 'signin'), true);
+  });
+  it('counts Password and SSO over signed-up users; someone with both matches both', () => {
+    const f = buildFacets({ items: list, sso: true });
+    const signin = f.find((x) => x.key === 'signin');
+    assert.deepEqual(signin.options.map((o) => [o.label, o.count]), [['Password', 2], ['SSO', 2]]);
+    const pickS = (v) => list.filter((i) => matchesFilters(i, { signin: v }, f)).map((i) => i.email);
+    assert.deepEqual(pickS(['password']), ['a', 'c']);
+    assert.deepEqual(pickS(['sso']), ['b', 'c']);
+    assert.deepEqual(pickS(['password', 'sso']), ['a', 'b', 'c'], 'invites and the wait list match neither');
+    assert.deepEqual(describeFilters({ signin: ['sso'] }, f), [{ key: 'signin', label: 'Sign-in', values: ['SSO'] }]);
+  });
+  it('a user row without hasPassword counts as a password account', () => {
+    const rows = [{ _type: 'user', email: 'x', _user: {} }];
+    const f = buildFacets({ items: rows, sso: true });
+    assert.deepEqual(rows.filter((i) => matchesFilters(i, { signin: ['password'] }, f)).map((i) => i.email), ['x']);
+  });
+  it('Status offers Wait list: verified; a verified entry is still on the wait list', () => {
+    const f = buildFacets({ items: list, sso: true });
+    const status = f.find((x) => x.key === 'status');
+    const count = (v) => status.options.find((o) => o.value === v).count;
+    assert.equal(count('waitlist'), 2);
+    assert.equal(count('verified'), 1);
+    const pickS = (v) => list.filter((i) => matchesFilters(i, { status: v }, f)).map((i) => i.email);
+    assert.deepEqual(pickS(['verified']), ['e']);
+    assert.deepEqual(pickS(['waitlist']), ['e', 'f']);
+  });
+});
+
 describe('invites from the wait list', () => {
   const wlItems = [
     { _type: 'invite', email: 'p', _invite: {} },

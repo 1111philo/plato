@@ -7,7 +7,8 @@ Supplies the Microsoft Entra ID sign-in provider (`auth.provider`). Read `docs/S
 - **Single tenant only.** `configure` returns `null` unless the tenant id is a GUID; `common` / `organizations` would accept any Microsoft account.
 - **`mapClaims` decides which emails are vouched for**: only addresses whose domain is in `SSO_ENTRA_DOMAINS`, and never the `email` claim when `xms_edov` is false. Loosening this lets one directory account claim another person's plato account.
 - The admin status route never returns the secret, and masks the ids.
+- **The admin panel (`client/EntraSettingsPanel.jsx`, the `adminSettingsPanel` slot) only displays trust settings.** Its one editable field is `buttonLabel`, saved through `onSave`. Don't add an input for anything the status route reports.
 - Never issue sessions, create users, or link accounts here.
 
 ## Tests
-`server/tests/routes/sso.test.js` (the whole flow with this provider) and `server/tests/lib/entra-provider.test.js`.
+`server/tests/routes/sso.test.js` (the whole flow with this provider) and `server/tests/lib/entra-provider.test.js`. The panel: `e2e/tests/sso-admin.spec.js` (stubbed status; keyboard and axe).

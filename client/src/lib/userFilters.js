@@ -8,12 +8,18 @@ import { matchesFieldFilter } from './userFields.js';
 
 const NO_GROUP = '__none';
 const statusOf = (i) => (i._type === 'user' ? 'active' : i._type === 'invite' ? (i._invite?.expired ? 'expired' : 'invited') : 'waitlist');
+// A wait-list entry whose address was proved by single sign-on is both
+// "Wait list" and "Wait list: verified".
+const statusesOf = (i) => (i._type === 'waitlist' && i._entry?.ssoVerified ? ['waitlist', 'verified'] : [statusOf(i)]);
+// A user with a password and a linked identity matches both.
+const signInOf = (u) => [...(u?.hasPassword !== false ? ['password'] : []), ...(u?.sso ? ['sso'] : [])];
 
 /** The value(s) an item has for a facet; null means "this facet doesn't apply" (it's filtered out). */
 function valuesOf(item, facet) {
-  if (facet.key === 'status') return [statusOf(item)];
+  if (facet.key === 'status') return statusesOf(item);
   if (facet.key === 'role') return item._type === 'user' ? [normalizeRole(item.role)] : null;
   if (facet.key === 'slack') return item._type === 'user' ? [item._user?.slackUserId ? 'linked' : 'unlinked'] : null;
+  if (facet.key === 'signin') return item._type === 'user' ? signInOf(item._user) : null;
   if (facet.key === 'group') return [item.userGroup || NO_GROUP];
   if (facet.field) {
     // A plain invite has no answers; one from the wait list keeps the entry's.
@@ -28,12 +34,15 @@ function valuesOf(item, facet) {
  * `[{ key, label, options: [{ value, label, count }] }]`. Custom fields offer
  * their dropdown options (plus Empty), or Has a value / Empty. `slack` adds
  * Slack: Linked / Not linked (signed-up users only), shown when the Slack
- * plugin is connected.
+ * plugin is connected. `sso` adds Sign-in: Password / SSO (signed-up users
+ * only; someone with both matches both) and Status → Wait list: verified,
+ * shown when single sign-on is in play (lib/signIn.js `ssoInPlay`).
  */
-export function buildFacets({ items, groups = [], userFields = [], slack = false }) {
+export function buildFacets({ items, groups = [], userFields = [], slack = false, sso = false }) {
   const facets = [
     { key: 'status', label: 'Status', options: [
       { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'expired', label: 'Invite expired' }, { value: 'waitlist', label: 'Wait list' },
+      ...(sso ? [{ value: 'verified', label: 'Wait list: verified' }] : []),
     ] },
     { key: 'role', label: 'Role', options: ['admin', 'educator', 'learner', 'tester'].map((r) => ({ value: r, label: ROLE_LABELS[r] })) },
   ];
@@ -43,6 +52,9 @@ export function buildFacets({ items, groups = [], userFields = [], slack = false
   }
   if (slack) {
     facets.push({ key: 'slack', label: 'Slack', options: [{ value: 'linked', label: 'Linked' }, { value: 'unlinked', label: 'Not linked' }] });
+  }
+  if (sso) {
+    facets.push({ key: 'signin', label: 'Sign-in', options: [{ value: 'password', label: 'Password' }, { value: 'sso', label: 'SSO' }] });
   }
   for (const f of userFields) {
     const options = f.type === 'dropdown'
