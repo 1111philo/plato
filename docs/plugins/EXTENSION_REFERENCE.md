@@ -259,6 +259,7 @@ Hook handler returns enrichment data or `null`. See `plugins/wordpress-info/` fo
 | `agent` | Contribute AI agent prompt | 3 |
 | `syncData.namespace` | Write `plugin:<id>:*` sync-data keys | 3 |
 | `lessonEnrichment` | Enrich lessons at start with additional context | 1 |
+| `auth.provider` | Supply a single sign-on provider; core runs the flow and owns accounts ([SSO](../SSO.md)) | 1.6 |
 
 A plugin using an extension point without declaring its capability fails registration with `plugin_capability_missing`.
 

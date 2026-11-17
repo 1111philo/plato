@@ -66,6 +66,9 @@ admin.get('/v1/admin/users', async (c) => {
     slackUserId: p.slackUserId || null,
     customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
+    // Sign-in methods: a linked single sign-on identity, and whether a password is set.
+    sso: p.ssoKey ? { provider: p.ssoKey.split(':')[0], email: p.ssoEmail || null, linkedAt: p.ssoLinkedAt || null } : null,
+    hasPassword: !!p.passwordHash,
   });
   if (!includeStats) {
     return c.json(users.map(baseRow));
@@ -506,6 +509,8 @@ admin.get('/v1/admin/waitlist', async (c) => {
       userGroup: inv.profile?.userGroup || null,
       customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
       createdAt: inv.createdAt,
+      // Proved the address by single sign-on (lib/external-identity.js).
+      ssoVerified: inv.profile?.ssoVerified?.provider || null,
     }));
   return c.json({ entries, open: !!config.open, hasApiKey: !!config.apiKeyHash });
 });
@@ -618,7 +623,9 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   }
 
   try {
-    await db.updateWaitlistEntry(entry.inviteToken, { email: result.email, profile: result.profile });
+    // A single sign-on check vouched for the old address only.
+    const profile = result.email === entry.email && entry.profile?.ssoVerified ? { ...result.profile, ssoVerified: entry.profile.ssoVerified } : result.profile;
+    await db.updateWaitlistEntry(entry.inviteToken, { email: result.email, profile });
   } catch (err) {
     // Invited or removed between the read above and this write.
     if (err.name === 'ConditionalCheckFailedException') return c.json({ error: 'Wait-list entry not found' }, 404);
@@ -764,6 +771,21 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
     details: { field, label, cleared: !value, count: result.updated, waitlist: waitlistUpdated, failed: result.failed.length },
   });
   return c.json(result);
+});
+
+// DELETE /v1/admin/users/:userId/sso — unlink the account's single sign-on
+// identity (lib/external-identity.js). The person signs in with their password
+// afterwards; someone without one uses "Forgot password".
+admin.delete('/v1/admin/users/:userId/sso', async (c) => {
+  const user = await db.getUserById(c.req.param('userId'));
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  if (!user.ssoKey) return c.json({ ok: true, hasPassword: !!user.passwordHash });
+  await db.clearUserSso(user.userId);
+  await db.createAuditLog({
+    action: 'sso_unlinked', userId: user.userId, email: user.email, performedBy: c.get('user').userId,
+    details: { provider: user.ssoKey.split(':')[0], by: 'admin' },
+  });
+  return c.json({ ok: true, hasPassword: !!user.passwordHash });
 });
 
 admin.patch('/v1/admin/users/:userId', async (c) => {

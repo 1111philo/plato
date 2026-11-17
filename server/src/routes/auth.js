@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
 import { normalizeRole } from '../lib/permissions.js';
 import { generateUserId, hashToken } from '../lib/crypto.js';
@@ -16,6 +15,7 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { inviteExpired } from '../lib/invite-expiry.js';
+import { generateUsername, uniqueUsername } from '../lib/usernames.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -24,24 +24,6 @@ function validateUsername(username) {
   if (username.length < 3 || username.length > 30) return 'Username must be 3-30 characters';
   if (!USERNAME_RE.test(username)) return 'Username must be alphanumeric with hyphens or underscores, and cannot start/end with them';
   if (username.includes('@')) return 'Username cannot contain @';
-  return null;
-}
-
-function generateUsername() {
-  return 'user-' + randomBytes(3).toString('hex');
-}
-
-/**
- * A generated username nobody has yet. The random part is small (16.7M), and
- * DynamoDB's createUser only conditions on userId, so a collision would
- * create a second account with the same username. Returns null if every try
- * is taken (practically never).
- */
-async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
-  for (let i = 0; i < tries; i++) {
-    const candidate = generate();
-    if (!(await db.getUserByUsername(candidate))) return candidate;
-  }
   return null;
 }
 

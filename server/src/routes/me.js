@@ -45,6 +45,12 @@ me.get('/v1/me', async (c) => {
     role: normalizeRole(user.role),
     customFields: visibleFieldValues(learnerFields(defs), user.customFields),
     createdAt: user.createdAt,
+    // Sign-in methods (Settings): whether a password is set, and the linked
+    // single sign-on identity, if any (routes/sso.js).
+    signIn: {
+      password: !!user.passwordHash,
+      sso: user.ssoKey ? { provider: user.ssoKey.split(':')[0], email: user.ssoEmail || null } : null,
+    },
   });
 });
 

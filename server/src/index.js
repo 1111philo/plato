@@ -4,6 +4,7 @@ import { handle, streamHandle } from 'hono/aws-lambda';
 import { cors } from 'hono/cors';
 import health from './routes/health.js';
 import auth from './routes/auth.js';
+import sso from './routes/sso.js';
 import me from './routes/me.js';
 import admin, { recomputeAndCacheLessonStats } from './routes/admin.js';
 import sync from './routes/sync.js';
@@ -107,6 +108,7 @@ server.use('*', viewAsReadOnly);
 
 server.route('/', health);
 server.route('/', auth);
+server.route('/', sso);
 server.route('/', me);
 server.route('/', admin);
 server.route('/', sync);

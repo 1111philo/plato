@@ -22,13 +22,16 @@ const doc = DynamoDBDocumentClient.from(client);
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso }) {
     const now = new Date().toISOString();
     const item = {
-      userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
+      userId, email: email.toLowerCase(), username: username || null, name,
       userGroup: userGroup || null,
       role, createdAt: now, updatedAt: now,
     };
+    // An account made by single sign-on has no password (lib/external-identity.js).
+    if (passwordHash) item.passwordHash = passwordHash;
+    if (sso?.key) Object.assign(item, { ssoKey: sso.key, ssoEmail: sso.email || null, ssoLinkedAt: now });
     if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
@@ -55,6 +58,46 @@ const db = {
       ExpressionAttributeValues: { ':email': email.toLowerCase() },
     }));
     return result.Items?.[0] || null;
+  },
+
+  // Single sign-on (lib/external-identity.js). `ssoKey` is
+  // '<provider>:<tenant>:<subject>'; the sparse ssoKey-index finds the one
+  // account it belongs to.
+  async getUserBySsoKey(ssoKey) {
+    const result = await doc.send(new QueryCommand({
+      TableName: USERS_TABLE,
+      IndexName: 'ssoKey-index',
+      KeyConditionExpression: 'ssoKey = :k',
+      ExpressionAttributeValues: { ':k': ssoKey },
+    }));
+    return result.Items?.[0] || null;
+  },
+
+  // Connect an identity to an account that has none. False if it already has one.
+  async linkUserSso(userId, { key, email }) {
+    try {
+      await doc.send(new UpdateCommand({
+        TableName: USERS_TABLE,
+        Key: { userId },
+        UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
+        ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
+        ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': new Date().toISOString() },
+      }));
+      return true;
+    } catch (err) {
+      if (err.name === 'ConditionalCheckFailedException') return false;
+      throw err;
+    }
+  },
+
+  // REMOVE, not null: a null can't sit in an index key attribute.
+  async clearUserSso(userId) {
+    await doc.send(new UpdateCommand({
+      TableName: USERS_TABLE,
+      Key: { userId },
+      UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
+      ExpressionAttributeValues: { ':now': new Date().toISOString() },
+    }));
   },
 
   async getUserByUsername(username) {
@@ -409,7 +452,7 @@ const db = {
       Key: { tokenHash },
     }));
     const item = result.Item;
-    if (!item || item.type === 'reset' || expired(item)) return null;
+    if (!item || item.type === 'reset' || item.type === 'sso' || expired(item)) return null;
     return item;
   },
 
@@ -434,6 +477,27 @@ const db = {
   },
 
   // ── Reset Tokens (reuses refresh-tokens table) ──
+
+  // One-time codes (the sign-in handoff after single sign-on, routes/sso.js):
+  // kept in the tokens table under their own type, deleted on first read.
+  async storeOneTimeCode(codeHash, data, ttlSeconds) {
+    const ttl = Math.floor(Date.now() / 1000) + ttlSeconds;
+    await doc.send(new PutCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Item: { tokenHash: codeHash, type: 'sso', data, createdAt: new Date().toISOString(), ttl },
+    }));
+  },
+
+  async takeOneTimeCode(codeHash) {
+    const result = await doc.send(new DeleteCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Key: { tokenHash: codeHash },
+      ReturnValues: 'ALL_OLD',
+    }));
+    const item = result.Attributes;
+    if (!item || item.type !== 'sso' || expired(item)) return null;
+    return item.data;
+  },
 
   async storeResetToken(tokenHash, userId) {
     const ttl = Math.floor(Date.now() / 1000) + RESET_TOKEN_TTL_HOURS * 3600;
