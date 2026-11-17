@@ -4,6 +4,7 @@ import { readWaitlistConfig, hasValidApiKey, validateWaitlistEntry, waitlistToke
 import { readAutomations, sendTemplated } from '../lib/notifications.js';
 import { logger } from '../lib/logger.js';
 import { clientIp, createLimiter } from '../lib/rate-limit.js';
+import { unseal } from '../lib/oidc.js';
 
 const waitlist = new Hono();
 
@@ -49,9 +50,17 @@ waitlist.post('/v1/waitlist', async (c) => {
     return c.json({ ok: true }, 202);
   }
 
+  // Joining straight after a single sign-on that found no account (routes/sso.js):
+  // the ticket carries the address the provider vouched for. It replaces
+  // whatever the form sent, and the entry is marked verified for admins.
+  const ticket = typeof body?.ssoTicket === 'string' ? unseal('waitlist', body.ssoTicket) : null;
+  if (body?.ssoTicket && !ticket) return c.json({ error: 'Your sign-in has expired. Please sign in again.' }, 400);
+  if (ticket) body = { ...body, email: ticket.email };
+
   const settings = await db.getSyncData('_system', 'settings');
   const result = validateWaitlistEntry(body, settings?.data || {});
   if (result.error) return c.json({ error: result.error }, 400);
+  if (ticket) result.profile = { ...result.profile, ssoVerified: { provider: ticket.provider, at: new Date().toISOString() } };
 
   // Store the submission even when the email already has an account or a
   // pending invite: admins need to see what the person sent (the Wait List

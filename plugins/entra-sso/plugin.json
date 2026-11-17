@@ -1,0 +1,32 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "entra-sso",
+  "name": "Microsoft Entra SSO",
+  "version": "1.0.0",
+  "apiVersion": "^1.6.0",
+  "description": "Sign in with a Microsoft Entra ID (Azure AD) account from one organization, alongside plato's own sign-in. The tenant, client id, and secret come from the deployment, not from this page.",
+  "author": "plato core",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/1111philo/plato",
+  "defaultEnabled": false,
+  "capabilities": [
+    "server.routes",
+    "settings.read",
+    "settings.write",
+    "auth.provider"
+  ],
+  "extensionPoints": {
+    "serverRoutes": "server/index.js#default"
+  },
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "buttonLabel": {
+        "type": "string",
+        "title": "Button label",
+        "description": "Text on the sign-in button, e.g. \"Sign in with UIC\". Empty uses \"Sign in with Microsoft\".",
+        "maxLength": 40
+      }
+    }
+  }
+}

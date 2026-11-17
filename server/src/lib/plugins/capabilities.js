@@ -24,6 +24,9 @@ export const STATIC_CAPABILITIES = Object.freeze([
   'agent',
   'syncData.namespace',
   'lessonEnrichment',
+  // Supplies a single sign-on provider (lib/sso-providers.js). Core runs the
+  // flow and owns sessions and accounts; the plugin only configures and maps claims.
+  'auth.provider',
 ]);
 
 /** Pattern capabilities — `ui.slot.<slotName>` and `hook.<hookName>`. */

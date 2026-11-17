@@ -75,7 +75,8 @@ export type Capability =
   | 'kpi'
   | 'agent'
   | 'syncData.namespace'
-  | 'lessonEnrichment';
+  | 'lessonEnrichment'
+  | 'auth.provider';
 
 // ---------- Slots ----------
 

@@ -76,6 +76,14 @@ Allows writing arbitrary `plugin:<id>:*` keys to per-user sync-data. The whiteli
 
 Phase 3.
 
+### `auth.provider`
+
+Lets a plugin supply a **single sign-on provider** (API 1.6.0). The server module exports `authProviders: [{ id, label, configure(env, pluginSettings), mapClaims(claims, cfg) }]`:
+- `configure` returns `{ issuer, clientId, clientSecret, scope?, authorizeParams? }`, or `null` when the deployment hasn't supplied its trust settings (the provider is then off). Read trust settings from the environment, not from plugin settings: an admin must not be able to repoint sign-in.
+- `mapClaims` turns verified ID-token claims into `{ subject, tenant?, emails, email, firstName?, lastName?, name? }`. `emails` are the addresses the provider vouches for; only those are matched to accounts, invites, and wait-list entries. Throw (with `code: 'identity_refused'`) to refuse a sign-in.
+
+**Contract:** the plugin never issues sessions, creates users, or links accounts. Core does all of that (`docs/SSO.md`). Implemented: `plugins/entra-sso`.
+
 ### `lessonEnrichment`
 
 Allows a plugin to enrich lessons at start time by providing additional context, sources, and reasoning. Plugins with this capability can register a `lessonStarted` hook handler that returns enrichment data: `{ context: string, sources: [{ url, title, excerpt }], reasoning: string, pluginId, label }`. The enrichment is stored on `lessonKB.enrichments`, injected into the coach's system context, and displayed to the learner as a collapsible artifact panel above the first coach message.

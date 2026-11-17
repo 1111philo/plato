@@ -5,12 +5,15 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.5.1'
+PLUGIN_API_VERSION = '1.6.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.6.0 (additive)
+- **Added** the `auth.provider` capability: a plugin's server module can export `authProviders: [{ id, label, configure(env, settings), mapClaims(claims, cfg) }]` to supply a single sign-on provider. Core runs the OpenID Connect flow and owns accounts and sessions; the plugin only configures the issuer and maps ID-token claims. See [`docs/SSO.md`](../SSO.md) and `plugins/entra-sso`.
 
 ### 1.5.1 (fix)
 - **Changed** `PUT /v1/admin/plugins/:id/settings` keeps a stored **writeOnly** value (e.g. a bot token) when the body leaves that key out. Clients never receive writeOnly values, so a settings panel that saved its other fields used to erase them. Send `null` to clear one.
