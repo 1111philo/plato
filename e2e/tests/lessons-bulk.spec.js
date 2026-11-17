@@ -22,14 +22,21 @@ test('admins filter lessons by course and change visibility in bulk', async ({ p
   await expectAccessible(page, { label: 'lessons filters menu' });
   await menu.getByRole('menuitemcheckbox', { name: new RegExp(`^${PROGRAM.name}(?! ›)`) }).click();
   await page.keyboard.press('Escape');
+  // The menu hands focus back to its button as it closes. Wait for that, or a
+  // late hand-back can land between a checkbox's focus and its Space press.
+  await expect(menu).toBeHidden();
+  await expect(page.getByRole('button', { name: /^Filters/ })).toBeFocused();
   await expect(page.getByRole('list', { name: 'Filters on' })).toContainText(`Course: ${PROGRAM.name}`);
   await expect(page.getByRole('status').filter({ hasText: /^\d+ of \d+ lessons$/ })).toBeVisible();
 
   try {
     // Select two lessons by keyboard, then make them private and share them.
     for (const l of [ONE, TWO]) {
-      await table.getByRole('checkbox', { name: `Select ${l.name}` }).focus();
+      const box = table.getByRole('checkbox', { name: `Select ${l.name}` });
+      await box.focus();
+      await expect(box).toBeFocused();
       await page.keyboard.press('Space');
+      await expect(box).toBeChecked();
     }
     const bar = page.getByRole('region', { name: 'Selected lessons' });
     await expect(bar).toContainText('2 selected');
