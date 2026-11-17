@@ -13,10 +13,14 @@
     "server.routes",
     "settings.read",
     "settings.write",
+    "ui.slot.adminSettingsPanel",
     "auth.provider"
   ],
   "extensionPoints": {
-    "serverRoutes": "server/index.js#default"
+    "serverRoutes": "server/index.js#default",
+    "slots": {
+      "adminSettingsPanel": "client/EntraSettingsPanel.jsx"
+    }
   },
   "settingsSchema": {
     "type": "object",

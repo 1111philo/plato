@@ -57,6 +57,23 @@ describe('usersCsvRows', () => {
     assert.deepEqual(inv.slice(6), ['Invited', '2026-10-03', '', '', '']);
   });
 
+  it('adds a Sign-in column before User ID only when single sign-on is in play', () => {
+    const providers = [{ id: 'entra', label: 'Sign in with UIC' }];
+    const rows = [
+      { ...items[0], _user: { userId: 'usr_a1', hasPassword: true, sso: { provider: 'entra' } } },
+      { ...items[0], _user: { userId: 'usr_a2', hasPassword: false, sso: { provider: 'entra' } } },
+      { ...items[0], _user: { userId: 'usr_a3', hasPassword: true, sso: null } },
+      items[1],
+    ];
+    const [header, both, ssoOnly, pw, wl] = usersCsvRows(rows, fields, { providers });
+    assert.deepEqual(header.slice(-2), ['Sign-in', 'User ID']);
+    assert.deepEqual(both.slice(-2), ['Password + UIC', 'usr_a1']);
+    assert.deepEqual(ssoOnly.slice(-2), ['UIC', 'usr_a2']);
+    assert.deepEqual(pw.slice(-2), ['Password', 'usr_a3']);
+    assert.deepEqual(wl.slice(-2), ['', ''], 'not an account: blank');
+    assert.equal(usersCsvRows(rows, fields)[0].includes('Sign-in'), false);
+  });
+
   it('round-trips through toCsv with labels escaped', () => {
     const csv = toCsv(usersCsvRows(items, fields));
     assert.ok(csv.startsWith('Email,First Name,Last Name,Username,Group,Role,Status,Date Added,"Org, Name",Phone,User ID\r\n'));

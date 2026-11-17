@@ -127,7 +127,42 @@ The first deploy that includes SSO adds the `ssoKey-index` to the users table
 in `server/.env` with a registration whose redirect URI is
 `http://localhost:3000/v1/auth/sso/entra/callback`.
 
+## For admins
+
+Everything here appears only once single sign-on is in play (a provider is
+on, or an account is linked). Until then Admin → Users looks as it always did.
+
+- **Users → Sign-in column.** For each signed-up user: "Password", the
+  provider's name, or both. The name is the sign-in button's label without
+  "Sign in with" ("Sign in with UIC" → "UIC"); a provider that's switched off
+  shows as "SSO". The **Download CSV** file gets the same column.
+- **Users → Filters → Sign-in.** Password / SSO, signed-up users only. Someone
+  with both matches both.
+- **Edit User → Sign-in.** Whether a password is set, and the linked identity:
+  its email and the date it was connected. **Unlink** (`users.write`) asks
+  first, then calls `DELETE /v1/admin/users/:userId/sso`. The person signs in
+  with their password afterwards; if they have none, they use "Forgot
+  password". The result message says which.
+- **Wait list → Verified.** An entry whose address the provider vouched for
+  (rule 6) carries a "Verified" mark, and Filters → Status offers "Wait list:
+  verified".
+- **Plugins → Microsoft Entra SSO.** Shows whether the deployment configured
+  it, with the masked tenant and client ids, the owned domains, and the
+  redirect URI to register (with a copy button). These are read-only: they
+  come from the deployment. The one setting is the **button label** (up to 40
+  characters; empty means "Sign in with Microsoft").
+
+Code: `client/src/lib/signIn.js`, `client/src/lib/userFilters.js`,
+`client/src/pages/admin/AdminUsers.jsx`,
+`plugins/entra-sso/client/EntraSettingsPanel.jsx`.
+
 ## Tests
+
+`e2e/tests/sso-admin.spec.js` covers the admin screens above against stubbed
+responses (keyboard and axe), and `client/tests/signIn.test.js`,
+`userFilters.test.js`, and `csv.test.js` cover the labels, the filter, and the
+CSV column.
+
 
 `server/tests/routes/sso.test.js` runs the real routes and rules against a
 real SQLite database and a fake identity provider that signs real tokens
