@@ -107,7 +107,7 @@ names.
 | `SsoEntraClientSecret` | `SSO_ENTRA_CLIENT_SECRET` | Client secret **value** (`NoEcho`) |
 | `SsoEntraDomains` | `SSO_ENTRA_DOMAINS` | Email domains the tenant owns, comma-separated (e.g. `uic.edu`) |
 
-All four empty (the default) means SSO is off: no button, and the routes
+All four empty (the default), or a tenant id that isn't a GUID (a deploy pipeline can pass `off`), means SSO is off: no button, and the routes
 answer "unavailable". Then turn the **Microsoft Entra SSO** plugin on in
 Admin → Plugins (it ships off). Turning it off again removes the button at
 once; password sign-in is never affected.

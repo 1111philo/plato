@@ -26,6 +26,7 @@ import defaultDb from './db.js';
 import { generateUserId } from './crypto.js';
 import { uniqueUsername } from './usernames.js';
 import { inviteExpired } from './invite-expiry.js';
+import { nameFields } from './names.js';
 import { getFieldDefinitions, visibleFieldValues } from './user-fields.js';
 import { emit as emitHook } from './plugins/hooks.js';
 import { logger } from './logger.js';
@@ -39,8 +40,12 @@ async function createAccount({ db, email, identity, key, profile = null, slackUs
   const username = await uniqueUsername();
   if (!username) return { outcome: 'error', code: 'try_again' };
   const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
-  const firstName = (profile?.firstName || identity.firstName || '').trim().slice(0, 100);
-  const lastName = (profile?.firstName ? (profile.lastName || '') : (identity.lastName || '')).trim().slice(0, 100);
+  // The name comes from one source, whole: the invite's (what the person or an
+  // admin entered; older profiles hold a single `name`), else the provider's.
+  // Never one part from each.
+  const invited = profile && (profile.firstName || profile.name) ? nameFields(profile) : null;
+  const firstName = ((invited ? invited.firstName : identity.firstName) || '').trim().slice(0, 100);
+  const lastName = ((invited ? invited.lastName : identity.lastName) || '').trim().slice(0, 100);
   const fallback = (identity.name || email.split('@')[0]).trim().slice(0, 100);
   const userId = generateUserId();
   await db.createUser({

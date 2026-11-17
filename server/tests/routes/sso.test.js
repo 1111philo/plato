@@ -201,6 +201,19 @@ describe('which account you land in', () => {
     assert.deepEqual(meRes.signIn, { password: false, sso: { provider: 'entra', email: 'invitee@uic.edu' } });
   });
 
+  it('a new account’s name comes whole from the invite, or whole from the provider, never mixed', async () => {
+    await db.createInvite({ inviteToken: 'inv_n1', email: 'cher@uic.edu', invitedBy: 'usr_admin', profile: { firstName: 'Cher' } }); // no last name on purpose
+    await db.createInvite({ inviteToken: 'inv_n2', email: 'legacy@uic.edu', invitedBy: 'usr_admin', profile: { name: 'Lee Gacy Jr' } }); // older single-name profile
+    await db.createInvite({ inviteToken: 'inv_n3', email: 'plain@uic.edu', invitedBy: 'usr_admin' }); // a plain invite: no name
+    await complete(person('cher'));
+    await complete(person('legacy'));
+    await complete(person('plain'));
+    const names = async (email) => { const u = await db.getUserByEmail(email); return [u.firstName, u.lastName]; };
+    assert.deepEqual(await names('cher@uic.edu'), ['Cher', ''], 'not "Cher Tester"');
+    assert.deepEqual(await names('legacy@uic.edu'), ['Lee', 'Gacy Jr']);
+    assert.deepEqual(await names('plain@uic.edu'), ['plain', 'Tester'], 'from the provider');
+  });
+
   it('an existing account with the same uic.edu email is connected (staff too), and the link then wins over email', async () => {
     const out = await complete(person('boss'));
     assert.deepEqual([out.outcome, out.linked, out.user.userId, out.user.role], ['signed_in', true, 'usr_admin', 'admin']);
