@@ -38,6 +38,9 @@ test('Users: combine filters by keyboard, see them as chips, clear them', async 
 });
 
 test('Users: choose and order columns; the User ID column shows the account id; layout persists', async ({ page }) => {
+  // The e2e server has single sign-on on (global-setup.js), which adds a Sign-in
+  // column (tests/sso-admin.spec.js). This test is about the columns without it.
+  await page.route('**/v1/auth/sso/providers', (route) => route.fulfill({ json: { providers: [] } }));
   await login(page, ADMIN);
   await page.goto('/plato/users');
   await expect(page.getByRole('table', { name: 'Users and invites' }).getByRole('cell', { name: /^usr_/ }).first()).toBeVisible();

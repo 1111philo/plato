@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
@@ -12,6 +13,7 @@ import { SEND_KEYS, sendKeyOf, isMacLike } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
+import { fetchSsoProviders, providerName, ssoReasonMessage } from '../lib/sso.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncIfUnsaved } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
@@ -25,6 +27,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 export default function Settings() {
   const { user, refreshUser } = useAuth();
@@ -166,6 +173,46 @@ export default function Settings() {
     }
   };
 
+  const passwordForm = (
+    <form className="space-y-3" onSubmit={handleChangePassword}>
+      <div className="space-y-1.5">
+        <Label htmlFor="current-password">Current Password</Label>
+        <PasswordField
+          id="current-password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="new-password">New Password</Label>
+        <PasswordField
+          id="new-password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="confirm-password">Confirm Password</Label>
+        <PasswordField
+          id="confirm-password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleChangePassword(e); } }}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <Button type="submit" disabled={passwordSubmitting}>
+        {passwordSubmitting ? 'Changing...' : 'Change Password'}
+      </Button>
+      {passwordFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{passwordFeedback}</p>}
+    </form>
+  );
+
   return (
     <div className="mx-auto max-w-lg space-y-6 p-4">
       <h2 className="text-xl font-semibold">User Settings</h2>
@@ -199,47 +246,10 @@ export default function Settings() {
             {nameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{nameFeedback}</p>}
           </form>
 
-          <Separator />
-
-          <form className="space-y-3" onSubmit={handleChangePassword}>
-            <div className="space-y-1.5">
-              <Label htmlFor="current-password">Current Password</Label>
-              <PasswordField
-                id="current-password"
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-password">New Password</Label>
-              <PasswordField
-                id="new-password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <PasswordField
-                id="confirm-password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleChangePassword(e); } }}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <Button type="submit" disabled={passwordSubmitting}>
-              {passwordSubmitting ? 'Changing...' : 'Change Password'}
-            </Button>
-            {passwordFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{passwordFeedback}</p>}
-          </form>
         </CardContent>
       </Card>
+
+      <SignInMethods>{passwordForm}</SignInMethods>
 
       {userFields.length > 0 && (
         <Card>
@@ -309,6 +319,145 @@ export default function Settings() {
         }}
       />
     </div>
+  );
+}
+
+// How this account signs in: its password, and a single sign-on identity
+// (docs/SSO.md). `children` is the change-password form, shown only when a
+// password is set (it asks for the current one). The provider rows appear
+// only when SSO is on or this account is already connected.
+function SignInMethods({ children }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // What a single sign-on round trip came back with: "connected" from
+  // /sso/complete, or a failure reason from /login?sso=… (App.jsx LoginRoute).
+  const [arrival] = useState(() => ({ notice: location.state?.ssoNotice || '', reason: location.state?.ssoReason || '' }));
+  const [signIn, setSignIn] = useState(null);
+  const [providers, setProviders] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const loadSignIn = () => authenticatedFetch('/v1/me')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((me) => setSignIn(me?.signIn || null))
+    .catch(() => {});
+
+  useEffect(() => {
+    let live = true;
+    Promise.all([fetchSsoProviders(), loadSignIn()]).then(([list]) => {
+      if (!live) return;
+      setProviders(list);
+      // Set after the first render so the live regions announce them.
+      if (arrival.notice) setNotice(arrival.notice);
+      if (arrival.reason) setError(ssoReasonMessage(arrival.reason, list));
+    });
+    // Shown once: a reload or Back shouldn't repeat it.
+    if (arrival.notice || arrival.reason) navigate('.', { replace: true, state: null });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const linked = signIn?.sso || null;
+  // The connected provider first (even if it has since been turned off), then
+  // the ones on offer. An account holds one identity, so nothing else can be
+  // connected while one is.
+  const rows = linked
+    ? [{ id: linked.provider, name: providerName(providers.find((p) => p.id === linked.provider)?.label || 'Single sign-on') }]
+    : providers.map((p) => ({ id: p.id, name: providerName(p.label) }));
+
+  async function connect(id, name) {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const res = await authenticatedFetch(`/v1/auth/sso/${encodeURIComponent(id)}/link`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) throw new Error();
+      window.location.assign(data.url);
+    } catch {
+      setError(`Connecting ${name} isn’t available right now.`);
+      setBusy(false);
+    }
+  }
+
+  function askDisconnect() {
+    setError(''); setNotice('');
+    // Without a password this is the only way in; the server refuses too.
+    if (signIn && !signIn.password) { setError('Set a password first, so you can still sign in.'); return; }
+    setConfirmOpen(true);
+  }
+
+  async function disconnect(name) {
+    setConfirmOpen(false);
+    setBusy(true);
+    try {
+      const res = await authenticatedFetch('/v1/auth/sso/disconnect', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.code === 'no_password' ? 'Set a password first, so you can still sign in.' : 'Couldn’t disconnect. Try again.');
+      await loadSignIn();
+      setNotice(`${name} disconnected.`);
+    } catch (err) {
+      setError(err.message === 'Session expired' ? 'Couldn’t disconnect. Try again.' : err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const noPassword = !!signIn && !signIn.password;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign-in methods</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground min-h-5 empty:hidden" role="status" aria-live="polite">{notice}</p>
+        {error && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{error}</p>}
+
+        {rows.map((row) => (
+          <div key={row.id} className="flex items-center justify-between gap-3">
+            <div className="min-w-0 text-sm">
+              <div className="font-medium">{row.name}</div>
+              <div className="text-muted-foreground break-all">
+                {linked ? (linked.email ? `Connected as ${linked.email}` : 'Connected') : 'Not connected'}
+              </div>
+            </div>
+            {linked
+              ? <Button variant="outline" disabled={busy} aria-label={`Disconnect ${row.name}`} onClick={askDisconnect}>Disconnect</Button>
+              : <Button variant="outline" disabled={busy} onClick={() => connect(row.id, row.name)}>Connect {row.name}</Button>}
+          </div>
+        ))}
+        {rows.length > 0 && <Separator />}
+
+        {noPassword ? (
+          <div className="text-sm">
+            <div className="font-medium">Password</div>
+            <div className="text-muted-foreground">Not set — use Forgot password to add one</div>
+          </div>
+        ) : (
+          <>
+            {rows.length > 0 && <div className="text-sm font-medium">Password</div>}
+            {children}
+          </>
+        )}
+      </CardContent>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect {rows[0]?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>You’ll sign in with your password.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive/10 text-red-800 dark:text-destructive hover:bg-destructive/20"
+              onClick={() => disconnect(rows[0]?.name)}
+            >
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
   );
 }
 

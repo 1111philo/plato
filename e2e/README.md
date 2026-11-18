@@ -21,6 +21,21 @@ A/AA violations** on any page or dialog, at desktop (1280×800) and mobile
   (Cmd/Ctrl+Enter to send, Alt+Arrow through messages); the admin skip link;
   long dialogs fit the viewport.
 
+- `tests/sso.spec.js`: single sign-on (docs/SSO.md), by keyboard, against a
+  stand-in identity provider. Playwright starts `fake-idp-server.js` next to
+  the app (port 3491; it is `server/tests/helpers/fake-idp.js`, which signs
+  real tokens and checks PKCE, with an authorize endpoint that approves at
+  once). A test says who signs in next with
+  `POST /__control/next { claims }`, or `{ cancel: true }`. The app gets
+  made-up `SSO_ENTRA_*` settings pointing at it, and `global-setup.js` turns
+  the `entra-sso` plugin on with the label "Sign in with UIC", so the login
+  page has two "Sign in…" buttons: match the password one exactly
+  (`{ name: 'Sign in', exact: true }`).
+
+Ports and the database can be moved when 3490 is taken:
+`E2E_PORT=3590 E2E_DB=/tmp/other.db npx playwright test` (the identity
+provider uses the next port up, or `E2E_IDP_PORT`).
+
 `global-setup.js` seeds data through the real API (a course, two lessons, a
 group, a custom field) plus a learner via `server/scripts/create-dev-user.js`.
 The mock coach adds 3 progress points per learner turn; a message containing

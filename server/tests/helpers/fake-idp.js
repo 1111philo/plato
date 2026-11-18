@@ -3,22 +3,29 @@
  * endpoint that checks the client secret, the redirect URI, and the PKCE
  * verifier like a real one, and signs real RS256 ID tokens. Shaped like
  * Microsoft Entra v2 (`/<tenant>/v2.0`).
+ *
+ * Unit tests play the person themselves with `approve()`. The e2e suite runs
+ * it as a standalone server (`e2e/fake-idp-server.js`): a fixed `port`, and an
+ * `onRequest(req, res, url, idp)` hook that answers the authorize endpoint
+ * (return true when it handled the request).
  */
 import http from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 
-export async function startFakeIdp({ tenant, clientId, clientSecret }) {
+export async function startFakeIdp({ tenant, clientId, clientSecret, port = 0, onRequest = null }) {
   const { publicKey, privateKey } = await generateKeyPair('RS256');
   const other = await generateKeyPair('RS256'); // a key the JWKS doesn't publish
   const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
   const codes = new Map(); // code -> { claims, challenge, redirectUri, tamper }
   let base;
+  let idp;
   const issuer = () => `${base}/${tenant}/v2.0`;
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, base);
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (onRequest && await onRequest(req, res, url, idp)) return undefined;
     if (url.pathname === `/${tenant}/v2.0/.well-known/openid-configuration`) {
       return json(200, { issuer: issuer(), authorization_endpoint: `${base}/${tenant}/authorize`, token_endpoint: `${base}/${tenant}/token`, jwks_uri: `${base}/${tenant}/keys` });
     }
@@ -43,10 +50,10 @@ export async function startFakeIdp({ tenant, clientId, clientSecret }) {
     }
     return json(404, { error: 'not_found' });
   });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}`;
 
-  return {
+  idp = {
     base,
     issuer,
     /** What the provider does after the person signs in: mint a code for this authorize request. */
@@ -58,4 +65,5 @@ export async function startFakeIdp({ tenant, clientId, clientSecret }) {
     },
     close: () => new Promise((r) => server.close(r)),
   };
+  return idp;
 }

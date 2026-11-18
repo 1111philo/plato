@@ -5,6 +5,8 @@ import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
+import SsoButtons from '../components/SsoButtons.jsx';
+import { fetchSsoProviders } from '../lib/sso.js';
 import { missingRequired } from '../lib/userFields.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,6 +37,11 @@ export default function Signup() {
   // expired, or full invite (or none at all), so nobody fills in a form
   // that can't work.
   const [inviteState, setInviteState] = useState(token ? 'checking' : 'invalid');
+  const [providers, setProviders] = useState(null);
+
+  useEffect(() => {
+    if (token) fetchSsoProviders().then(setProviders);
+  }, [token]);
 
   useEffect(() => {
     fetch('/v1/groups')
@@ -151,6 +158,8 @@ export default function Signup() {
               {error}
             </div>
           )}
+          {/* Single sign-on makes the account from this invite; no password, and the invite's email needn't match. */}
+          <SsoButtons providers={providers} invite={token} verb="Continue" />
           <div className="space-y-2">
             <Label htmlFor="signup-email">Email</Label>
             <Input

@@ -10,6 +10,7 @@ import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import SignedInInvite from './pages/SignedInInvite.jsx';
 import Waitlist from './pages/Waitlist.jsx';
+import SsoComplete from './pages/SsoComplete.jsx';
 import Privacy from './pages/Privacy.jsx';
 import HowAssessmentWorks from './pages/HowAssessmentWorks.jsx';
 import Setup from './pages/Setup.jsx';
@@ -63,6 +64,18 @@ function RequireGuest({ children }) {
   if (loading) return null;
   if (loggedIn) return <Navigate to="/lessons" replace />;
   return children;
+}
+
+// /login: a single sign-on that failed comes back here as ?sso=<reason>
+// (docs/SSO.md). When that was "Connect" from Settings the person is signed
+// in, so the reason is shown there instead of being dropped.
+function LoginRoute() {
+  const { loggedIn, loading } = useAuth();
+  const [params] = useSearchParams();
+  if (loading) return null;
+  const reason = params.get('sso');
+  if (loggedIn) return reason ? <Navigate to="/settings" replace state={{ ssoReason: reason }} /> : <Navigate to="/lessons" replace />;
+  return <Login />;
 }
 
 // /signup: an invite opened while signed in says so (SignedInInvite) instead
@@ -126,9 +139,11 @@ export default function App() {
     <>
       <ScreenReaderAnnounce />
       <Routes>
-        <Route path="/login" element={<RequireGuest><Login /></RequireGuest>} />
+        <Route path="/login" element={<LoginRoute />} />
         <Route path="/signup" element={<SignupRoute />} />
         <Route path="/waitlist" element={<RequireGuest><Waitlist /></RequireGuest>} />
+        {/* Where single sign-on returns to: signed out (signing in) or signed in (connecting from Settings). */}
+        <Route path="/sso/complete" element={<SsoComplete />} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
         <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
         <Route path="/privacy" element={<Privacy />} />
