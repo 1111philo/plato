@@ -22,17 +22,27 @@ unless a deployment configures it.
 
 Decided 2026-11-17. In order:
 
-1. **Connecting from Settings** (already signed in): the identity is linked to
-   that account.
+1. **Connecting from Settings** (already signed in): asks for the current
+   password first (adding a way to sign in is a credential change). Nothing is
+   linked when the provider redirects back; the link is made at the exchange,
+   and only for the signed-in person who started it. The account gets an email.
 2. **The identity is already linked** → that account. A stored link always
    wins, even if emails have changed on either side since.
 3. **An email the provider vouches for matches an account** → it's linked and
    signed in (everyone, staff included), and the account gets an email saying
-   so.
+   so. **If nobody ever proved that account's email, its password is removed
+   and every session ends.** plato accepts unproven emails (a learner can
+   change theirs; a shareable invite takes any), so someone could park an
+   account on another person's address and wait for their first sign-in. An
+   email counts as proven (`emailVerifiedAt`) when an emailed invite or an
+   emailed reset link was used, or the account was made by SSO; changing the
+   email clears it. Accounts from before this existed count as unproven, so
+   their first SSO sign-in removes the password once (the email says so, and
+   Settings can set a new one).
 4. **They came from an invite link** → the account is made from the invite.
    An email invite keeps the *invite's* email (holding the link is the proof,
-   as with password signup) and must not be expired. A shareable link uses the
-   identity's email and counts against its usage limit.
+   as with password signup) and must not be expired. A shareable link needs an
+   email the provider vouches for, uses it, and counts against its usage limit.
 5. **A vouched-for email has an invite, pending or expired** → the account is
    made from it, with the invite's name, group, and answers. The identity
    proves the address, so the emailed link isn't needed.
@@ -40,22 +50,35 @@ Decided 2026-11-17. In order:
    have an account yet", with a wait-list join that carries the verified name
    and email (a signed 15-minute ticket, `ssoTicket` on `POST /v1/waitlist`).
    If a vouched-for email is already on the wait list, the entry is marked
-   verified (`profile.ssoVerified`) and the person keeps waiting.
+   "Email verified" (`profile.ssoVerified`), its name is replaced with the
+   provider's (anyone can join the public list under someone else's address;
+   the group and answers stay as submitted), and the person keeps waiting.
 
 Other rules:
 - One identity belongs to one account, and an account has one identity
-  (`ssoKey` = `<provider>:<tenant>:<subject>` on the user, found through the
-  sparse `ssoKey-index`). Connecting an identity that's on another account is
-  refused; accounts can't be merged.
+  (`ssoKey` = `<provider>:<tenant>:<subject>` on the user). The database
+  enforces it: on DynamoDB the owner is a guard item (sync-data partition
+  `_sso`) written in the same transaction as the user and read with strong
+  consistency; on SQLite a unique index. Connecting an identity that's on
+  another account is refused; accounts can't be merged.
 - **Which emails are vouched for** is the provider's call. Entra: the `email`
   claim and the sign-in name, only when the domain is one the tenant owns
   (`SSO_ENTRA_DOMAINS`), and never when Entra says the email's domain owner
-  isn't verified. A guest account's outside address matches nothing.
+  isn't verified. A guest (B2B) account matches nothing, whatever its address.
+  List only domains that are verified in the tenant.
 - An account made by SSO has **no password**. Password sign-in answers
-  "Invalid credentials" (in the same time as a wrong password); "Forgot
-  password" lets the person add one. Disconnecting SSO from your own account
-  needs a password first; an admin can unlink anyone
-  (`DELETE /v1/admin/users/:userId/sso`).
+  "Invalid credentials" (in the same time as a wrong password). To add one: Settings →
+  Sign-in methods → **Email me a link to set one** (the password-reset email;
+  `/reset-password` opens while signed in, and a reset signs every session
+  out), or "Forgot password" from the login page. Disconnecting SSO from your own account
+  needs your current password; an admin can unlink anyone
+  (`DELETE /v1/admin/users/:userId/sso`), which also ends that person's
+  sessions. Unlinking isn't a block: if the email still matches, their next
+  SSO sign-in connects it again. **A password reset drops the link** along
+  with every session, so an identity connected by whoever had the account
+  doesn't outlive the reset; the owner connects it again by signing in with it.
+- An invite for a vouched-for email works through SSO even after its link
+  expired. To stop someone joining, revoke the invite.
 - Roles never come from the provider. New accounts are learners.
 - Sign-out ends the plato session only. When someone's institutional account
   is disabled, SSO stops working for them and their plato session runs out by
@@ -129,7 +152,11 @@ app      POST /v1/auth/sso/exchange { code }   (with the cookie)
   configured one, and endpoints must be https.
 - **Nothing from the provider is stored** except the stable subject id and
   the email it showed. No provider tokens are kept.
-- `next` is a local path only; anything else becomes `/`.
+- `next` is a path on this site only: control characters (browsers strip tabs
+  and newlines from URLs), backslashes, and anything the URL parser resolves
+  to another origin become `/`. The app checks again before navigating.
+- The transaction cookie is `__Secure-plato_sso_tx` over https (a sibling
+  host can't plant it), and every SSO response is `Cache-Control: no-store`.
 - Failures redirect to `/login?sso=<reason>` (`cancelled`, `expired`,
   `refused`, `failed`, `unavailable`). Logs carry a reason code only, never a
   token or a claim (`sso_start_failed`, `sso_callback_failed`).
@@ -200,6 +227,29 @@ on, or an account is linked). Until then Admin → Users looks as it always did.
 Code: `client/src/lib/signIn.js`, `client/src/lib/userFilters.js`,
 `client/src/pages/admin/AdminUsers.jsx`,
 `plugins/entra-sso/client/EntraSettingsPanel.jsx`.
+
+## Security review (2026-11-18)
+
+An independent adversarial review found the protocol core sound and six
+issues where an identity meets plato's accounts; all are fixed and have
+regression tests in `server/tests/routes/sso.test.js`:
+1. Pre-registering someone's address to capture their first sign-in (rule 3's
+   `emailVerifiedAt` and takeover).
+2. Connecting from Settings with only a stolen session, and the link
+   surviving a password reset (current password required; link finished
+   behind authentication; reset and admin unlink end it).
+3. An open redirect through a tab character in `next`.
+4. "One identity, one account" not enforced by DynamoDB (guard item +
+   transaction; verified against real tables).
+5. A planted wait-list entry looking verified (name replaced; "Email verified").
+6. A shareable-link account under an address the provider didn't vouch for.
+
+Also hardened: the test-only authority override is honored only for
+localhost; the callback has its own rate limit; logs carry reason codes only.
+
+**Rollback:** code from before SSO meeting an account that has no password
+answers a password attempt with a 500, not a sign-in. Turn the plugin off
+before rolling back past this feature.
 
 ## Tests
 

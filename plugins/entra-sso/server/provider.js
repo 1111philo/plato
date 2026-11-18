@@ -24,7 +24,10 @@ export function configure(env = process.env, settings = {}) {
   const clientSecret = (env.SSO_ENTRA_CLIENT_SECRET || '').trim();
   // One named tenant only: "common" or "organizations" would accept any Microsoft account.
   if (!GUID.test(tenant) || !clientId || !clientSecret) return null;
-  const authority = (env.SSO_ENTRA_AUTHORITY || 'https://login.microsoftonline.com').replace(/\/$/, '');
+  // The override is for tests and local development only: it's honored only
+  // when it points at this machine, so it can never redirect a real deployment.
+  const override = (env.SSO_ENTRA_AUTHORITY || '').replace(/\/$/, '');
+  const authority = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(override) ? override : 'https://login.microsoftonline.com';
   return {
     issuer: `${authority}/${tenant}/v2.0`,
     clientId,
@@ -53,7 +56,10 @@ export function mapClaims(claims, cfg) {
   const clean = (v) => (typeof v === 'string' && EMAIL.test(v.trim()) ? v.trim().toLowerCase() : null);
   const emailClaim = claims.xms_edov === false ? null : clean(claims.email);
   const candidates = [...new Set([emailClaim, clean(claims.preferred_username)].filter(Boolean))];
-  const emails = candidates.filter((e) => cfg.domains.includes(e.split('@')[1]));
+  // A guest (B2B) account lives in this tenant but belongs to another
+  // organization: it never matches a plato account, whatever its address.
+  const guest = claims.acct === 1 || claims.acct === '1';
+  const emails = guest ? [] : candidates.filter((e) => cfg.domains.includes(e.split('@')[1]));
   return {
     subject: String(subject),
     tenant: cfg.tenant,

@@ -1039,8 +1039,8 @@ export default function AdminUsers() {
           <Badge variant="outline">Wait List</Badge>
           {/* Proved the address by single sign-on (docs/SSO.md rule 6). */}
           {item._entry.ssoVerified && (
-            <Badge variant="outline" className="ml-1 border-green-300 bg-green-50 text-green-800" title={`Verified by ${providerName(item._entry.ssoVerified, ssoProviders)} sign-in`}>
-              Verified<span className="sr-only"> by {providerName(item._entry.ssoVerified, ssoProviders)} sign-in</span>
+            <Badge variant="outline" className="ml-1 border-green-300 bg-green-50 text-green-800" title={`Email verified by ${providerName(item._entry.ssoVerified, ssoProviders)} sign-in`}>
+              Email verified<span className="sr-only"> by {providerName(item._entry.ssoVerified, ssoProviders)} sign-in</span>
             </Badge>
           )}
           {item._entry.alreadyRegistered && (

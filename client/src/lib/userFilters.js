@@ -9,7 +9,7 @@ import { matchesFieldFilter } from './userFields.js';
 const NO_GROUP = '__none';
 const statusOf = (i) => (i._type === 'user' ? 'active' : i._type === 'invite' ? (i._invite?.expired ? 'expired' : 'invited') : 'waitlist');
 // A wait-list entry whose address was proved by single sign-on is both
-// "Wait list" and "Wait list: verified".
+// "Wait list" and "Wait list: email verified".
 const statusesOf = (i) => (i._type === 'waitlist' && i._entry?.ssoVerified ? ['waitlist', 'verified'] : [statusOf(i)]);
 // A user with a password and a linked identity matches both.
 const signInOf = (u) => [...(u?.hasPassword !== false ? ['password'] : []), ...(u?.sso ? ['sso'] : [])];
@@ -35,14 +35,14 @@ function valuesOf(item, facet) {
  * their dropdown options (plus Empty), or Has a value / Empty. `slack` adds
  * Slack: Linked / Not linked (signed-up users only), shown when the Slack
  * plugin is connected. `sso` adds Sign-in: Password / SSO (signed-up users
- * only; someone with both matches both) and Status → Wait list: verified,
+ * only; someone with both matches both) and Status → Wait list: email verified,
  * shown when single sign-on is in play (lib/signIn.js `ssoInPlay`).
  */
 export function buildFacets({ items, groups = [], userFields = [], slack = false, sso = false }) {
   const facets = [
     { key: 'status', label: 'Status', options: [
       { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'expired', label: 'Invite expired' }, { value: 'waitlist', label: 'Wait list' },
-      ...(sso ? [{ value: 'verified', label: 'Wait list: verified' }] : []),
+      ...(sso ? [{ value: 'verified', label: 'Wait list: email verified' }] : []),
     ] },
     { key: 'role', label: 'Role', options: ['admin', 'educator', 'learner', 'tester'].map((r) => ({ value: r, label: ROLE_LABELS[r] })) },
   ];

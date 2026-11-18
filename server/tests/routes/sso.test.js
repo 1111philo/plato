@@ -41,7 +41,7 @@ before(async () => {
   _setProviders([{ ...entra, settings: { buttonLabel: 'Sign in with UIC' } }]);
   await db.putSyncData('_system', 'settings', { userGroups: ['Cohort A'], userFields: [{ id: 'fld_org', label: 'Org', type: 'text', required: false }] }, 0);
   await db.putSyncData('_system', 'waitlist', { open: true }, 0);
-  await db.createUser({ userId: 'usr_admin', email: 'boss@uic.edu', username: 'boss', passwordHash: await hashPassword('admin-pass-1'), firstName: 'Boss', lastName: '', name: 'Boss', role: 'admin' });
+  await db.createUser({ userId: 'usr_admin', email: 'boss@uic.edu', username: 'boss', passwordHash: await hashPassword('admin-pass-1'), firstName: 'Boss', lastName: '', name: 'Boss', role: 'admin', emailVerifiedAt: '2026-01-01T00:00:00.000Z' });
   await db.createUser({ userId: 'usr_gmail', email: 'pat@gmail.com', username: 'pat', passwordHash: await hashPassword('pat-pass-123'), firstName: 'Pat', lastName: '', name: 'Pat', role: 'learner' });
 });
 after(async () => {
@@ -58,7 +58,7 @@ const person = (netid, extra = {}) => ({ oid: `oid-${netid}`, sub: `sub-${netid}
 async function signIn(claims, { query = '', tamper, cookieOverride, headers = {}, link } = {}) {
   let start; let cookie; let authorize;
   if (link) {
-    start = await app.request('/v1/auth/sso/entra/link', { method: 'POST', headers: { Authorization: `Bearer ${link}` } });
+    start = await app.request('/v1/auth/sso/entra/link', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${link.token}` }, body: JSON.stringify({ currentPassword: link.password }) });
     assert.equal(start.status, 200);
     authorize = (await start.json()).url;
   } else {
@@ -77,7 +77,8 @@ async function complete(claims, opts = {}) {
   const location = callback.headers.get('location');
   if (!location.includes('/sso/complete#code=')) return { redirect: location };
   const code = location.split('#code=')[1];
-  const res = await app.request('/v1/auth/sso/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ code }) });
+  const bearer = opts.exchangeAs ?? opts.link?.token;
+  const res = await app.request('/v1/auth/sso/exchange', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie, ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) }, body: JSON.stringify({ code }) });
   return { status: res.status, code, cookie, ...(await res.json()) };
 }
 
@@ -110,8 +111,12 @@ describe('the flow', () => {
     assert.match(set, /plato_sso_tx=/); assert.match(set, /HttpOnly/); assert.match(set, /SameSite=Lax/); assert.match(set, /Path=\/v1\/auth\/sso/);
     const again = await app.request('/v1/auth/sso/entra/start');
     assert.notEqual(new URL(again.headers.get('location')).searchParams.get('state'), q.get('state'), 'fresh per attempt');
-    const out = await complete(person('nextcheck'), { query: '?next=https://evil.example/x' });
-    assert.equal(out.next, '/');
+    assert.match(res.headers.get('cache-control') || '', /no-store/);
+    for (const next of ['https://evil.example/x', '/%09/evil.example/x', '/%0A/evil.example', '//evil.example', '/%5Cevil.example']) {
+      const out = await complete(person('nextcheck'), { query: `?next=${next}` });
+      assert.equal(out.next, '/', next);
+    }
+    assert.equal((await complete(person('nextcheck'), { query: '?next=/lessons/abc%3Fx=1' })).next, '/lessons/abc?x=1');
   });
 
   it('refuses a callback without our cookie, with someone else’s state, or after a cancel', async () => {
@@ -217,7 +222,8 @@ describe('which account you land in', () => {
   it('an existing account with the same uic.edu email is connected (staff too), and the link then wins over email', async () => {
     const out = await complete(person('boss'));
     assert.deepEqual([out.outcome, out.linked, out.user.userId, out.user.role], ['signed_in', true, 'usr_admin', 'admin']);
-    assert.ok((await db.getUserById('usr_admin')).passwordHash, 'the password still works');
+    assert.ok((await db.getUserById('usr_admin')).passwordHash, 'a proven email keeps its password');
+    assert.equal(out.passwordRemoved, false);
     await db.updateUser('usr_admin', { email: 'boss-renamed@uic.edu' });
     const again = await complete(person('boss', { email: 'someone.new@uic.edu', preferred_username: 'someone.new@uic.edu' }));
     assert.deepEqual([again.outcome, again.user.userId, !!again.linked], ['signed_in', 'usr_admin', false]);
@@ -260,7 +266,19 @@ describe('which account you land in', () => {
 
   it('connect from Settings, refuse an identity that belongs to another account, and disconnect only with a password', async () => {
     const token = await signAccessToken('usr_gmail', 'learner');
-    const linked = await complete(person('patuic'), { link: token });
+    const start = (body) => app.request('/v1/auth/sso/entra/link', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    assert.equal((await start({})).status, 400, 'a session alone can’t add a way to sign in');
+    assert.equal((await start({ currentPassword: 'wrong-password' })).status, 400);
+    const link = { token, password: 'pat-pass-123' };
+    // Finishing needs the same signed-in person: no session, or someone else's, links nothing.
+    const adminToken0 = await signAccessToken('usr_admin', 'admin');
+    for (const exchangeAs of ['', adminToken0]) {
+      const stray = await complete(person('patuic'), { link, exchangeAs });
+      assert.deepEqual([stray.outcome, stray.code], ['error', 'try_again']);
+      assert.ok(!(await db.getUserById('usr_gmail')).ssoKey);
+      assert.ok(!(await db.getUserById('usr_admin')).ssoKey || (await db.getUserById('usr_admin')).ssoKey.endsWith('oid-boss'));
+    }
+    const linked = await complete(person('patuic'), { link });
     assert.deepEqual([linked.outcome, linked.next], ['linked', '/settings']);
     assert.equal((await db.getUserById('usr_gmail')).ssoKey, `entra:${TENANT}:oid-patuic`);
     const viaUic = await complete(person('patuic'));
@@ -268,14 +286,17 @@ describe('which account you land in', () => {
     // The same UIC identity can't be connected to a second account.
     const adminToken = await signAccessToken('usr_admin', 'admin');
     await db.clearUserSso('usr_admin');
-    const taken = await complete(person('patuic'), { link: adminToken });
+    const taken = await complete(person('patuic'), { link: { token: adminToken, password: 'admin-pass-1' } });
     assert.deepEqual([taken.outcome, taken.code], ['error', 'identity_in_use']);
     // Disconnect: fine with a password, refused without one.
-    const off = await app.request('/v1/auth/sso/disconnect', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const disconnect = (t, body) => app.request('/v1/auth/sso/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` }, body: JSON.stringify(body) });
+    assert.equal((await disconnect(token, {})).status, 400, 'needs the current password');
+    assert.ok((await db.getUserById('usr_gmail')).ssoKey);
+    const off = await disconnect(token, { currentPassword: 'pat-pass-123' });
     assert.equal(off.status, 200);
     assert.ok(!(await db.getUserById('usr_gmail')).ssoKey);
     const ssoOnly = await db.getUserByEmail('invitee@uic.edu');
-    const stuck = await app.request('/v1/auth/sso/disconnect', { method: 'POST', headers: { Authorization: `Bearer ${await signAccessToken(ssoOnly.userId, 'learner')}` } });
+    const stuck = await disconnect(await signAccessToken(ssoOnly.userId, 'learner'), { currentPassword: 'x' });
     assert.equal(stuck.status, 400);
     assert.ok((await db.getUserById(ssoOnly.userId)).ssoKey);
     // An admin can unlink anyone; the list shows sign-in methods.
@@ -284,7 +305,92 @@ describe('which account you land in', () => {
     assert.deepEqual([row.sso.provider, row.sso.email, row.hasPassword], ['entra', 'invitee@uic.edu', false]);
     const unlink = await app.request(`/v1/admin/users/${ssoOnly.userId}/sso`, { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } });
     assert.deepEqual(await unlink.json(), { ok: true, hasPassword: false });
-    assert.ok(!(await db.getUserById(ssoOnly.userId)).ssoKey);
+    const after = await db.getUserById(ssoOnly.userId);
+    assert.ok(!after.ssoKey);
+    assert.equal(Number(after.tokenVersion), Number(ssoOnly.tokenVersion || 0) + 1, 'unlinking ends their sessions');
     assert.equal((await app.request('/v1/auth/sso/entra/link', { method: 'POST' })).status, 401, 'connecting needs a session');
+  });
+});
+
+describe('attacks from the security review', () => {
+  const json = (token) => ({ 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+
+  it('parking an account on someone else’s address gains nothing: the real owner’s sign-in ends its sessions and removes its password', async () => {
+    // The attacker has an ordinary account and changes its email to the victim's (no proof needed).
+    await db.createUser({ userId: 'usr_attacker', email: 'attacker@gmail.com', username: 'attacker', passwordHash: await hashPassword('attacker-pass-1'), firstName: 'A', lastName: '', name: 'A', role: 'learner', emailVerifiedAt: '2026-01-01T00:00:00.000Z' });
+    const login = await (await app.request('/v1/auth/login', { method: 'POST', headers: json(), body: JSON.stringify({ email: 'attacker@gmail.com', password: 'attacker-pass-1' }) })).json();
+    const change = await app.request('/v1/me', { method: 'PATCH', headers: json(login.accessToken), body: JSON.stringify({ email: 'victim@uic.edu', currentPassword: 'attacker-pass-1' }) });
+    assert.equal(change.status, 200);
+    assert.ok(!(await db.getUserById('usr_attacker')).emailVerifiedAt, 'a changed email is unproven');
+
+    const victim = await complete(person('victim'));
+    assert.deepEqual([victim.outcome, victim.linked, victim.passwordRemoved, victim.user.userId], ['signed_in', true, true, 'usr_attacker']);
+    // The attacker is out: session, refresh, and password.
+    assert.equal((await app.request('/v1/me', { headers: json(login.accessToken) })).status, 401);
+    assert.equal((await app.request('/v1/auth/refresh', { method: 'POST', headers: json(), body: JSON.stringify({ refreshToken: login.refreshToken }) })).status, 401);
+    assert.equal((await app.request('/v1/auth/login', { method: 'POST', headers: json(), body: JSON.stringify({ email: 'victim@uic.edu', password: 'attacker-pass-1' }) })).status, 401);
+    // The victim's own session works, and the address now counts as proven.
+    assert.equal((await app.request('/v1/me', { headers: json(victim.accessToken) })).status, 200);
+    assert.ok((await db.getUserById('usr_attacker')).emailVerifiedAt);
+  });
+
+  it('a password signup through an emailed invite proves the address; through a shareable link it doesn’t', async () => {
+    await db.createInvite({ inviteToken: 'inv_proof_1', email: 'proven@uic.edu', invitedBy: 'usr_admin' });
+    await db.createInvite({ inviteToken: 'inv_proof_link', invitedBy: 'usr_admin', isLink: true });
+    const signup = (body) => app.request('/v1/auth/signup', { method: 'POST', headers: json(), body: JSON.stringify({ firstName: 'P', password: 'long-enough-pass', ...body }) });
+    assert.equal((await signup({ inviteToken: 'inv_proof_1' })).status, 201);
+    assert.equal((await signup({ inviteToken: 'inv_proof_link', email: 'dean@uic.edu' })).status, 201);
+    assert.ok((await db.getUserByEmail('proven@uic.edu')).emailVerifiedAt);
+    assert.ok(!(await db.getUserByEmail('dean@uic.edu')).emailVerifiedAt);
+    const kept = await complete(person('proven'));
+    assert.deepEqual([kept.linked, kept.passwordRemoved], [true, false]);
+    const dean = await complete(person('dean'));
+    assert.deepEqual([dean.linked, dean.passwordRemoved], [true, true]);
+    assert.ok(!(await db.getUserByEmail('dean@uic.edu')).passwordHash);
+  });
+
+  it('a password reset proves the address and drops a connected identity', async () => {
+    const { issueResetToken } = await import('../../src/lib/sessions.js');
+    const user = await db.getUserByEmail('proven@uic.edu');
+    assert.ok(user.ssoKey);
+    const resetToken = await issueResetToken(user, { force: true });
+    const res = await app.request('/v1/auth/reset-password', { method: 'POST', headers: json(), body: JSON.stringify({ resetToken, password: 'a-brand-new-pass' }) });
+    assert.equal(res.status, 200);
+    const after = await db.getUserById(user.userId);
+    assert.ok(!after.ssoKey, 'an identity linked by whoever had the account does not outlive the reset');
+    assert.equal(await db.getUserBySsoKey(user.ssoKey), null);
+    // The owner's next sign-in connects it again, keeping the new password.
+    const again = await complete(person('proven'));
+    assert.deepEqual([again.outcome, again.linked, again.passwordRemoved], ['signed_in', true, false]);
+  });
+
+  it('a wait-list entry someone else made under your address gets your name when you verify it', async () => {
+    await db.createWaitlistEntry({ inviteToken: 'wl_planted', email: 'prof@uic.edu', profile: { firstName: 'Planted', lastName: 'Name', userGroup: 'Cohort A' } });
+    await complete(person('prof', { given_name: 'Real', family_name: 'Professor' }));
+    const entry = await db.getInvite('wl_planted');
+    assert.deepEqual([entry.profile.firstName, entry.profile.lastName, entry.profile.userGroup], ['Real', 'Professor', 'Cohort A']);
+    assert.ok(entry.profile.ssoVerified);
+  });
+
+  it('a guest account, or an address outside the owned domains, can’t take an account or use a shareable link', async () => {
+    await db.createInvite({ inviteToken: 'inv_link_guest', invitedBy: 'usr_admin', isLink: true });
+    const outside = await complete(person('ceo', { email: 'ceo@bigcorp.com', preferred_username: 'ceo_bigcorp.com#EXT#@uic.onmicrosoft.com' }), { query: '?invite=inv_link_guest' });
+    assert.deepEqual([outside.outcome, outside.code], ['error', 'no_email']);
+    assert.equal(await db.getUserByEmail('ceo@bigcorp.com'), null);
+    // A guest whose address happens to be in an owned domain still matches nothing.
+    const guest = await complete(person('boss', { oid: 'oid-guest', acct: 1 }));
+    assert.equal(guest.outcome, 'no_account');
+  });
+
+  it('one identity can’t be connected to two accounts, even when both try at once', async () => {
+    await db.createUser({ userId: 'usr_race_a', email: 'race-a@gmail.com', username: 'racea', passwordHash: await hashPassword('race-pass-aaa'), firstName: 'A', lastName: '', name: 'A', role: 'learner' });
+    await db.createUser({ userId: 'usr_race_b', email: 'race-b@gmail.com', username: 'raceb', passwordHash: await hashPassword('race-pass-bbb'), firstName: 'B', lastName: '', name: 'B', role: 'learner' });
+    const results = await Promise.all([
+      db.linkUserSso('usr_race_a', { key: 'entra:t:race', email: 'r@uic.edu' }),
+      db.linkUserSso('usr_race_b', { key: 'entra:t:race', email: 'r@uic.edu' }),
+    ]);
+    assert.deepEqual(results.sort(), [false, true]);
+    const owner = await db.getUserBySsoKey('entra:t:race');
+    assert.ok(['usr_race_a', 'usr_race_b'].includes(owner.userId));
   });
 });

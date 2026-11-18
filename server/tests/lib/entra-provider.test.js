@@ -36,6 +36,13 @@ describe('entra provider', () => {
     assert.deepEqual(mapClaims({ ...base, email: 'ada@uic.edu' }, { ...cfg, domains: [] }).emails, [], 'no owned domains: match nothing');
   });
 
+  it('never vouches for a guest account, and ignores an authority override that isn’t this machine', () => {
+    assert.deepEqual(mapClaims({ ...base, email: 'ada@uic.edu', preferred_username: 'ada@uic.edu', acct: 1 }, cfg).emails, []);
+    assert.deepEqual(mapClaims({ ...base, email: 'ada@uic.edu', acct: 0 }, cfg).emails, ['ada@uic.edu']);
+    assert.equal(configure({ ...ENV, SSO_ENTRA_AUTHORITY: 'https://login.evil.example' }).issuer, `https://login.microsoftonline.com/${T}/v2.0`);
+    assert.equal(configure({ ...ENV, SSO_ENTRA_AUTHORITY: 'http://127.0.0.1:4455/' }).issuer, `http://127.0.0.1:4455/${T}/v2.0`);
+  });
+
   it('uses the directory object id as the subject, and refuses another tenant or a token with no subject', () => {
     assert.equal(mapClaims({ ...base, email: 'a@uic.edu' }, cfg).subject, 'o1');
     assert.equal(mapClaims({ tid: T, sub: 's1' }, cfg).subject, 's1');

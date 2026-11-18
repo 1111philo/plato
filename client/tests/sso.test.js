@@ -120,3 +120,14 @@ describe('fetchSsoProviders', () => {
     }
   });
 });
+
+describe('localPath', () => {
+  it('keeps a path on this site and refuses anything that could leave it', async () => {
+    const { localPath } = await import('../src/lib/sso.js');
+    const o = 'https://plato.example';
+    assert.equal(localPath('/lessons/abc?x=1#top', '/lessons', o), '/lessons/abc?x=1#top');
+    for (const bad of ['/\t/evil.example/x', '/\n/evil.example', '//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', '', '/', null, '/a b']) {
+      assert.equal(localPath(bad, '/lessons', o), '/lessons', JSON.stringify(bad));
+    }
+  });
+});

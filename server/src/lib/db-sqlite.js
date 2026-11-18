@@ -141,7 +141,7 @@ for (const col of ['firstName', 'lastName', 'nameSource']) {
 
 // Single sign-on (lib/external-identity.js): the linked identity. An account
 // made by SSO stores '' as passwordHash (the column is NOT NULL).
-for (const col of ['ssoKey', 'ssoEmail', 'ssoLinkedAt']) {
+for (const col of ['ssoKey', 'ssoEmail', 'ssoLinkedAt', 'emailVerifiedAt']) {
   const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
   if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
 }
@@ -303,13 +303,13 @@ function rowToUser(row) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso, emailVerifiedAt }) {
     const now = new Date().toISOString();
     const customJson = customFields && Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, ssoKey, ssoEmail, ssoLinkedAt, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash || '', name ?? null, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, sso?.key || null, sso?.key ? (sso.email || null) : null, sso?.key ? now : null, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, ssoKey, ssoEmail, ssoLinkedAt, emailVerifiedAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash || '', name ?? null, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, sso?.key || null, sso?.key ? (sso.email || null) : null, sso?.key ? now : null, emailVerifiedAt || null, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
   },
 

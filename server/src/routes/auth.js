@@ -271,6 +271,9 @@ auth.post('/v1/auth/signup', async (c) => {
     role: 'learner',
     slackUserId: invite.slackUserId || null,
     customFields,
+    // An emailed invite's link reached that address, which proves it. A
+    // shareable link takes any typed email, which proves nothing.
+    ...(invite.email ? { emailVerifiedAt: new Date().toISOString() } : {}),
   });
 
   await emitHook('userCreated', { userId, email: userEmail, role: 'learner' });
@@ -421,7 +424,16 @@ auth.post('/v1/auth/reset-password', async (c) => {
   }
 
   const passwordHash = await hashPassword(password);
-  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null } });
+  // Using the emailed link proves the address. A reset is also how someone
+  // takes their account back, so it drops a connected single sign-on identity
+  // along with every session: an identity linked by whoever had the account
+  // must not outlive the reset. The owner connects it again by signing in
+  // with it (rule 2) or from Settings.
+  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null, emailVerifiedAt: new Date().toISOString() } });
+  if (found.user.ssoKey) {
+    await db.clearUserSso(found.user.userId);
+    try { await db.createAuditLog({ action: 'sso_unlinked', userId: found.user.userId, email: found.user.email, performedBy: found.user.userId, details: { provider: found.user.ssoKey.split(':')[0], by: 'password_reset' } }); } catch { /* best-effort */ }
+  }
   await db.deleteResetToken(found.tokenHash);
 
   return c.json({ ok: true });

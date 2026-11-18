@@ -145,7 +145,9 @@ export default function App() {
         {/* Where single sign-on returns to: signed out (signing in) or signed in (connecting from Settings). */}
         <Route path="/sso/complete" element={<SsoComplete />} />
         <Route path="/forgot-password" element={<RequireGuest><ForgotPassword /></RequireGuest>} />
-        <Route path="/reset-password" element={<RequireGuest><ResetPassword /></RequireGuest>} />
+        {/* Not guest-only: a signed-in person with no password (an account made by
+            single sign-on) sets one from the emailed link (Settings). */}
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/how-assessment-works" element={<HowAssessmentWorks />} />
 

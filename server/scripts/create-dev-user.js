@@ -36,6 +36,9 @@ await db.createUser({
   userGroup: null,
   role: 'user',
   slackUserId: null,
+  // The operator made this account for this address: treat it as proven, so a
+  // single sign-on with the same address connects without removing the password.
+  emailVerifiedAt: new Date().toISOString(),
 });
 
 console.log(`Created user:\n  userId:   ${userId}\n  email:    ${email}\n  username: ${username}\n  name:     ${displayName}`);

@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
-import { exchangeSsoCode, providerName, ssoCodeFromHash, ssoErrorMessage, SSO_EXPIRED_MESSAGE } from '../lib/sso.js';
+import { exchangeSsoCode, localPath, providerName, ssoCodeFromHash, ssoErrorMessage, SSO_EXPIRED_MESSAGE } from '../lib/sso.js';
+import { getAuthTokens } from '../../js/storage.js';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card';
 
@@ -24,12 +25,12 @@ export default function SsoComplete() {
     if (window.location.hash) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
     if (!code) return undefined;
     let live = true;
-    exchangeSsoCode(code).then(async (r) => {
+    getAuthTokens().catch(() => null).then((tokens) => exchangeSsoCode(code, fetch, tokens?.accessToken || null)).then(async (r) => {
       if (!live) return;
       if (r.outcome === 'signed_in') {
         try {
           const user = await completeSsoLogin(r);
-          const next = r.next && r.next !== '/' ? r.next : '/lessons';
+          const next = localPath(r.next);
           // Someone was already signed in on this browser: reload, so nothing
           // the app loaded for that session is left on screen.
           if (wasLoggedIn.current) { window.location.replace(next); return; }

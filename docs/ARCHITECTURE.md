@@ -1668,7 +1668,7 @@ filter.
   while the Slack plugin is connected; signed-up users only), Sign-in
   (Password / SSO, only while single sign-on is in play: a provider is on or
   an account is linked; signed-up users only, and someone with both matches
-  both; Status then also offers "Wait list: verified", see
+  both; Status then also offers "Wait list: email verified", see
   [`SSO.md`](SSO.md#for-admins)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
   Each option shows its count.
