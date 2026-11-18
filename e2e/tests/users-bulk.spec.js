@@ -85,7 +85,7 @@ test('wait-list entries can be selected and updated; someone on the list with an
     await login(page, ADMIN);
     await page.goto('/plato/users');
     await page.getByRole('button', { name: /^Filters/ }).click();
-    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Wait list/ }).click();
+    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Wait list(?!:)/ }).click();
     await page.keyboard.press('Escape');
     const table = page.getByRole('table', { name: 'Users and invites' });
     await expect(table.getByRole('row').filter({ hasText: 'Wren Waiting' })).toHaveCount(1);
@@ -131,7 +131,7 @@ test('admins invite selected wait-list entries in one go', async ({ page }) => {
     await login(page, ADMIN);
     await page.goto('/plato/users');
     await page.getByRole('button', { name: /^Filters/ }).click();
-    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Wait list/ }).click();
+    await page.getByRole('menu').getByRole('menuitemcheckbox', { name: /^Wait list(?!:)/ }).click();
     await page.keyboard.press('Escape');
     const table = page.getByRole('table', { name: 'Users and invites' });
     await table.getByRole('checkbox', { name: 'Select all users on this page' }).check();

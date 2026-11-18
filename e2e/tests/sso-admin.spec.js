@@ -48,6 +48,8 @@ async function stubSso(page) {
 }
 
 test('with SSO off, the Users page has no Sign-in column or filter', async ({ page }) => {
+  // The e2e server has SSO on (global-setup.js, for sso.spec.js), so "off" is stubbed here.
+  await page.route('**/v1/auth/sso/providers', (route) => route.fulfill({ json: { providers: [] } }));
   await login(page, ADMIN);
   await page.goto('/plato/users');
   const table = page.getByRole('table', { name: 'Users and invites' });
