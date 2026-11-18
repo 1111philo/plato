@@ -116,22 +116,31 @@ const db = {
     }
   },
 
-  async clearUserSso(userId) {
+  // Removes the identity this read saw, and only that one: the update is
+  // conditional on it, so a link that lands in between isn't the one removed
+  // (and its guard item isn't orphaned). One retry on a lost race.
+  async clearUserSso(userId, attempt = 0) {
     const user = (await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ConsistentRead: true }))).Item;
     if (!user?.ssoKey) return;
-    await doc.send(new TransactWriteCommand({
-      TransactItems: [
-        {
-          Update: {
-            TableName: USERS_TABLE,
-            Key: { userId },
-            UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
-            ExpressionAttributeValues: { ':now': new Date().toISOString() },
+    try {
+      await doc.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: USERS_TABLE,
+              Key: { userId },
+              UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
+              ConditionExpression: 'ssoKey = :k',
+              ExpressionAttributeValues: { ':now': new Date().toISOString(), ':k': user.ssoKey },
+            },
           },
-        },
-        { Delete: { TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: user.ssoKey } } },
-      ],
-    }));
+          { Delete: { TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: user.ssoKey } } },
+        ],
+      }));
+    } catch (err) {
+      if (err.name === 'TransactionCanceledException' && attempt < 1) return db.clearUserSso(userId, attempt + 1);
+      throw err;
+    }
   },
 
   async getUserByUsername(username) {
