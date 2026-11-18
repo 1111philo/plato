@@ -30,6 +30,10 @@ export default async function globalSetup() {
       stdio: 'ignore',
     });
   }
+  // Single sign-on: the plugin ships off (docs/SSO.md). The deployment
+  // settings and the stand-in provider come from playwright.config.js.
+  await api('PUT', '/v1/admin/plugins/entra-sso/activation', admin, { enabled: true });
+  await api('PUT', '/v1/admin/plugins/entra-sso/settings', admin, { buttonLabel: 'Sign in with UIC' });
   // Staff roles go through the real role endpoint (#435).
   const users = await api('GET', '/v1/admin/users', admin);
   for (const u of [EDUCATOR, TESTER]) {

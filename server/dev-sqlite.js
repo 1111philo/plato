@@ -31,6 +31,7 @@ process.env.APP_URL = process.env.APP_URL ?? 'http://localhost:3000';
 
 const { default: health } = await import('./src/routes/health.js');
 const { default: auth } = await import('./src/routes/auth.js');
+const { default: sso } = await import('./src/routes/sso.js');
 const { default: me } = await import('./src/routes/me.js');
 const { default: admin } = await import('./src/routes/admin.js');
 const { default: sync } = await import('./src/routes/sync.js');
@@ -101,6 +102,7 @@ server.use('*', viewAsReadOnly);
 
 server.route('/', health);
 server.route('/', auth);
+server.route('/', sso); // single sign-on (docs/SSO.md); off unless SSO_ENTRA_* are set
 server.route('/', me);
 server.route('/', admin);
 server.route('/', sync);

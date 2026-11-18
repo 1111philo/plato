@@ -51,6 +51,16 @@ export function AuthProvider({ children }) {
     return authUser;
   }, []);
 
+  // Single sign-on: the exchange already returned a session (pages/SsoComplete.jsx).
+  const completeSsoLogin = useCallback(async (payload) => {
+    const authUser = await authModule.completeSsoLogin(payload);
+    setImpersonatedUserState(null);
+    setLoggedIn(true);
+    setUser(authUser);
+    setSessionExpired(false);
+    return authUser;
+  }, []);
+
   const refreshUser = useCallback(async () => {
     const u = await authModule.getCurrentUser();
     setUser(u);
@@ -113,7 +123,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      loggedIn, user, loading, login, logout, refreshUser, sessionExpired,
+      loggedIn, user, loading, login, completeSsoLogin, logout, refreshUser, sessionExpired,
       impersonatedUser, startImpersonation, stopImpersonation,
     }}>
       {children}

@@ -56,6 +56,14 @@ export default function Privacy() {
           </section>
 
           <section>
+            <h2 className="text-lg font-semibold mb-2">Signing In With Your Institution</h2>
+            <p className="text-muted-foreground">
+              If you sign in with your institution’s account, plato receives your name, email, and an account
+              ID from it. plato keeps the ID and email to recognize you next time, and stores none of its tokens.
+            </p>
+          </section>
+
+          <section>
             <h2 className="text-lg font-semibold mb-2">AI Provider</h2>
             <p className="text-muted-foreground mb-2">
               plato uses Amazon Bedrock to power the AI coach and other lesson features. Bedrock is Amazon’s

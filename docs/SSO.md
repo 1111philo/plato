@@ -61,6 +61,48 @@ Other rules:
   is disabled, SSO stops working for them and their plato session runs out by
   itself (up to 30 days).
 
+## What people see
+
+The app side is `client/src/lib/sso.js` (start URL, messages, the one-time
+exchange), `components/SsoButtons.jsx`, and `pages/SsoComplete.jsx`. With SSO
+off, every page looks exactly as it did before.
+
+- **Sign in** (`/login`): one button per provider with its label ("Sign in
+  with UIC") above the email and password form, then "or". A sign-in that
+  fails comes back with a message (`?sso=<reason>`, removed from the address
+  bar once shown): cancelled, took too long, couldn't sign you in, or not
+  available right now.
+- **Coming back** (`/sso/complete`): "Signing you in…", then the classroom. A
+  new account is told its username once, as after signup. The one-time code
+  is taken out of the address bar at once and posted exactly once.
+- **No account** (rule 6): "You don't have an account yet". If the wait list
+  is open, "Join the wait list" opens the usual form with the name and email
+  filled in and the email read-only; the ticket travels in router state
+  (memory), never the URL or localStorage. If it's closed: "Ask your program
+  team for an invite." Someone already waiting sees "You're on the wait list.
+  We'll email you when you're invited."
+- **Something in the way**: a plain sentence per case (the identity is on
+  another account, the invite can't be used or is full, an account already
+  exists for that email), or "That sign-in link has expired" for a used or
+  expired code. Always a way back to sign in.
+- **Create account** (`/signup?token=…`): "Continue with UIC" above the form.
+  It makes the account from that invite with no password; the invite's email
+  doesn't have to match the institution's.
+- **Settings → Sign-in methods**: "Connected as <email>" with **Disconnect**
+  (asks first; refused with "Set a password first, so you can still sign in."
+  when there's no password), or **Connect UIC**. Connecting goes to the
+  provider and comes back to Settings with "UIC is now connected."; cancelling
+  there comes back to Settings too. An account with no password sees
+  "Not set — use Forgot password to add one" in place of the change-password
+  form (which asks for the current one). The provider rows only appear when
+  SSO is on or the account is connected.
+- **Privacy** (`/privacy`): says what plato receives from the institution and
+  what it keeps.
+
+Where a sentence names the provider ("UIC is now connected."), the name is
+the button label without its "Sign in with" (`providerName` in `sso.js`); a
+label of another shape is used whole.
+
 ## The flow
 
 ```
@@ -123,9 +165,12 @@ environment so a leaked test secret never touches production):
 4. API permissions: the delegated `openid`, `profile`, `email` only.
 
 The first deploy that includes SSO adds the `ssoKey-index` to the users table
-(online; no downtime). Local development: set the four `SSO_ENTRA_*` variables
-in `server/.env` with a registration whose redirect URI is
-`http://localhost:3000/v1/auth/sso/entra/callback`.
+(online; no downtime). Local development (`node dev-sqlite.js` serves the same
+routes): set the four `SSO_ENTRA_*` variables in `server/.env` with a
+registration whose redirect URI is
+`http://localhost:3000/v1/auth/sso/entra/callback`, and `APP_URL` to the
+address your browser uses (the redirect URI and the return to `/sso/complete`
+are built from it).
 
 ## For admins
 
@@ -169,3 +214,12 @@ real SQLite database and a fake identity provider that signs real tokens
 (`server/tests/helpers/fake-idp.js`): every rule above, plus forged state, a
 missing cookie, another tenant, wrong audience / issuer / key / nonce, an
 expired token, and a stolen or replayed one-time code.
+
+`e2e/tests/sso.spec.js` drives the whole thing in a browser, by keyboard,
+against the same fake provider run as a server (`e2e/fake-idp-server.js`, with
+an authorize endpoint that approves at once as whoever the test chose): no
+account → wait list, an invited address, a matching password account, a
+cancelled sign-in, connect and disconnect in Settings, and signup from an
+invite link. `e2e/tests/a11y.spec.js` runs axe on every `/sso/complete`
+screen. `client/tests/sso.test.js` covers the messages and the one-shot
+exchange.
