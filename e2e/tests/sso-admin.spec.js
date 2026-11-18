@@ -86,8 +86,8 @@ test('admins see how each account signs in, filter by it, and spot verified wait
 
   // Wait list: the Verified mark names the provider for screen readers and on hover.
   const verifiedRow = table.getByRole('row').filter({ hasText: VERIFIED.email });
-  await expect(verifiedRow).toContainText('Verified by UIC sign-in');
-  await expect(verifiedRow.getByTitle('Verified by UIC sign-in')).toBeVisible();
+  await expect(verifiedRow).toContainText('Email verified by UIC sign-in');
+  await expect(verifiedRow.getByTitle('Email verified by UIC sign-in')).toBeVisible();
   await expectAccessible(page, { label: 'users with SSO in play' });
 
   // Filter, by keyboard: Sign-in → SSO keeps only the linked account.
@@ -107,13 +107,13 @@ test('admins see how each account signs in, filter by it, and spot verified wait
   await expect(table.getByRole('row').filter({ hasText: VERIFIED.email })).toHaveCount(0);
   await chips.getByRole('button', { name: 'Clear all' }).click();
 
-  // Status → Wait list: verified.
+  // Status → Wait list: email verified.
   await page.getByRole('button', { name: /^Filters/ }).focus();
   await page.keyboard.press('Enter');
-  await menu.getByRole('menuitemcheckbox', { name: /^Wait list: verified/ }).focus();
+  await menu.getByRole('menuitemcheckbox', { name: /^Wait list: email verified/ }).focus();
   await page.keyboard.press('Space');
   await page.keyboard.press('Escape');
-  await expect(chips).toContainText('Status: Wait list: verified');
+  await expect(chips).toContainText('Status: Wait list: email verified');
   await expect(table.getByRole('row').filter({ hasText: VERIFIED.email })).toHaveCount(1);
   await expect(table.getByRole('row').filter({ hasText: LEARNER.email })).toHaveCount(0);
 });

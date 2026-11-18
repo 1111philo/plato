@@ -203,9 +203,23 @@ test('Settings: connect and disconnect', async ({ page }) => {
   await expect(page.getByLabel('Current Password', { exact: true })).toBeVisible(); // changing the password is still here
   await expectAccessible(page, { label: 'settings: sign-in methods, not connected' });
 
+  // Connecting asks for the current password first (a credential change).
+  const dialog = page.getByRole('dialog');
+  const confirmWith = async (password, button) => {
+    await dialog.getByLabel('Current password').fill(password);
+    await press(page, dialog.getByRole('button', { name: button }));
+  };
+  await press(page, connect);
+  await expect(dialog).toContainText('Connect UIC');
+  await expect(dialog).toHaveCSS('opacity', '1'); // fully faded in, or axe samples washed-out colors
+  await expectAccessible(page, { include: '[role=dialog]', label: 'connect dialog' });
+  await confirmWith('not-the-password', 'Continue');
+  await expect(dialog.getByRole('alert')).toHaveText('That password isn’t right.');
+  await expect(page).toHaveURL(/\/settings$/);
+
   // Cancelling at the provider comes back to Settings, not the login page.
   await providerWillSignIn(null);
-  await press(page, connect);
+  await confirmWith(MATCH.password, 'Continue');
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('alert').filter({ hasText: 'Sign-in was cancelled.' })).toBeVisible({ timeout: 15_000 });
   expect((await me(page)).signIn.sso).toBeNull();
@@ -214,24 +228,23 @@ test('Settings: connect and disconnect', async ({ page }) => {
   const alias = `m.match@${SSO_DOMAIN}`;
   await providerWillSignIn(person('Morgan', 'Match', alias));
   await press(page, connect);
+  await confirmWith(MATCH.password, 'Continue');
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('status').filter({ hasText: 'UIC is now connected.' })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(`Connected as ${alias}`)).toBeVisible();
   await expectAccessible(page, { label: 'settings: sign-in methods, connected' });
 
-  // Disconnect, with a confirmation.
+  // Disconnect: also behind the current password.
   await press(page, page.getByRole('button', { name: 'Disconnect UIC' }));
-  const dialog = page.getByRole('alertdialog');
-  await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('Disconnect UIC?');
-  await expect(dialog).toHaveCSS('opacity', '1'); // fully faded in, or axe samples washed-out colors
-  await expectAccessible(page, { include: '[role=alertdialog]', label: 'disconnect dialog' });
+  await expect(dialog).toHaveCSS('opacity', '1');
+  await expectAccessible(page, { include: '[role=dialog]', label: 'disconnect dialog' });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   expect((await me(page)).signIn.sso).toBeTruthy();
 
   await press(page, page.getByRole('button', { name: 'Disconnect UIC' }));
-  await press(page, dialog.getByRole('button', { name: 'Disconnect' }));
+  await confirmWith(MATCH.password, 'Disconnect');
   await expect(page.getByRole('status').filter({ hasText: 'UIC disconnected.' })).toBeVisible();
   await expect(connect).toBeVisible();
   expect((await me(page)).signIn.sso).toBeNull();

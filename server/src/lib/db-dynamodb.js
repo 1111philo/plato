@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand,
-  UpdateCommand, DeleteCommand, ScanCommand,
+  UpdateCommand, DeleteCommand, ScanCommand, TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   USERS_TABLE, INVITES_TABLE, REFRESH_TOKENS_TABLE, SYNC_DATA_TABLE,
@@ -19,10 +19,18 @@ if (process.env.DYNAMODB_ENDPOINT) {
 const client = new DynamoDBClient(clientOpts);
 const doc = DynamoDBDocumentClient.from(client);
 
+// The partition that holds single sign-on guard items (see getUserBySsoKey).
+const SSO_GUARD = '_sso';
+const ssoGuardPut = (ssoKey, ownerId, now) => ({
+  TableName: SYNC_DATA_TABLE,
+  Item: { userId: SSO_GUARD, dataKey: ssoKey, ownerId, createdAt: now },
+  ConditionExpression: 'attribute_not_exists(dataKey)',
+});
+
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso, emailVerifiedAt }) {
     const now = new Date().toISOString();
     const item = {
       userId, email: email.toLowerCase(), username: username || null, name,
@@ -31,15 +39,24 @@ const db = {
     };
     // An account made by single sign-on has no password (lib/external-identity.js).
     if (passwordHash) item.passwordHash = passwordHash;
-    if (sso?.key) Object.assign(item, { ssoKey: sso.key, ssoEmail: sso.email || null, ssoLinkedAt: now });
+    if (emailVerifiedAt) item.emailVerifiedAt = emailVerifiedAt;
     if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
-    await doc.send(new PutCommand({
-      TableName: USERS_TABLE,
-      Item: item,
-      ConditionExpression: 'attribute_not_exists(userId)',
-    }));
+    const put = { TableName: USERS_TABLE, Item: item, ConditionExpression: 'attribute_not_exists(userId)' };
+    if (!sso?.key) {
+      await doc.send(new PutCommand(put));
+      return;
+    }
+    // With an identity: the account and the identity's guard item are written
+    // together, so one identity can never end up on two accounts.
+    Object.assign(item, { ssoKey: sso.key, ssoEmail: sso.email || null, ssoLinkedAt: now });
+    try {
+      await doc.send(new TransactWriteCommand({ TransactItems: [{ Put: put }, { Put: ssoGuardPut(sso.key, userId, now) }] }));
+    } catch (err) {
+      if (err.name === 'TransactionCanceledException') throw Object.assign(new Error('User or identity already exists'), { name: 'ConditionalCheckFailedException' });
+      throw err;
+    }
   },
 
   async getUserById(userId) {
@@ -60,43 +77,60 @@ const db = {
     return result.Items?.[0] || null;
   },
 
-  // Single sign-on (lib/external-identity.js). `ssoKey` is
-  // '<provider>:<tenant>:<subject>'; the sparse ssoKey-index finds the one
-  // account it belongs to.
+  // Single sign-on (lib/external-identity.js). `ssoKey` on the user is
+  // '<provider>:<tenant>:<subject>'. The identity's owner is recorded in a
+  // guard item (sync-data partition `_sso`, key = the ssoKey), written in the
+  // same transaction as the user, so "one identity, one account" is enforced
+  // by the database and read with strong consistency (an index couldn't do
+  // either).
   async getUserBySsoKey(ssoKey) {
-    const result = await doc.send(new QueryCommand({
-      TableName: USERS_TABLE,
-      IndexName: 'ssoKey-index',
-      KeyConditionExpression: 'ssoKey = :k',
-      ExpressionAttributeValues: { ':k': ssoKey },
-    }));
-    return result.Items?.[0] || null;
+    const guard = await doc.send(new GetCommand({ TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: ssoKey }, ConsistentRead: true }));
+    if (!guard.Item?.ownerId) return null;
+    const result = await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: guard.Item.ownerId }, ConsistentRead: true }));
+    return result.Item?.ssoKey === ssoKey ? result.Item : null;
   },
 
-  // Connect an identity to an account that has none. False if it already has one.
+  // Connect an identity to an account that has none. False if the account
+  // already has one, or the identity belongs to another account.
   async linkUserSso(userId, { key, email }) {
+    const now = new Date().toISOString();
     try {
-      await doc.send(new UpdateCommand({
-        TableName: USERS_TABLE,
-        Key: { userId },
-        UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
-        ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
-        ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': new Date().toISOString() },
+      await doc.send(new TransactWriteCommand({
+        TransactItems: [
+          { Put: ssoGuardPut(key, userId, now) },
+          {
+            Update: {
+              TableName: USERS_TABLE,
+              Key: { userId },
+              UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
+              ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
+              ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': now },
+            },
+          },
+        ],
       }));
       return true;
     } catch (err) {
-      if (err.name === 'ConditionalCheckFailedException') return false;
+      if (err.name === 'TransactionCanceledException') return false;
       throw err;
     }
   },
 
-  // REMOVE, not null: a null can't sit in an index key attribute.
   async clearUserSso(userId) {
-    await doc.send(new UpdateCommand({
-      TableName: USERS_TABLE,
-      Key: { userId },
-      UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
-      ExpressionAttributeValues: { ':now': new Date().toISOString() },
+    const user = (await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ConsistentRead: true }))).Item;
+    if (!user?.ssoKey) return;
+    await doc.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
+            ExpressionAttributeValues: { ':now': new Date().toISOString() },
+          },
+        },
+        { Delete: { TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: user.ssoKey } } },
+      ],
     }));
   },
 

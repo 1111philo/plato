@@ -4,11 +4,20 @@
  * verified (lib/oidc.js) and mapped by the provider (lib/sso-providers.js).
  *
  * Rules, in order (decided 2026-11-17; see docs/SSO.md):
- *  0. Connecting from Settings (signed in): link the identity to that account.
+ *  0. Connecting from Settings: nothing is linked at the callback. The
+ *     identity is handed back (`pending_link`) and linked only when the
+ *     signed-in person who started it finishes the exchange (routes/sso.js),
+ *     so a planted cookie can't attach anyone's identity to another account.
  *  1. The identity is already linked to an account → that account. A stored
  *     link always wins, whatever emails say now.
  *  2. A vouched-for email matches an account → link it and sign in (everyone,
- *     staff included), and tell the account by email.
+ *     staff included), and tell the account by email. plato accepts emails
+ *     nobody proved (a learner can change theirs; a shareable invite takes
+ *     any), so someone could park an account on another person's address and
+ *     wait for them. Unless the account's email was proven
+ *     (`emailVerifiedAt`: an emailed invite or reset link was used), the link
+ *     is a takeover by the address's real owner: every session ends and the
+ *     password is removed.
  *  3. They came from an invite link → create the account from the invite. An
  *     email invite keeps the invite's email (holding the link is the proof, as
  *     with password signup) and must not be expired; a shareable link uses the
@@ -29,6 +38,7 @@ import { inviteExpired } from './invite-expiry.js';
 import { nameFields } from './names.js';
 import { getFieldDefinitions, visibleFieldValues } from './user-fields.js';
 import { emit as emitHook } from './plugins/hooks.js';
+import { revokeSessions } from './sessions.js';
 import { logger } from './logger.js';
 
 export const ssoKeyFor = (providerId, identity) => `${providerId}:${identity.tenant || '-'}:${identity.subject}`;
@@ -48,20 +58,28 @@ async function createAccount({ db, email, identity, key, profile = null, slackUs
   const lastName = ((invited ? invited.lastName : identity.lastName) || '').trim().slice(0, 100);
   const fallback = (identity.name || email.split('@')[0]).trim().slice(0, 100);
   const userId = generateUserId();
-  await db.createUser({
-    userId,
-    email,
-    username,
-    firstName: firstName || fallback,
-    lastName,
-    name: [firstName || fallback, lastName].filter(Boolean).join(' '),
-    // A group renamed or deleted since the person joined the wait list is dropped.
-    userGroup: profile?.userGroup && (settings.userGroups || []).includes(profile.userGroup) ? profile.userGroup : null,
-    role: 'learner', // never from the provider's claims
-    slackUserId,
-    customFields: visibleFieldValues(getFieldDefinitions(settings), profile?.customFields),
-    sso: { key, email: identity.email },
-  });
+  try {
+    await db.createUser({
+      userId,
+      email,
+      username,
+      firstName: firstName || fallback,
+      lastName,
+      name: [firstName || fallback, lastName].filter(Boolean).join(' '),
+      // A group renamed or deleted since the person joined the wait list is dropped.
+      userGroup: profile?.userGroup && (settings.userGroups || []).includes(profile.userGroup) ? profile.userGroup : null,
+      role: 'learner', // never from the provider's claims
+      slackUserId,
+      customFields: visibleFieldValues(getFieldDefinitions(settings), profile?.customFields),
+      sso: { key, email: identity.email },
+      // Proven either by the provider or by holding the emailed invite link.
+      emailVerifiedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // The identity or the account appeared meanwhile (two sign-ins at once).
+    if (err.name === 'ConditionalCheckFailedException') return { outcome: 'error', code: 'try_again' };
+    throw err;
+  }
   await emitHook('userCreated', { userId, email, role: 'learner' });
   return { outcome: 'signed_in', userId, created: true };
 }
@@ -78,15 +96,10 @@ export async function resolveSignIn({ providerId, identity, inviteToken = null, 
   const emails = [...new Set((identity.emails || []).map((e) => String(e).toLowerCase()))];
   const owner = await db.getUserBySsoKey(key);
 
-  // 0. Connect from Settings.
+  // 0. Connect from Settings: decided at the exchange (finishLink), not here.
   if (linkUserId) {
-    if (owner) return owner.userId === linkUserId ? { outcome: 'linked', userId: linkUserId } : { outcome: 'error', code: 'identity_in_use' };
-    const user = await db.getUserById(linkUserId);
-    if (!user) return { outcome: 'error', code: 'try_again' };
-    if (user.ssoKey) return { outcome: 'error', code: 'account_has_identity' };
-    if (!(await db.linkUserSso(linkUserId, { key, email: identity.email }))) return { outcome: 'error', code: 'account_has_identity' };
-    await audit(db, { action: 'sso_linked', userId: linkUserId, email: user.email, performedBy: linkUserId, details: { provider: providerId, how: 'settings' } });
-    return { outcome: 'linked', userId: linkUserId };
+    if (owner && owner.userId !== linkUserId) return { outcome: 'error', code: 'identity_in_use' };
+    return { outcome: 'pending_link', userId: linkUserId, key, email: identity.email || null };
   }
 
   // 1. Known identity.
@@ -98,9 +111,15 @@ export async function resolveSignIn({ providerId, identity, inviteToken = null, 
     if (!user) continue;
     if (user.ssoKey) return { outcome: 'error', code: 'account_has_identity' };
     if (!(await db.linkUserSso(user.userId, { key, email: identity.email }))) return { outcome: 'error', code: 'account_has_identity' };
-    await audit(db, { action: 'sso_linked', userId: user.userId, email: user.email, performedBy: user.userId, details: { provider: providerId, how: 'email' } });
-    if (notifyLinked) { try { await notifyLinked(user); } catch (err) { logger.warn('sso_link_notice_failed', { error: err?.message }); } }
-    return { outcome: 'signed_in', userId: user.userId, linked: true };
+    // Nobody proved this account's email: whoever made it may not be the
+    // address's owner. The owner is here now, so end every session and remove
+    // the password. A proven email keeps both.
+    const takeover = !user.emailVerifiedAt;
+    if (takeover) await revokeSessions(user, { db, extra: { passwordHash: '', resetTokenHash: null, failedLogins: 0, lockedUntil: null } });
+    await db.updateUser(user.userId, { emailVerifiedAt: new Date().toISOString() });
+    await audit(db, { action: 'sso_linked', userId: user.userId, email: user.email, performedBy: user.userId, details: { provider: providerId, how: 'email', passwordRemoved: takeover } });
+    if (notifyLinked) { try { await notifyLinked(user, { passwordRemoved: takeover }); } catch (err) { logger.warn('sso_link_notice_failed', { reason: err?.code || err?.name || 'error' }); } }
+    return { outcome: 'signed_in', userId: user.userId, linked: true, passwordRemoved: takeover };
   }
 
   // 3. From an invite link.
@@ -112,15 +131,18 @@ export async function resolveSignIn({ providerId, identity, inviteToken = null, 
       result = await createAccount({ db, email: invite.email.toLowerCase(), identity, key, profile: invite.profile, slackUserId: invite.slackUserId });
       if (result.outcome === 'signed_in') await db.markInviteUsed(inviteToken);
     } else if (invite.isLink) {
-      if (!identity.email) return { outcome: 'error', code: 'no_email' };
-      if (await db.getUserByEmail(identity.email)) return { outcome: 'error', code: 'account_exists' };
+      // A shareable link takes any typed email at password signup, but an
+      // account shown as "connected" must carry an address the provider vouches for.
+      const vouched = emails[0];
+      if (!vouched) return { outcome: 'error', code: 'no_email' };
+      if (await db.getUserByEmail(vouched)) return { outcome: 'error', code: 'account_exists' };
       try {
         await db.incrementLinkUsage(inviteToken); // atomic: gates creation at the limit
       } catch (err) {
         if (err.name === 'ConditionalCheckFailedException') return { outcome: 'error', code: 'invite_full' };
         throw err;
       }
-      result = await createAccount({ db, email: identity.email, identity, key });
+      result = await createAccount({ db, email: vouched, identity, key });
       if (result.outcome === 'signed_in') {
         const updated = await db.getInvite(inviteToken);
         if (updated?.maxUsages && updated.usageCount >= updated.maxUsages) await db.markInviteUsed(inviteToken);
@@ -152,10 +174,32 @@ export async function resolveSignIn({ providerId, identity, inviteToken = null, 
     onWaitlist = true;
     if (!entry.profile?.ssoVerified) {
       try {
-        await db.updateWaitlistEntry(entry.inviteToken, { email: entry.email, profile: { ...(entry.profile || {}), ssoVerified: { provider: providerId, at: new Date().toISOString() } } });
+        // Anyone can join the public list under someone else's address. The
+        // mark vouches for the email only, so take the name from the provider;
+        // the group and answers stay as submitted (admins see "Email verified").
+        const named = identity.firstName ? { firstName: identity.firstName.trim().slice(0, 100), lastName: (identity.lastName || '').trim().slice(0, 100) } : {};
+        await db.updateWaitlistEntry(entry.inviteToken, { email: entry.email, profile: { ...(entry.profile || {}), ...named, ssoVerified: { provider: providerId, at: new Date().toISOString() } } });
       } catch { /* invited or removed meanwhile */ }
     }
     break;
   }
   return { outcome: 'no_account', onWaitlist };
+}
+
+/**
+ * Finish "Connect" from Settings: link the identity a callback handed back
+ * (`pending_link`) to the signed-in account that started it. Called from the
+ * exchange, behind authentication. Returns `{ outcome: 'linked' }` or an error.
+ */
+export async function finishLink({ providerId, pending, userId, db = defaultDb, notifyLinked = null }) {
+  if (!pending?.key || pending.userId !== userId) return { outcome: 'error', code: 'try_again' };
+  const owner = await db.getUserBySsoKey(pending.key);
+  if (owner) return owner.userId === userId ? { outcome: 'linked', userId } : { outcome: 'error', code: 'identity_in_use' };
+  const user = await db.getUserById(userId);
+  if (!user) return { outcome: 'error', code: 'try_again' };
+  if (user.ssoKey) return { outcome: 'error', code: 'account_has_identity' };
+  if (!(await db.linkUserSso(userId, { key: pending.key, email: pending.email }))) return { outcome: 'error', code: 'identity_in_use' };
+  await audit(db, { action: 'sso_linked', userId, email: user.email, performedBy: userId, details: { provider: providerId, how: 'settings' } });
+  if (notifyLinked) { try { await notifyLinked(user, { passwordRemoved: false }); } catch (err) { logger.warn('sso_link_notice_failed', { reason: err?.code || err?.name || 'error' }); } }
+  return { outcome: 'linked', userId };
 }

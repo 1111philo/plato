@@ -8,7 +8,7 @@ import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.
 import { registerNotificationRoutes } from './admin-notifications.js';
 import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, hashToken } from '../lib/crypto.js';
-import { issueResetToken } from '../lib/sessions.js';
+import { issueResetToken, revokeSessions } from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
 import { listSuppressed, getSuppression, removeSuppression } from '../lib/email-suppression.js';
 import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
@@ -781,6 +781,9 @@ admin.delete('/v1/admin/users/:userId/sso', async (c) => {
   if (!user) return c.json({ error: 'User not found' }, 404);
   if (!user.ssoKey) return c.json({ ok: true, hasPassword: !!user.passwordHash });
   await db.clearUserSso(user.userId);
+  // End their sessions too: one may have been opened through the identity
+  // being removed. They sign in again with their password.
+  await revokeSessions(user);
   await db.createAuditLog({
     action: 'sso_unlinked', userId: user.userId, email: user.email, performedBy: c.get('user').userId,
     details: { provider: user.ssoKey.split(':')[0], by: 'admin' },
@@ -805,6 +808,8 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
     const existing = await db.getUserByEmail(email);
     if (existing && existing.userId !== userId) return c.json({ error: 'Email already in use' }, 409);
     updates.email = email;
+    // Nobody proved the new address (lib/external-identity.js, rule 2).
+    updates.emailVerifiedAt = null;
   }
   if (body.username !== undefined) {
     const usernameErr = validateUsername(body.username);

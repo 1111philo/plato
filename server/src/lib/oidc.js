@@ -14,7 +14,7 @@
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
-import { JWT_SECRET } from '../config.js';
+import { JWT_SECRET, APP_URL } from '../config.js';
 
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
 export const randomToken = (bytes = 32) => b64u(randomBytes(bytes));
@@ -136,10 +136,22 @@ export async function verifyIdToken(idToken, { doc, jwks, clientId, nonce }) {
   return payload;
 }
 
-/** A post-sign-in destination: a local path only (no scheme, no `//`, no backslash), else '/'. */
-export function safeNextPath(next) {
-  if (typeof next !== 'string' || next.length > 300) return '/';
-  if (!next.startsWith('/') || next.startsWith('//') || next.includes('\\') || next.includes('://')) return '/';
-  if (/[\r\n]/.test(next)) return '/';
-  return next;
+/**
+ * A post-sign-in destination: a path on this site, else '/'. Browsers strip
+ * tabs and newlines from URLs and treat a backslash as a slash, so
+ * "/<tab>/evil.example" would leave the site: refuse control characters and
+ * backslashes outright, then let the URL parser confirm the origin.
+ */
+export function safeNextPath(next, base = APP_URL) {
+  if (typeof next !== 'string' || !next || next.length > 300) return '/';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\]/.test(next) || !next.startsWith('/') || next.startsWith('//')) return '/';
+  try {
+    const origin = new URL(base).origin;
+    const url = new URL(next, origin);
+    if (url.origin !== origin) return '/';
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return '/';
+  }
 }

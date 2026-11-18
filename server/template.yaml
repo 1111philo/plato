@@ -261,8 +261,6 @@ Resources:
           AttributeType: S
         - AttributeName: username
           AttributeType: S
-        - AttributeName: ssoKey
-          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
@@ -276,14 +274,6 @@ Resources:
         - IndexName: username-index
           KeySchema:
             - AttributeName: username
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-        # Single sign-on: the account a linked identity belongs to. Sparse
-        # (only linked accounts have ssoKey). lib/external-identity.js.
-        - IndexName: ssoKey-index
-          KeySchema:
-            - AttributeName: ssoKey
               KeyType: HASH
           Projection:
             ProjectionType: ALL

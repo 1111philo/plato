@@ -122,6 +122,8 @@ me.patch('/v1/me', async (c) => {
           return c.json({ error: 'Email already in use' }, 409);
         }
         updates.email = email;
+        // Nobody proved the new address (lib/external-identity.js, rule 2).
+        updates.emailVerifiedAt = null;
       } else if (key === 'username') {
         const usernameErr = validateUsername(body.username);
         if (usernameErr) return c.json({ error: usernameErr }, 400);

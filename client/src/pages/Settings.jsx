@@ -27,11 +27,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
   DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogContent, AlertDialogHeader,
-  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
-  AlertDialogAction, AlertDialogCancel,
-} from '@/components/ui/alert-dialog';
 
 export default function Settings() {
   const { user, refreshUser } = useAuth();
@@ -338,7 +333,6 @@ function SignInMethods({ children }) {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const loadSignIn = () => authenticatedFetch('/v1/me')
     .then((r) => (r.ok ? r.json() : null))
@@ -367,37 +361,44 @@ function SignInMethods({ children }) {
     ? [{ id: linked.provider, name: providerName(providers.find((p) => p.id === linked.provider)?.label || 'Single sign-on') }]
     : providers.map((p) => ({ id: p.id, name: providerName(p.label) }));
 
-  async function connect(id, name) {
-    setBusy(true); setError(''); setNotice('');
-    try {
-      const res = await authenticatedFetch(`/v1/auth/sso/${encodeURIComponent(id)}/link`, { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) throw new Error();
-      window.location.assign(data.url);
-    } catch {
-      setError(`Connecting ${name} isn’t available right now.`);
-      setBusy(false);
-    }
-  }
+  // Connecting or disconnecting a sign-in method is a credential change, so
+  // both ask for the current password (the server requires it).
+  const [pending, setPending] = useState(null); // { action: 'connect' | 'disconnect', id, name }
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [dialogError, setDialogError] = useState('');
 
-  function askDisconnect() {
-    setError(''); setNotice('');
-    // Without a password this is the only way in; the server refuses too.
-    if (signIn && !signIn.password) { setError('Set a password first, so you can still sign in.'); return; }
-    setConfirmOpen(true);
+  function ask(action, id, name) {
+    setError(''); setNotice(''); setDialogError(''); setCurrentPassword('');
+    // Without a password SSO is the only way in; the server refuses too.
+    if (action === 'disconnect' && signIn && !signIn.password) { setError('Set a password first, so you can still sign in.'); return; }
+    setPending({ action, id, name });
   }
+  const connect = (id, name) => ask('connect', id, name);
+  const askDisconnect = () => ask('disconnect', rows[0]?.id, rows[0]?.name);
 
-  async function disconnect(name) {
-    setConfirmOpen(false);
-    setBusy(true);
+  async function confirmPending(e) {
+    e.preventDefault();
+    if (!pending || !currentPassword) return;
+    setBusy(true); setDialogError('');
+    const { action, id, name } = pending;
     try {
-      const res = await authenticatedFetch('/v1/auth/sso/disconnect', { method: 'POST' });
+      const res = await authenticatedFetch(action === 'connect' ? `/v1/auth/sso/${encodeURIComponent(id)}/link` : '/v1/auth/sso/disconnect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword }),
+      });
       const data = await res.json().catch(() => ({}));
+      if (data.code === 'wrong_password') { setDialogError('That password isn’t right.'); return; }
+      if (action === 'connect') {
+        if (!res.ok || !data.url) throw new Error(`Connecting ${name} isn’t available right now.`);
+        window.location.assign(data.url);
+        return;
+      }
       if (!res.ok) throw new Error(data.code === 'no_password' ? 'Set a password first, so you can still sign in.' : 'Couldn’t disconnect. Try again.');
+      setPending(null);
       await loadSignIn();
       setNotice(`${name} disconnected.`);
     } catch (err) {
-      setError(err.message === 'Session expired' ? 'Couldn’t disconnect. Try again.' : err.message);
+      setPending(null);
+      setError(err.message === 'Session expired' ? 'Something went wrong. Try again.' : err.message);
     } finally {
       setBusy(false);
     }
@@ -455,23 +456,27 @@ function SignInMethods({ children }) {
         )}
       </CardContent>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disconnect {rows[0]?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>You’ll sign in with your password.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive/10 text-red-800 dark:text-destructive hover:bg-destructive/20"
-              onClick={() => disconnect(rows[0]?.name)}
-            >
-              Disconnect
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={!!pending} onOpenChange={(open) => { if (!open) setPending(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{pending?.action === 'disconnect' ? `Disconnect ${pending?.name}?` : `Connect ${pending?.name}`}</DialogTitle>
+            <DialogDescription>
+              {pending?.action === 'disconnect' ? 'You’ll sign in with your password.' : `Enter your password, then sign in with ${pending?.name}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <form id="sso-confirm-form" onSubmit={confirmPending} className="space-y-2">
+            {dialogError && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{dialogError}</p>}
+            <Label htmlFor="sso-current-password">Current password</Label>
+            <Input id="sso-current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </form>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPending(null)}>Cancel</Button>
+            <Button type="submit" form="sso-confirm-form" disabled={busy || !currentPassword}>
+              {pending?.action === 'disconnect' ? 'Disconnect' : 'Continue'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

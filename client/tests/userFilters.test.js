@@ -102,7 +102,7 @@ describe('Sign-in filter (single sign-on)', () => {
     const f = buildFacets({ items: rows, sso: true });
     assert.deepEqual(rows.filter((i) => matchesFilters(i, { signin: ['password'] }, f)).map((i) => i.email), ['x']);
   });
-  it('Status offers Wait list: verified; a verified entry is still on the wait list', () => {
+  it('Status offers Wait list: email verified; a verified entry is still on the wait list', () => {
     const f = buildFacets({ items: list, sso: true });
     const status = f.find((x) => x.key === 'status');
     const count = (v) => status.options.find((o) => o.value === v).count;

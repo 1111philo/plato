@@ -440,11 +440,13 @@ export async function sendInviteEmail(to, inviteToken, inviterName, { firstName 
  * Tells an account's owner that a single sign-on identity was connected to it
  * (lib/external-identity.js, rule 2), so a connection they didn't make gets noticed.
  */
-export async function sendSsoLinkedEmail(to, { firstName = null, providerLabel, ssoEmail }, opts = {}) {
+export async function sendSsoLinkedEmail(to, { firstName = null, providerLabel, ssoEmail, passwordRemoved = false }, opts = {}) {
   const classroom = await getClassroom();
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
   const hi = `Hi ${firstName || 'there'},`;
-  const what = `${providerLabel} (${ssoEmail}) was just connected to your ${classroom.name} account. You can now sign in either way.`;
+  const what = passwordRemoved
+    ? `${providerLabel} (${ssoEmail}) was just connected to your ${classroom.name} account. For safety, the account's password was removed and other devices were signed out. You can set a new password in Settings.`
+    : `${providerLabel} (${ssoEmail}) was just connected to your ${classroom.name} account. You can now sign in either way.`;
   const ifNot = `If this wasn't you, tell your program team and reset your password: ${APP_URL}/forgot-password`;
   return sendNotificationEmail({
     to,

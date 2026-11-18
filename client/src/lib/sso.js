@@ -89,13 +89,15 @@ const exchanges = new Map();
  * cookie, or a network failure. The transaction cookie rides along
  * (same-origin).
  */
-export function exchangeSsoCode(code, fetchImpl = fetch) {
+export function exchangeSsoCode(code, fetchImpl = fetch, accessToken = null) {
   if (!exchanges.has(code)) {
     exchanges.set(code, (async () => {
       try {
         const res = await fetchImpl('/v1/auth/sso/exchange', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // The session, when there is one: "Connect" from Settings is only
+          // finished for the signed-in person who started it.
+          headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
           credentials: 'same-origin',
           body: JSON.stringify({ code }),
         });
@@ -108,4 +110,21 @@ export function exchangeSsoCode(code, fetchImpl = fetch) {
     })());
   }
   return exchanges.get(code);
+}
+
+/**
+ * A destination on this site, else `fallback`. The server already checks
+ * `next` (lib/oidc.js safeNextPath); this is the same check before the
+ * browser navigates, since browsers strip tabs and newlines from URLs.
+ */
+export function localPath(next, fallback = '/lessons', origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost') {
+  if (typeof next !== 'string' || !next || next === '/') return fallback;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\]/.test(next) || !next.startsWith('/') || next.startsWith('//')) return fallback;
+  try {
+    const url = new URL(next, origin);
+    return url.origin === origin ? `${url.pathname}${url.search}${url.hash}` : fallback;
+  } catch {
+    return fallback;
+  }
 }
