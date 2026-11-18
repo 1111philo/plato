@@ -52,8 +52,10 @@ Other rules:
   (`SSO_ENTRA_DOMAINS`), and never when Entra says the email's domain owner
   isn't verified. A guest account's outside address matches nothing.
 - An account made by SSO has **no password**. Password sign-in answers
-  "Invalid credentials" (in the same time as a wrong password); "Forgot
-  password" lets the person add one. Disconnecting SSO from your own account
+  "Invalid credentials" (in the same time as a wrong password). To add one: Settings →
+  Sign-in methods → **Email me a link to set one** (the password-reset email;
+  `/reset-password` opens while signed in, and a reset signs every session
+  out), or "Forgot password" from the login page. Disconnecting SSO from your own account
   needs a password first; an admin can unlink anyone
   (`DELETE /v1/admin/users/:userId/sso`).
 - Roles never come from the provider. New accounts are learners.

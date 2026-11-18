@@ -327,6 +327,7 @@ export default function Settings() {
 // password is set (it asks for the current one). The provider rows appear
 // only when SSO is on or this account is already connected.
 function SignInMethods({ children }) {
+  const { user: authUser } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   // What a single sign-on round trip came back with: "connected" from
@@ -403,6 +404,17 @@ function SignInMethods({ children }) {
   }
 
   const noPassword = !!signIn && !signIn.password;
+
+  // An account made by single sign-on has no password. The reset email is how
+  // one is added: it proves the address, and the link works while signed in.
+  async function emailSetPasswordLink() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const res = await fetch('/v1/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: authUser?.email }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Couldn’t send the link. Please try again.');
+      setNotice(`We sent a link to ${authUser?.email}. It works for 1 hour.`);
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
   return (
     <Card>
       <CardHeader>
@@ -428,9 +440,12 @@ function SignInMethods({ children }) {
         {rows.length > 0 && <Separator />}
 
         {noPassword ? (
-          <div className="text-sm">
-            <div className="font-medium">Password</div>
-            <div className="text-muted-foreground">Not set — use Forgot password to add one</div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <div className="flex-1">
+              <div className="font-medium">Password</div>
+              <div className="text-muted-foreground">Not set</div>
+            </div>
+            <Button variant="outline" disabled={busy} onClick={emailSetPasswordLink}>Email me a link to set one</Button>
           </div>
         ) : (
           <>

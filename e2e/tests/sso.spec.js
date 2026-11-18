@@ -137,12 +137,19 @@ test('an invited address is signed in to a new account, with no password asked',
     // Settings: no password to change, and the only way in can't be disconnected.
     await page.goto('/settings');
     await expect(page.getByText(`Connected as ${ivy.email}`)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Not set — use Forgot password to add one')).toBeVisible();
+    await expect(page.getByText('Not set', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Current Password', { exact: true })).toHaveCount(0);
     await expectAccessible(page, { label: 'settings: sso account without a password' });
     await press(page, page.getByRole('button', { name: 'Disconnect UIC' }));
     await expect(page.getByRole('alert').filter({ hasText: 'Set a password first, so you can still sign in.' })).toBeVisible();
     expect((await me(page)).signIn.sso).toBeTruthy();
+
+    // Adding a password: the link is emailed, and it opens while signed in.
+    await press(page, page.getByRole('button', { name: 'Email me a link to set one' }));
+    await expect(page.getByRole('status').filter({ hasText: `We sent a link to ${ivy.email}.` })).toBeVisible();
+    await page.goto('/reset-password?reset=not-a-real-token');
+    await expect(page).toHaveURL(/\/reset-password/);
+    await expect(page.getByLabel('New password', { exact: true })).toBeVisible();
   } finally {
     await removeUser(admin, ivy.email);
   }
