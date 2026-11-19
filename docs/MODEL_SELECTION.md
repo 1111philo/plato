@@ -1,6 +1,6 @@
 # Model selection: choosing an open source model for plato
 
-**Status:** decided — `qwen.qwen3-vl-235b-a22b`, the only candidate satisfying all four constraints
+**Status:** decided — `qwen.qwen3-vl-235b-a22b`. Re-checked 2026-11-19 against three more Apache-2.0 image models (see [Re-check: grading, #584](#re-check-grading-584)); still the choice.
 **Date:** 2026-07-28
 **Supersedes:** Claude Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`)
 **Implementation:** [PR #332](https://github.com/1111philo/plato/pull/332)
@@ -464,3 +464,43 @@ Reopen this decision if:
   every result here is prompt-specific.
 - Prompt caching becomes available for non-Anthropic Bedrock models, which would
   meaningfully change the cost and latency picture.
+
+## Re-check: grading (#584)
+
+**2026-11-19.** Auditors reported the coach awarding mastery for work it wrote
+itself and for one-line answers. Before deciding between a harness fix and a
+model switch, both were measured with `server/scripts/coach-eval.js`: one coach
+turn per scenario, through plato's own context, prompt assembly, parsing, and
+completion rule, against Bedrock us-east-2, with AI Leaders' knowledge base.
+
+**The pool changed.** Three more image-capable models on Bedrock us-east-2 are
+Apache-2.0: Mistral Large 3 (`mistral.mistral-large-3-675b-instruct`),
+Magistral Small 1.2 (`mistral.magistral-small-2509`, a reasoning model), and
+Ministral 3 14B (`mistral.ministral-3-14b-instruct`). All four, Qwen included,
+answered the solid-red-image check "Red" this time, so Mistral Large 3's
+earlier vision failure no longer holds. (Kimi K3 and Pixtral Large remain
+non-OSI licenses.)
+
+**Results**, with the grading check (`harness` mode, what plato runs). False
+completions are turns where the lesson wasn't done and the coach completed
+it; missed completions are genuine work left open; "wrote it" is the share of
+replies that wrote the learner's message when asked to.
+
+| Model | False completions | Missed completions | Wrote it when asked | Calls/turn |
+|---|---|---|---|---|
+| Qwen3-VL 235B | 0 of 64 | 6 of 16 | 3 of 8 | 1.80 |
+| Mistral Large 3 | 0 of 48 | 8 of 12 | 5 of 6 | 1.47 |
+| Magistral Small 1.2 | 2 of 48 | 4 of 12 | 2 of 6 | 2.02 |
+| Ministral 3 14B | 0 of 48 | 10 of 12 | 5 of 6 | 1.92 |
+
+Without the check (`baseline`), every model over-credited: false completions
+were 9 of 64 for Qwen, 6 for Mistral Large 3, 11 for Magistral, and 9 for
+Ministral (of 48). So the fix is in the harness, not the model, and no
+candidate beats Qwen with it on both false and missed completions. Qwen stays.
+No model reliably refuses to write the learner's text when asked outright; the
+check keeps that from counting, and it remains a coaching gap
+(`docs/ARCHITECTURE.md`, "The grading check").
+
+Re-run the eval when `coach.md` or `assessor.md` change, or to evaluate a model
+(`--models <bedrock id>,…`).
+

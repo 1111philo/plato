@@ -11,9 +11,14 @@ aiRoute.use('/v1/ai/*', authenticate);
 
 // POST /v1/ai/events — client-side events only the browser sees, logged so
 // they show in /v1/admin/logs (OBSERVABILITY.md): a coach reply's missing tags
-// recovered or not, a conversation past the size budget. Known codes only.
+// recovered or not, a conversation past the size budget, and the grading check
+// (#584) holding a completion, dropping an unbacked objective, or failing.
+// Known codes only.
 const LESSON_ID_RE = /^[a-z0-9][a-z0-9_-]{0,99}$/i;
-const CLIENT_EVENTS = new Set(['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long']);
+const CLIENT_EVENTS = new Set([
+  'coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long',
+  'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed',
+]);
 aiRoute.post('/v1/ai/events', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (!CLIENT_EVENTS.has(body?.code)) return c.json({ error: 'Unknown event' }, 400);

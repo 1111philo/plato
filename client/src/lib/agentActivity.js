@@ -10,6 +10,7 @@ export const AGENT_LABELS = Object.freeze({
   'lesson-owner': 'Lesson planner',
   'learner-profile-update': 'Learner profile',
   'course-progress-update': 'Unit progress',
+  assessor: 'Assessment check',
   'lesson-creator': 'Lesson creator',
   'knowledge-base-editor': 'Knowledge base editor',
   plugins: 'Plugins',
@@ -65,7 +66,25 @@ function progressLine(before, after, { achieved, wasCompleted }) {
  * A coach turn in a lesson. `before` / `after` are the lesson KB on either
  * side of applyCoachResponseToKB; `parsed` is parseCoachResponse's output.
  */
-export function coachTurnActivity({ before, after, parsed, achieved = false, newlyMet = [], images = 0, links = 0, hasUnitNote = false, unitName = null }) {
+/**
+ * The grading check's line (#584; lessonEngine.checkGrading). Counts only:
+ * what it found missing goes to the coach, not here.
+ */
+function assessmentEntry(a) {
+  if (!a) return null;
+  const did = [];
+  if (a.failed) {
+    did.push('Couldn’t check this turn, so the coach’s assessment stands');
+  } else {
+    did.push(`Checked ${plural(a.checked, 'objective')} against your own words: ${a.shown} shown`);
+    if (a.held) did.push(a.regenerated
+      ? 'Held the lesson open until the rest is in your own words, and asked the coach to reply again'
+      : 'Held the lesson open until the rest is in your own words');
+  }
+  return entry('assessor', { read: ['This lesson’s objectives', 'Your messages in this lesson'], did });
+}
+
+export function coachTurnActivity({ before, after, parsed, achieved = false, newlyMet = [], assessment = null, images = 0, links = 0, hasUnitNote = false, unitName = null }) {
   const wasCompleted = before?.status === 'completed';
   const coach = entry('coach', {
     read: coachReads({ hasUnitNote, images, links }),
@@ -84,6 +103,8 @@ export function coachTurnActivity({ before, after, parsed, achieved = false, new
     ],
   });
   const out = [coach];
+  const check = assessmentEntry(assessment);
+  if (check) out.push(check);
   // Mirrors sendMessage (shouldUpdateProfile): only an explicit observation.
   const observation = parsed?.profileUpdate?.observation?.trim() || null;
   if (observation) {
