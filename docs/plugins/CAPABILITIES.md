@@ -79,7 +79,8 @@ Phase 3.
 ### `auth.provider`
 
 Lets a plugin supply a **single sign-on provider** (API 1.6.0). The server module exports `authProviders: [{ id, label, configure(env, pluginSettings), mapClaims(claims, cfg) }]`:
-- `configure` returns `{ issuer, clientId, clientSecret, scope?, authorizeParams? }`, or `null` when the deployment hasn't supplied its trust settings (the provider is then off). Read trust settings from the environment, not from plugin settings: an admin must not be able to repoint sign-in.
+- `configure` returns `{ issuer, clientId, clientSecret, scope?, authorizeParams?, style? }`, or `null` when the deployment hasn't supplied its trust settings (the provider is then off). Read trust settings from the environment, not from plugin settings: an admin must not be able to repoint sign-in.
+- `style` (API 1.6.1, optional) is `{ background, color, icon }` for the sign-in button, from the plugin's own (cosmetic) settings. Pass it as stored: core validates it (`server/src/lib/sso-button-style.js`) and drops what fails.
 - `mapClaims` turns verified ID-token claims into `{ subject, tenant?, emails, email, firstName?, lastName?, name? }`. `emails` are the addresses the provider vouches for; only those are matched to accounts, invites, and wait-list entries. Throw (with `code: 'identity_refused'`) to refuse a sign-in.
 
 **Contract:** the plugin never issues sessions, creates users, or links accounts. Core does all of that (`docs/SSO.md`). Implemented: `plugins/entra-sso`.

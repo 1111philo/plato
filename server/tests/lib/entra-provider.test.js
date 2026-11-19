@@ -22,6 +22,16 @@ describe('entra provider', () => {
     assert.equal(configure({}), null);
   });
 
+  it('passes the button’s look through as stored, for core to validate', () => {
+    assert.deepEqual(configure(ENV).style, { background: undefined, color: undefined, icon: undefined });
+    assert.deepEqual(configure(ENV, { buttonBackground: '#001E62', buttonTextColor: '#fff', buttonIcon: 'x' }).style, { background: '#001E62', color: '#fff', icon: 'x' });
+    // Cosmetic settings never turn the provider on or change what it trusts.
+    assert.equal(configure({}, { buttonBackground: '#001E62', buttonTextColor: '#ffffff' }), null);
+    const { style: _style, label: _label, ...trust } = configure(ENV, { buttonBackground: '#001E62', buttonTextColor: '#ffffff', buttonIcon: 'x' });
+    const { style: _s, label: _l, ...plain } = configure(ENV);
+    assert.deepEqual(trust, plain);
+  });
+
   const cfg = configure(ENV);
   const base = { tid: T, oid: 'o1', sub: 's1', given_name: 'Ada', family_name: 'L' };
 

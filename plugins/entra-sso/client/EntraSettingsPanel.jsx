@@ -4,19 +4,24 @@
  *
  * Props (per the SettingsPanel slot contract):
  *   - pluginId: 'entra-sso'
- *   - settings: { buttonLabel? }
+ *   - settings: { buttonLabel?, buttonBackground?, buttonTextColor?, buttonIcon? }
  *   - onSave: (next) => Promise<void>
  *
- * The only thing saved here is the button label. The tenant, client id,
- * secret, and owned domains are deployment config (docs/SSO.md): this panel
- * shows them (masked, from the admin status route) and never edits them.
+ * The only things saved here are how the sign-in button looks: its label, an
+ * icon, and a background / text color pair (docs/SSO.md, "Button style"; the
+ * server validates all of it again). The tenant, client id, secret, and owned
+ * domains are deployment config: this panel shows them (masked, from the
+ * admin status route) and never edits them.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import SsoButton from '@/components/SsoButton';
+import { checkSsoColors, isHexColor, SSO_ICON_PIXELS } from '@/lib/sso.js';
 import { authenticatedFetch } from '../../../client/js/auth.js';
+import { fileToIcon } from './icon.js';
 
 const DEFAULT_LABEL = 'Sign in with Microsoft';
 const MAX_LABEL = 40;
@@ -29,10 +34,46 @@ async function fetchStatus() {
   return data;
 }
 
+// A hex field with the browser's color picker beside it. The text field is
+// the labelled control; the picker is a second way to set the same value.
+function ColorField({ id, label, value, onChange, invalid, placeholder }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          aria-label={`${label} picker`}
+          value={isHexColor(value.trim()) ? value.trim().toLowerCase() : '#ffffff'}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-10 shrink-0 cursor-pointer rounded-lg border border-border p-0.5 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+        <Input
+          id={id}
+          value={value}
+          maxLength={7}
+          placeholder={placeholder}
+          spellCheck={false}
+          autoComplete="off"
+          aria-invalid={invalid || undefined}
+          aria-describedby="entra-button-colors-help"
+          className="w-28 font-mono"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function EntraSettingsPanel({ settings, onSave }) {
   const [status, setStatus] = useState(null); // null = loading
   const [statusError, setStatusError] = useState('');
   const [label, setLabel] = useState(settings?.buttonLabel || '');
+  const [background, setBackground] = useState(settings?.buttonBackground || '');
+  const [textColor, setTextColor] = useState(settings?.buttonTextColor || '');
+  const [icon, setIcon] = useState(settings?.buttonIcon || '');
+  const [iconError, setIconError] = useState('');
+  const fileRef = useRef(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [copied, setCopied] = useState('');
@@ -54,13 +95,53 @@ export default function EntraSettingsPanel({ settings, onSave }) {
     }
   }
 
+  const colors = checkSsoColors(background, textColor);
+
+  async function chooseIcon(e) {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    setIconError('');
+    try {
+      setIcon(await fileToIcon(file));
+    } catch (err) {
+      setIconError(err.message);
+      input.value = '';
+    }
+  }
+
+  function removeIcon() {
+    setIcon('');
+    setIconError('');
+    if (fileRef.current) {
+      fileRef.current.value = '';
+      fileRef.current.focus(); // the button that had focus is gone
+    }
+  }
+
+  function resetColors() {
+    setBackground('');
+    setTextColor('');
+    document.getElementById('entra-button-bg')?.focus(); // likewise
+  }
+
   async function save(e) {
     e.preventDefault();
+    if (!colors.ok) {
+      setMessage({ text: `Not saved. ${colors.message}`, type: 'error' });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
-      await onSave({ ...settings, buttonLabel: label.trim() });
-      setMessage({ text: 'Button label saved.', type: 'success' });
+      await onSave({
+        ...settings,
+        buttonLabel: label.trim(),
+        buttonBackground: background.trim(),
+        buttonTextColor: textColor.trim(),
+        buttonIcon: icon,
+      });
+      setMessage({ text: 'Saved.', type: 'success' });
     } catch (err) {
       setMessage({ text: err.message, type: 'error' });
     } finally {
@@ -115,23 +196,76 @@ export default function EntraSettingsPanel({ settings, onSave }) {
         </p>
       </section>
 
-      <form className="space-y-2 border-t pt-4" onSubmit={save}>
-        <Label htmlFor="entra-button-label">Button label</Label>
-        <Input
-          id="entra-button-label"
-          value={label}
-          maxLength={MAX_LABEL}
-          placeholder={DEFAULT_LABEL}
-          aria-describedby="entra-button-label-help"
-          onChange={(e) => setLabel(e.target.value)}
-        />
-        <p id="entra-button-label-help" className="text-sm text-muted-foreground">
-          Up to {MAX_LABEL} characters, e.g. “Sign in with UIC”. Empty uses “{DEFAULT_LABEL}”.
-        </p>
-        <p className="text-sm">
-          <span className="text-muted-foreground">Preview: </span>
-          <span data-testid="entra-label-preview" className="inline-block rounded-md border px-3 py-1.5 font-medium">{label.trim() || DEFAULT_LABEL}</span>
-        </p>
+      <form className="space-y-4 border-t pt-4" onSubmit={save} noValidate aria-labelledby="entra-button">
+        <h3 id="entra-button" className="text-sm font-medium">Sign-in button</h3>
+        <div className="space-y-2">
+          <Label htmlFor="entra-button-label">Button label</Label>
+          <Input
+            id="entra-button-label"
+            value={label}
+            maxLength={MAX_LABEL}
+            placeholder={DEFAULT_LABEL}
+            aria-describedby="entra-button-label-help"
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <p id="entra-button-label-help" className="text-sm text-muted-foreground">
+            Up to {MAX_LABEL} characters, e.g. “Sign in with UIC”. Empty uses “{DEFAULT_LABEL}”.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="entra-button-icon">Icon</Label>
+          <div className="flex flex-wrap items-center gap-3">
+            {icon && (
+              <span className="inline-flex size-10 items-center justify-center rounded-lg border bg-background">
+                <img src={icon} alt="" className="size-5 object-contain" data-testid="entra-icon-current" />
+              </span>
+            )}
+            <Input
+              id="entra-button-icon"
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              aria-describedby="entra-button-icon-help"
+              className="max-w-xs flex-1"
+              onChange={chooseIcon}
+            />
+            {icon && <Button type="button" variant="outline" onClick={removeIcon}>Remove icon</Button>}
+          </div>
+          <p id="entra-button-icon-help" className="text-sm text-muted-foreground">
+            PNG, JPEG, or WebP. Resized to fit {SSO_ICON_PIXELS} × {SSO_ICON_PIXELS}.
+          </p>
+          <p className="text-sm text-destructive" role="alert">{iconError}</p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-end gap-4">
+            <ColorField id="entra-button-bg" label="Background color" value={background} onChange={setBackground} invalid={!colors.ok} placeholder="#001E62" />
+            <ColorField id="entra-button-fg" label="Text color" value={textColor} onChange={setTextColor} invalid={!colors.ok} placeholder="#FFFFFF" />
+            {(background || textColor) && <Button type="button" variant="outline" onClick={resetColors}>Reset colors</Button>}
+          </div>
+          <p
+            id="entra-button-colors-help"
+            role="status"
+            aria-live="polite"
+            className={`text-sm ${colors.ok ? 'text-muted-foreground' : 'text-destructive'}`}
+          >
+            {colors.message}
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">Preview</p>
+          {/* The real button, not a copy of it; inert, since it goes nowhere here. */}
+          <div data-testid="entra-button-preview" inert className="max-w-sm rounded-lg border bg-background p-4">
+            <SsoButton
+              label={label.trim() || DEFAULT_LABEL}
+              style={{ background: background.trim(), color: textColor.trim(), icon }}
+              tabIndex={-1}
+            />
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
           <span

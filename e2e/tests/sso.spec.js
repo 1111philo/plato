@@ -278,6 +278,80 @@ test('Signup: "Continue with UIC" from an invite link sent to a different email'
   }
 });
 
+// A 1 × 1 PNG.
+const ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+test('the sign-in button carries the admin’s icon and colors, and nothing invalid', async ({ page }) => {
+  const save = (settings) => api('PUT', '/v1/admin/plugins/entra-sso/settings', admin, { buttonLabel: BUTTON, ...settings });
+  const look = (locator) => locator.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { height: el.offsetHeight, width: el.offsetWidth, radius: cs.borderRadius, font: `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`, gap: cs.columnGap, padding: cs.paddingLeft };
+  });
+  let inviteToken;
+  try {
+    await page.goto('/login');
+    const button = page.getByRole('button', { name: BUTTON, exact: true });
+    await expect(button).toBeVisible();
+    const before = await look(button);
+    await expect(button.locator('img')).toHaveCount(0);
+
+    await save({ buttonBackground: '#001E62', buttonTextColor: '#FFFFFF', buttonIcon: ICON });
+    await page.reload();
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS('background-color', 'rgb(0, 30, 98)');
+    await expect(button).toHaveCSS('color', 'rgb(255, 255, 255)');
+    // The icon: decorative, a fixed 20px square, left of the label.
+    const icon = button.locator('img');
+    await expect(icon).toHaveAttribute('src', ICON);
+    await expect(icon).toHaveAttribute('alt', '');
+    await expect(icon).toHaveAttribute('aria-hidden', 'true');
+    const box = await icon.boundingBox();
+    expect([box.width, box.height]).toEqual([20, 20]);
+    expect(await button.evaluate((el) => el.firstElementChild?.tagName)).toBe('IMG');
+    // Same size, shape, font, and spacing as before, and as tall as the form's own button.
+    expect(await look(button)).toEqual(before);
+    const own = page.getByRole('button', { name: 'Sign in', exact: true });
+    expect((await look(button)).height).toBe((await look(own)).height);
+    expect((await look(button)).radius).toBe((await look(own)).radius);
+    // By keyboard: the focus ring shows on the custom background.
+    for (let i = 0; i < 6 && !(await button.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press('Tab');
+    await expect(button).toBeFocused();
+    await expect(button).not.toHaveCSS('box-shadow', 'none');
+    await expectAccessible(page, { label: 'login with a styled single sign-on button' });
+
+    // Signup's "Continue with UIC" is the same button.
+    ({ inviteToken } = await api('POST', '/v1/admin/invites', admin, { email: 'styled.button@example.com' }));
+    await page.goto(`/signup?token=${inviteToken}`);
+    const cont = page.getByRole('button', { name: 'Continue with UIC' });
+    await expect(cont).toHaveCSS('background-color', 'rgb(0, 30, 98)');
+    await expect(cont.locator('img')).toHaveAttribute('src', ICON);
+    await expectAccessible(page, { label: 'signup with a styled single sign-on button' });
+
+    // Stored values that fail the rules are never served: a low-contrast
+    // pair, an SVG, a remote image. The button is the site's default again.
+    for (const bad of [
+      { buttonBackground: '#ffffff', buttonTextColor: '#cccccc', buttonIcon: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=' },
+      { buttonBackground: '#001E62', buttonIcon: 'https://example.com/logo.png' },
+    ]) {
+      await save(bad);
+      const res = await page.request.get('/v1/auth/sso/providers');
+      expect(await res.json()).toEqual({ providers: [{ id: 'entra', label: BUTTON }] });
+    }
+    await page.goto('/login');
+    await expect(button).toBeVisible();
+    await expect(button.locator('img')).toHaveCount(0);
+    expect(await button.getAttribute('style')).toBeNull();
+    // An icon over the cap is refused at save.
+    const big = await page.request.put('/v1/admin/plugins/entra-sso/settings', {
+      headers: { Authorization: `Bearer ${admin}` }, data: { buttonLabel: BUTTON, buttonIcon: ICON + 'A'.repeat(20480) },
+    });
+    expect(big.status()).toBe(400);
+  } finally {
+    await save({}); // as global-setup left it
+    if (inviteToken) await page.request.fetch(`/v1/admin/invites/${inviteToken}`, { method: 'DELETE', headers: { Authorization: `Bearer ${admin}` } });
+  }
+});
+
 test('a used or missing code shows the expired screen', async ({ page }) => {
   await page.goto('/sso/complete#code=not-a-real-code-000000');
   await expect(page.getByRole('heading', { name: 'That sign-in link has expired' })).toBeFocused();

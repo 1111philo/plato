@@ -203,7 +203,7 @@ test('the Entra plugin panel shows the deployment’s settings and saves the but
   const uri = status.getByRole('textbox', { name: 'Redirect URI' });
   await expect(uri).toHaveValue(redirectUri);
   await expect(uri).not.toBeEditable();
-  // Nothing about trust is a form field: only the button label is editable.
+  // Nothing about trust is a form field: only the button's look is editable.
   await expect(page.getByLabel(/tenant|client id|secret|domain/i)).toHaveCount(0);
 
   await status.getByRole('button', { name: 'Copy redirect URI' }).focus();
@@ -216,16 +216,124 @@ test('the Entra plugin panel shows the deployment’s settings and saves the but
   // Button label: the preview follows the field; Enter saves.
   const label = page.getByLabel('Button label');
   await expect(label).toHaveAttribute('maxlength', '40');
-  const preview = page.getByTestId('entra-label-preview');
+  const preview = page.getByTestId('entra-button-preview');
   await expect(preview).toHaveText('Sign in with Microsoft');
   await label.fill('  Sign in with UIC ');
   await expect(preview).toHaveText('Sign in with UIC');
   await label.press('Enter');
-  await expect(page.getByRole('status').filter({ hasText: 'Button label saved.' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
   expect(saves).toHaveLength(1);
   expect(saves[0].method).toBe('PUT');
-  expect(saves[0].body).toEqual({ buttonLabel: 'Sign in with UIC' });
+  expect(saves[0].body).toEqual({ buttonLabel: 'Sign in with UIC', buttonBackground: '', buttonTextColor: '', buttonIcon: '' });
   await expectAccessible(page, { label: 'plugins page with the Entra panel' });
+});
+
+test('the Entra plugin panel sets the button’s icon and colors, by keyboard, and refuses a low-contrast pair', async ({ page }) => {
+  const saves = await stubEntraPlugin(page, {
+    configured: true, tenantId: '1234…abcd', clientId: '9876…ef01', domains: ['uic.edu'], redirectUri: 'https://learn.example.edu/v1/auth/sso/entra/callback',
+  }, { buttonLabel: 'Sign in with UIC' });
+  await login(page, ADMIN);
+  await page.goto('/plato/plugins');
+  await settle(page);
+
+  const form = page.getByRole('form', { name: 'Sign-in button' });
+  const preview = page.getByTestId('entra-button-preview');
+  const previewButton = preview.locator('button');
+  const contrast = form.locator('#entra-button-colors-help');
+  const bg = form.getByLabel('Background color', { exact: true });
+  const fg = form.getByLabel('Text color', { exact: true });
+  const save = form.getByRole('button', { name: 'Save' });
+
+  // Nothing set: the site's own button, and nothing to remove or reset.
+  await expect(contrast).toHaveText('Empty uses the site’s button style.');
+  await expect(preview.locator('img')).toHaveCount(0);
+  expect(await previewButton.getAttribute('style')).toBeNull();
+  await expect(form.getByRole('button', { name: 'Remove icon' })).toHaveCount(0);
+  await expect(form.getByRole('button', { name: 'Reset colors' })).toHaveCount(0);
+  // The preview is the real button, but not a tab stop here.
+  await expect(preview).toHaveAttribute('inert', '');
+
+  // One color alone can't be saved.
+  await bg.focus();
+  await page.keyboard.type('#001E62');
+  await expect(contrast).toHaveText('Set both colors, or neither.');
+  await expect(bg).toHaveAttribute('aria-invalid', 'true');
+  await page.keyboard.press('Enter');
+  await expect(form.getByRole('alert').filter({ hasText: 'Not saved. Set both colors, or neither.' })).toBeVisible();
+  expect(saves).toHaveLength(0);
+
+  // A low-contrast pair: the live ratio says so, the preview stays default, and Save refuses.
+  await page.keyboard.press('Tab'); // the text color's picker
+  await expect(form.getByLabel('Text color picker')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(fg).toBeFocused();
+  await page.keyboard.type('#33448F');
+  await expect(contrast).toHaveText(/^Contrast 1\.\d\d:1\. It needs at least 4\.5:1\.$/);
+  expect(await previewButton.getAttribute('style')).toBeNull();
+  await page.keyboard.press('Tab');
+  await expect(form.getByRole('button', { name: 'Reset colors' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(save).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(form.getByRole('alert').filter({ hasText: /Not saved\. Contrast 1\.\d\d:1\. It needs at least 4\.5:1\./ })).toBeVisible();
+  expect(saves).toHaveLength(0);
+  await expectAccessible(page, { label: 'Entra panel refusing a low-contrast pair' });
+
+  // A pair that passes shows in the preview.
+  await fg.fill('#FFFFFF');
+  await expect(contrast).toHaveText('Contrast 15.41:1. Passes.');
+  await expect(bg).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(previewButton).toHaveCSS('background-color', 'rgb(0, 30, 98)');
+  await expect(previewButton).toHaveCSS('color', 'rgb(255, 255, 255)');
+
+  // Icon: an SVG is refused; a PNG is redrawn small and shown in the preview.
+  const file = form.getByLabel('Icon', { exact: true });
+  await expect(file).toHaveAttribute('accept', 'image/png,image/jpeg,image/webp');
+  await file.setInputFiles({ name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>') });
+  await expect(form.getByRole('alert').filter({ hasText: 'Use a PNG, JPEG, or WebP image.' })).toBeVisible();
+  await expect(preview.locator('img')).toHaveCount(0);
+  // 200 × 100, drawn in the page so the upload is a real PNG.
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas');
+    c.width = 200; c.height = 100;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#d50032'; ctx.fillRect(0, 0, 200, 100);
+    return c.toDataURL('image/png').split(',')[1];
+  });
+  await file.setInputFiles({ name: 'logo.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+  const icon = preview.locator('img');
+  await expect(icon).toHaveAttribute('src', /^data:image\/png;base64,/);
+  await expect(icon).toHaveAttribute('alt', '');
+  expect(await icon.evaluate((el) => [el.naturalWidth, el.naturalHeight, el.offsetWidth, el.offsetHeight])).toEqual([64, 32, 20, 20]);
+  await expect(form.getByRole('alert').filter({ hasText: 'Use a PNG' })).toHaveCount(0);
+  await expectAccessible(page, { label: 'Entra panel with an icon and colors' });
+
+  // Save, by keyboard.
+  await save.focus();
+  await page.keyboard.press('Enter');
+  await expect(form.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+  expect(saves).toHaveLength(1);
+  const saved = saves[0].body;
+  expect(saved).toMatchObject({ buttonLabel: 'Sign in with UIC', buttonBackground: '#001E62', buttonTextColor: '#FFFFFF' });
+  expect(saved.buttonIcon).toMatch(/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
+  expect(saved.buttonIcon.length).toBeLessThanOrEqual(20480);
+
+  // Remove icon and Reset colors, by keyboard; focus stays in the form.
+  await form.getByRole('button', { name: 'Remove icon' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(preview.locator('img')).toHaveCount(0);
+  await expect(file).toBeFocused();
+  await form.getByRole('button', { name: 'Reset colors' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(bg).toHaveValue('');
+  await expect(fg).toHaveValue('');
+  await expect(bg).toBeFocused();
+  await expect(contrast).toHaveText('Empty uses the site’s button style.');
+  expect((await previewButton.getAttribute('style')) || '').toBe('');
+  await save.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saves[1].body).toEqual({ buttonLabel: 'Sign in with UIC', buttonBackground: '', buttonTextColor: '', buttonIcon: '' });
 });
 
 test('the Entra plugin panel says when the deployment hasn’t configured it', async ({ page }) => {

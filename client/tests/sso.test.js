@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   providerName, ssoStartUrl, ssoCodeFromHash, ssoReasonMessage, ssoErrorMessage, exchangeSsoCode, fetchSsoProviders,
+  contrastRatio, isHexColor, isSsoIcon, checkSsoColors, normalizeSsoStyle, SSO_ICON_MAX_LENGTH, SSO_MIN_CONTRAST,
 } from '../src/lib/sso.js';
 
 const UIC = [{ id: 'entra', label: 'Sign in with UIC' }];
@@ -128,6 +129,76 @@ describe('localPath', () => {
     assert.equal(localPath('/lessons/abc?x=1#top', '/lessons', o), '/lessons/abc?x=1#top');
     for (const bad of ['/\t/evil.example/x', '/\n/evil.example', '//evil.example', '/\\evil.example', 'https://evil.example', 'javascript:alert(1)', '', '/', null, '/a b']) {
       assert.equal(localPath(bad, '/lessons', o), '/lessons', JSON.stringify(bad));
+    }
+  });
+});
+
+describe('button style', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+  it('accepts only #rrggbb colors', () => {
+    for (const ok of ['#001E62', '#ffffff']) assert.equal(isHexColor(ok), true);
+    for (const bad of ['#fff', '001E62', 'red', '#001E62;x', ' #001E62', '', null, undefined, 5]) assert.equal(isHexColor(bad), false, String(bad));
+  });
+
+  it('computes the WCAG contrast ratio', () => {
+    assert.equal(contrastRatio('#000000', '#ffffff'), 21);
+    assert.equal(contrastRatio('#ffffff', '#000000'), 21);
+    assert.equal(contrastRatio('#123456', '#123456'), 1);
+    assert.ok(Math.abs(contrastRatio('#767676', '#ffffff') - 4.54) < 0.01);
+    assert.ok(Math.abs(contrastRatio('#777777', '#ffffff') - 4.48) < 0.01);
+    assert.ok(Math.abs(contrastRatio('#001E62', '#ffffff') - 15.42) < 0.01);
+    assert.equal(contrastRatio('#fff', '#000000'), 0);
+    assert.equal(contrastRatio(null, undefined), 0);
+  });
+
+  it('says what the admin needs to know about a color pair', () => {
+    assert.equal(SSO_MIN_CONTRAST, 4.5);
+    assert.deepEqual(checkSsoColors('', ''), { ok: true, ratio: 0, message: 'Empty uses the site’s button style.' });
+    assert.deepEqual(checkSsoColors(undefined, null), { ok: true, ratio: 0, message: 'Empty uses the site’s button style.' });
+    assert.deepEqual(checkSsoColors('#001E62', ''), { ok: false, ratio: 0, message: 'Set both colors, or neither.' });
+    assert.deepEqual(checkSsoColors('', '#ffffff'), { ok: false, ratio: 0, message: 'Set both colors, or neither.' });
+    assert.deepEqual(checkSsoColors('#001E6', '#ffffff'), { ok: false, ratio: 0, message: 'Use hex colors like #001E62.' });
+    assert.equal(checkSsoColors(' #000000 ', '#FFFFFF').message, 'Contrast 21.00:1. Passes.');
+    assert.equal(checkSsoColors('#000000', '#ffffff').ok, true);
+    const low = checkSsoColors('#ffffff', '#777777');
+    assert.equal(low.ok, false);
+    assert.equal(low.message, 'Contrast 4.47:1. It needs at least 4.5:1.');
+    assert.equal(checkSsoColors('#ffffff', '#767676').ok, true);
+  });
+
+  it('accepts a small PNG, JPEG, or WebP data URL as the icon and nothing else', () => {
+    assert.equal(isSsoIcon(PNG), true);
+    assert.equal(isSsoIcon('data:image/jpeg;base64,/9j/4AAQSkZJRg=='), true);
+    assert.equal(isSsoIcon('data:image/webp;base64,UklGRiQAAABXRUJQVlA4IA=='), true);
+    for (const bad of [
+      'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', 'data:image/svg+xml,<svg/>', 'https://cdn.example.com/a.png', '/a.png',
+      'javascript:alert(1)', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 'data:image/png;base64,', `${PNG}" onerror="x`, '', null, undefined, {},
+    ]) assert.equal(isSsoIcon(bad), false, String(bad));
+    assert.equal(SSO_ICON_MAX_LENGTH, 20480);
+    const head = 'data:image/png;base64,';
+    assert.equal(isSsoIcon(head + 'A'.repeat(SSO_ICON_MAX_LENGTH - head.length)), true);
+    assert.equal(isSsoIcon(head + 'A'.repeat(SSO_ICON_MAX_LENGTH - head.length + 1)), false);
+  });
+
+  it('normalizes a style to what is valid, colors only as a passing pair', () => {
+    assert.deepEqual(normalizeSsoStyle({ background: '#001E62', color: '#FFFFFF', icon: PNG }), { background: '#001e62', color: '#ffffff', icon: PNG });
+    assert.deepEqual(normalizeSsoStyle({ background: '#ffffff', color: '#eeeeee', icon: PNG }), { icon: PNG });
+    assert.deepEqual(normalizeSsoStyle({ background: '#001E62', icon: PNG }), { icon: PNG });
+    assert.deepEqual(normalizeSsoStyle({ background: '#000000', color: '#ffffff', icon: 'https://x.example/a.png', extra: 'x' }), { background: '#000000', color: '#ffffff' });
+    for (const nothing of [null, undefined, 'x', {}, { background: '', color: '', icon: '' }, { background: 'red', color: 'white' }]) {
+      assert.equal(normalizeSsoStyle(nothing), null);
+    }
+  });
+
+  it('fetchSsoProviders keeps a provider’s style', async () => {
+    const real = globalThis.fetch;
+    const style = { background: '#001e62', color: '#ffffff' };
+    try {
+      globalThis.fetch = async () => ({ ok: true, json: async () => ({ providers: [{ id: 'entra', label: 'Sign in with UIC', style }] }) });
+      assert.deepEqual(await fetchSsoProviders(), [{ id: 'entra', label: 'Sign in with UIC', style }]);
+    } finally {
+      globalThis.fetch = real;
     }
   });
 });

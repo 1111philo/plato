@@ -65,7 +65,10 @@ sso.use('/v1/auth/sso/*', async (c, next) => {
   c.header('Cache-Control', 'no-store');
 });
 
-sso.get('/v1/auth/sso/providers', (c) => c.json({ providers: liveProviders().map((p) => ({ id: p.id, label: p.label })) }));
+// `style` (icon and colors, validated in lib/sso-button-style.js) only when an admin set one.
+sso.get('/v1/auth/sso/providers', (c) => c.json({
+  providers: liveProviders().map((p) => ({ id: p.id, label: p.label, ...(p.style ? { style: p.style } : {}) })),
+}));
 
 async function begin(c, provider, extra) {
   const { doc } = await discover(provider.cfg.issuer);

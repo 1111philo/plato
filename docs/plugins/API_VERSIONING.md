@@ -5,12 +5,16 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.6.0'
+PLUGIN_API_VERSION = '1.6.1'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.6.1 (fix)
+- **Changed** `PUT /v1/admin/plugins/:id/settings` refuses (400) a string value longer than the `maxLength` its `settingsSchema` property declares. All plugins' settings share one stored record, so a declared cap is now enforced on the server, not only in the form.
+- **Added** an optional `style: { background, color, icon }` on the config an `auth.provider`'s `configure` returns: the sign-in button's colors and icon. Core validates it (hex colors with at least 4.5:1 contrast; a PNG, JPEG, or WebP data URL of at most 20 KB) and drops what fails. See [`docs/SSO.md`](../SSO.md#button-style).
 
 ### 1.6.0 (additive)
 - **Added** the `auth.provider` capability: a plugin's server module can export `authProviders: [{ id, label, configure(env, settings), mapClaims(claims, cfg) }]` to supply a single sign-on provider. Core runs the OpenID Connect flow and owns accounts and sessions; the plugin only configures the issuer and maps ID-token claims. See [`docs/SSO.md`](../SSO.md) and `plugins/entra-sso`.

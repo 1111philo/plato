@@ -321,7 +321,7 @@ Admin only. Body: `{ enabled: boolean }`. Toggles activation. Runs `onActivate`/
 
 ### `PUT /v1/admin/plugins/:id/settings`
 
-Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activation.<id>.settings`.
+Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activation.<id>.settings`. A string longer than its property's declared `maxLength` in `settingsSchema` is refused with 400 (API 1.6.1); nothing else in the schema is enforced on the server, so validate what you read.
 
 ### `GET /v1/plugins`
 

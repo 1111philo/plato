@@ -2,7 +2,77 @@
 // each failure, and the one-time-code exchange. The server decides everything
 // about accounts; this only starts the flow and shows what came back.
 
-/** The providers to show a button for: `[{ id, label }]`, empty when SSO is off. */
+// --- Button style -----------------------------------------------------------
+// An admin can give a provider's button an icon and a background / text color
+// pair. The server validates them (server/src/lib/sso-button-style.js); these
+// are the same rules for the admin panel's live check, and a second check
+// before anything from the payload is rendered.
+
+/** WCAG AA for normal-size text. */
+export const SSO_MIN_CONTRAST = 4.5;
+/** The whole icon data URL, in characters (20 KB). */
+export const SSO_ICON_MAX_LENGTH = 20 * 1024;
+/** The panel downscales an upload to fit this square, in pixels. */
+export const SSO_ICON_PIXELS = 64;
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const ICON = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+export const isHexColor = (v) => typeof v === 'string' && HEX.test(v);
+
+function luminance(hex) {
+  const lin = (i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(1) + 0.7152 * lin(3) + 0.0722 * lin(5);
+}
+
+/** WCAG 2.x contrast ratio of two `#rrggbb` colors (1–21), or 0 when either isn't one. */
+export function contrastRatio(a, b) {
+  if (!isHexColor(a) || !isHexColor(b)) return 0;
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** A PNG, JPEG, or WebP base64 data URL within the size cap. Never SVG, never a remote URL. */
+export const isSsoIcon = (v) => typeof v === 'string' && v.length <= SSO_ICON_MAX_LENGTH && ICON.test(v);
+
+/**
+ * What can be said about a color pair as typed: `{ ok, ratio, message }`.
+ * Both empty is fine (the site's button style); one alone, a value that
+ * isn't `#rrggbb`, or a pair under 4.5:1 is not.
+ */
+export function checkSsoColors(background, color) {
+  const bg = (background || '').trim();
+  const fg = (color || '').trim();
+  if (!bg && !fg) return { ok: true, ratio: 0, message: 'Empty uses the site’s button style.' };
+  if (!bg || !fg) return { ok: false, ratio: 0, message: 'Set both colors, or neither.' };
+  if (!isHexColor(bg) || !isHexColor(fg)) return { ok: false, ratio: 0, message: 'Use hex colors like #001E62.' };
+  const ratio = contrastRatio(bg, fg);
+  // Rounded down, so 4.499 never reads as "4.50".
+  const shown = (Math.floor(ratio * 100) / 100).toFixed(2);
+  return ratio >= SSO_MIN_CONTRAST
+    ? { ok: true, ratio, message: `Contrast ${shown}:1. Passes.` }
+    : { ok: false, ratio, message: `Contrast ${shown}:1. It needs at least ${SSO_MIN_CONTRAST}:1.` };
+}
+
+/**
+ * `{ background, color, icon }` → the same with only what's valid, or null.
+ * Colors come as a pair that passes contrast, or not at all.
+ */
+export function normalizeSsoStyle(style) {
+  if (!style || typeof style !== 'object') return null;
+  const out = {};
+  if (contrastRatio(style.background, style.color) >= SSO_MIN_CONTRAST) {
+    out.background = style.background.toLowerCase();
+    out.color = style.color.toLowerCase();
+  }
+  if (isSsoIcon(style.icon)) out.icon = style.icon;
+  return Object.keys(out).length ? out : null;
+}
+
+/** The providers to show a button for: `[{ id, label, style? }]`, empty when SSO is off. */
 export async function fetchSsoProviders() {
   try {
     const res = await fetch('/v1/auth/sso/providers');
