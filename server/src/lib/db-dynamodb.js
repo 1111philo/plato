@@ -27,6 +27,33 @@ const ssoGuardPut = (ssoKey, ownerId, now) => ({
   ConditionExpression: 'attribute_not_exists(dataKey)',
 });
 
+// Delete an identity's guard item, only while it still names this owner.
+async function releaseSsoGuard(ssoKey, ownerId) {
+  try {
+    await doc.send(new DeleteCommand({
+      TableName: SYNC_DATA_TABLE,
+      Key: { userId: SSO_GUARD, dataKey: ssoKey },
+      ConditionExpression: 'ownerId = :o',
+      ExpressionAttributeValues: { ':o': ownerId },
+    }));
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+  }
+}
+
+// A guard whose owner no longer exists, or no longer holds this identity, is
+// stale (an account deleted before deleteUser released guards, or a write
+// that died between steps). Remove it so the identity can be used again.
+// True if a stale guard was removed.
+async function dropStaleSsoGuard(ssoKey) {
+  const guard = (await doc.send(new GetCommand({ TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: ssoKey }, ConsistentRead: true }))).Item;
+  if (!guard?.ownerId) return false;
+  const owner = (await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: guard.ownerId }, ConsistentRead: true }))).Item;
+  if (owner?.ssoKey === ssoKey) return false; // a live link
+  await releaseSsoGuard(ssoKey, guard.ownerId);
+  return true;
+}
+
 const db = {
   // ── Users ──
 
@@ -51,11 +78,14 @@ const db = {
     // With an identity: the account and the identity's guard item are written
     // together, so one identity can never end up on two accounts.
     Object.assign(item, { ssoKey: sso.key, ssoEmail: sso.email || null, ssoLinkedAt: now });
+    const write = () => doc.send(new TransactWriteCommand({ TransactItems: [{ Put: put }, { Put: ssoGuardPut(sso.key, userId, now) }] }));
     try {
-      await doc.send(new TransactWriteCommand({ TransactItems: [{ Put: put }, { Put: ssoGuardPut(sso.key, userId, now) }] }));
+      await write();
     } catch (err) {
-      if (err.name === 'TransactionCanceledException') throw Object.assign(new Error('User or identity already exists'), { name: 'ConditionalCheckFailedException' });
-      throw err;
+      if (err.name !== 'TransactionCanceledException') throw err;
+      const exists = Object.assign(new Error('User or identity already exists'), { name: 'ConditionalCheckFailedException' });
+      if (!(await dropStaleSsoGuard(sso.key))) throw exists;
+      try { await write(); } catch (again) { if (again.name === 'TransactionCanceledException') throw exists; throw again; }
     }
   },
 
@@ -94,25 +124,27 @@ const db = {
   // already has one, or the identity belongs to another account.
   async linkUserSso(userId, { key, email }) {
     const now = new Date().toISOString();
-    try {
-      await doc.send(new TransactWriteCommand({
-        TransactItems: [
-          { Put: ssoGuardPut(key, userId, now) },
-          {
-            Update: {
-              TableName: USERS_TABLE,
-              Key: { userId },
-              UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
-              ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
-              ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': now },
-            },
+    const write = () => doc.send(new TransactWriteCommand({
+      TransactItems: [
+        { Put: ssoGuardPut(key, userId, now) },
+        {
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
+            ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
+            ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': now },
           },
-        ],
-      }));
+        },
+      ],
+    }));
+    try {
+      await write();
       return true;
     } catch (err) {
-      if (err.name === 'TransactionCanceledException') return false;
-      throw err;
+      if (err.name !== 'TransactionCanceledException') throw err;
+      if (!(await dropStaleSsoGuard(key))) return false;
+      try { await write(); return true; } catch (again) { if (again.name === 'TransactionCanceledException') return false; throw again; }
     }
   },
 
@@ -170,11 +202,16 @@ const db = {
     }));
   },
 
+  // Deleting an account releases its single sign-on identity: the guard item
+  // goes with it, or the identity could never be connected to another account.
   async deleteUser(userId) {
-    await doc.send(new DeleteCommand({
+    const result = await doc.send(new DeleteCommand({
       TableName: USERS_TABLE,
       Key: { userId },
+      ReturnValues: 'ALL_OLD',
     }));
+    const ssoKey = result.Attributes?.ssoKey;
+    if (ssoKey) await releaseSsoGuard(ssoKey, userId);
   },
 
   // Lightweight writes used by the sync-route hooks. They deliberately do

@@ -417,6 +417,21 @@ describe('attacks from the security review', () => {
     assert.equal(guest.outcome, 'no_account');
   });
 
+  it('deleting an account releases its identity: the same person can be invited and sign in again', async () => {
+    await db.createInvite({ inviteToken: 'inv_again_1', email: 'again@uic.edu', invitedBy: 'usr_admin' });
+    const first = await complete(person('again'));
+    assert.equal(first.created, true);
+    const adminToken = await signAccessToken('usr_admin', 'admin');
+    const del = await app.request(`/v1/admin/users/${first.user.userId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } });
+    assert.equal(del.status, 200);
+    assert.equal(await db.getUserBySsoKey(`entra:${TENANT}:oid-again`), null);
+    assert.equal((await complete(person('again'))).outcome, 'no_account', 'no account, no invite');
+    await db.createInvite({ inviteToken: 'inv_again_2', email: 'again@uic.edu', invitedBy: 'usr_admin' });
+    const second = await complete(person('again'));
+    assert.deepEqual([second.outcome, second.created], ['signed_in', true]);
+    assert.notEqual(second.user.userId, first.user.userId);
+  });
+
   it('one identity can’t be connected to two accounts, even when both try at once', async () => {
     await db.createUser({ userId: 'usr_race_a', email: 'race-a@gmail.com', username: 'racea', passwordHash: await hashPassword('race-pass-aaa'), firstName: 'A', lastName: '', name: 'A', role: 'learner' });
     await db.createUser({ userId: 'usr_race_b', email: 'race-b@gmail.com', username: 'raceb', passwordHash: await hashPassword('race-pass-bbb'), firstName: 'B', lastName: '', name: 'B', role: 'learner' });
