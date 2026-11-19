@@ -61,6 +61,8 @@ Other rules:
   `_sso`) written in the same transaction as the user and read with strong
   consistency; on SQLite a unique index. Connecting an identity that's on
   another account is refused; accounts can't be merged.
+  Deleting an account releases its identity (the guard item goes with it),
+  and a guard whose owner is gone is treated as stale and replaced.
 - **Which emails are vouched for** is the provider's call. Entra: the `email`
   claim and the sign-in name, only when the domain is one the tenant owns
   (`SSO_ENTRA_DOMAINS`), and never when Entra says the email's domain owner
