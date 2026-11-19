@@ -264,6 +264,8 @@ test('Signup: an invite to a campus address leads with UIC and asks for no usern
     await expectAccessible(page, { label: 'signup leading with single sign-on' });
     await press(page, page.getByRole('button', { name: 'Set a password instead' }));
     await expect(page.getByLabel('Email', { exact: true })).toHaveValue(dana.email);
+    await expect(page.getByLabel('Email', { exact: true })).toBeFocused(); // the button is gone; focus lands in the form
+    await expect(page.getByRole('button', { name: 'Set a password instead' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
     await expectAccessible(page, { label: 'signup with the password form opened' });
 

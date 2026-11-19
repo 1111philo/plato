@@ -43,6 +43,11 @@ export default function Signup() {
   const [providers, setProviders] = useState(null);
   const preferred = (providers || []).filter((p) => inviteSso.includes(p.id));
   const showForm = formOpen || preferred.length === 0;
+  // "Set a password instead" removes itself when the form appears: put focus
+  // on the form's first field so keyboard and screen-reader users land in it.
+  useEffect(() => {
+    if (formOpen) document.getElementById('signup-email')?.focus();
+  }, [formOpen]);
 
   useEffect(() => {
     if (token) fetchSsoProviders().then(setProviders);
@@ -171,7 +176,8 @@ export default function Signup() {
           {!showForm && (
             <div className="space-y-3 text-center">
               <p className="text-sm text-muted-foreground">No username or password needed.</p>
-              <Button variant="link" className="h-auto p-0" aria-expanded="false" aria-controls="signup-password-form" onClick={() => setFormOpen(true)}>
+              {/* A one-way reveal, not a toggle: the button goes away, so focus moves into the form (effect above). */}
+              <Button variant="link" className="h-auto p-0" onClick={() => setFormOpen(true)}>
                 Set a password instead
               </Button>
             </div>
