@@ -561,9 +561,9 @@ describe('signup from a wait-list invite', () => {
     const res = await makeApp().request('/v1/auth/invite/inv_x');
     // This entry predates #402 (profile.name only): split on read.
     assert.deepEqual(await res.json(), {
-      email: 'ada@example.com', name: 'Ada', firstName: 'Ada', lastName: '', nameSource: 'auto',
+      email: 'ada@example.com', sso: [], name: 'Ada', firstName: 'Ada', lastName: '', nameSource: 'auto',
       userGroup: 'Cohort A', customFields: { fld_org: 'UIC' },
-    });
+    }); // `sso`: no sign-in provider vouches for this address (docs/SSO.md)
     assert.equal((await makeApp().request('/v1/auth/invite/inv_none')).status, 404);
   });
 

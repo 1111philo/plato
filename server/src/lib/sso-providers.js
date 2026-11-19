@@ -58,3 +58,14 @@ export function liveProviders(env = process.env) {
 }
 
 export const getProvider = (id, env) => liveProviders(env).find((p) => p.id === id) || null;
+
+/**
+ * Ids of the live providers that vouch for this address's domain (a provider
+ * says so with `cfg.domains`). The signup page uses it to lead with single
+ * sign-on for an invite sent to such an address.
+ */
+export function providersForEmail(email, env) {
+  const domain = typeof email === 'string' && email.includes('@') ? email.split('@').pop().toLowerCase() : '';
+  if (!domain) return [];
+  return liveProviders(env).filter((p) => Array.isArray(p.cfg.domains) && p.cfg.domains.includes(domain)).map((p) => p.id);
+}

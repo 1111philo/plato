@@ -7,7 +7,7 @@ import SsoButton from './SsoButton.jsx';
 // `verb`: Login shows the provider's own label ("Sign in with UIC"); Signup
 // passes "Continue" ("Continue with UIC"). A provider's `style` (icon and
 // colors) applies to both.
-export default function SsoButtons({ providers, invite, next, verb }) {
+export default function SsoButtons({ providers, invite, next, verb, divider = true }) {
   if (!providers?.length) return null;
   return (
     <>
@@ -21,11 +21,13 @@ export default function SsoButtons({ providers, invite, next, verb }) {
           />
         ))}
       </div>
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="h-px flex-1 bg-border" aria-hidden="true" />
-        <span>or</span>
-        <span className="h-px flex-1 bg-border" aria-hidden="true" />
-      </div>
+      {divider && (
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" aria-hidden="true" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-border" aria-hidden="true" />
+        </div>
+      )}
     </>
   );
 }
