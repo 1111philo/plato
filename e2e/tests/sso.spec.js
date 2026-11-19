@@ -250,6 +250,32 @@ test('Settings: connect and disconnect', async ({ page }) => {
   expect((await me(page)).signIn.sso).toBeNull();
 });
 
+test('Signup: an invite to a campus address leads with UIC and asks for no username or password', async ({ page }) => {
+  const dana = person('Dana', 'Direct');
+  const { inviteToken } = await api('POST', '/v1/admin/invites', admin, { email: dana.email });
+  try {
+    await page.goto(`/signup?token=${inviteToken}`);
+    const button = page.getByRole('button', { name: 'Continue with UIC' });
+    await expect(button).toBeVisible();
+    await expect(page.getByText('No username or password needed.')).toBeVisible();
+    // The password form is there for anyone who wants it, but not in the way.
+    await expect(page.getByLabel('Email', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Create Account' })).toHaveCount(0);
+    await expectAccessible(page, { label: 'signup leading with single sign-on' });
+    await press(page, page.getByRole('button', { name: 'Set a password instead' }));
+    await expect(page.getByLabel('Email', { exact: true })).toHaveValue(dana.email);
+    await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
+    await expectAccessible(page, { label: 'signup with the password form opened' });
+
+    await providerWillSignIn(dana);
+    await press(page, button);
+    await expect(page).toHaveURL(/\/lessons$/);
+    expect((await me(page)).signIn).toEqual({ password: false, sso: { provider: 'entra', email: dana.email } });
+  } finally {
+    await removeUser(admin, dana.email);
+  }
+});
+
 test('Signup: "Continue with UIC" from an invite link sent to a different email', async ({ page }) => {
   const invitedEmail = 'casey.personal@example.com';
   const { inviteToken } = await api('POST', '/v1/admin/invites', admin, { email: invitedEmail });

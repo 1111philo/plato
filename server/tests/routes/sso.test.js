@@ -222,6 +222,19 @@ describe('which account you land in', () => {
     assert.equal(await db.getUserByEmail('waiter@uic.edu'), null);
   });
 
+  it('the invite lookup says which sign-in vouches for the invited address', async () => {
+    await db.createInvite({ inviteToken: 'inv_lead_uic', email: 'lead@uic.edu', invitedBy: 'usr_admin' });
+    await db.createInvite({ inviteToken: 'inv_lead_gmail', email: 'lead@gmail.com', invitedBy: 'usr_admin' });
+    const look = async (t) => (await app.request(`/v1/auth/invite/${t}`)).json();
+    assert.deepEqual((await look('inv_lead_uic')).sso, ['entra']);
+    assert.deepEqual((await look('inv_lead_gmail')).sso, []);
+    const tenant = process.env.SSO_ENTRA_TENANT_ID;
+    process.env.SSO_ENTRA_TENANT_ID = 'off'; // SSO off: nothing to lead with
+    assert.deepEqual((await look('inv_lead_uic')).sso, []);
+    process.env.SSO_ENTRA_TENANT_ID = tenant;
+    for (const t of ['inv_lead_uic', 'inv_lead_gmail']) await db.deleteInvite(t);
+  });
+
   it('has an invite (even an expired one): the account is made from it, with no password', async () => {
     await db.createInvite({ inviteToken: 'inv_i1', email: 'invitee@uic.edu', invitedBy: 'usr_admin', profile: { firstName: 'Inga', lastName: 'Vited', userGroup: 'Cohort A', customFields: { fld_org: 'UIC', fld_gone: 'x' } } });
     const { default: Database } = await import('better-sqlite3');
