@@ -53,6 +53,8 @@ const exchanges = createLimiter({ limit: 1000, windowMs: TEN_MIN });
 const TOO_MANY = { error: 'Too many requests. Please try again later.' };
 
 const cookieOptions = () => ({ httpOnly: true, secure: SECURE, sameSite: 'Lax', path: '/v1/auth/sso', maxAge: TX_TTL_SECONDS });
+// A `__Secure-` cookie can only be set, or cleared, with the Secure attribute.
+const clearTx = (c) => deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso', secure: SECURE });
 const redirectUri = (providerId) => `${APP_URL}/v1/auth/sso/${providerId}/callback`;
 const codeKey = (code) => sha256(`sso-code:${code}`);
 const toLogin = (c, reason) => c.redirect(`${APP_URL}/login?sso=${encodeURIComponent(reason)}`, 302);
@@ -122,17 +124,17 @@ sso.get('/v1/auth/sso/:provider/callback', async (c) => {
   // No cookie, a cookie for another provider, or a state that isn't ours: stop
   // before talking to the provider (this is the login-CSRF check).
   if (!tx || tx.p !== providerId || !safeEqual(c.req.query('state'), tx.state)) {
-    deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso' });
+    clearTx(c);
     return toLogin(c, 'expired');
   }
   if (c.req.query('error')) {
-    deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso' });
+    clearTx(c);
     return toLogin(c, 'cancelled');
   }
   const provider = getProvider(providerId);
   const code = c.req.query('code');
   if (!provider || typeof code !== 'string' || !code) {
-    deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso' });
+    clearTx(c);
     return toLogin(c, 'failed');
   }
 
@@ -149,8 +151,10 @@ sso.get('/v1/auth/sso/:provider/callback', async (c) => {
     });
   } catch (err) {
     // The code only: never the token, claims, or provider response.
-    logger.error('sso_callback_failed', { provider: provider.id, reason: err?.code || 'error' });
-    deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso' });
+    // `detail` is the provider's own error code for a refused token exchange
+    // (e.g. "invalid_client AADSTS7000215"): what an operator needs, and no secret.
+    logger.error('sso_callback_failed', { provider: provider.id, reason: err?.code || 'error', ...(err?.code === 'token_exchange_failed' ? { detail: err.message } : {}) });
+    clearTx(c);
     return toLogin(c, err?.code === 'identity_refused' ? 'refused' : 'failed');
   }
 
@@ -173,7 +177,7 @@ sso.post('/v1/auth/sso/exchange', async (c) => {
   if (exchanges.hit(clientIp(c))) return c.json(TOO_MANY, 429);
   const body = await readJson(c);
   const tx = unseal('tx', getCookie(c, TX_COOKIE));
-  deleteCookie(c, TX_COOKIE, { path: '/v1/auth/sso' });
+  clearTx(c);
   const code = body?.code;
   const stored = typeof code === 'string' && code.length <= 200 ? await db.takeOneTimeCode(codeKey(code)) : null;
   if (!stored || !tx || !safeEqual(stored.bind, sha256(tx.nonce))) {

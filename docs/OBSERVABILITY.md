@@ -95,7 +95,7 @@ lost something?* Yes → A. No → B.
 | `migration_failed` | error | B | one migration finished with item errors (`migration`, counts); it isn't recorded as applied, so it retries on the next cold start |
 | `job_completed` | warn | — | a background job finished, with its counts |
 | `job_failed`, `job_unknown`, `job_dispatch_failed` | error | B | a background job threw, wasn't registered, or couldn't be invoked |
-| `sso_start_failed`, `sso_callback_failed` | error | B | a single sign-on attempt couldn't start or finish (`provider`, `reason`: a code such as `discovery_failed`, `token_exchange_failed`, `id_token_invalid`, `identity_refused`; never a token or claim). A burst means the provider or its config is broken: check the client secret's expiry first |
+| `sso_start_failed`, `sso_callback_failed` | error | B | a single sign-on attempt couldn't start or finish (`provider`, `reason`: a code such as `discovery_failed`, `token_exchange_failed`, `id_token_invalid`, `identity_refused`; never a token or claim; a refused token exchange adds `detail`, the provider's own error code, e.g. `invalid_client AADSTS7000215` for a wrong or expired client secret). A burst means the provider or its config is broken: check the client secret's expiry first |
 | `sso_link_notice_failed` | warn | — | the "sign-in was connected" email couldn't be sent; the link itself succeeded |
 | `schedule_check_failed` | error | B | the traffic-driven schedule check (`lib/schedule.js`) threw |
 | `learner_email_failed` | error | B | SES refused a reminder or digest; its claim was released for the next run |

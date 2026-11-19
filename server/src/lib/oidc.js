@@ -119,7 +119,10 @@ export async function exchangeCode({ doc, clientId, clientSecret, redirectUri, c
   const body = await res.json().catch(() => null);
   if (!res.ok || typeof body?.id_token !== 'string') {
     // The provider's error code only (e.g. invalid_grant); never the body, which can echo secrets.
-    throw oidcError('token_exchange_failed', typeof body?.error === 'string' ? body.error.slice(0, 60) : `status ${res.status}`);
+    // Entra puts its own code (AADSTS…) in the description; keep just that.
+    const aadsts = typeof body?.error_description === 'string' ? (body.error_description.match(/AADSTS\d+/) || [''])[0] : '';
+    const reason = typeof body?.error === 'string' ? body.error.replace(/[^a-z_]/gi, '').slice(0, 40) : `status ${res.status}`;
+    throw oidcError('token_exchange_failed', `${reason}${aadsts ? ` ${aadsts}` : ''}`);
   }
   return body.id_token;
 }
