@@ -1549,6 +1549,14 @@ admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   for (const [key, def] of Object.entries(schemaProps)) {
     if (def?.writeOnly && !(key in body) && current.settings?.[key] !== undefined) body[key] = current.settings[key];
   }
+  // A string longer than its declared `maxLength` is refused: every plugin's
+  // settings share one `_system:plugins:activation` item (400 KB on DynamoDB)
+  // that's read on many requests, so e.g. a sign-in button icon is capped here.
+  for (const [key, def] of Object.entries(schemaProps)) {
+    if (Number.isInteger(def?.maxLength) && typeof body[key] === 'string' && body[key].length > def.maxLength) {
+      return c.json({ error: `${def.title || key} is too long (${def.maxLength} characters at most)` }, 400);
+    }
+  }
   try {
     const entry = await pluginRegistry.updateSettings(id, body);
     return c.json({ ...pluginRegistry.publicView(entry), settings: pluginRegistry.sanitizeSettings(entry) });

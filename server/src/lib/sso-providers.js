@@ -4,7 +4,10 @@
  * capability `auth.provider`) and is live only when `configure` returns a
  * config, i.e. when the deployment has supplied its trust settings:
  *
- *   configure(env, pluginSettings) -> null | { issuer, clientId, clientSecret, scope?, authorizeParams? , ... }
+ *   configure(env, pluginSettings) -> null | { issuer, clientId, clientSecret, scope?, authorizeParams?, style?, ... }
+ *     - `style`: `{ background, color, icon }` for the button, from the
+ *       plugin's (cosmetic) settings. Core validates it (lib/sso-button-style.js)
+ *       and drops whatever fails, so every provider gets the same guarantees.
  *   mapClaims(claims, cfg) -> { subject, tenant?, emails: [trusted...], email, firstName?, lastName?, name? }
  *     - `emails`: addresses the provider vouches for (used to match accounts,
  *       invites, and wait-list entries). Empty means "match nothing".
@@ -16,6 +19,7 @@
  * the session (routes/sso.js).
  */
 import { pluginRegistry } from './plugins/registry.js';
+import { buttonStyle } from './sso-button-style.js';
 
 const ID_RE = /^[a-z][a-z0-9-]{1,30}$/;
 let testProviders = null;
@@ -38,7 +42,7 @@ function declared() {
   return out;
 }
 
-/** Live providers: `[{ id, label, cfg, mapClaims }]`. A provider whose configure throws or returns null is off. */
+/** Live providers: `[{ id, label, style, cfg, mapClaims }]` (`style` is null or validated). A provider whose configure throws or returns null is off. */
 export function liveProviders(env = process.env) {
   const out = [];
   const seen = new Set();
@@ -48,7 +52,7 @@ export function liveProviders(env = process.env) {
     try { cfg = p.configure(env, p.settings || {}); } catch { cfg = null; }
     if (!cfg?.issuer || !cfg.clientId || !cfg.clientSecret) continue;
     seen.add(p.id);
-    out.push({ id: p.id, label: typeof p.label === 'function' ? p.label(cfg) : (p.label || p.id), cfg, mapClaims: p.mapClaims });
+    out.push({ id: p.id, label: typeof p.label === 'function' ? p.label(cfg) : (p.label || p.id), style: buttonStyle(cfg.style), cfg, mapClaims: p.mapClaims });
   }
   return out;
 }

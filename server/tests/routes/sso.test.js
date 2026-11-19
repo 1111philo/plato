@@ -95,6 +95,41 @@ describe('the flow', () => {
     process.env.SSO_ENTRA_TENANT_ID = TENANT;
   });
 
+  it('the provider list carries a button style only when it is valid', async () => {
+    const PNG = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]).toString('base64')}`;
+    const list = async (settings) => {
+      _setProviders([{ ...entra, settings: { buttonLabel: 'Sign in with UIC', ...settings } }]);
+      const res = await app.request('/v1/auth/sso/providers');
+      assert.equal(res.headers.get('cache-control'), 'no-store');
+      return (await res.json()).providers;
+    };
+    try {
+      assert.deepEqual(await list({ buttonBackground: '#001E62', buttonTextColor: '#FFFFFF', buttonIcon: PNG }),
+        [{ id: 'entra', label: 'Sign in with UIC', style: { background: '#001e62', color: '#ffffff', icon: PNG } }]);
+      // Each part stands or falls by itself; the colors only as a pair.
+      assert.deepEqual(await list({ buttonIcon: PNG }), [{ id: 'entra', label: 'Sign in with UIC', style: { icon: PNG } }]);
+      assert.deepEqual(await list({ buttonBackground: '#001E62', buttonTextColor: '#ffffff', buttonIcon: 'https://cdn.example.com/logo.png' }),
+        [{ id: 'entra', label: 'Sign in with UIC', style: { background: '#001e62', color: '#ffffff' } }]);
+      // Nothing valid: no `style` key at all, exactly the payload from before.
+      const plain = [{ id: 'entra', label: 'Sign in with UIC' }];
+      const svg = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64')}`;
+      for (const bad of [
+        {},
+        { buttonBackground: '', buttonTextColor: '', buttonIcon: '' },
+        { buttonBackground: '#001E62' }, // one color alone
+        { buttonBackground: '#ffffff', buttonTextColor: '#bbbbbb' }, // 1.9:1
+        { buttonBackground: 'red', buttonTextColor: '#ffffff' },
+        { buttonBackground: '#000000;background:url(https://x.example)', buttonTextColor: '#ffffff' },
+        { buttonIcon: svg },
+        { buttonIcon: 'https://cdn.example.com/logo.png' },
+        { buttonIcon: PNG + 'A'.repeat(20481) },
+        { buttonIcon: { src: PNG }, buttonBackground: 7, buttonTextColor: null },
+      ]) assert.deepEqual(await list(bad), plain, JSON.stringify(bad).slice(0, 80));
+    } finally {
+      _setProviders([{ ...entra, settings: { buttonLabel: 'Sign in with UIC' } }]);
+    }
+  });
+
   it('start redirects with state, nonce, and PKCE, and an HttpOnly cookie; `next` can’t leave the site', async () => {
     const res = await app.request('/v1/auth/sso/entra/start?next=https://evil.example/x');
     const url = new URL(res.headers.get('location'));

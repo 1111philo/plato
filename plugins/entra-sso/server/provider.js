@@ -37,6 +37,9 @@ export function configure(env = process.env, settings = {}) {
     tenant,
     domains: (env.SSO_ENTRA_DOMAINS || '').split(',').map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean),
     label: (typeof settings?.buttonLabel === 'string' && settings.buttonLabel.trim()) || 'Sign in with Microsoft',
+    // Cosmetic only. Passed as stored: core validates it and drops anything
+    // that fails (server/src/lib/sso-button-style.js).
+    style: { background: settings?.buttonBackground, color: settings?.buttonTextColor, icon: settings?.buttonIcon },
   };
 }
 

@@ -126,6 +126,34 @@ Where a sentence names the provider ("UIC is now connected."), the name is
 the button label without its "Sign in with" (`providerName` in `sso.js`); a
 label of another shape is used whole.
 
+### Button style
+
+An admin can give a provider's button an **icon** and a **background and text
+color** (Admin → Plugins → the provider). It stays the site's button: same
+height, radius, font, spacing, full width, and focus ring. Only the icon
+(20 px square, left of the label, decorative: `alt=""`, `aria-hidden`) and
+the two colors change. `components/SsoButton.jsx` is that one button, used by
+Login ("Sign in with UIC"), Signup ("Continue with UIC"), and the admin
+panel's preview. Settings → Sign-in methods keeps the site's standard
+buttons.
+
+`GET /v1/auth/sso/providers` carries it as an optional
+`style: { background, color, icon }` per provider. A provider returns its
+stored settings as `cfg.style`; core validates them
+(`server/src/lib/sso-button-style.js`) and serves only what passes, so a bad
+stored value falls back to the default button:
+
+- **Colors:** both `#rrggbb`, and their contrast ratio at least **4.5:1**
+  (WCAG AA). One color alone, or a pair below that, drops both.
+- **Icon:** a `data:image/(png|jpeg|webp);base64,…` URL of at most 20 KB
+  (20,480 characters) whose first bytes are that format. No SVG (it can carry
+  script) and no remote address (tracking, mixed content). The admin panel
+  redraws an upload to fit 64 × 64 first, and the settings route refuses a
+  longer value, since all plugin settings share one stored record.
+
+The app checks again before rendering (`normalizeSsoStyle` in `sso.js`) and
+sets the colors through the `style` prop, never as CSS text.
+
 ## The flow
 
 ```
@@ -221,8 +249,12 @@ on, or an account is linked). Until then Admin → Users looks as it always did.
 - **Plugins → Microsoft Entra SSO.** Shows whether the deployment configured
   it, with the masked tenant and client ids, the owned domains, and the
   redirect URI to register (with a copy button). These are read-only: they
-  come from the deployment. The one setting is the **button label** (up to 40
-  characters; empty means "Sign in with Microsoft").
+  come from the deployment. The settings are the sign-in button's look: its
+  **label** (up to 40 characters; empty means "Sign in with Microsoft"), an
+  **icon** (PNG, JPEG, or WebP; resized to fit 64 × 64), and a **background
+  and text color**. The panel shows the pair's contrast ratio and won't save
+  one under 4.5:1, with **Remove icon**, **Reset colors**, and a preview that
+  is the login page's own button. Rules: [Button style](#button-style).
 
 Code: `client/src/lib/signIn.js`, `client/src/lib/userFilters.js`,
 `client/src/pages/admin/AdminUsers.jsx`,
@@ -273,3 +305,9 @@ cancelled sign-in, connect and disconnect in Settings, and signup from an
 invite link. `e2e/tests/a11y.spec.js` runs axe on every `/sso/complete`
 screen. `client/tests/sso.test.js` covers the messages and the one-shot
 exchange.
+
+Button style: `server/tests/lib/sso-button-style.test.js` (colors, contrast,
+icon type and size, SVG and remote addresses refused), the providers payload
+in `sso.test.js`, the same rules in `client/tests/sso.test.js`, the styled
+login and signup buttons in `e2e/tests/sso.spec.js` (axe, focus ring, same
+size as before), and the panel's controls in `sso-admin.spec.js`.

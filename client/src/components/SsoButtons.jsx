@@ -1,25 +1,24 @@
 import { providerName, ssoStartUrl } from '../lib/sso.js';
-import { Button } from '@/components/ui/button';
+import SsoButton from './SsoButton.jsx';
 
 // One button per single sign-on provider, then an "or" divider before the
 // email and password form below it. Renders nothing when SSO is off
 // (docs/SSO.md). Each button is a full-page navigation to the provider.
 // `verb`: Login shows the provider's own label ("Sign in with UIC"); Signup
-// passes "Continue" ("Continue with UIC").
+// passes "Continue" ("Continue with UIC"). A provider's `style` (icon and
+// colors) applies to both.
 export default function SsoButtons({ providers, invite, next, verb }) {
   if (!providers?.length) return null;
   return (
     <>
       <div className="space-y-2">
         {providers.map((p) => (
-          <Button
+          <SsoButton
             key={p.id}
-            variant="outline"
-            className="w-full"
+            label={verb ? `${verb} with ${providerName(p.label)}` : p.label}
+            style={p.style}
             onClick={() => window.location.assign(ssoStartUrl(p.id, { invite, next }))}
-          >
-            {verb ? `${verb} with ${providerName(p.label)}` : p.label}
-          </Button>
+          />
         ))}
       </div>
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
