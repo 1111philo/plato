@@ -79,12 +79,14 @@ export function assessmentTranscript(messages) {
     .filter((m) => m.text);
 }
 
-/** The assessor's user message. Only the objectives' wording and evidence: no notes, no scores. */
+/**
+ * The assessor's user message: the objectives' wording only. No notes or
+ * scores, and not the lesson planner's per-learner `evidence` text either:
+ * on prod the assessor applied its examples ("YYYY-MM-DD", "label it on
+ * track") as requirements and held learners who met the objective (#584).
+ */
 export function assessmentInput({ lesson, kb, transcript, check, imageThisTurn = false, recheck = null }) {
-  const objectives = (kb?.objectives || []).map((o, i) => {
-    const item = typeof o === 'string' ? { objective: o } : o;
-    return { n: i + 1, objective: item.objective, ...(item.evidence ? { evidence: item.evidence } : {}) };
-  });
+  const objectives = (kb?.objectives || []).map((o, i) => ({ n: i + 1, objective: typeof o === 'string' ? o : o?.objective }));
   return JSON.stringify({ exemplar: lesson?.exemplar || '', objectives, check, transcript, imageThisTurn, ...(recheck ? { recheck } : {}) });
 }
 
@@ -180,14 +182,16 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     // A quote with an ellipsis joins passages: each part must be the learner's.
     const parts = quote.split(/\.\.\.|…/).map((q) => q.trim()).filter((q) => words(q).length >= 3);
     const pieces = parts.length > 1 ? parts : [quote];
-    const learnerAt = Math.max(...pieces.map((q) => firstIndex('learner', q)).map((i) => (i === -1 ? Infinity : i)));
-    // Copying means a passage the coach wrote first: 8+ words, so a short
-    // phrase the coach used in a question doesn't make the learner's words its own.
-    const coachAt = Math.min(...pieces.filter((q) => words(q).length >= COPY_WORDS).map((q) => firstIndex('coach', q)).map((i) => (i === -1 ? Infinity : i)));
-    const theirs = learnerAt !== Infinity;
-    const coachWrote = coachAt !== Infinity && coachAt < learnerAt;
-    if (theirs && !coachWrote) return true;
-    return coachWrote ? 'the words that would show it were written by the coach' : 'not yet shown in the learner’s own words';
+    // Each piece on its own: the learner wrote it, and (for a passage of 8+
+    // words, so a short phrase the coach used in a question doesn't count)
+    // the coach didn't write that same piece earlier.
+    for (const q of pieces) {
+      const learnerAt = firstIndex('learner', q);
+      const coachAt = words(q).length >= COPY_WORDS ? firstIndex('coach', q) : -1;
+      if (coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt)) return 'the words that would show it were written by the coach';
+      if (learnerAt === -1) return 'not yet shown in the learner’s own words';
+    }
+    return true;
   }
 }
 

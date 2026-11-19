@@ -105,7 +105,7 @@ async function runTurn(mode, modelId, s) {
   if (mode === 'harness') {
     const graded = await checkGrading({
       lesson, kb: lessonKB, parsed, messages,
-      assess: async (input) => { try { return (assessRaw = await converse(modelId, PROMPTS.assessor, [{ role: 'user', content: input }], 800, stats, 0)); } catch (e) { assessRaw = `ERROR ${e.name}: ${e.message}`; throw e; } },
+      assess: async (input) => { try { return (assessRaw = await converse(modelId, PROMPTS.assessor, [{ role: 'user', content: input }], 2048, stats, 0)); } catch (e) { assessRaw = `ERROR ${e.name}: ${e.message}`; throw e; } },
       regenerate: (addendum) => converse(modelId, system(addendum), messages, 2048, stats),
     });
     parsed = graded.parsed;

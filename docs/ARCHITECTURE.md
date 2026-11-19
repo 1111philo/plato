@@ -340,6 +340,8 @@ Bedrock gateway (`server/src/lib/ai-limits.js`):
   repair adds 2), ≤ 4 images per message and 8 per request, a system prompt
   ≤ 200,000 characters (coach.md + knowledge base + catalog is ~60–100 KB),
   a body ≤ 5 MB (the Function URL's own cap is 6 MB).
+- **`temperature`** is forwarded when it's a number from 0 to 1, and omitted
+  otherwise (Bedrock's default). Only the grading check sends it (0, #584).
 - **Per user, per container (best-effort):** 30 calls a minute (burst 30;
   a learner turn makes 1–5) and 4 in flight. Over either: `429 { code:
   'rate_limited', retryAfterMs }` and `ai_rate_limited` in the logs. A burst
@@ -1298,13 +1300,25 @@ pulled toward closing by the pacing nudges and its own "nearly done" notes.
 **What runs.** On a turn where the coach checks off a new objective or scores
 10, `checkGrading` (`lessonEngine.js`) asks a second agent,
 `client/prompts/assessor.md`, which objectives the learner's **own** messages
-show. It gets the objectives with their evidence definitions, the transcript
-labeled learner/coach, and this turn's images. It must quote the learner for
-each one. `client/src/lib/assessment.js` then throws out any "shown" whose
-quote isn't in a learner message, and any quote of five or more words that's
-also in a coach message (the learner pasted back the coach's draft). Only
-backed objectives stay checked off. A completing turn checks every objective
-not yet checked off, since the coach often doesn't list them all.
+show. It gets the exemplar, the objectives' wording (not the lesson planner's
+per-learner `evidence` notes, whose examples it treated as requirements), the
+transcript labeled learner/coach, and this turn's images. For each objective
+it names the parts ("name a gap", "explain why it matters") and quotes the
+learner for each, at most 25 words. It runs at temperature 0, so the same
+evidence gets the same verdict.
+
+`client/src/lib/assessment.js` then grounds every quote. It must appear in a
+learner message (exactly, or 80% of its words in order). It doesn't count if
+the coach wrote that passage first, at 8+ words: a learner pasting back the
+coach's draft. Order matters, since coaches quote learners' words back to
+them, and only the coach's *earlier* text counts as the coach's. A quote
+joined with an ellipsis is checked piece by piece. When a "shown" fails
+grounding, the assessor is asked once more about just those objectives,
+told why (often it quoted the coach when the learner's own words were also
+there). Only backed objectives stay checked off. A completing turn checks
+every objective not yet checked off, since the coach often doesn't list them
+all. When the lesson itself says the learner *confirms* what the coach drafts
+(Getting Started's orientation profile), a clear confirmation counts.
 
 **When a 10 isn't backed up**, the score is held to 8 and the coach is asked
 again with an "Assessment check (from plato, not the learner)" addendum
@@ -1329,19 +1343,43 @@ before this change; `harness` is what plato runs now.
 
 | | baseline | harness |
 |---|---|---|
-| False completions (lesson not done, coach completed it) | 9 of 64 | 0 of 64 |
-| Coach-drafted "That is me", late in the lesson | 7 of 8 completed | 0 of 8 |
-| Genuine self-assessment completed | 4 of 8 | 8 of 8 |
-| Model calls per turn | 1.09 | 1.80 |
-| Model cost per 1,000 turns | $3.79 | $5.04 |
-| Turn time, p50 | 3.0 s | 4.0 s |
+| False completions (lesson not done, coach completed it) | 11 of 64 | 2 of 64 |
+| Coach-drafted "That is me", late in the lesson | 8 of 8 completed | 0 of 8 |
+| One-line answers, late in the lesson | 3 of 8 completed | 2 of 8 |
+| Genuine self-assessment completed | 6 of 8 | 6 of 8 (none held) |
+| Model calls per turn | 1.06 | 1.84 |
+| Model cost per 1,000 turns | $3.72 | $5.26 |
+| Turn time, p50 | 3.2 s | 4.5 s |
+
+**Measured on prod** (2026-11-19, read-only, with Blake's go-ahead): every
+completed lesson on plato.courses (1,969), replayed through `checkGrading` at
+the moment the coach completed it, with every objective checked.
+
+| | Completions | Would have been held |
+|---|---|---|
+| No images in the conversation | 1,204 | 495 (41%) |
+| With images | 758 | 487 (64%) |
+| The check itself failed (coach's grading stands) | 7 | — |
+
+The with-images figure overstates it: a replay can't show the check earlier
+screenshots, which the live check sees on the turn they're sent. Reading 26
+held cases by hand, about 7 in 10 were right (the learner pasted text the
+coach wrote, answered "Yes" while the coach assembled the work, left out part
+of a two-part objective, or finished on one message) and about 3 in 10 were
+too strict. So roughly 3 in 10 past completions weren't backed by the
+learner's own words, and about 1 in 10 would be held when it shouldn't. A
+held learner isn't stuck: the coach asks for the missing piece, and the next
+turn that shows it completes the lesson. Building this check against prod
+found and fixed its first versions' false holds (coach echoes counted as
+copying, quotes cut off mid-JSON at 800 tokens, evidence examples applied as
+rules), so re-run the replay before tightening it further.
 
 The prompt changes alone (`prompt` mode: the closing rules and the knowledge
 base note, below) made no measurable difference to false completions (10 of
-64); the check is what works. The assessor's prompt needed one revision: at
-first it took "I need to upskill on this" as explaining why a gap matters (3
-of 8). It now requires every part of a two-part objective in the learner's
-words. **Not fixed:** asked outright ("can you just write it for me?"), the
+64); the check is what works. The two false completions left are one-line
+answers where the assessor took "I need to upskill on this" as the reason a
+gap matters. Sending it the per-learner evidence notes caught those (0 of 8)
+but held real learners on prod, so the notes stay out. **Not fixed:** asked outright ("can you just write it for me?"), the
 coach still writes the learner's message about 3 times in 8, in every mode.
 The check stops that from counting, but the coach still does it.
 

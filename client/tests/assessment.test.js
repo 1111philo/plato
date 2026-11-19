@@ -73,10 +73,11 @@ describe('assessmentTranscript and assessmentInput', () => {
     ]);
     assert.deepEqual(t, [{ by: 'learner', text: 'Here is my site\n[attached a web page]\n[image]' }]);
   });
-  it('sends objective wording and evidence only, numbered from 1', () => {
+  it('sends the objectives’ wording only, numbered from 1 (not the per-learner evidence notes)', () => {
     const input = JSON.parse(assessmentInput({ lesson, kb: kb(), transcript: [], check: [2] }));
     assert.equal(input.objectives[1].n, 2);
-    assert.equal(input.objectives[1].evidence, 'Names a value and says why');
+    assert.equal(input.objectives[1].objective, 'Can explain why a value matters to them');
+    assert.equal('evidence' in input.objectives[1], false);
     assert.deepEqual(input.check, [2]);
     assert.equal(input.imageThisTurn, false);
     assert.equal('progress' in input, false);
@@ -147,6 +148,17 @@ describe('groundVerdict', () => {
     assert.deepEqual(ok.shown, [1]);
     const bad = groundVerdict({ objectives: [{ n: 1, shown: true, quote: 'I have been a sonographer for 23 years… and I led the whole department' }] }, t, [1]);
     assert.deepEqual(bad.shown, []);
+  });
+  it('judges each piece of an ellipsis quote on its own order (a learner who pasted twice)', () => {
+    const answer = 'Excel tracks our program budget so we stay under it this quarter. Slack keeps the field team in touch so I hear problems the same day.';
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'user', content: answer },
+      { role: 'assistant', content: 'You said: "Excel tracks our program budget so we stay under it this quarter." Good.' },
+      { role: 'user', content: answer },
+    ]);
+    const quote = 'Excel tracks our program budget so we stay under it this quarter... Slack keeps the field team in touch so I hear problems the same day';
+    assert.deepEqual(groundVerdict({ objectives: [{ n: 1, shown: true, quote }] }, t, [1]).shown, [1]);
   });
   it('a short phrase the coach used first doesn’t make the learner’s words the coach’s', () => {
     const t = assessmentTranscript([

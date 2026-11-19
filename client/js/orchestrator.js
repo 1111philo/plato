@@ -234,7 +234,8 @@ export async function assessTurn(input, imageParts = []) {
   const { content: reply } = await callApi({
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content }],
-    maxTokens: 800,
+    // A part and a short quote per objective; 800 cut long replies off mid-JSON on prod.
+    maxTokens: 2048,
     // A grader: the same evidence should get the same verdict (measured: at
     // the default temperature it accepted "I need to upskill" as a reason in
     // some runs and not others).

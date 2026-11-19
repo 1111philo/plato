@@ -501,6 +501,8 @@ No model reliably refuses to write the learner's text when asked outright; the
 check keeps that from counting, and it remains a coaching gap
 (`docs/ARCHITECTURE.md`, "The grading check").
 
-Re-run the eval when `coach.md` or `assessor.md` change, or to evaluate a model
+These model results used the first version of the assessor; it was revised the
+same day against prod (`docs/ARCHITECTURE.md`, "Measured on prod"). Re-run the
+eval when `coach.md` or `assessor.md` change, or to evaluate a model
 (`--models <bedrock id>,…`).
 
