@@ -156,6 +156,17 @@ stored value falls back to the default button:
 The app checks again before rendering (`normalizeSsoStyle` in `sso.js`) and
 sets the colors through the `style` prop, never as CSS text.
 
+## Signup from an invite
+
+An invite link opens the signup page. With SSO on it offers "Continue with
+<provider>" above the password form. **When the invite was sent to an address
+a provider vouches for** (`GET /v1/auth/invite/:token` returns `sso: [ids]`,
+from the provider's owned domains), the page leads with that button alone
+("No username or password needed.") and the password form is behind **Set a
+password instead**. Someone invited at a campus address shouldn't be asked to
+invent a username and password they don't need. They can also skip the link
+entirely and use the sign-in button on the login page.
+
 ## The flow
 
 ```

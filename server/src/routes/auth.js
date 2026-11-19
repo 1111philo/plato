@@ -15,6 +15,7 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { inviteExpired } from '../lib/invite-expiry.js';
+import { providersForEmail } from '../lib/sso-providers.js';
 import { generateUsername, uniqueUsername } from '../lib/usernames.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
@@ -151,6 +152,9 @@ auth.get('/v1/auth/invite/:token', async (c) => {
   const named = profile.firstName || profile.name;
   return c.json({
     email: invite.email,
+    // Single sign-on providers that vouch for this address: the page leads
+    // with them, since the person needs no password (docs/SSO.md).
+    sso: providersForEmail(invite.email),
     ...(named ? nameFields(profile) : { name: null, firstName: null, lastName: null }),
     userGroup: profile.userGroup || null,
     // Only what the signup form shows: admin-only answers stay on the server.

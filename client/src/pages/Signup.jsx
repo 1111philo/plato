@@ -37,7 +37,17 @@ export default function Signup() {
   // expired, or full invite (or none at all), so nobody fills in a form
   // that can't work.
   const [inviteState, setInviteState] = useState(token ? 'checking' : 'invalid');
+  // Providers that vouch for the invite's address (GET /v1/auth/invite/:token `sso`).
+  const [inviteSso, setInviteSso] = useState([]);
+  const [formOpen, setFormOpen] = useState(false);
   const [providers, setProviders] = useState(null);
+  const preferred = (providers || []).filter((p) => inviteSso.includes(p.id));
+  const showForm = formOpen || preferred.length === 0;
+  // "Set a password instead" removes itself when the form appears: put focus
+  // on the form's first field so keyboard and screen-reader users land in it.
+  useEffect(() => {
+    if (formOpen) document.getElementById('signup-email')?.focus();
+  }, [formOpen]);
 
   useEffect(() => {
     if (token) fetchSsoProviders().then(setProviders);
@@ -67,6 +77,7 @@ export default function Signup() {
       .then(d => {
         if (!d) return;
         if (d.email) setEmail(prev => prev || d.email);
+        if (Array.isArray(d.sso)) setInviteSso(d.sso);
         if (d.firstName) setName(prev => (prev.firstName || prev.lastName ? prev : { firstName: d.firstName, lastName: d.lastName || '' }));
         if (d.userGroup) setGroup(prev => prev || d.userGroup);
         if (d.customFields) setFieldValues(prev => ({ ...d.customFields, ...prev }));
@@ -158,8 +169,21 @@ export default function Signup() {
               {error}
             </div>
           )}
-          {/* Single sign-on makes the account from this invite; no password, and the invite's email needn't match. */}
-          <SsoButtons providers={providers} invite={token} verb="Continue" />
+          {/* An invite sent to an address a provider vouches for (e.g. uic.edu) leads
+              with that provider: no username or password to make. The form is one
+              click away for anyone who'd rather set a password. */}
+          <SsoButtons providers={preferred.length ? preferred : providers} invite={token} verb="Continue" divider={showForm} />
+          {!showForm && (
+            <div className="space-y-3 text-center">
+              <p className="text-sm text-muted-foreground">No username or password needed.</p>
+              {/* A one-way reveal, not a toggle: the button goes away, so focus moves into the form (effect above). */}
+              <Button variant="link" className="h-auto p-0" onClick={() => setFormOpen(true)}>
+                Set a password instead
+              </Button>
+            </div>
+          )}
+          {showForm && (
+          <div id="signup-password-form" className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="signup-email">Email</Label>
             <Input
@@ -236,6 +260,8 @@ export default function Signup() {
           <Button className="w-full" onClick={handleSignup} disabled={submitting}>
             {submitting ? 'Creating...' : 'Create account'}
           </Button>
+          </div>
+          )}
         </CardContent>
         <CardFooter className="justify-center">
           <Button variant="link" onClick={() => navigate('/login')}>
