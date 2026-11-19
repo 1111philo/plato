@@ -340,6 +340,8 @@ Bedrock gateway (`server/src/lib/ai-limits.js`):
   repair adds 2), ≤ 4 images per message and 8 per request, a system prompt
   ≤ 200,000 characters (coach.md + knowledge base + catalog is ~60–100 KB),
   a body ≤ 5 MB (the Function URL's own cap is 6 MB).
+- **`temperature`** is forwarded when it's a number from 0 to 1, and omitted
+  otherwise (Bedrock's default). Only the grading check sends it (0, #584).
 - **Per user, per container (best-effort):** 30 calls a minute (burst 30;
   a learner turn makes 1–5) and 4 in flight. Over either: `429 { code:
   'rate_limited', retryAfterMs }` and `ai_rate_limited` in the logs. A burst
@@ -1247,8 +1249,9 @@ Lessons target 11 exchanges (~20 min). **There is no hard cutoff** — lessons
 always run until the coach awards progress 10. The coach gets escalating
 `pacingDirective` nudges in the context JSON (at 8+, 11+, 15+, 20+) but these
 are suggestions, never orders. `client/src/lib/lessonEngine.js` must **never**
-auto-complete a lesson based on exchange count; only `parsed.progress >= 10`
-triggers completion. Philosophy: "move people, not force people" — the coach can
+auto-complete a lesson based on exchange count; a lesson completes when the
+coach scores `parsed.progress >= 10` **and every objective is checked off**
+(the grading check below, #584). Philosophy: "move people, not force people" — the coach can
 always introduce new scaffolding if the learner needs it. `extendedLessons`
 (completions at 22+ exchanges) is informational only — it signals lesson-design
 mismatch, not a metric to drive to zero.
@@ -1283,6 +1286,115 @@ a reply that already finished streaming. The mock's `MOCK_NOTAGS` cue
 exercises the wiring in e2e (the model side is measured on Bedrock, not by the
 mock). Coach turns also get `max_tokens: 2048` (was 1024), so a long
 explanation doesn't run out before its tags.
+
+### The grading check (#584)
+
+Auditors found the coach awarding mastery for work it did itself. In one
+lesson it wrote the learner's introduction ("Try this revision: …"), the
+learner answered "That is me", and the coach said "You've nailed the
+exemplar". In another it completed a self-assessment on one-line answers,
+supplying the "why it matters" itself. `coach.md` already forbade both. The
+cause is structural: one model call teaches, grades its own teaching, and is
+pulled toward closing by the pacing nudges and its own "nearly done" notes.
+
+**What runs.** On a turn where the coach checks off a new objective or scores
+10, `checkGrading` (`lessonEngine.js`) asks a second agent,
+`client/prompts/assessor.md`, which objectives the learner's **own** messages
+show. It gets the exemplar, the objectives' wording (not the lesson planner's
+per-learner `evidence` notes, whose examples it treated as requirements), the
+transcript labeled learner/coach, and this turn's images. For each objective
+it names the parts ("name a gap", "explain why it matters") and quotes the
+learner for each, at most 25 words. It runs at temperature 0, so the same
+evidence gets the same verdict.
+
+`client/src/lib/assessment.js` then grounds every quote. It must appear in a
+learner message (exactly, or 80% of its words in order). It doesn't count if
+the coach wrote that passage first, at 8+ words: a learner pasting back the
+coach's draft. Order matters, since coaches quote learners' words back to
+them, and only the coach's *earlier* text counts as the coach's. A quote
+joined with an ellipsis is checked piece by piece. When a "shown" fails
+grounding, the assessor is asked once more about just those objectives,
+told why (often it quoted the coach when the learner's own words were also
+there). Only backed objectives stay checked off. A completing turn checks
+every objective not yet checked off, since the coach often doesn't list them
+all. When the lesson itself says the learner *confirms* what the coach drafts
+(Getting Started's orientation profile), a clear confirmation counts.
+
+**When a 10 isn't backed up**, the score is held to 8 and the coach is asked
+again with an "Assessment check (from plato, not the learner)" addendum
+naming what's missing. Its second try streams in place of the first. The
+second try's score stays at 8 or lower and its objectives are the ones the
+check found. `applyCoachResponseToKB` makes it a rule: a lesson completes only
+when every objective is checked off (lessons without objectives keep the old
+behavior). "Behind this response" adds an **Assessment check** entry with
+counts only ("Checked 2 objectives against your own words: 1 shown"; "Held
+the lesson open until the rest is in your own words"). The reasons go to the
+coach, never to the learner.
+
+**Fail open.** If the assessor's reply isn't JSON, it's asked once more. If
+that fails too, or Bedrock errors, the coach's grading stands as it did
+before: a completing turn checks off every objective. The client logs
+`coach_completion_held`, `coach_objectives_unverified`, and
+`coach_assessment_failed` (OBSERVABILITY.md).
+
+**Measured** with `server/scripts/coach-eval.js` (10 synthetic scenarios,
+8 trials each, AI Leaders' knowledge base, Qwen3-VL). `baseline` is the coach
+before this change; `harness` is what plato runs now.
+
+| | baseline | harness |
+|---|---|---|
+| False completions (lesson not done, coach completed it) | 11 of 64 | 2 of 64 |
+| Coach-drafted "That is me", late in the lesson | 8 of 8 completed | 0 of 8 |
+| One-line answers, late in the lesson | 3 of 8 completed | 2 of 8 |
+| Genuine self-assessment completed | 6 of 8 | 6 of 8 (none held) |
+| Model calls per turn | 1.06 | 1.84 |
+| Model cost per 1,000 turns | $3.72 | $5.26 |
+| Turn time, p50 | 3.2 s | 4.5 s |
+
+**Measured on prod** (2026-11-19, read-only, with Blake's go-ahead): every
+completed lesson on plato.courses (1,969), replayed through `checkGrading` at
+the moment the coach completed it, with every objective checked.
+
+| | Completions | Would have been held |
+|---|---|---|
+| No images in the conversation | 1,204 | 495 (41%) |
+| With images | 758 | 487 (64%) |
+| The check itself failed (coach's grading stands) | 7 | — |
+
+The with-images figure overstates it: a replay can't show the check earlier
+screenshots, which the live check sees on the turn they're sent. Reading 26
+held cases by hand, about 7 in 10 were right (the learner pasted text the
+coach wrote, answered "Yes" while the coach assembled the work, left out part
+of a two-part objective, or finished on one message) and about 3 in 10 were
+too strict. So roughly 3 in 10 past completions weren't backed by the
+learner's own words, and about 1 in 10 would be held when it shouldn't. A
+held learner isn't stuck: the coach asks for the missing piece, and the next
+turn that shows it completes the lesson. Building this check against prod
+found and fixed its first versions' false holds (coach echoes counted as
+copying, quotes cut off mid-JSON at 800 tokens, evidence examples applied as
+rules), so re-run the replay before tightening it further.
+
+The prompt changes alone (`prompt` mode: the closing rules and the knowledge
+base note, below) made no measurable difference to false completions (10 of
+64); the check is what works. The two false completions left are one-line
+answers where the assessor took "I need to upskill on this" as the reason a
+gap matters. Sending it the per-learner evidence notes caught those (0 of 8)
+but held real learners on prod, so the notes stay out. **Not fixed:** asked outright ("can you just write it for me?"), the
+coach still writes the learner's message about 3 times in 8, in every mode.
+The check stops that from counting, but the coach still does it.
+
+**Prompt order.** `client/js/promptAssembly.js` builds every agent's system
+prompt. The knowledge base gets a note for the coach ("background … does not
+set this lesson's focus"), because a program knowledge base describes the
+whole program (AI Leaders': "the core is building your professional identity
+and portfolio"). And the part of `coach.md` after `<!-- AFTER CONTEXT -->`
+("Before you reply") goes after the knowledge base and lesson list, so the
+rules most often broken are the last thing the coach reads.
+
+**Re-measure** after any change to `coach.md`, `assessor.md`, the knowledge
+base, or the model: `cd server && node scripts/coach-eval.js --kb <your kb>`.
+A rise in either `false completions` or `missed completions` is a
+regression. Costs cents.
 
 ### What the coach trusts
 

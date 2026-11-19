@@ -385,17 +385,21 @@ export default function LessonChat() {
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-theme(spacing.20))]">
-      {/* Fixed header clone — appears when inline header scrolls out of view */}
+      {/* Fixed header clone — appears when inline header scrolls out of view.
+          aria-hidden (a screen reader would hear the header twice), so its
+          controls are out of the Tab order too (axe aria-hidden-focus); the
+          inline header's controls are the keyboard path, #584 e2e. */}
       {headerPinned && (
         <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
           <div className="mx-auto max-w-5xl flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
+            <Button variant="ghost" size="icon-sm" tabIndex={-1} aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
               &larr;
             </Button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
                 <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
                 <button
+                  tabIndex={-1}
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
                   onClick={() => setShowOverview(true)}
                   aria-label={`${metLabel}: lesson overview`}
@@ -408,17 +412,17 @@ export default function LessonChat() {
               <ProgressBar lessonKB={lessonKB} />
             </div>
             {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleExport} title="Export lesson markdown">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleExport} title="Export lesson markdown">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </Button>
             )}
             {phase && (
-              <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset lesson">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleReset} title="Reset lesson">
                 &#8635;
               </Button>
             )}
             {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleDelete} title="Delete lesson">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleDelete} title="Delete lesson">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </Button>
             )}

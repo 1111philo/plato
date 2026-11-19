@@ -11,12 +11,21 @@
  * MOCK_COMPLETE awards 10, so tests can drive a lesson to completion;
  * MOCK_NOTAGS leaves the tags off (the tag-repair call then supplies them);
  * MOCK_THROTTLE fails a streamed reply as a Bedrock throttle.
+ *
+ * Assessor (the grading check, #584): backs every objective it's asked about
+ * with a quote from the learner's latest message, so MOCK_COMPLETE still
+ * completes a lesson in fewer turns than it has objectives. A latest message
+ * containing MOCK_UNBACKED backs none, so the completion is held.
  */
 
 const MOCK_USAGE = { input_tokens: 0, output_tokens: 0 };
 
+function systemText(system) {
+  return Array.isArray(system) ? system.map((b) => b.text || '').join('\n') : String(system || '');
+}
+
 function agentOf(system) {
-  const text = Array.isArray(system) ? system.map((b) => b.text || '').join('\n') : String(system || '');
+  const text = systemText(system);
   return (text.match(/AGENT:\s*([A-Za-z ]+?)\s*\n/) || [])[1] || 'unknown';
 }
 
@@ -30,17 +39,22 @@ function lastUserJson(messages) {
   try { return JSON.parse(textOf(last?.content)); } catch { return {}; }
 }
 
-function coachReply(messages) {
+function coachReply(messages, system = '') {
   // lessonEngine sends [context, 'Ready.' (assistant), ...history, new turn];
   // the lesson opens with a 'Start the lesson.' cue. Neither is a learner turn.
   const learnerTurns = (messages || []).filter((m) => m.role === 'user').slice(1)
     .filter((m) => textOf(m.content).trim() !== 'Start the lesson.');
   const lastText = textOf([...(messages || [])].reverse().find((m) => m.role === 'user')?.content);
-  const done = /MOCK_COMPLETE/.test(lastText);
-  const progress = done ? 10 : Math.min(9, learnerTurns.length * 3);
+  // The coach's second try after a held completion (#584): its system prompt
+  // carries plato's "Assessment check" addendum.
+  const held = /## Assessment check \(from plato/.test(systemText(system));
+  const done = /MOCK_COMPLETE/.test(lastText) && !held;
+  const progress = done ? 10 : Math.min(held ? 8 : 9, learnerTurns.length * 3);
   const body = learnerTurns.length === 0
     ? 'Welcome! In this lesson you will practice the key idea. To start, tell me about a time you used it.'
-    : done
+    : held
+      ? 'Not done yet. In your own words, what did you learn from that example?'
+      : done
       ? 'Excellent work. You have met every objective for this lesson.'
       : 'Good thinking. Can you give a specific example from your own experience?';
   const kb = { insights: [`Mock insight after turn ${learnerTurns.length}`], learnerPosition: `Mock position at progress ${progress}` };
@@ -52,6 +66,17 @@ function coachReply(messages) {
   // A learner turn also carries a profile observation, as coach.md asks.
   const profile = learnerTurns.length > 0 ? `\n[PROFILE_UPDATE: ${JSON.stringify({ observation: `Mock observation after turn ${learnerTurns.length}` })}]` : '';
   return `${body}\n\n[PROGRESS: ${progress}]\n[KB_UPDATE: ${JSON.stringify(kb)}]${profile}`;
+}
+
+function assessorReply(messages) {
+  const input = lastUserJson(messages);
+  const learner = [...(input.transcript || [])].reverse().find((m) => m.by === 'learner')?.text || '';
+  const unbacked = /MOCK_UNBACKED/.test(learner);
+  return JSON.stringify({
+    objectives: (input.check || []).map((n) => (unbacked
+      ? { n, shown: false, missing: 'show it in your own words' }
+      : { n, shown: true, quote: learner })),
+  });
 }
 
 function lessonOwnerReply(messages) {
@@ -90,10 +115,11 @@ A short written example.
 - Can name the key idea
 - Can apply it to an example`;
 
-function replyFor(agent, messages) {
+function replyFor(agent, messages, system) {
   switch (agent) {
-    case 'Coach': return coachReply(messages);
+    case 'Coach': return coachReply(messages, system);
     case 'Lesson Owner': return lessonOwnerReply(messages);
+    case 'Assessor': return assessorReply(messages);
     case 'Learner Profile Owner':
     case 'Learner Profile Update': return profileReply(messages);
     case 'Course Progress Updater': return JSON.stringify({ summary: 'Mock course progress note.' });
@@ -107,7 +133,7 @@ function replyFor(agent, messages) {
 
 const mockAi = {
   async invoke(_model, body) {
-    const text = replyFor(agentOf(body.system), body.messages);
+    const text = replyFor(agentOf(body.system), body.messages, body.system);
     return { content: [{ type: 'text', text }], usage: MOCK_USAGE, stop_reason: 'end_turn' };
   },
 
@@ -116,7 +142,7 @@ const mockAi = {
   // streaming) is exercised. A learner message containing MOCK_SLOW streams
   // over about two seconds, for tests of composing during a reply.
   async *invokeStream(_model, body) {
-    const text = replyFor(agentOf(body.system), body.messages);
+    const text = replyFor(agentOf(body.system), body.messages, body.system);
     const lastUser = textOf([...(body.messages || [])].reverse().find((m) => m.role === 'user')?.content);
     const delay = /MOCK_SLOW/.test(lastUser) ? 250 : 5;
     // MOCK_THROTTLE: Bedrock refuses before anything streams, as when the

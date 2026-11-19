@@ -9,6 +9,7 @@ import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
 import { screenLearnerNotes, learnerNoteFlag, LEARNER_TEXT_FRAMING } from './learnerNoteFilter.js';
 import { loadLessons } from './lessonOwner.js';
+import { assembleSystemPrompt, COACH_KB_NOTE } from './promptAssembly.js';
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -95,12 +96,12 @@ async function callWithValidation(agentFn, validator) {
   return retry;
 }
 
-async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
+async function callApi({ model, systemPrompt, messages, maxTokens = 1024, temperature }) {
   const attempt = async () => {
     const resp = await authenticatedFetch('/v1/ai/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages, ...(temperature != null ? { temperature } : {}) }),
     });
     return parseResponse(resp);
   };
@@ -135,25 +136,30 @@ export async function isReady() {
  * tag repair, so a repair is judged under the same prompt as the reply.
  */
 async function buildSystemPrompt(promptName, addendum = '') {
-  let systemPrompt = await loadPrompt(promptName);
-  if (KB_AGENTS.includes(promptName)) {
-    const kb = await loadKnowledgeBase();
-    if (kb) systemPrompt = `${systemPrompt}\n\n---\n\n## Program Knowledge Base\n\n${kb}`;
-  }
+  const prompt = await loadPrompt(promptName);
+  const kb = KB_AGENTS.includes(promptName) ? await loadKnowledgeBase() : '';
+  let catalog = '';
+  let catalogHeading;
   if (ADMIN_CATALOG_AGENTS.includes(promptName)) {
-    const catalog = await loadAdminCatalog();
-    if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Current Lessons in This Classroom\n\n${catalog}`;
+    catalog = await loadAdminCatalog();
+    catalogHeading = 'Current Lessons in This Classroom';
   } else if (PUBLIC_CATALOG_AGENTS.includes(promptName)) {
-    const catalog = await loadPublicCatalog();
-    if (catalog) systemPrompt = `${systemPrompt}\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`;
+    catalog = await loadPublicCatalog();
   }
-  if (addendum) systemPrompt = `${systemPrompt}\n\n---\n\n${addendum}`;
-  // The learner's language, if not English (#240) — see language.js.
-  return withLanguage(systemPrompt);
+  // The learner's language, if not English (#240) — see language.js. Order and
+  // the coach's knowledge-base note: promptAssembly.js (#584).
+  return withLanguage(assembleSystemPrompt({
+    prompt, kb, kbNote: promptName === 'coach' ? COACH_KB_NOTE : '', catalog, catalogHeading, addendum,
+  }));
 }
 
-export async function converseStream(promptName, messages, onChunk, maxTokens = 512) {
-  const systemPrompt = await buildSystemPrompt(promptName);
+/**
+ * Stream an agent's reply. `addendum` is a one-turn instruction from plato
+ * appended to the system prompt (the coach's second try after a held
+ * completion, #584).
+ */
+export async function converseStream(promptName, messages, onChunk, maxTokens = 512, addendum = '') {
+  const systemPrompt = await buildSystemPrompt(promptName, addendum);
 
   const send = () => authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
@@ -202,14 +208,40 @@ export function reportEvent(code, meta = {}) {
     body: JSON.stringify({ code, ...meta }),
   }).catch(() => {});
 }
+/** The coach's system-prompt addendum for a tag repair (also used by server/scripts/coach-eval.js). */
+export const TAG_REPAIR_ADDENDUM = `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`;
+
 export async function repairCoachTags(messages, reply) {
-  const systemPrompt = await buildSystemPrompt('coach', `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`);
+  const systemPrompt = await buildSystemPrompt('coach', TAG_REPAIR_ADDENDUM);
   const { content } = await callApi({
     model: LLM, systemPrompt,
     messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
     maxTokens: 600,
   });
   return content;
+}
+
+/**
+ * The grading check (#584, prompts/assessor.md): given the assessor's input
+ * (lib/assessment.js assessmentInput), returns its raw reply. Images on this
+ * turn go with the transcript so work shown in a screenshot can count. No
+ * knowledge base, catalog, or language directive: it reads evidence and
+ * writes JSON that plato reads, never the learner.
+ */
+export async function assessTurn(input, imageParts = []) {
+  const systemPrompt = await loadPrompt('assessor');
+  const content = imageParts.length ? [{ type: 'text', text: input }, ...imageParts] : input;
+  const { content: reply } = await callApi({
+    model: LLM, systemPrompt,
+    messages: [{ role: 'user', content }],
+    // A part and a short quote per objective; 800 cut long replies off mid-JSON on prod.
+    maxTokens: 2048,
+    // A grader: the same evidence should get the same verdict (measured: at
+    // the default temperature it accepted "I need to upskill" as a reason in
+    // some runs and not others).
+    temperature: 0,
+  });
+  return reply;
 }
 
 // -- Lesson Owner (LLM) -------------------------------------------------------

@@ -22,6 +22,10 @@ import { updateCourseProgressOnCompletionInBackground } from './courseProgressQu
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
+import {
+  assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
+  heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
+} from './assessment.js';
 
 function ts() { return Date.now(); }
 
@@ -134,6 +138,83 @@ export async function recoverMissingTags(parsed, repair) {
 }
 
 /** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
+/**
+ * The grading check for one coach turn (#584; lib/assessment.js). When the
+ * reply checks off a new objective or scores 10, `assess(input, images)` asks
+ * the assessor which objectives the learner's own words show, and only those
+ * stay checked off. When the reply scored 10 but some objective isn't shown,
+ * completion is held and `regenerate(addendum)` streams the coach's second
+ * try, told what's missing; its score is held to HELD_PROGRESS and its
+ * objectives to the ones the check found.
+ *
+ * Never throws. If the check itself fails, the coach's grading stands, as it
+ * did before: a completing turn checks off every objective, so the
+ * every-objective rule in applyCoachResponseToKB still lets it complete.
+ * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
+ */
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate }) {
+  const plan = assessmentPlan(kb, parsed);
+  if (!plan.check.length) return { parsed, assessment: null };
+  const imageThisTurn = imageParts.length > 0;
+  const transcript = assessmentTranscript(messages);
+  const input = assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn });
+  let grounded;
+  try {
+    // One retry: a reply that isn't JSON (or a transient error) shouldn't hand
+    // grading back to the coach. orchestrator.callApi already retries busy errors.
+    let verdict;
+    try { verdict = parseVerdict(await assess(input, imageParts)); } catch { verdict = parseVerdict(await assess(input, imageParts)); }
+    grounded = groundVerdict(verdict, transcript, plan.check, { imageThisTurn });
+    // A "shown" whose quote wasn't the learner's (often the coach's paraphrase
+    // when the learner's own words were there too, measured on prod): ask once
+    // more about just those, saying why. A failed recheck keeps the first answer.
+    if (grounded.ungrounded.length) {
+      try {
+        const recheck = grounded.ungrounded.map((n) => ({ n, problem: grounded.missing[n] }));
+        const again = groundVerdict(parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: grounded.ungrounded, imageThisTurn, recheck }), imageParts)), transcript, grounded.ungrounded, { imageThisTurn });
+        const missing = { ...grounded.missing };
+        for (const n of again.shown) delete missing[n];
+        grounded = { ...grounded, shown: [...grounded.shown, ...again.shown].sort((a, b) => a - b), missing };
+      } catch { /* keep the first answer */ }
+    }
+  } catch {
+    const all = (kb.objectives || []).map((_, i) => i + 1);
+    const fallback = plan.completionClaimed
+      ? { ...parsed, kbUpdate: { ...(parsed.kbUpdate || {}), objectivesMet: all } }
+      : parsed;
+    return { parsed: fallback, assessment: { failed: true, checked: plan.check.length } };
+  }
+
+  const applied = applyVerdict(parsed, kb, plan, grounded);
+  let out = applied.parsed;
+  let regenerated = false;
+  if (applied.held && regenerate) {
+    try {
+      const second = parseCoachResponse(await regenerate(heldCompletionAddendum(kb, applied.outstanding, grounded.missing)));
+      if (second.text) {
+        regenerated = true;
+        const kept = applied.parsed.kbUpdate?.objectivesMet || [];
+        out = {
+          ...second,
+          progress: Math.min(second.progress ?? out.progress ?? 0, HELD_PROGRESS),
+          kbUpdate: { ...(second.kbUpdate || applied.parsed.kbUpdate || {}), objectivesMet: kept },
+          profileUpdate: second.profileUpdate || parsed.profileUpdate,
+        };
+      }
+    } catch { /* keep the first reply, with completion held */ }
+  }
+  return {
+    parsed: out,
+    assessment: {
+      checked: plan.check.length,
+      shown: grounded.shown.length,
+      unverified: applied.unverified.length,
+      held: applied.held,
+      regenerated,
+    },
+  };
+}
+
 export function shouldUpdateProfile(parsed) {
   return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
 }
@@ -359,14 +440,30 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     2048
   );
 
-  const parsed = await recoverMissingTags(
+  const repaired = await recoverMissingTags(
     parseCoachResponse(coachMsg),
     () => orchestrator.repairCoachTags(messages, stripTags(coachMsg)),
   );
   // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
-  if (parsed.tagsRepairTried) {
-    orchestrator.reportEvent(parsed.progress != null && parsed.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
+  if (repaired.tagsRepairTried) {
+    orchestrator.reportEvent(repaired.progress != null && repaired.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
   }
+
+  // The grading check (#584): objectives stay checked off only when the
+  // learner's own words show them, and a completion that isn't backed up is
+  // held while the coach asks for what's missing (its second try streams in
+  // place of the first).
+  const graded = await checkGrading({
+    lesson, kb: lessonKB, parsed: repaired, messages,
+    imageParts: userParts.filter((p) => p.type === 'image'),
+    assess: (input, images) => orchestrator.assessTurn(input, images),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, addendum),
+  });
+  const parsed = graded.parsed;
+  const assessment = graded.assessment;
+  if (assessment?.failed) orchestrator.reportEvent('coach_assessment_failed', { lessonId });
+  else if (assessment?.held) orchestrator.reportEvent('coach_completion_held', { lessonId });
+  else if (assessment?.unverified) orchestrator.reportEvent('coach_objectives_unverified', { lessonId });
 
   const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   // The objectives checklist (#438) first, against the KB as it was, so the
@@ -414,7 +511,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   };
   // What each agent read and did on this turn (#411), for "Behind this response".
   const agents = coachTurnActivity({
-    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet,
+    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet, assessment,
     images: imageDataUrls.length, links: linkList.length,
     hasUnitNote: !!courseProgress,
     unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
@@ -595,7 +692,15 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   //
   // A null clamp means the score was absent or unparseable — leave the stored
   // value alone rather than overwriting it with nothing.
-  const reportedProgress = clampProgress(parsed.progress);
+  let reportedProgress = clampProgress(parsed.progress);
+  // A lesson completes only when every objective is checked off (#584). The
+  // coach's 10 alone isn't enough: on its own it completed lessons on one-line
+  // answers. sendMessage's grading check decides which objectives are checked
+  // off (client/src/lib/assessment.js); this is the rule. Lessons without
+  // objectives keep the old behavior.
+  if (reportedProgress >= MAX_PROGRESS && !wasCompleted && !allObjectivesMet(next)) {
+    reportedProgress = MAX_PROGRESS - 1;
+  }
   if (reportedProgress != null && !wasCompleted) {
     next.progress = reportedProgress;
   }
