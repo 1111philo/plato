@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { randomBytes } from 'node:crypto';
 import db from '../lib/db.js';
 import { normalizeRole } from '../lib/permissions.js';
 import { generateUserId, hashToken } from '../lib/crypto.js';
@@ -16,6 +15,7 @@ import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { getFieldDefinitions, mergeFieldValues, publicFields, visibleFieldValues } from '../lib/user-fields.js';
 import { nameFields, readNameInput } from '../lib/names.js';
 import { inviteExpired } from '../lib/invite-expiry.js';
+import { generateUsername, uniqueUsername } from '../lib/usernames.js';
 
 const USERNAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,28}[a-zA-Z0-9]$/;
 
@@ -24,24 +24,6 @@ function validateUsername(username) {
   if (username.length < 3 || username.length > 30) return 'Username must be 3-30 characters';
   if (!USERNAME_RE.test(username)) return 'Username must be alphanumeric with hyphens or underscores, and cannot start/end with them';
   if (username.includes('@')) return 'Username cannot contain @';
-  return null;
-}
-
-function generateUsername() {
-  return 'user-' + randomBytes(3).toString('hex');
-}
-
-/**
- * A generated username nobody has yet. The random part is small (16.7M), and
- * DynamoDB's createUser only conditions on userId, so a collision would
- * create a second account with the same username. Returns null if every try
- * is taken (practically never).
- */
-async function uniqueUsername({ generate = generateUsername, tries = 5 } = {}) {
-  for (let i = 0; i < tries; i++) {
-    const candidate = generate();
-    if (!(await db.getUserByUsername(candidate))) return candidate;
-  }
   return null;
 }
 
@@ -289,6 +271,9 @@ auth.post('/v1/auth/signup', async (c) => {
     role: 'learner',
     slackUserId: invite.slackUserId || null,
     customFields,
+    // An emailed invite's link reached that address, which proves it. A
+    // shareable link takes any typed email, which proves nothing.
+    ...(invite.email ? { emailVerifiedAt: new Date().toISOString() } : {}),
   });
 
   await emitHook('userCreated', { userId, email: userEmail, role: 'learner' });
@@ -439,7 +424,16 @@ auth.post('/v1/auth/reset-password', async (c) => {
   }
 
   const passwordHash = await hashPassword(password);
-  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null } });
+  // Using the emailed link proves the address. A reset is also how someone
+  // takes their account back, so it drops a connected single sign-on identity
+  // along with every session: an identity linked by whoever had the account
+  // must not outlive the reset. The owner connects it again by signing in
+  // with it (rule 2) or from Settings.
+  await revokeSessions(found.user, { extra: { passwordHash, resetTokenHash: null, failedLogins: 0, lockedUntil: null, emailVerifiedAt: new Date().toISOString() } });
+  if (found.user.ssoKey) {
+    await db.clearUserSso(found.user.userId);
+    try { await db.createAuditLog({ action: 'sso_unlinked', userId: found.user.userId, email: found.user.email, performedBy: found.user.userId, details: { provider: found.user.ssoKey.split(':')[0], by: 'password_reset' } }); } catch { /* best-effort */ }
+  }
   await db.deleteResetToken(found.tokenHash);
 
   return c.json({ ok: true });

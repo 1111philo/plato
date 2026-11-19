@@ -436,6 +436,30 @@ export async function sendInviteEmail(to, inviteToken, inviterName, { firstName 
   return { ...r, signupUrl };
 }
 
+/**
+ * Tells an account's owner that a single sign-on identity was connected to it
+ * (lib/external-identity.js, rule 2), so a connection they didn't make gets noticed.
+ */
+export async function sendSsoLinkedEmail(to, { firstName = null, providerLabel, ssoEmail, passwordRemoved = false }, opts = {}) {
+  const classroom = await getClassroom();
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const hi = `Hi ${firstName || 'there'},`;
+  const what = passwordRemoved
+    ? `${providerLabel} (${ssoEmail}) was just connected to your ${classroom.name} account. For safety, the account's password was removed and other devices were signed out. You can set a new password in Settings.`
+    : `${providerLabel} (${ssoEmail}) was just connected to your ${classroom.name} account. You can now sign in either way.`;
+  const ifNot = `If this wasn't you, tell your program team and reset your password: ${APP_URL}/forgot-password`;
+  return sendNotificationEmail({
+    to,
+    subject: `${providerLabel} was connected to your account`,
+    text: `${hi}\n\n${what}\n\n${ifNot}\n`,
+    html: `<p>${esc(hi)}</p><p>${esc(what)}</p><p>${esc(ifNot)}</p><p>Powered by <a href="https://github.com/1111philo/plato">plato</a>.</p>`,
+    classroom,
+    allowlist: false,
+    template: 'sso-linked',
+    ...opts,
+  });
+}
+
 /** The invite for someone who already has an account (#486): links to the classroom. */
 export async function sendAccountInviteEmail(to, inviterName, { firstName = null, ...opts } = {}) {
   return sendInvitation('account-invite', to, `${APP_URL}/lessons`, inviterName, firstName, opts);

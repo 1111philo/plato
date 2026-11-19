@@ -97,6 +97,24 @@ export async function login(email, password) {
 }
 
 /**
+ * Finish a single sign-on: store the session the exchange returned
+ * (`POST /v1/auth/sso/exchange`, outcome `signed_in`) exactly as `login` does.
+ * If another account was signed in on this browser, its cached data is
+ * dropped first.
+ */
+export async function completeSsoLogin({ accessToken, refreshToken, user }) {
+  if (!accessToken || !refreshToken || !user) throw new Error('Sign-in failed');
+  const previous = await getAuthUser();
+  if (previous?.userId && previous.userId !== user.userId) {
+    setImpersonation(null);
+    await clearAuth();
+  }
+  await saveAuthTokens({ accessToken, refreshToken });
+  await saveAuthUser(user);
+  return user;
+}
+
+/**
  * Log out — clears local tokens and notifies the server.
  */
 export async function logout() {

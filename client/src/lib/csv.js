@@ -20,17 +20,21 @@ export function toCsv(rows) {
   return rows.map((row) => row.map(csvCell).join(',')).join('\r\n');
 }
 
+import { signInMethods } from './signIn.js';
+
 const TYPE_LABELS = { user: 'User', invite: 'Invited', waitlist: 'Wait List' };
 
 /**
  * Rows for the Admin → Users list as shown (current filter, search, sort).
  * `items` are AdminUsers' combinedList wrappers; one column per custom field,
  * in field order. Dates are ISO (YYYY-MM-DD), not the admin's locale format.
+ * `sso` (`{ providers }`), passed when single sign-on is in play, adds a
+ * Sign-in column before User ID: "Password", the provider's name, or both.
  */
-export function usersCsvRows(items, userFields) {
+export function usersCsvRows(items, userFields, sso = null) {
   // User ID (#386): the immutable account id, a stable key for research
   // exports. Last, after the custom fields.
-  const header = ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label), 'User ID'];
+  const header = ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', ...userFields.map((f) => f.label), ...(sso ? ['Sign-in'] : []), 'User ID'];
   const rows = items.map((item) => [
     item.email,
     item.firstName,
@@ -41,6 +45,7 @@ export function usersCsvRows(items, userFields) {
     TYPE_LABELS[item._type] || item._type,
     item.createdAt ? new Date(item.createdAt).toISOString().slice(0, 10) : '',
     ...userFields.map((f) => item.customFields?.[f.id] ?? ''),
+    ...(sso ? [item._type === 'user' ? signInMethods(item._user, sso.providers).join(' + ') : ''] : []),
     item._user?.userId || '',
   ]);
   return [header, ...rows];

@@ -4,7 +4,8 @@ export async function login(page, { email, password }) {
   await page.goto('/login');
   await page.getByLabel(/email or username/i).fill(email);
   await page.locator('input[type=password]').fill(password);
-  await page.getByRole('button', { name: /sign in/i }).click();
+  // Exact: the single sign-on button ("Sign in with UIC") is on the page too.
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForURL(/\/(lessons|plato)/);
 }
 

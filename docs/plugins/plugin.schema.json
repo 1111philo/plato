@@ -103,7 +103,8 @@
           "kpi",
           "agent",
           "syncData.namespace",
-          "lessonEnrichment"
+          "lessonEnrichment",
+          "auth.provider"
         ] },
         { "pattern": "^ui\\.slot\\.[a-zA-Z][a-zA-Z0-9]*$" },
         { "pattern": "^hook\\.[a-zA-Z][a-zA-Z0-9]*$" }

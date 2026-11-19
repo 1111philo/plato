@@ -8,7 +8,7 @@ import { bundledLessonStatus, actOnBundledLesson } from '../lib/bundled-lessons.
 import { registerNotificationRoutes } from './admin-notifications.js';
 import { addGroup, renameGroup, deleteGroup } from '../lib/groups.js';
 import { generateInviteToken, hashToken } from '../lib/crypto.js';
-import { issueResetToken } from '../lib/sessions.js';
+import { issueResetToken, revokeSessions } from '../lib/sessions.js';
 import { sendResetEmail } from '../lib/email.js';
 import { listSuppressed, getSuppression, removeSuppression } from '../lib/email-suppression.js';
 import { sendInviteEmail, sendAccountInviteEmail, readAutomations, sendTemplated } from '../lib/notifications.js';
@@ -66,6 +66,9 @@ admin.get('/v1/admin/users', async (c) => {
     slackUserId: p.slackUserId || null,
     customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
+    // Sign-in methods: a linked single sign-on identity, and whether a password is set.
+    sso: p.ssoKey ? { provider: p.ssoKey.split(':')[0], email: p.ssoEmail || null, linkedAt: p.ssoLinkedAt || null } : null,
+    hasPassword: !!p.passwordHash,
   });
   if (!includeStats) {
     return c.json(users.map(baseRow));
@@ -506,6 +509,8 @@ admin.get('/v1/admin/waitlist', async (c) => {
       userGroup: inv.profile?.userGroup || null,
       customFields: visibleFieldValues(fieldDefs, inv.profile?.customFields),
       createdAt: inv.createdAt,
+      // Proved the address by single sign-on (lib/external-identity.js).
+      ssoVerified: inv.profile?.ssoVerified?.provider || null,
     }));
   return c.json({ entries, open: !!config.open, hasApiKey: !!config.apiKeyHash });
 });
@@ -618,7 +623,9 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   }
 
   try {
-    await db.updateWaitlistEntry(entry.inviteToken, { email: result.email, profile: result.profile });
+    // A single sign-on check vouched for the old address only.
+    const profile = result.email === entry.email && entry.profile?.ssoVerified ? { ...result.profile, ssoVerified: entry.profile.ssoVerified } : result.profile;
+    await db.updateWaitlistEntry(entry.inviteToken, { email: result.email, profile });
   } catch (err) {
     // Invited or removed between the read above and this write.
     if (err.name === 'ConditionalCheckFailedException') return c.json({ error: 'Wait-list entry not found' }, 404);
@@ -766,6 +773,24 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
   return c.json(result);
 });
 
+// DELETE /v1/admin/users/:userId/sso — unlink the account's single sign-on
+// identity (lib/external-identity.js). The person signs in with their password
+// afterwards; someone without one uses "Forgot password".
+admin.delete('/v1/admin/users/:userId/sso', async (c) => {
+  const user = await db.getUserById(c.req.param('userId'));
+  if (!user) return c.json({ error: 'User not found' }, 404);
+  if (!user.ssoKey) return c.json({ ok: true, hasPassword: !!user.passwordHash });
+  await db.clearUserSso(user.userId);
+  // End their sessions too: one may have been opened through the identity
+  // being removed. They sign in again with their password.
+  await revokeSessions(user);
+  await db.createAuditLog({
+    action: 'sso_unlinked', userId: user.userId, email: user.email, performedBy: c.get('user').userId,
+    details: { provider: user.ssoKey.split(':')[0], by: 'admin' },
+  });
+  return c.json({ ok: true, hasPassword: !!user.passwordHash });
+});
+
 admin.patch('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
   const user = await db.getUserById(userId);
@@ -783,6 +808,8 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
     const existing = await db.getUserByEmail(email);
     if (existing && existing.userId !== userId) return c.json({ error: 'Email already in use' }, 409);
     updates.email = email;
+    // Nobody proved the new address (lib/external-identity.js, rule 2).
+    updates.emailVerifiedAt = null;
   }
   if (body.username !== undefined) {
     const usernameErr = validateUsername(body.username);
@@ -1521,6 +1548,14 @@ admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   const schemaProps = current?.manifest?.settingsSchema?.properties || {};
   for (const [key, def] of Object.entries(schemaProps)) {
     if (def?.writeOnly && !(key in body) && current.settings?.[key] !== undefined) body[key] = current.settings[key];
+  }
+  // A string longer than its declared `maxLength` is refused: every plugin's
+  // settings share one `_system:plugins:activation` item (400 KB on DynamoDB)
+  // that's read on many requests, so e.g. a sign-in button icon is capped here.
+  for (const [key, def] of Object.entries(schemaProps)) {
+    if (Number.isInteger(def?.maxLength) && typeof body[key] === 'string' && body[key].length > def.maxLength) {
+      return c.json({ error: `${def.title || key} is too long (${def.maxLength} characters at most)` }, 400);
+    }
   }
   try {
     const entry = await pluginRegistry.updateSettings(id, body);

@@ -1,0 +1,54 @@
+{
+  "$schema": "../../docs/plugins/plugin.schema.json",
+  "id": "entra-sso",
+  "name": "Microsoft Entra SSO",
+  "version": "1.0.0",
+  "apiVersion": "^1.6.0",
+  "description": "Sign in with a Microsoft Entra ID (Azure AD) account from one organization, alongside plato's own sign-in. The tenant, client id, and secret come from the deployment, not from this page.",
+  "author": "plato core",
+  "license": "AGPL-3.0-or-later",
+  "homepage": "https://github.com/1111philo/plato",
+  "defaultEnabled": false,
+  "capabilities": [
+    "server.routes",
+    "settings.read",
+    "settings.write",
+    "ui.slot.adminSettingsPanel",
+    "auth.provider"
+  ],
+  "extensionPoints": {
+    "serverRoutes": "server/index.js#default",
+    "slots": {
+      "adminSettingsPanel": "client/EntraSettingsPanel.jsx"
+    }
+  },
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "buttonLabel": {
+        "type": "string",
+        "title": "Button label",
+        "description": "Text on the sign-in button, e.g. \"Sign in with UIC\". Empty uses \"Sign in with Microsoft\".",
+        "maxLength": 40
+      },
+      "buttonBackground": {
+        "type": "string",
+        "title": "Button background color",
+        "description": "Hex color like #001E62. Set with the text color, or leave both empty for the site's button style. The pair needs a contrast ratio of at least 4.5:1.",
+        "maxLength": 7
+      },
+      "buttonTextColor": {
+        "type": "string",
+        "title": "Button text color",
+        "description": "Hex color like #FFFFFF.",
+        "maxLength": 7
+      },
+      "buttonIcon": {
+        "type": "string",
+        "title": "Button icon",
+        "description": "A PNG, JPEG, or WebP image as a base64 data URL, at most 20 KB (the panel resizes an upload to 64 x 64). Empty means no icon.",
+        "maxLength": 20480
+      }
+    }
+  }
+}

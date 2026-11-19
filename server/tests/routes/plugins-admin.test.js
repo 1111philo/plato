@@ -180,6 +180,30 @@ describe('PUT /v1/admin/plugins/:id/settings', () => {
     assert.equal(data.settings.workspaceName, 'NewSpace');
   });
 
+  it('refuses a string longer than its declared maxLength, and saves one at the limit', async () => {
+    const schema = { type: 'object', properties: { buttonLabel: { type: 'string', title: 'Button label', maxLength: 5 }, buttonIcon: { type: 'string', maxLength: 20480 }, note: { type: 'string' } } };
+    const realGet = pluginRegistry.get;
+    pluginRegistry.get = () => makeEntry({ id: 'entra-sso', schema });
+    let saved = null;
+    pluginRegistry.updateSettings = async (id, settings) => { saved = settings; return makeEntry({ id, settings, schema }); };
+    try {
+      const app = new Hono();
+      app.route('/', admin);
+      const tooLong = await adminReq(app, 'PUT', '/v1/admin/plugins/entra-sso/settings', { buttonLabel: 'sixsix' });
+      assert.equal(tooLong.status, 400);
+      assert.equal((await tooLong.json()).error, 'Button label is too long (5 characters at most)');
+      const bigIcon = await adminReq(app, 'PUT', '/v1/admin/plugins/entra-sso/settings', { buttonIcon: 'A'.repeat(20481) });
+      assert.equal(bigIcon.status, 400);
+      assert.match((await bigIcon.json()).error, /^buttonIcon is too long \(20480 characters at most\)$/);
+      assert.equal(saved, null, 'nothing was stored');
+      const body = { buttonLabel: 'fives', buttonIcon: 'A'.repeat(20480), note: 'x'.repeat(100) };
+      assert.equal((await adminReq(app, 'PUT', '/v1/admin/plugins/entra-sso/settings', body)).status, 200);
+      assert.deepEqual(saved, body);
+    } finally {
+      pluginRegistry.get = realGet;
+    }
+  });
+
   it('keeps a stored writeOnly value the body leaves out; an explicit null clears it', async () => {
     const schema = { type: 'object', properties: { botToken: { type: 'string', writeOnly: true }, autoInviteEnabled: { type: 'boolean' } } };
     const realGet = pluginRegistry.get;

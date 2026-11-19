@@ -1,7 +1,7 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand,
-  UpdateCommand, DeleteCommand, ScanCommand,
+  UpdateCommand, DeleteCommand, ScanCommand, TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import {
   USERS_TABLE, INVITES_TABLE, REFRESH_TOKENS_TABLE, SYNC_DATA_TABLE,
@@ -19,24 +19,74 @@ if (process.env.DYNAMODB_ENDPOINT) {
 const client = new DynamoDBClient(clientOpts);
 const doc = DynamoDBDocumentClient.from(client);
 
+// The partition that holds single sign-on guard items (see getUserBySsoKey).
+const SSO_GUARD = '_sso';
+const ssoGuardPut = (ssoKey, ownerId, now) => ({
+  TableName: SYNC_DATA_TABLE,
+  Item: { userId: SSO_GUARD, dataKey: ssoKey, ownerId, createdAt: now },
+  ConditionExpression: 'attribute_not_exists(dataKey)',
+});
+
+// Delete an identity's guard item, only while it still names this owner.
+async function releaseSsoGuard(ssoKey, ownerId) {
+  try {
+    await doc.send(new DeleteCommand({
+      TableName: SYNC_DATA_TABLE,
+      Key: { userId: SSO_GUARD, dataKey: ssoKey },
+      ConditionExpression: 'ownerId = :o',
+      ExpressionAttributeValues: { ':o': ownerId },
+    }));
+  } catch (err) {
+    if (err.name !== 'ConditionalCheckFailedException') throw err;
+  }
+}
+
+// A guard whose owner no longer exists, or no longer holds this identity, is
+// stale (an account deleted before deleteUser released guards, or a write
+// that died between steps). Remove it so the identity can be used again.
+// True if a stale guard was removed.
+async function dropStaleSsoGuard(ssoKey) {
+  const guard = (await doc.send(new GetCommand({ TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: ssoKey }, ConsistentRead: true }))).Item;
+  if (!guard?.ownerId) return false;
+  const owner = (await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: guard.ownerId }, ConsistentRead: true }))).Item;
+  if (owner?.ssoKey === ssoKey) return false; // a live link
+  await releaseSsoGuard(ssoKey, guard.ownerId);
+  return true;
+}
+
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso, emailVerifiedAt }) {
     const now = new Date().toISOString();
     const item = {
-      userId, email: email.toLowerCase(), username: username || null, passwordHash, name,
+      userId, email: email.toLowerCase(), username: username || null, name,
       userGroup: userGroup || null,
       role, createdAt: now, updatedAt: now,
     };
+    // An account made by single sign-on has no password (lib/external-identity.js).
+    if (passwordHash) item.passwordHash = passwordHash;
+    if (emailVerifiedAt) item.emailVerifiedAt = emailVerifiedAt;
     if (firstName !== undefined) Object.assign(item, { firstName, lastName: lastName || '', nameSource: nameSource || 'user' });
     if (slackUserId) item.slackUserId = slackUserId;
     if (customFields && Object.keys(customFields).length > 0) item.customFields = customFields;
-    await doc.send(new PutCommand({
-      TableName: USERS_TABLE,
-      Item: item,
-      ConditionExpression: 'attribute_not_exists(userId)',
-    }));
+    const put = { TableName: USERS_TABLE, Item: item, ConditionExpression: 'attribute_not_exists(userId)' };
+    if (!sso?.key) {
+      await doc.send(new PutCommand(put));
+      return;
+    }
+    // With an identity: the account and the identity's guard item are written
+    // together, so one identity can never end up on two accounts.
+    Object.assign(item, { ssoKey: sso.key, ssoEmail: sso.email || null, ssoLinkedAt: now });
+    const write = () => doc.send(new TransactWriteCommand({ TransactItems: [{ Put: put }, { Put: ssoGuardPut(sso.key, userId, now) }] }));
+    try {
+      await write();
+    } catch (err) {
+      if (err.name !== 'TransactionCanceledException') throw err;
+      const exists = Object.assign(new Error('User or identity already exists'), { name: 'ConditionalCheckFailedException' });
+      if (!(await dropStaleSsoGuard(sso.key))) throw exists;
+      try { await write(); } catch (again) { if (again.name === 'TransactionCanceledException') throw exists; throw again; }
+    }
   },
 
   async getUserById(userId) {
@@ -55,6 +105,74 @@ const db = {
       ExpressionAttributeValues: { ':email': email.toLowerCase() },
     }));
     return result.Items?.[0] || null;
+  },
+
+  // Single sign-on (lib/external-identity.js). `ssoKey` on the user is
+  // '<provider>:<tenant>:<subject>'. The identity's owner is recorded in a
+  // guard item (sync-data partition `_sso`, key = the ssoKey), written in the
+  // same transaction as the user, so "one identity, one account" is enforced
+  // by the database and read with strong consistency (an index couldn't do
+  // either).
+  async getUserBySsoKey(ssoKey) {
+    const guard = await doc.send(new GetCommand({ TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: ssoKey }, ConsistentRead: true }));
+    if (!guard.Item?.ownerId) return null;
+    const result = await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId: guard.Item.ownerId }, ConsistentRead: true }));
+    return result.Item?.ssoKey === ssoKey ? result.Item : null;
+  },
+
+  // Connect an identity to an account that has none. False if the account
+  // already has one, or the identity belongs to another account.
+  async linkUserSso(userId, { key, email }) {
+    const now = new Date().toISOString();
+    const write = () => doc.send(new TransactWriteCommand({
+      TransactItems: [
+        { Put: ssoGuardPut(key, userId, now) },
+        {
+          Update: {
+            TableName: USERS_TABLE,
+            Key: { userId },
+            UpdateExpression: 'SET ssoKey = :k, ssoEmail = :e, ssoLinkedAt = :now, updatedAt = :now',
+            ConditionExpression: 'attribute_exists(userId) AND attribute_not_exists(ssoKey)',
+            ExpressionAttributeValues: { ':k': key, ':e': email || null, ':now': now },
+          },
+        },
+      ],
+    }));
+    try {
+      await write();
+      return true;
+    } catch (err) {
+      if (err.name !== 'TransactionCanceledException') throw err;
+      if (!(await dropStaleSsoGuard(key))) return false;
+      try { await write(); return true; } catch (again) { if (again.name === 'TransactionCanceledException') return false; throw again; }
+    }
+  },
+
+  // Removes the identity this read saw, and only that one: the update is
+  // conditional on it, so a link that lands in between isn't the one removed
+  // (and its guard item isn't orphaned). One retry on a lost race.
+  async clearUserSso(userId, attempt = 0) {
+    const user = (await doc.send(new GetCommand({ TableName: USERS_TABLE, Key: { userId }, ConsistentRead: true }))).Item;
+    if (!user?.ssoKey) return;
+    try {
+      await doc.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: USERS_TABLE,
+              Key: { userId },
+              UpdateExpression: 'REMOVE ssoKey, ssoEmail, ssoLinkedAt SET updatedAt = :now',
+              ConditionExpression: 'ssoKey = :k',
+              ExpressionAttributeValues: { ':now': new Date().toISOString(), ':k': user.ssoKey },
+            },
+          },
+          { Delete: { TableName: SYNC_DATA_TABLE, Key: { userId: SSO_GUARD, dataKey: user.ssoKey } } },
+        ],
+      }));
+    } catch (err) {
+      if (err.name === 'TransactionCanceledException' && attempt < 1) return db.clearUserSso(userId, attempt + 1);
+      throw err;
+    }
   },
 
   async getUserByUsername(username) {
@@ -84,11 +202,16 @@ const db = {
     }));
   },
 
+  // Deleting an account releases its single sign-on identity: the guard item
+  // goes with it, or the identity could never be connected to another account.
   async deleteUser(userId) {
-    await doc.send(new DeleteCommand({
+    const result = await doc.send(new DeleteCommand({
       TableName: USERS_TABLE,
       Key: { userId },
+      ReturnValues: 'ALL_OLD',
     }));
+    const ssoKey = result.Attributes?.ssoKey;
+    if (ssoKey) await releaseSsoGuard(ssoKey, userId);
   },
 
   // Lightweight writes used by the sync-route hooks. They deliberately do
@@ -409,7 +532,7 @@ const db = {
       Key: { tokenHash },
     }));
     const item = result.Item;
-    if (!item || item.type === 'reset' || expired(item)) return null;
+    if (!item || item.type === 'reset' || item.type === 'sso' || expired(item)) return null;
     return item;
   },
 
@@ -434,6 +557,27 @@ const db = {
   },
 
   // ── Reset Tokens (reuses refresh-tokens table) ──
+
+  // One-time codes (the sign-in handoff after single sign-on, routes/sso.js):
+  // kept in the tokens table under their own type, deleted on first read.
+  async storeOneTimeCode(codeHash, data, ttlSeconds) {
+    const ttl = Math.floor(Date.now() / 1000) + ttlSeconds;
+    await doc.send(new PutCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Item: { tokenHash: codeHash, type: 'sso', data, createdAt: new Date().toISOString(), ttl },
+    }));
+  },
+
+  async takeOneTimeCode(codeHash) {
+    const result = await doc.send(new DeleteCommand({
+      TableName: REFRESH_TOKENS_TABLE,
+      Key: { tokenHash: codeHash },
+      ReturnValues: 'ALL_OLD',
+    }));
+    const item = result.Attributes;
+    if (!item || item.type !== 'sso' || expired(item)) return null;
+    return item.data;
+  },
 
   async storeResetToken(tokenHash, userId) {
     const ttl = Math.floor(Date.now() / 1000) + RESET_TOKEN_TTL_HOURS * 3600;

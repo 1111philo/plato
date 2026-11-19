@@ -19,11 +19,44 @@ test.describe('public pages', () => {
   }
 });
 
+// Where single sign-on returns to (docs/SSO.md). The exchange is answered
+// here so every screen is checked at both sizes; tests/sso.spec.js runs the
+// real flow.
+test.describe('/sso/complete', () => {
+  const label = 'Sign in with UIC';
+  const person = { email: 'nova@sso.example.edu', firstName: 'Nova', lastName: 'Newcomer' };
+  const screens = [
+    ['no account, wait list open', { outcome: 'no_account', onWaitlist: false, waitlistOpen: true, ticket: 't', label, ...person }, 'You don’t have an account yet'],
+    ['no account, wait list closed', { outcome: 'no_account', onWaitlist: false, waitlistOpen: false, ticket: 't', label, ...person }, 'You don’t have an account yet'],
+    ['on the wait list', { outcome: 'no_account', onWaitlist: true, waitlistOpen: true, ticket: null, label, ...person }, 'You’re on the wait list'],
+    ['error', { outcome: 'error', code: 'identity_in_use', label }, 'We couldn’t sign you in'],
+    ['expired', null, 'That sign-in link has expired'],
+  ];
+  for (const [name, outcome, heading] of screens) {
+    test(name, async ({ page }) => {
+      await page.route('**/v1/auth/sso/exchange', (route) => (outcome
+        ? route.fulfill({ json: outcome })
+        : route.fulfill({ status: 400, json: { code: 'sso_expired' } })));
+      await page.goto(`/sso/complete#code=a11y-${name.replace(/[^a-z]/g, '-')}`);
+      await expect(page.getByRole('heading', { name: heading })).toBeFocused();
+      await settle(page);
+      await expectAccessible(page, { label: `/sso/complete: ${name}` });
+    });
+  }
+
+  test('while signing in', async ({ page }) => {
+    await page.route('**/v1/auth/sso/exchange', () => {}); // never answers
+    await page.goto('/sso/complete#code=a11y-pending-0000');
+    await expect(page.getByRole('status').filter({ hasText: 'Signing you in…' })).toBeVisible();
+    await expectAccessible(page, { label: '/sso/complete: signing in' });
+  });
+});
+
 test('error banner (failed sign-in) has readable contrast', async ({ page }) => {
   await page.goto('/login');
   await page.getByLabel(/email or username/i).fill('nobody@example.com');
   await page.locator('input[type=password]').fill('wrong-password');
-  await page.getByRole('button', { name: /sign in/i }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expectAccessible(page, { label: 'login error banner' });
 });

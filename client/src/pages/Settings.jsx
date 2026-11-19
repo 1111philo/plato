@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import PasswordField from '../components/PasswordField.jsx';
 import {
@@ -12,6 +13,7 @@ import { SEND_KEYS, sendKeyOf, isMacLike } from '../lib/chatPrefs.js';
 import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
+import { fetchSsoProviders, providerName, ssoReasonMessage } from '../lib/sso.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { syncIfUnsaved } from '../lib/syncDebounce.js';
 import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
@@ -166,6 +168,46 @@ export default function Settings() {
     }
   };
 
+  const passwordForm = (
+    <form className="space-y-3" onSubmit={handleChangePassword}>
+      <div className="space-y-1.5">
+        <Label htmlFor="current-password">Current Password</Label>
+        <PasswordField
+          id="current-password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="new-password">New Password</Label>
+        <PasswordField
+          id="new-password"
+          autoComplete="new-password"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="confirm-password">Confirm Password</Label>
+        <PasswordField
+          id="confirm-password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleChangePassword(e); } }}
+          disabled={passwordSubmitting}
+        />
+      </div>
+      <Button type="submit" disabled={passwordSubmitting}>
+        {passwordSubmitting ? 'Changing...' : 'Change Password'}
+      </Button>
+      {passwordFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{passwordFeedback}</p>}
+    </form>
+  );
+
   return (
     <div className="mx-auto max-w-lg space-y-6 p-4">
       <h2 className="text-xl font-semibold">User Settings</h2>
@@ -199,47 +241,10 @@ export default function Settings() {
             {nameFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{nameFeedback}</p>}
           </form>
 
-          <Separator />
-
-          <form className="space-y-3" onSubmit={handleChangePassword}>
-            <div className="space-y-1.5">
-              <Label htmlFor="current-password">Current Password</Label>
-              <PasswordField
-                id="current-password"
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-password">New Password</Label>
-              <PasswordField
-                id="new-password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <PasswordField
-                id="confirm-password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleChangePassword(e); } }}
-                disabled={passwordSubmitting}
-              />
-            </div>
-            <Button type="submit" disabled={passwordSubmitting}>
-              {passwordSubmitting ? 'Changing...' : 'Change Password'}
-            </Button>
-            {passwordFeedback && <p className="text-sm text-muted-foreground" role="status" aria-live="polite">{passwordFeedback}</p>}
-          </form>
         </CardContent>
       </Card>
+
+      <SignInMethods>{passwordForm}</SignInMethods>
 
       {userFields.length > 0 && (
         <Card>
@@ -309,6 +314,170 @@ export default function Settings() {
         }}
       />
     </div>
+  );
+}
+
+// How this account signs in: its password, and a single sign-on identity
+// (docs/SSO.md). `children` is the change-password form, shown only when a
+// password is set (it asks for the current one). The provider rows appear
+// only when SSO is on or this account is already connected.
+function SignInMethods({ children }) {
+  const { user: authUser } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // What a single sign-on round trip came back with: "connected" from
+  // /sso/complete, or a failure reason from /login?sso=… (App.jsx LoginRoute).
+  const [arrival] = useState(() => ({ notice: location.state?.ssoNotice || '', reason: location.state?.ssoReason || '' }));
+  const [signIn, setSignIn] = useState(null);
+  const [providers, setProviders] = useState([]);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const loadSignIn = () => authenticatedFetch('/v1/me')
+    .then((r) => (r.ok ? r.json() : null))
+    .then((me) => setSignIn(me?.signIn || null))
+    .catch(() => {});
+
+  useEffect(() => {
+    let live = true;
+    Promise.all([fetchSsoProviders(), loadSignIn()]).then(([list]) => {
+      if (!live) return;
+      setProviders(list);
+      // Set after the first render so the live regions announce them.
+      if (arrival.notice) setNotice(arrival.notice);
+      if (arrival.reason) setError(ssoReasonMessage(arrival.reason, list));
+    });
+    // Shown once: a reload or Back shouldn't repeat it.
+    if (arrival.notice || arrival.reason) navigate('.', { replace: true, state: null });
+    return () => { live = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const linked = signIn?.sso || null;
+  // The connected provider first (even if it has since been turned off), then
+  // the ones on offer. An account holds one identity, so nothing else can be
+  // connected while one is.
+  const rows = linked
+    ? [{ id: linked.provider, name: providerName(providers.find((p) => p.id === linked.provider)?.label || 'Single sign-on') }]
+    : providers.map((p) => ({ id: p.id, name: providerName(p.label) }));
+
+  // Connecting or disconnecting a sign-in method is a credential change, so
+  // both ask for the current password (the server requires it).
+  const [pending, setPending] = useState(null); // { action: 'connect' | 'disconnect', id, name }
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [dialogError, setDialogError] = useState('');
+
+  function ask(action, id, name) {
+    setError(''); setNotice(''); setDialogError(''); setCurrentPassword('');
+    // Without a password SSO is the only way in; the server refuses too.
+    if (action === 'disconnect' && signIn && !signIn.password) { setError('Set a password first, so you can still sign in.'); return; }
+    setPending({ action, id, name });
+  }
+  const connect = (id, name) => ask('connect', id, name);
+  const askDisconnect = () => ask('disconnect', rows[0]?.id, rows[0]?.name);
+
+  async function confirmPending(e) {
+    e.preventDefault();
+    if (!pending || !currentPassword) return;
+    setBusy(true); setDialogError('');
+    const { action, id, name } = pending;
+    try {
+      const res = await authenticatedFetch(action === 'connect' ? `/v1/auth/sso/${encodeURIComponent(id)}/link` : '/v1/auth/sso/disconnect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.code === 'wrong_password') { setDialogError('That password isn’t right.'); return; }
+      if (action === 'connect') {
+        if (!res.ok || !data.url) throw new Error(`Connecting ${name} isn’t available right now.`);
+        window.location.assign(data.url);
+        return;
+      }
+      if (!res.ok) throw new Error(data.code === 'no_password' ? 'Set a password first, so you can still sign in.' : 'Couldn’t disconnect. Try again.');
+      setPending(null);
+      await loadSignIn();
+      setNotice(`${name} disconnected.`);
+    } catch (err) {
+      setPending(null);
+      setError(err.message === 'Session expired' ? 'Something went wrong. Try again.' : err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const noPassword = !!signIn && !signIn.password;
+
+  // An account made by single sign-on has no password. The reset email is how
+  // one is added: it proves the address, and the link works while signed in.
+  async function emailSetPasswordLink() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const res = await fetch('/v1/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: authUser?.email }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Couldn’t send the link. Please try again.');
+      setNotice(`We sent a link to ${authUser?.email}. It works for 1 hour.`);
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign-in methods</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground min-h-5 empty:hidden" role="status" aria-live="polite">{notice}</p>
+        {error && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{error}</p>}
+
+        {rows.map((row) => (
+          <div key={row.id} className="flex items-center justify-between gap-3">
+            <div className="min-w-0 text-sm">
+              <div className="font-medium">{row.name}</div>
+              <div className="text-muted-foreground break-all">
+                {linked ? (linked.email ? `Connected as ${linked.email}` : 'Connected') : 'Not connected'}
+              </div>
+            </div>
+            {linked
+              ? <Button variant="outline" disabled={busy} aria-label={`Disconnect ${row.name}`} onClick={askDisconnect}>Disconnect</Button>
+              : <Button variant="outline" disabled={busy} onClick={() => connect(row.id, row.name)}>Connect {row.name}</Button>}
+          </div>
+        ))}
+        {rows.length > 0 && <Separator />}
+
+        {noPassword ? (
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <div className="flex-1">
+              <div className="font-medium">Password</div>
+              <div className="text-muted-foreground">Not set</div>
+            </div>
+            <Button variant="outline" disabled={busy} onClick={emailSetPasswordLink}>Email me a link to set one</Button>
+          </div>
+        ) : (
+          <>
+            {rows.length > 0 && <div className="text-sm font-medium">Password</div>}
+            {children}
+          </>
+        )}
+      </CardContent>
+
+      <Dialog open={!!pending} onOpenChange={(open) => { if (!open) setPending(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{pending?.action === 'disconnect' ? `Disconnect ${pending?.name}?` : `Connect ${pending?.name}`}</DialogTitle>
+            <DialogDescription>
+              {pending?.action === 'disconnect' ? 'You’ll sign in with your password.' : `Enter your password, then sign in with ${pending?.name}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <form id="sso-confirm-form" onSubmit={confirmPending} className="space-y-2">
+            {dialogError && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{dialogError}</p>}
+            <Label htmlFor="sso-current-password">Current password</Label>
+            <Input id="sso-current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </form>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setPending(null)}>Cancel</Button>
+            <Button type="submit" form="sso-confirm-form" disabled={busy || !currentPassword}>
+              {pending?.action === 'disconnect' ? 'Disconnect' : 'Continue'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 

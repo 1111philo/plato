@@ -259,6 +259,7 @@ Hook handler returns enrichment data or `null`. See `plugins/wordpress-info/` fo
 | `agent` | Contribute AI agent prompt | 3 |
 | `syncData.namespace` | Write `plugin:<id>:*` sync-data keys | 3 |
 | `lessonEnrichment` | Enrich lessons at start with additional context | 1 |
+| `auth.provider` | Supply a single sign-on provider; core runs the flow and owns accounts ([SSO](../SSO.md)) | 1.6 |
 
 A plugin using an extension point without declaring its capability fails registration with `plugin_capability_missing`.
 
@@ -320,7 +321,7 @@ Admin only. Body: `{ enabled: boolean }`. Toggles activation. Runs `onActivate`/
 
 ### `PUT /v1/admin/plugins/:id/settings`
 
-Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activation.<id>.settings`.
+Admin only. Body: arbitrary settings object. Persists to `_system:plugins:activation.<id>.settings`. A string longer than its property's declared `maxLength` in `settingsSchema` is refused with 400 (API 1.6.1); nothing else in the schema is enforced on the server, so validate what you read.
 
 ### `GET /v1/plugins`
 

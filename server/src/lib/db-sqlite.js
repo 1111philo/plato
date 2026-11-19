@@ -139,6 +139,14 @@ for (const col of ['firstName', 'lastName', 'nameSource']) {
   if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
 }
 
+// Single sign-on (lib/external-identity.js): the linked identity. An account
+// made by SSO stores '' as passwordHash (the column is NOT NULL).
+for (const col of ['ssoKey', 'ssoEmail', 'ssoLinkedAt', 'emailVerifiedAt']) {
+  const has = sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = ?").get(col);
+  if (has.count === 0) sqlite.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT`);
+}
+sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_ssoKey ON users (ssoKey) WHERE ssoKey IS NOT NULL');
+
 // Sign-in security (#451 scale review): session version, failed sign-ins,
 // and the latest reset link (lib/sessions.js).
 for (const [col, type] of [['tokenVersion', 'INTEGER DEFAULT 0'], ['failedLogins', 'INTEGER DEFAULT 0'], ['lockedUntil', 'TEXT'], ['resetTokenHash', 'TEXT'], ['resetRequestedAt', 'TEXT']]) {
@@ -247,6 +255,11 @@ const expired = (item) => typeof item?.ttl === 'number' && item.ttl < Math.floor
 
 // -- TTL cleanup (runs on startup and periodically) ---------------------------
 
+// One-time codes (routes/sso.js) share the tokens table and keep a JSON payload.
+if (sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('refresh_tokens') WHERE name = 'data'").get().count === 0) {
+  sqlite.exec('ALTER TABLE refresh_tokens ADD COLUMN data TEXT');
+}
+
 function cleanupExpired() {
   const now = Math.floor(Date.now() / 1000);
   sqlite.prepare('DELETE FROM invites WHERE ttl < ?').run(now);
@@ -290,14 +303,34 @@ function rowToUser(row) {
 const db = {
   // ── Users ──
 
-  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields }) {
+  async createUser({ userId, email, passwordHash, name, firstName, lastName, nameSource, username, userGroup, role, slackUserId, customFields, sso, emailVerifiedAt }) {
     const now = new Date().toISOString();
     const customJson = customFields && Object.keys(customFields).length > 0 ? JSON.stringify(customFields) : null;
     const result = sqlite.prepare(
-      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(userId, email.toLowerCase(), username || null, passwordHash, name, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, now, now);
+      `INSERT OR IGNORE INTO users (userId, email, username, passwordHash, name, firstName, lastName, nameSource, userGroup, role, slackUserId, customFields, ssoKey, ssoEmail, ssoLinkedAt, emailVerifiedAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(userId, email.toLowerCase(), username || null, passwordHash || '', name ?? null, firstName ?? null, lastName ?? null, nameSource ?? null, userGroup || null, role, slackUserId || null, customJson, sso?.key || null, sso?.key ? (sso.email || null) : null, sso?.key ? now : null, emailVerifiedAt || null, now, now);
     if (result.changes === 0) throw conditionalCheckFailed('User already exists');
+  },
+
+  // Single sign-on (see db-dynamodb.js).
+  async getUserBySsoKey(ssoKey) {
+    return rowToUser(sqlite.prepare('SELECT * FROM users WHERE ssoKey = ?').get(ssoKey));
+  },
+
+  async linkUserSso(userId, { key, email }) {
+    const now = new Date().toISOString();
+    try {
+      const r = sqlite.prepare('UPDATE users SET ssoKey = ?, ssoEmail = ?, ssoLinkedAt = ?, updatedAt = ? WHERE userId = ? AND ssoKey IS NULL').run(key, email || null, now, now, userId);
+      return r.changes > 0;
+    } catch (err) {
+      if (/UNIQUE/.test(err.message)) return false; // the identity is on another account
+      throw err;
+    }
+  },
+
+  async clearUserSso(userId) {
+    sqlite.prepare('UPDATE users SET ssoKey = NULL, ssoEmail = NULL, ssoLinkedAt = NULL, updatedAt = ? WHERE userId = ?').run(new Date().toISOString(), userId);
   },
 
   async getUserById(userId) {
@@ -509,7 +542,7 @@ const db = {
 
   async getRefreshToken(tokenHash) {
     const item = sqlite.prepare('SELECT * FROM refresh_tokens WHERE tokenHash = ?').get(tokenHash);
-    if (!item || item.type === 'reset' || expired(item)) return null;
+    if (!item || item.type === 'reset' || item.type === 'sso' || expired(item)) return null;
     return item;
   },
 
@@ -524,6 +557,19 @@ const db = {
   },
 
   // ── Reset Tokens (reuses refresh_tokens table) ──
+
+  // One-time codes (see db-dynamodb.js).
+  async storeOneTimeCode(codeHash, data, ttlSeconds) {
+    const ttl = Math.floor(Date.now() / 1000) + ttlSeconds;
+    sqlite.prepare("INSERT OR REPLACE INTO refresh_tokens (tokenHash, userId, type, createdAt, ttl, data) VALUES (?, '', 'sso', ?, ?, ?)")
+      .run(codeHash, new Date().toISOString(), ttl, JSON.stringify(data));
+  },
+
+  async takeOneTimeCode(codeHash) {
+    const item = sqlite.prepare("DELETE FROM refresh_tokens WHERE tokenHash = ? AND type = 'sso' RETURNING *").get(codeHash);
+    if (!item || expired(item)) return null;
+    try { return JSON.parse(item.data); } catch { return null; }
+  },
 
   async storeResetToken(tokenHash, userId) {
     const ttl = Math.floor(Date.now() / 1000) + RESET_TOKEN_TTL_HOURS * 3600;

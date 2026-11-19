@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import { missingRequired } from '../lib/userFields.js';
@@ -14,9 +14,13 @@ import {
 // Join the wait list (#363). Asks for what signup asks, minus the password;
 // an admin invites the person later from Admin → Users.
 export default function Waitlist() {
+  // After a single sign-on that found no account (pages/SsoComplete.jsx): the
+  // name and email it showed, and a ticket that lets the server trust the
+  // email. Router state only, so it's gone on reload and never in the URL.
+  const sso = useLocation().state?.sso || null;
   const [open, setOpen] = useState(null);
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState({ firstName: '', lastName: '' });
+  const [email, setEmail] = useState(sso?.email || '');
+  const [name, setName] = useState({ firstName: sso?.firstName || '', lastName: sso?.lastName || '' });
   const [group, setGroup] = useState('');
   const [groups, setGroups] = useState([]);
   const [userFields, setUserFields] = useState([]);
@@ -67,6 +71,7 @@ export default function Waitlist() {
           userGroup: group || undefined,
           customFields: userFields.length ? fieldValues : undefined,
           website: website || undefined,
+          ssoTicket: sso?.ticket || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -105,7 +110,9 @@ export default function Waitlist() {
         <NameFields idPrefix="waitlist" value={name} onChange={setName} />
         <div className="space-y-2">
           <Label htmlFor="waitlist-email">Email</Label>
+          {/* With a ticket the server uses the verified address whatever is typed, so it isn't editable. */}
           <Input id="waitlist-email" type="email" autoComplete="email" placeholder="your.email@example.com"
+            readOnly={!!sso?.ticket} className={sso?.ticket ? 'bg-muted' : undefined}
             value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         {groups.length > 0 && (

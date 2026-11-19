@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
+import SsoButtons from '../components/SsoButtons.jsx';
+import { fetchSsoProviders, ssoReasonMessage } from '../lib/sso.js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,6 +22,23 @@ export default function Login() {
   const passwordRef = useRef(null);
   const branding = usePublicBranding('Sign in');
   const [waitlistOpen, setWaitlistOpen] = useState(false);
+  // Single sign-on (docs/SSO.md): null until the list answers, [] when it's off.
+  const [providers, setProviders] = useState(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // A failed single sign-on lands here as ?sso=<reason>. Read once, so the
+  // message stays after the param is taken out of the address bar.
+  const [ssoReason] = useState(() => searchParams.get('sso'));
+
+  useEffect(() => {
+    fetchSsoProviders().then(setProviders);
+  }, []);
+
+  useEffect(() => {
+    if (!searchParams.has('sso')) return;
+    const rest = new URLSearchParams(searchParams);
+    rest.delete('sso');
+    setSearchParams(rest, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     fetch('/v1/waitlist')
@@ -45,9 +64,11 @@ export default function Login() {
     }
   }
 
-  if (!branding) return null;
+  // With a reason to show, wait for the provider list so the message can name the provider.
+  if (!branding || (ssoReason && providers === null)) return null;
 
   const { primary: headerBg, logo, classroomName } = branding;
+  const shownError = error || ssoReasonMessage(ssoReason, providers || []);
 
   return (
     <main className="min-h-dvh shrink-0 flex flex-col items-center justify-center p-4" style={{ backgroundColor: headerBg }}>
@@ -61,11 +82,12 @@ export default function Login() {
           <CardTitle className="text-2xl">Sign in</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
+          {shownError && (
             <div className="bg-destructive/10 text-red-800 dark:text-destructive border border-destructive/20 rounded-lg p-3 text-sm" role="alert">
-              {error}
+              {shownError}
             </div>
           )}
+          <SsoButtons providers={providers} />
           <div className="space-y-2">
             <Label htmlFor="login-email">Email or Username</Label>
             <Input id="login-email" type="text" placeholder="you@example.com or username" autoComplete="username"

@@ -38,6 +38,7 @@ import { buildFacets, matchesFilters, describeFilters } from '../../lib/userFilt
 import { countGroupMembers } from '../../lib/groupCounts.js';
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 import FiltersMenu from './FiltersMenu.jsx';
+import { providerName, signInMethods, ssoInPlay } from '../../lib/signIn.js';
 import ColumnsDialog from './ColumnsDialog.jsx';
 import GroupsDialog from './GroupsDialog.jsx';
 import BulkUpdateDialog from './BulkUpdateDialog.jsx';
@@ -218,11 +219,16 @@ export default function AdminUsers() {
   const [suppression, setSuppression] = useState({});
   const [unsuppressOpen, setUnsuppressOpen] = useState(false);
 
+  // Single sign-on (docs/SSO.md): the live providers, `[{ id, label }]`.
+  const [ssoProviders, setSsoProviders] = useState([]);
+  const [unlinkOpen, setUnlinkOpen] = useState(false);
+  const signInHeadingRef = useRef(null);
+
   // `quiet` refreshes without the page spinner, which would unmount an open dialog.
   const loadData = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
     try {
-      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes, suppressionRes] = await Promise.all([
+      const [usersRes, invitesRes, settingsRes, pluginsRes, linkRes, waitlistRes, suppressionRes, ssoRes] = await Promise.all([
         adminApi('GET', '/v1/admin/users?include=stats'),
         adminApi('GET', '/v1/admin/invites'),
         adminApi('GET', '/v1/admin/settings'),
@@ -231,6 +237,8 @@ export default function AdminUsers() {
         adminApi('GET', '/v1/admin/waitlist').catch(() => null),
         // Quiet: no list (SES unreachable, or no permission) just means no badges.
         adminApi('GET', '/v1/admin/email-suppression').catch(() => null),
+        // Empty when single sign-on is off (the default).
+        adminApi('GET', '/v1/auth/sso/providers').catch(() => null),
       ]);
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setPendingInvites(Array.isArray(invitesRes) ? invitesRes.filter(x => x.status === 'pending') : []);
@@ -240,6 +248,7 @@ export default function AdminUsers() {
       setWaitlistEntries(Array.isArray(waitlistRes?.entries) ? waitlistRes.entries : []);
       setWaitlistSettings({ open: !!waitlistRes?.open, hasApiKey: !!waitlistRes?.hasApiKey });
       setSuppression(suppressionMap(suppressionRes));
+      setSsoProviders(Array.isArray(ssoRes?.providers) ? ssoRes.providers : []);
       // Slack connection status comes from the plugin's settings, not legacy _system:settings.slack.
       // The Slack tab is hidden when the plugin is disabled OR not connected.
       const slack = Array.isArray(pluginsRes) ? pluginsRes.find((entry) => entry.id === 'slack') : null;
@@ -655,6 +664,23 @@ export default function AdminUsers() {
     } catch (e) { setMessage({ text: e.message, type: 'error' }); }
   }
 
+  // Unlink the account's single sign-on identity (admin route; audit-logged
+  // server-side). The row refreshes quietly so the Edit User view stays put.
+  async function unlinkSso(u) {
+    try {
+      const r = await adminApi('DELETE', `/v1/admin/users/${u.userId}/sso`);
+      setMessage({
+        text: r?.hasPassword === false
+          ? `Unlinked. ${u.email} has no password, so they’ll need Forgot password to sign in.`
+          : `Unlinked. ${u.email} signs in with their password.`,
+        type: 'success',
+      });
+      // The Unlink button goes away with the link; keep focus in the block.
+      signInHeadingRef.current?.focus();
+      loadData({ quiet: true });
+    } catch (e) { setMessage({ text: e.message, type: 'error' }); }
+  }
+
   async function saveEditUser() {
     if (!editUser) return;
     const missing = missingRequired(userFields, editForm.customFields);
@@ -707,7 +733,10 @@ export default function AdminUsers() {
   // Per group, for the User Groups dialog: people (users and wait-list
   // entries) and, apart, invited people (lib/groupCounts.js).
   const groupCounts = useMemo(() => countGroupMembers(combinedList), [combinedList]);
-  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected }), [combinedList, groups, userFields, slackConnected]);
+  // The Sign-in column, filter, CSV column, and Edit User block show only
+  // when single sign-on is in play: a provider is on, or someone is linked.
+  const ssoOn = useMemo(() => ssoInPlay(users, ssoProviders), [users, ssoProviders]);
+  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected, sso: ssoOn }), [combinedList, groups, userFields, slackConnected, ssoOn]);
   const filterChips = describeFilters(filters, facets);
 
   const filteredList = useMemo(() => {
@@ -750,7 +779,7 @@ export default function AdminUsers() {
 
   // CSV of the list as shown (current filter, search, sort) — see lib/csv.js.
   function downloadCsv() {
-    const blob = new Blob(['\uFEFF' + toCsv(usersCsvRows(sortedList, userFields))], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['\uFEFF' + toCsv(usersCsvRows(sortedList, userFields, ssoOn ? { providers: ssoProviders } : null))], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -857,6 +886,7 @@ export default function AdminUsers() {
     const isSelf = editUser.userId === currentUser?.userId;
     const canEditUser = shows('users.write');
     const editSuppression = editUser.email ? suppression[editUser.email.toLowerCase()] : null;
+    const ssoName = editUser.sso ? providerName(editUser.sso.provider, ssoProviders) : null;
     return (
       <div>
         <div className="flex items-center gap-3 mb-4">
@@ -887,6 +917,14 @@ export default function AdminUsers() {
           confirmLabel="Remove"
           variant="default"
           onConfirm={() => { setUnsuppressOpen(false); removeFromBounceList(editUser.email); }}
+        />
+        <ConfirmModal
+          open={unlinkOpen && !!editUser.sso}
+          onOpenChange={setUnlinkOpen}
+          title={`Unlink ${ssoName || 'SSO'} sign-in?`}
+          message="They’ll sign in with their password. If they don’t have one, they’ll need Forgot password."
+          confirmLabel="Unlink"
+          onConfirm={() => { setUnlinkOpen(false); unlinkSso(editUser); }}
         />
         <Card>
           <CardContent className="space-y-4">
@@ -936,6 +974,26 @@ export default function AdminUsers() {
                 <p id="edit-role-help" className="text-xs text-muted-foreground">{ROLE_HELP[normalizeRole(editForm.role)]}</p>
               </div>
             )}
+            {ssoOn && (
+              <section className="space-y-2 border-t pt-4" aria-labelledby="edit-signin">
+                <h2 id="edit-signin" ref={signInHeadingRef} tabIndex={-1} className="text-sm font-medium">Sign-in</h2>
+                <ul className="space-y-1 text-sm">
+                  <li>{editUser.hasPassword === false ? 'No password' : 'Password set'}</li>
+                  <li className="flex flex-wrap items-center gap-2">
+                    {editUser.sso ? (
+                      <>
+                        <span>
+                          {ssoName}: {[editUser.sso.email, editUser.sso.linkedAt && `connected ${new Date(editUser.sso.linkedAt).toLocaleDateString()}`].filter(Boolean).join(', ') || 'connected'}
+                        </span>
+                        {can(currentUser, 'users.write') && (
+                          <Button variant="outline" size="xs" aria-label={`Unlink ${ssoName} sign-in`} onClick={() => setUnlinkOpen(true)}>Unlink</Button>
+                        )}
+                      </>
+                    ) : <span className="text-muted-foreground">Single sign-on not connected</span>}
+                  </li>
+                </ul>
+              </section>
+            )}
             <div className="flex items-center gap-3 pt-2">
               {canEditUser && <Button onClick={saveEditUser}>Save</Button>}
               <Button variant="outline" onClick={closeEditUser}>{canEditUser ? 'Cancel' : 'Back'}</Button>
@@ -979,6 +1037,12 @@ export default function AdminUsers() {
       item._type === 'waitlist' ? (
         <>
           <Badge variant="outline">Wait List</Badge>
+          {/* Proved the address by single sign-on (docs/SSO.md rule 6). */}
+          {item._entry.ssoVerified && (
+            <Badge variant="outline" className="ml-1 border-green-300 bg-green-50 text-green-800" title={`Email verified by ${providerName(item._entry.ssoVerified, ssoProviders)} sign-in`}>
+              Email verified<span className="sr-only"> by {providerName(item._entry.ssoVerified, ssoProviders)} sign-in</span>
+            </Badge>
+          )}
           {item._entry.alreadyRegistered && (
             <span className="block text-xs text-muted-foreground mt-1">{item._entry.alreadyRegistered === 'account' ? 'Has an account' : 'Invited'}</span>
           )}
@@ -1005,6 +1069,7 @@ export default function AdminUsers() {
       id: `field:${f.id}`, label: f.label, defaultHidden: true, cellClass: 'max-w-48 truncate',
       cell: (item) => item.customFields?.[f.id] || DASH,
     })),
+    ...(ssoOn ? [{ id: 'signin', label: 'Sign-in', cell: (item) => (item._type === 'user' && signInMethods(item._user, ssoProviders).join(', ')) || DASH }] : []),
     ...(slackConnected ? [{ id: 'slack', label: 'Slack', cell: (item) => (item._type === 'user' && item._user.slackUserId ? (
       <span title={item._user.slackUserId} className="text-xs">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="inline-block mr-1 text-muted-foreground" aria-label="Slack linked">

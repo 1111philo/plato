@@ -1665,7 +1665,11 @@ All / Active / Staff / Invited / Wait List buttons and the one custom-field
 filter.
 - It has one group of checkbox items per facet: Status (Signed up, Invited,
   Wait list), Role, Group (plus No group), Slack (Linked / Not linked, only
-  while the Slack plugin is connected; signed-up users only), and every
+  while the Slack plugin is connected; signed-up users only), Sign-in
+  (Password / SSO, only while single sign-on is in play: a provider is on or
+  an account is linked; signed-up users only, and someone with both matches
+  both; Status then also offers "Wait list: email verified", see
+  [`SSO.md`](SSO.md#for-admins)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
   Each option shows its count.
 - Filters combine as **OR within a facet, AND across facets**. Each facet has

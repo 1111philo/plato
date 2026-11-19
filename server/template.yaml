@@ -18,6 +18,29 @@ Parameters:
       (automations, messages). Empty means anyone on prod and no one on other
       stages. Invite and password-reset emails aren't affected.
 
+  # Microsoft Entra single sign-on (plugins/entra-sso). All empty means SSO is
+  # off. Values are deployment config, passed with --parameter-overrides from a
+  # private place (never committed): see docs/SSO.md.
+  SsoEntraTenantId:
+    Type: String
+    Default: ''
+    Description: Entra directory (tenant) ID. Empty turns Entra sign-in off.
+  SsoEntraClientId:
+    Type: String
+    Default: ''
+    Description: Entra application (client) ID.
+  SsoEntraClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Entra client secret value.
+  SsoEntraDomains:
+    Type: String
+    Default: ''
+    Description: >-
+      Comma-separated email domains the tenant owns (e.g. uic.edu). Only emails
+      in these domains are matched to existing plato accounts and invites.
+
 Conditions:
   IsProd: !Equals [!Ref Stage, prod]
 
@@ -54,6 +77,10 @@ Resources:
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
           ORIGIN_VERIFY: !Sub '{{resolve:ssm:/plato/${Stage}/origin-verify}}'
+          SSO_ENTRA_TENANT_ID: !Ref SsoEntraTenantId
+          SSO_ENTRA_CLIENT_ID: !Ref SsoEntraClientId
+          SSO_ENTRA_CLIENT_SECRET: !Ref SsoEntraClientSecret
+          SSO_ENTRA_DOMAINS: !Ref SsoEntraDomains
           EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:
@@ -147,6 +174,10 @@ Resources:
           SES_FROM_EMAIL: !Sub '{{resolve:ssm:/plato/${Stage}/ses-from-email}}'
           APP_URL: !Sub '{{resolve:ssm:/plato/${Stage}/app-url}}'
           ORIGIN_VERIFY: !Sub '{{resolve:ssm:/plato/${Stage}/origin-verify}}'
+          SSO_ENTRA_TENANT_ID: !Ref SsoEntraTenantId
+          SSO_ENTRA_CLIENT_ID: !Ref SsoEntraClientId
+          SSO_ENTRA_CLIENT_SECRET: !Ref SsoEntraClientSecret
+          SSO_ENTRA_DOMAINS: !Ref SsoEntraDomains
           EMAIL_ALLOWLIST: !Ref EmailAllowlist
       Policies:
         - DynamoDBCrudPolicy:

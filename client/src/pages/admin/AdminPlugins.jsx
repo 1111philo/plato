@@ -24,8 +24,8 @@ export default function AdminPlugins() {
   const [error, setError] = useState(null);
   const [registryReady, setRegistryReady] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const list = await adminApi('GET', '/v1/admin/plugins');
@@ -56,7 +56,8 @@ export default function AdminPlugins() {
   async function saveSettings(pluginId, next) {
     await adminApi('PUT', `/v1/admin/plugins/${pluginId}/settings`, next);
     await refreshActivation();
-    await load();
+    // Quietly: the page spinner would unmount the panel and lose its "saved" status.
+    await load({ quiet: true });
   }
 
   async function uninstallData(pluginId) {

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext.jsx';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import PasswordField from '../components/PasswordField.jsx';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ export default function ResetPassword() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { loggedIn, logout } = useAuth();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('reset') || '';
   const confirmRef = useRef(null);
@@ -44,6 +46,8 @@ export default function ResetPassword() {
         throw new Error(data.error || 'Reset failed');
       }
       setMessage('Password reset. You can now sign in.');
+      // A reset ends every session, including this browser's if it was signed in.
+      if (loggedIn) await logout().catch(() => {});
       setTimeout(() => navigate('/login', { replace: true }), 2000);
     } catch (e) {
       setError(e.message || 'Reset failed');
