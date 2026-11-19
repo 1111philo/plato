@@ -47,7 +47,7 @@ const textOf = (v) => (typeof v === 'string' ? v : Array.isArray(v) ? v.map((b) 
 export function validateAiRequest(body, rawBytes = 0) {
   if (rawBytes > MAX_BODY_BYTES) return { error: `Request is too large (over ${MAX_BODY_BYTES / 1024 / 1024} MB)`, status: 413 };
   if (!body || typeof body !== 'object') return { error: 'Invalid request body' };
-  const { model, max_tokens: maxTokens, system, messages, stream } = body;
+  const { model, max_tokens: maxTokens, system, messages, stream, temperature } = body;
   if (!model) return { error: 'model is required' };
   if (model !== LLM) return { error: 'Unknown model' };
 
@@ -79,7 +79,13 @@ export function validateAiRequest(body, rawBytes = 0) {
   if (system !== undefined && system !== null && typeof system !== 'string' && !Array.isArray(system)) return { error: 'system must be text' };
   if (textOf(system).length > MAX_SYSTEM_CHARS) return { error: `system prompt is too long (over ${MAX_SYSTEM_CHARS} characters)` };
 
-  return { aiBody: { max_tokens: tokens, ...(system ? { system } : {}), messages }, stream: !!stream };
+  // Optional, 0–1: the grading check (#584) runs at 0 so the same evidence
+  // gets the same verdict. Agents that don't send it keep Bedrock's default.
+  if (temperature !== undefined && temperature !== null && (typeof temperature !== 'number' || !(temperature >= 0 && temperature <= 1))) {
+    return { error: 'temperature must be a number from 0 to 1' };
+  }
+
+  return { aiBody: { max_tokens: tokens, ...(system ? { system } : {}), messages, ...(typeof temperature === 'number' ? { temperature } : {}) }, stream: !!stream };
 }
 
 // ── Per-user rate (token bucket) and concurrency, per container ──────────

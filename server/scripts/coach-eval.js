@@ -67,9 +67,9 @@ const PROMPTS = {
 };
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-2', retryMode: 'adaptive', maxAttempts: 4 });
-async function converse(modelId, system, messages, maxTokens, stats) {
+async function converse(modelId, system, messages, maxTokens, stats, temperature) {
   const t0 = Date.now();
-  const res = fromConverseResponse(await bedrock.send(new ConverseCommand(toConverseRequest(modelId, { system, messages, max_tokens: maxTokens }))));
+  const res = fromConverseResponse(await bedrock.send(new ConverseCommand(toConverseRequest(modelId, { system, messages, max_tokens: maxTokens, ...(temperature != null ? { temperature } : {}) }))));
   stats.calls++; stats.ms += Date.now() - t0;
   stats.inTokens += res.usage.input_tokens; stats.outTokens += res.usage.output_tokens;
   return res.content.map((b) => b.text).join('');
@@ -105,7 +105,7 @@ async function runTurn(mode, modelId, s) {
   if (mode === 'harness') {
     const graded = await checkGrading({
       lesson, kb: lessonKB, parsed, messages,
-      assess: async (input) => { try { return (assessRaw = await converse(modelId, PROMPTS.assessor, [{ role: 'user', content: input }], 800, stats)); } catch (e) { assessRaw = `ERROR ${e.name}: ${e.message}`; throw e; } },
+      assess: async (input) => { try { return (assessRaw = await converse(modelId, PROMPTS.assessor, [{ role: 'user', content: input }], 800, stats, 0)); } catch (e) { assessRaw = `ERROR ${e.name}: ${e.message}`; throw e; } },
       regenerate: (addendum) => converse(modelId, system(addendum), messages, 2048, stats),
     });
     parsed = graded.parsed;

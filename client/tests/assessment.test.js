@@ -104,6 +104,58 @@ describe('groundVerdict', () => {
     ] }, transcript, [1]);
     assert.deepEqual(g.shown, [1]);
   });
+  it('keeps the learner’s words when the coach quoted them back afterwards (order matters)', () => {
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'user', content: 'Agentic AI evaluates data, reasons through it, takes an action, and learns from the result.' },
+      { role: 'assistant', content: 'Your definition, "Agentic AI evaluates data, reasons through it, takes an action, and learns from the result", is clear.' },
+    ]);
+    const quote = 'Agentic AI evaluates data, reasons through it, takes an action, and learns from the result';
+    assert.deepEqual(groundVerdict({ objectives: [{ n: 1, shown: true, quote }] }, t, [1]).shown, [1]);
+  });
+  it('throws out the coach’s words when the learner pasted them back later', () => {
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'assistant', content: 'Try: "I am the person who asks the questions nobody else in the room asks yet."' },
+      { role: 'user', content: 'I am the person who asks the questions nobody else in the room asks yet.' },
+    ]);
+    const g = groundVerdict({ objectives: [{ n: 3, shown: true, quote: 'I am the person who asks the questions nobody else in the room asks yet' }] }, t, [3]);
+    assert.deepEqual(g.shown, []);
+    assert.match(g.missing[3], /written by the coach/);
+  });
+  it('needs a grounded quote for every part of an objective', () => {
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'user', content: 'i don’t use ai tools for data analysis like claude. i need to upskill on this' },
+    ]);
+    const gap = { part: 'name a gap', quote: 'i don’t use ai tools for data analysis like claude' };
+    // The model says shown, but the "why" part has no quote: not shown.
+    const g = groundVerdict({ objectives: [{ n: 3, shown: true, parts: [gap, { part: 'explain why it matters for their goals', quote: null }] }] }, t, [3]);
+    assert.deepEqual(g.shown, []);
+    assert.match(g.missing[3], /explain why it matters/);
+    // Every part quoted from the learner: shown.
+    const ok = groundVerdict({ objectives: [{ n: 3, shown: true, parts: [gap, { part: 'why', quote: 'i need to upskill on this' }] }] }, t, [3]);
+    assert.deepEqual(ok.shown, [3]);
+  });
+  it('checks each part of a quote joined with an ellipsis', () => {
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'user', content: 'I have been a sonographer for 23 years and I like fixing schedules.' },
+      { role: 'user', content: 'Now I want to use data and analytics to solve these problems.' },
+    ]);
+    const ok = groundVerdict({ objectives: [{ n: 1, shown: true, quote: 'I have been a sonographer for 23 years... Now I want to use data and analytics' }] }, t, [1]);
+    assert.deepEqual(ok.shown, [1]);
+    const bad = groundVerdict({ objectives: [{ n: 1, shown: true, quote: 'I have been a sonographer for 23 years… and I led the whole department' }] }, t, [1]);
+    assert.deepEqual(bad.shown, []);
+  });
+  it('a short phrase the coach used first doesn’t make the learner’s words the coach’s', () => {
+    const t = assessmentTranscript([
+      { role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' },
+      { role: 'assistant', content: 'Is it efficiency for its own sake, or what it does for people?' },
+      { role: 'user', content: 'Efficiency for its own sake. I rebuilt our schedule so staff got hurt less.' },
+    ]);
+    assert.deepEqual(groundVerdict({ objectives: [{ n: 2, shown: true, quote: 'Efficiency for its own sake' }] }, t, [2]).shown, [2]);
+  });
   it('accepts "[image]" only when this turn has an image', () => {
     const v = { objectives: [{ n: 2, shown: true, quote: '[image]' }] };
     assert.deepEqual(groundVerdict(v, transcript, [2], { imageThisTurn: true }).shown, [2]);
@@ -227,9 +279,34 @@ describe('checkGrading', () => {
       assess: async () => (++calls === 1 ? 'Sure! Here is my assessment.' : notShown),
       regenerate: async () => 'Say it in your own words.\n[PROGRESS: 7]',
     });
-    assert.equal(calls, 2);
+    // Not JSON, then the verdict, then a recheck of objective 3 (its quote was the coach's).
+    assert.equal(calls, 3);
     assert.equal(assessment.failed, undefined);
     assert.equal(assessment.held, true);
+  });
+
+  it('asks again about a "shown" whose quote was the coach’s, and keeps a grounded second answer', async () => {
+    const inputs = [];
+    const genuine = [...coachDrafted.slice(0, 4), { role: 'user', content: 'I care about fairness because I grew up translating for my parents. Hi all, I’m Sam: I’m the one who asks the question nobody asked yet.' }];
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb({ objectivesMet: [0, 2] }), messages: genuine,
+      parsed: { text: 'Done!', progress: 10, kbUpdate: { objectivesMet: [2, 4] } },
+      assess: async (input) => {
+        inputs.push(JSON.parse(input));
+        return inputs.length === 1
+          ? JSON.stringify({ objectives: [
+            { n: 2, shown: true, quote: 'I’m the person who looks at the big picture and asks questions about things others haven’t considered' },
+            { n: 4, shown: true, quote: 'I’m the one who asks the question nobody asked yet' },
+          ] })
+          : JSON.stringify({ objectives: [{ n: 2, shown: true, quote: 'I care about fairness because I grew up translating for my parents' }] });
+      },
+      regenerate: async () => '',
+    });
+    assert.equal(inputs.length, 2);
+    assert.deepEqual(inputs[1].check, [2]);
+    assert.match(inputs[1].recheck[0].problem, /written by the coach/);
+    assert.equal(assessment.held, false);
+    assert.equal(parsed.progress, 10);
   });
 
   it('keeps the first reply (completion still held) when the second try fails', async () => {

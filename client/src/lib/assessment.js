@@ -19,6 +19,8 @@ const MAX_PROGRESS = 10;
 export const HELD_PROGRESS = 8;
 const MAX_TRANSCRIPT = 40;
 const LINK_CONTEXT_PREFIX = '[REFERENCE CONTEXT';
+/** Words a quote needs before matching a coach message means the learner copied it. */
+const COPY_WORDS = 8;
 
 /** 1-based numbers of the objectives the coach claimed this turn that weren't already checked off. */
 function claimedNew(kb, parsed) {
@@ -78,12 +80,12 @@ export function assessmentTranscript(messages) {
 }
 
 /** The assessor's user message. Only the objectives' wording and evidence: no notes, no scores. */
-export function assessmentInput({ lesson, kb, transcript, check, imageThisTurn = false }) {
+export function assessmentInput({ lesson, kb, transcript, check, imageThisTurn = false, recheck = null }) {
   const objectives = (kb?.objectives || []).map((o, i) => {
     const item = typeof o === 'string' ? { objective: o } : o;
     return { n: i + 1, objective: item.objective, ...(item.evidence ? { evidence: item.evidence } : {}) };
   });
-  return JSON.stringify({ exemplar: lesson?.exemplar || '', objectives, check, transcript, imageThisTurn });
+  return JSON.stringify({ exemplar: lesson?.exemplar || '', objectives, check, transcript, imageThisTurn, ...(recheck ? { recheck } : {}) });
 }
 
 /** The assessor's JSON, tolerating code fences or a sentence around it. Throws when there's none. */
@@ -127,14 +129,17 @@ function appearsIn(quote, text) {
 
 /**
  * Keep an assessor "shown" only when its quote is really the learner's:
- * found in a learner message, and not text the coach wrote that the learner
- * pasted back (5+ words also found in a coach message). "[image]" counts only
- * when this turn has an image. Returns `{ shown, missing }`: 1-based numbers
- * shown, and `{ n: why }` for the rest of `check`.
+ * found in a learner message, and not text the coach wrote first that the
+ * learner pasted back (8+ words in a coach message *earlier* than the
+ * learner's). The order matters: coaches quote learners' words back to them,
+ * and that echo doesn't make the words the coach's (measured on prod, #584).
+ * "[image]" counts only when this turn has an image. Returns `{ shown,
+ * missing, ungrounded }`: 1-based numbers shown, `{ n: why }` for the rest of
+ * `check`, and the numbers the assessor called shown with a quote that failed
+ * (checkGrading asks it once more about those).
  */
 export function groundVerdict(verdict, transcript, check, { imageThisTurn = false } = {}) {
-  const learner = transcript.filter((m) => m.by === 'learner').map((m) => m.text);
-  const coach = transcript.filter((m) => m.by === 'coach').map((m) => m.text);
+  const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text));
   const byN = new Map();
   for (const o of Array.isArray(verdict?.objectives) ? verdict.objectives : []) {
     const n = Number(o?.n);
@@ -142,24 +147,48 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
   }
   const shown = [];
   const missing = {};
+  const ungrounded = [];
   for (const n of check) {
     const o = byN.get(n);
-    const quote = typeof o?.quote === 'string' ? o.quote.trim() : '';
-    if (o?.shown !== true || !quote) {
-      missing[n] = (typeof o?.missing === 'string' && o.missing.trim()) || 'not yet shown in the learner’s own words';
+    // Each part of the objective needs its own quote (assessor.md "parts");
+    // a reply without parts gives one quote for the whole objective.
+    const parts = Array.isArray(o?.parts) && o.parts.length ? o.parts : [{ quote: o?.quote }];
+    const quotes = parts.map((p) => (typeof p?.quote === 'string' ? p.quote.trim() : ''));
+    const gap = parts.find((p, i) => !quotes[i]);
+    if (o?.shown !== true || gap) {
+      const why = (typeof o?.missing === 'string' && o.missing.trim()) || (gap?.part ? `show this in their own words: ${gap.part}` : '');
+      missing[n] = why || 'not yet shown in the learner’s own words';
       continue;
     }
-    if (quote === '[image]') {
-      if (imageThisTurn) shown.push(n);
-      else missing[n] = 'not yet shown in the learner’s own words';
+    const textQuotes = quotes.filter((q) => q !== '[image]');
+    if (textQuotes.length < quotes.length && !imageThisTurn) {
+      missing[n] = 'not yet shown in the learner’s own words';
       continue;
     }
-    const theirs = learner.some((t) => appearsIn(quote, t));
-    const coachWrote = words(quote).length >= 5 && coach.some((t) => appearsIn(quote, t));
-    if (theirs && !coachWrote) shown.push(n);
-    else missing[n] = coachWrote ? 'the words that would show it were written by the coach' : 'not yet shown in the learner’s own words';
+    let failed = null;
+    for (const quote of textQuotes) {
+      const result = groundQuote(quote);
+      if (result !== true) { failed = result; break; }
+    }
+    if (!failed) shown.push(n);
+    else { missing[n] = failed; ungrounded.push(n); }
   }
-  return { shown, missing };
+  return { shown, missing, ungrounded };
+
+  /** true, or why the quote isn't the learner's. */
+  function groundQuote(quote) {
+    // A quote with an ellipsis joins passages: each part must be the learner's.
+    const parts = quote.split(/\.\.\.|…/).map((q) => q.trim()).filter((q) => words(q).length >= 3);
+    const pieces = parts.length > 1 ? parts : [quote];
+    const learnerAt = Math.max(...pieces.map((q) => firstIndex('learner', q)).map((i) => (i === -1 ? Infinity : i)));
+    // Copying means a passage the coach wrote first: 8+ words, so a short
+    // phrase the coach used in a question doesn't make the learner's words its own.
+    const coachAt = Math.min(...pieces.filter((q) => words(q).length >= COPY_WORDS).map((q) => firstIndex('coach', q)).map((i) => (i === -1 ? Infinity : i)));
+    const theirs = learnerAt !== Infinity;
+    const coachWrote = coachAt !== Infinity && coachAt < learnerAt;
+    if (theirs && !coachWrote) return true;
+    return coachWrote ? 'the words that would show it were written by the coach' : 'not yet shown in the learner’s own words';
+  }
 }
 
 /**

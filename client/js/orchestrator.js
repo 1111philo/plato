@@ -96,12 +96,12 @@ async function callWithValidation(agentFn, validator) {
   return retry;
 }
 
-async function callApi({ model, systemPrompt, messages, maxTokens = 1024 }) {
+async function callApi({ model, systemPrompt, messages, maxTokens = 1024, temperature }) {
   const attempt = async () => {
     const resp = await authenticatedFetch('/v1/ai/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages, ...(temperature != null ? { temperature } : {}) }),
     });
     return parseResponse(resp);
   };
@@ -235,6 +235,10 @@ export async function assessTurn(input, imageParts = []) {
     model: LLM, systemPrompt,
     messages: [{ role: 'user', content }],
     maxTokens: 800,
+    // A grader: the same evidence should get the same verdict (measured: at
+    // the default temperature it accepted "I need to upskill" as a reason in
+    // some runs and not others).
+    temperature: 0,
   });
   return reply;
 }

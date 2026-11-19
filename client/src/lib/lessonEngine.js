@@ -165,6 +165,18 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     let verdict;
     try { verdict = parseVerdict(await assess(input, imageParts)); } catch { verdict = parseVerdict(await assess(input, imageParts)); }
     grounded = groundVerdict(verdict, transcript, plan.check, { imageThisTurn });
+    // A "shown" whose quote wasn't the learner's (often the coach's paraphrase
+    // when the learner's own words were there too, measured on prod): ask once
+    // more about just those, saying why. A failed recheck keeps the first answer.
+    if (grounded.ungrounded.length) {
+      try {
+        const recheck = grounded.ungrounded.map((n) => ({ n, problem: grounded.missing[n] }));
+        const again = groundVerdict(parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: grounded.ungrounded, imageThisTurn, recheck }), imageParts)), transcript, grounded.ungrounded, { imageThisTurn });
+        const missing = { ...grounded.missing };
+        for (const n of again.shown) delete missing[n];
+        grounded = { ...grounded, shown: [...grounded.shown, ...again.shown].sort((a, b) => a - b), missing };
+      } catch { /* keep the first answer */ }
+    }
   } catch {
     const all = (kb.objectives || []).map((_, i) => i + 1);
     const fallback = plan.completionClaimed

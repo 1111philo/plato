@@ -45,6 +45,13 @@ describe('validateAiRequest', () => {
     assert.equal(validateAiRequest({ model: M, max_tokens: 600, messages: [...turn, msg('reply', 'assistant'), msg('Tags for your last reply.')] }).error, undefined);
   });
 
+  it('forwards a temperature from 0 to 1 (the grading check sends 0, #584), and omits it otherwise', () => {
+    assert.equal(validateAiRequest({ model: M, temperature: 0, messages: [msg()] }).aiBody.temperature, 0);
+    assert.equal(validateAiRequest({ model: M, temperature: 0.7, messages: [msg()] }).aiBody.temperature, 0.7);
+    assert.equal('temperature' in validateAiRequest({ model: M, messages: [msg()] }).aiBody, false);
+    for (const t of [-0.1, 1.5, '0', NaN]) assert.ok(validateAiRequest({ model: M, temperature: t, messages: [msg()] }).error, String(t));
+  });
+
   it('refuses other models, oversized and malformed requests', () => {
     const bad = [
       { model: 'us.anthropic.claude-opus-5-5', messages: [msg()] },
