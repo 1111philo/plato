@@ -1792,8 +1792,9 @@ filter.
   wait-list entries, and invites have no field answers.
 - Active filters show as removable chips with a "Clear all" button, and a
   polite status line says "N of M people".
-- Search also matches the User ID. Shift+click on a column header adds a
-  sort level (a plain click sorts by that column alone).
+- Search also matches the User ID.
+- Shift+click on a column header adds a sort level (a plain click sorts by
+  that column alone).
 
 **Columns (Users and Lessons).** A Columns dialog (`ColumnsDialog.jsx`,
 logic in `client/src/lib/tableColumns.js`) shows and hides columns and moves

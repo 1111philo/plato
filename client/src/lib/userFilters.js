@@ -95,7 +95,7 @@ export function searchFacets(facets, query) {
     .filter((f) => f.options.length);
 }
 
-export const activeFilterCount =(filters) => Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+export const activeFilterCount = (filters) => Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
 
 /** `[{ key, label, values: [labels] }]` for the chips under the toolbar. */
 export function describeFilters(filters, facets) {
