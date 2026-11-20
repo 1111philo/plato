@@ -741,7 +741,7 @@ export default function AdminUsers() {
   // The Sign-in column, filter, CSV column, and Edit User block show only
   // when single sign-on is in play: a provider is on, or someone is linked.
   const ssoOn = useMemo(() => ssoInPlay(users, ssoProviders), [users, ssoProviders]);
-  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected, sso: ssoOn }), [combinedList, groups, userFields, slackConnected, ssoOn]);
+  const facets = useMemo(() => buildFacets({ items: combinedList, groups, userFields, slack: slackConnected, sso: ssoOn, filters }), [combinedList, groups, userFields, slackConnected, ssoOn, filters]);
   const filterChips = describeFilters(filters, facets);
 
   const filteredList = useMemo(() => {
