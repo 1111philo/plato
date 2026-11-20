@@ -105,21 +105,26 @@ function RowOpenButton({ onClick, srPrefix, children }) {
   );
 }
 
+// `sortBy` is the ordered list of sort levels; Shift+click adds one.
 function SortHeader({ sortKey, sortBy, onSort, align = 'left', children }) {
-  const active = sortBy.key === sortKey;
-  const aria = !active ? 'none' : sortBy.dir === 'asc' ? 'ascending' : 'descending';
+  const level = sortBy.findIndex((s) => s.key === sortKey);
+  const active = level >= 0;
+  const dir = active && sortBy[level].dir;
+  const aria = level !== 0 ? 'none' : dir === 'asc' ? 'ascending' : 'descending';
   const cellAlign = align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : '';
   const btnAlign = align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center w-full' : '';
   return (
     <TableHead aria-sort={aria} className={cellAlign}>
       <button
         type="button"
-        onClick={() => onSort(sortKey)}
+        onClick={(e) => onSort(sortKey, e.shiftKey)}
+        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+        title="Shift+click to add a sort"
         className={`inline-flex items-center gap-1 font-medium hover:text-foreground rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-1 ${btnAlign}`}
       >
         {children}
         <span aria-hidden="true" className={`text-xs ${active ? '' : 'opacity-30'}`}>
-          {active ? (sortBy.dir === 'asc' ? '↑' : '↓') : '↕'}
+          {active ? (dir === 'asc' ? '↑' : '↓') : '↕'}{active && sortBy.length > 1 ? level + 1 : ''}
         </span>
       </button>
     </TableHead>
@@ -195,7 +200,7 @@ export default function AdminUsers() {
   const [selection, setSelection] = useState({ key: '', ids: new Set() });
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selectionNote, setSelectionNote] = useState('');
-  const [sortBy, setSortBy] = useState({ key: 'name', dir: 'asc' });
+  const [sortBy, setSortBy] = useState([{ key: 'name', dir: 'asc' }]);
   const [sortAnnouncement, setSortAnnouncement] = useState('');
 
 
@@ -760,22 +765,26 @@ export default function AdminUsers() {
   // Sort comparators live at module level (SORT_KEY_FNS) so their references
   // are stable; nullish values always sort last regardless of direction so
   // invites (which lack user-stat fields) cluster predictably rather than
-  // ping-ponging between top and bottom on direction flip.
-  const sortedList = useMemo(() => {
-    const keyFn = SORT_KEY_FNS[sortBy.key] || SORT_KEY_FNS.name;
-    const mult = sortBy.dir === 'desc' ? -1 : 1;
-    return [...filteredList].sort((a, b) => {
+  // ping-ponging between top and bottom on direction flip. Levels compare in
+  // order; a tie falls through to the next.
+  const sortedList = useMemo(() => [...filteredList].sort((a, b) => {
+    for (const { key, dir } of sortBy) {
+      const keyFn = SORT_KEY_FNS[key] || SORT_KEY_FNS.name;
+      const mult = dir === 'desc' ? -1 : 1;
       const va = keyFn(a);
       const vb = keyFn(b);
       const aNull = va == null || va === '';
       const bNull = vb == null || vb === '';
-      if (aNull && bNull) return 0;
+      if (aNull && bNull) continue;
       if (aNull) return 1;   // nullish always last
       if (bNull) return -1;
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
-      return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
-    });
-  }, [filteredList, sortBy]);
+      const c = typeof va === 'number' && typeof vb === 'number'
+        ? (va - vb) * mult
+        : va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
+      if (c) return c;
+    }
+    return 0;
+  }), [filteredList, sortBy]);
 
   // CSV of the list as shown (current filter, search, sort) — see lib/csv.js.
   function downloadCsv() {
@@ -843,16 +852,20 @@ export default function AdminUsers() {
     loadData({ quiet: true });
   }
 
-  function handleSort(key) {
+  // Click: sort by this column alone (again flips it). Shift+click: add it as
+  // the next level, or flip it if it's already one.
+  function handleSort(key, add) {
     setSortBy((prev) => {
-      const next = prev.key === key
-        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
-        : { key, dir: 'asc' };
+      const at = prev.findIndex((s) => s.key === key);
+      const flip = (s) => ({ ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' });
+      const next = add
+        ? (at < 0 ? [...prev, { key, dir: 'asc' }] : prev.map((s, i) => (i === at ? flip(s) : s)))
+        : [at === 0 ? flip(prev[0]) : { key, dir: 'asc' }];
       // Announcement goes via setState so SRs hear it from the live region.
       // We update it from the same click handler (not an effect) so the
       // message is in sync with the visible sort and we don't cascade re-renders.
-      const label = SORT_LABELS[next.key] || next.key;
-      setSortAnnouncement(`Sorted by ${label}, ${next.dir === 'asc' ? 'ascending' : 'descending'}.`);
+      const levels = next.map((s) => `${SORT_LABELS[s.key] || s.key}, ${s.dir === 'asc' ? 'ascending' : 'descending'}`);
+      setSortAnnouncement(`Sorted by ${levels.join(', then ')}.`);
       return next;
     });
   }
