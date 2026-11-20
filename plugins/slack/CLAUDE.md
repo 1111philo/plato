@@ -10,6 +10,7 @@ Lets admins invite learners via Slack DM, and adds new accounts to a chosen chan
 - The settings panel saves with `{ ...settings, … }`. The client never sees `botToken`, and the host keeps a writeOnly value the body leaves out (send `null` to clear it, as Disconnect does).
 - Auto-invite never invites twice: check `userMeta:slack.autoInvite` for the current channel first, and treat `already_in_channel` as success.
 - A workspace member found by auto-invite is linked on the user record (`user.slackUserId`, the Admin → Users "Slack linked" column). Never overwrite an existing link.
+- Read the workspace member list only through `listSlackMembers` (`server/slack-client.js`): cached a minute per bot token, no retries, fails at once when Slack rate-limits. Routes answer a rate limit with 429 `slack_rate_limited` (`slackFailure`). Never call Slack from an admin route with the client's default retries — it waits out `retry-after` until the Lambda times out (the 2026-11-17 prod alarms).
 
 ## When changing this plugin
 - If you change the manifest's `capabilities`, update `docs/plugins/CAPABILITIES.md` if you add a new capability not yet in the vocabulary.

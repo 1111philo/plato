@@ -57,7 +57,7 @@ not in the workspace is recorded as "Not in the workspace".
 ## Routes (admin-only)
 
 - `POST /v1/plugins/slack/admin/test` — validate a bot token (no persistence)
-- `GET  /v1/plugins/slack/admin/users?q=` — search workspace users
+- `GET  /v1/plugins/slack/admin/users?q=` — search workspace users (the member list is read from Slack at most once a minute; 429 `slack_rate_limited` when Slack is rate-limiting)
 - `GET  /v1/plugins/slack/admin/channels` — list public channels
 - `GET  /v1/plugins/slack/admin/channels/:id/members` — list channel members
 - `POST /v1/plugins/slack/admin/invites` — send DMs (max 200 per batch)

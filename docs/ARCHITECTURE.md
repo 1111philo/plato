@@ -1758,6 +1758,12 @@ With the Slack plugin connected, **Update…** also offers **Slack link**: it
 links each selected account to the workspace member with the same email
 (`POST /v1/plugins/slack/admin/link`), keeping existing links and adding
 nobody to a channel, and reports linked / already linked / not found.
+Slack link and the invite dialog's Slack search both read the workspace
+member list through one cached reader (a minute per bot token, no retries).
+When Slack rate-limits it they answer 429 "Slack is busy. Try again in a
+minute." at once; before, each search re-read the whole workspace and a
+rate-limited call waited until the Lambda timed out at 120 s (prod alarms,
+2026-11-17).
 
 **Admin → Users.** Search matches custom field values too. A field filter
 (field + Has a value / Empty / a specific dropdown option) narrows the list
