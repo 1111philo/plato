@@ -1783,14 +1783,17 @@ filter.
   both; Status then also offers "Wait list: email verified", see
   [`SSO.md`](SSO.md#for-admins)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
-  Each option shows its count.
+  Each option counts who matches it under the other facets' filters (a facet
+  ignores its own selection).
 - Filters combine as **OR within a facet, AND across facets**. Each facet has
-  Select all and Clear.
+  Select all and Clear. A search box at the top matches option or facet
+  labels; Select all then adds only the options shown.
 - Facets that don't apply drop an item: a role filter leaves out invites and
   wait-list entries, and invites have no field answers.
 - Active filters show as removable chips with a "Clear all" button, and a
   polite status line says "N of M people".
-- Search also matches the User ID.
+- Search also matches the User ID. Shift+click on a column header adds a
+  sort level (a plain click sorts by that column alone).
 
 **Columns (Users and Lessons).** A Columns dialog (`ColumnsDialog.jsx`,
 logic in `client/src/lib/tableColumns.js`) shows and hides columns and moves
