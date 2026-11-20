@@ -24,6 +24,7 @@ import {
   listSlackChannels,
   listChannelMembers,
   sendSlackDM,
+  isSlackRateLimited,
 } from './slack-client.js';
 import { autoInvite, onUserCreated, needsRetry } from './auto-invite.js';
 import { linkAccounts } from './link-accounts.js';
@@ -37,6 +38,17 @@ routes.use('*', authenticate, requireAdmin);
 async function getSlackToken() {
   const item = await db.getSyncData('_system', 'plugins:activation');
   return item?.data?.slack?.settings?.botToken || null;
+}
+
+// Slack turned the call away for rate limiting: say so and stop (429, not a
+// hang or a 5xx). Anything else from Slack is a 502.
+const SLACK_BUSY = 'Slack is busy. Try again in a minute.';
+function slackFailure(c, err, error) {
+  if (isSlackRateLimited(err)) {
+    c.header('Retry-After', '60');
+    return c.json({ error: SLACK_BUSY, code: 'slack_rate_limited' }, 429);
+  }
+  return c.json({ error, detail: err?.data?.error || err?.message }, 502);
 }
 
 async function getClassroomName() {
@@ -66,7 +78,7 @@ routes.get('/admin/users', async (c) => {
     const users = await searchSlackUsers(token, q);
     return c.json(users);
   } catch (e) {
-    return c.json({ error: 'Slack API error', detail: e.message }, 500);
+    return slackFailure(c, e, 'Couldn’t read the Slack workspace');
   }
 });
 
@@ -246,7 +258,7 @@ routes.post('/admin/link', async (c) => {
   const users = (await db.listAllUsers()).filter((u) => wanted.has(u.userId));
   let members;
   try { members = await searchSlackUsers(token, ''); } catch (e) {
-    return c.json({ error: 'Couldn’t read the Slack workspace', detail: e?.data?.error || e.message }, 502);
+    return slackFailure(c, e, 'Couldn’t read the Slack workspace');
   }
   const result = await linkAccounts(users, members, (userId, slackUserId) => db.updateUser(userId, { slackUserId }));
   return c.json(result);

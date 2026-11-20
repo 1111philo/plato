@@ -205,6 +205,7 @@ export default function AdminUsers() {
   const [slackSearch, setSlackSearch] = useState('');
   const [slackSearchResults, setSlackSearchResults] = useState([]);
   const [slackSearching, setSlackSearching] = useState(false);
+  const [slackSearchError, setSlackSearchError] = useState('');
   const [slackChannels, setSlackChannels] = useState([]);
   const [slackSelectedChannel, setSlackSelectedChannel] = useState('');
   const [slackQueue, setSlackQueue] = useState([]);
@@ -375,6 +376,7 @@ export default function AdminUsers() {
       setSlackQueue([]);
       setSlackSearch('');
       setSlackSearchResults([]);
+      setSlackSearchError('');
       setInviteTab('email');
       setInviteNotice(null);
     }
@@ -388,15 +390,22 @@ export default function AdminUsers() {
   function handleSlackSearchChange(value) {
     setSlackSearch(value);
     clearTimeout(slackSearchTimeout.current);
-    if (!value.trim()) { setSlackSearchResults([]); return; }
-    slackSearchTimeout.current = setTimeout(async () => {
+    slackSearchTimeout.current = null;
+    setSlackSearchError('');
+    if (!value.trim()) { setSlackSearchResults([]); setSlackSearching(false); return; }
+    const timer = setTimeout(async () => {
+      // A slower, older search must not replace a newer one's results.
+      const current = () => slackSearchTimeout.current === timer;
       setSlackSearching(true);
       try {
         const results = await adminApi('GET', `/v1/plugins/slack/admin/users?q=${encodeURIComponent(value)}`);
-        setSlackSearchResults(Array.isArray(results) ? results : []);
-      } catch { setSlackSearchResults([]); }
-      setSlackSearching(false);
+        if (current()) setSlackSearchResults(Array.isArray(results) ? results : []);
+      } catch (err) {
+        if (current()) { setSlackSearchResults([]); setSlackSearchError(err.message); }
+      }
+      if (current()) setSlackSearching(false);
     }, 300);
+    slackSearchTimeout.current = timer;
   }
 
   async function loadSlackChannels() {
@@ -1368,6 +1377,7 @@ export default function AdminUsers() {
                   onChange={e => handleSlackSearchChange(e.target.value)}
                 />
                 {slackSearching && <p className="text-xs text-muted-foreground">Searching...</p>}
+                {slackSearchError && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{slackSearchError}</p>}
                 {slackSearchResults.length > 0 && (
                   <div className="max-h-40 overflow-y-auto rounded-md border">
                     {slackSearchResults.map(u => (

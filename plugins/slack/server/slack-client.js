@@ -4,13 +4,72 @@ import { WebClient } from '../../../src/lib/plugins/sdk.js';
  * Create a Slack WebClient for the given bot token.
  */
 export function getSlackClient(token, options) {
-  return new WebClient(token, options);
+  return new WebClient(token, apiUrl ? { ...options, slackApiUrl: apiUrl } : options);
 }
+
+// Tests point the client at a local fake Slack.
+let apiUrl = null;
+export function _setSlackApiUrl(url) { apiUrl = url; }
 
 // Auto-invite runs inside signup: one bounded try per call, no retries. A
 // rate-limited call fails at once instead of waiting out Slack's retry-after
 // (often 30-60 s, past API Gateway's 29 s), which `retries: 0` alone still does.
 export const SIGNUP_CALL = { timeout: 4000, retryConfig: { retries: 0 }, rejectRateLimitedCalls: true };
+
+// Reading the member list from an admin page: no retries, and a rate-limited
+// call fails at once. Left to its defaults the client waits out Slack's
+// retry-after (30 s) again and again, and the request hangs until the Lambda
+// times out at 120 s (the 2026-11-17 alarm).
+export const ADMIN_CALL = { timeout: 10000, retryConfig: { retries: 0 }, rejectRateLimitedCalls: true };
+
+/** True when Slack refused the call for rate limiting (HTTP 429). */
+export function isSlackRateLimited(err) {
+  return err?.code === 'slack_webapi_rate_limited_error' || err?.data?.error === 'ratelimited';
+}
+
+// The workspace member list, kept for a minute per bot token. Slack has no
+// member search, so every search and every "Slack link" needs the whole list;
+// `users.list` allows about 20 calls a minute, which typing in the search box
+// used to spend in seconds. Callers that arrive while a read is under way
+// share it. Per container, so a few reads a minute at most.
+export const MEMBER_CACHE_MS = 60_000;
+const memberCache = new Map(); // token -> { at, members } | { pending }
+export function _resetMemberCache() { memberCache.clear(); }
+
+export async function listSlackMembers(token, now = Date.now) {
+  const hit = memberCache.get(token);
+  if (hit?.pending) return hit.pending;
+  if (hit && now() - hit.at < MEMBER_CACHE_MS) return hit.members;
+  const pending = (async () => {
+    const client = getSlackClient(token, ADMIN_CALL);
+    const members = [];
+    let cursor;
+    do {
+      const result = await client.users.list({ limit: 200, cursor });
+      for (const m of result.members || []) {
+        if (m.is_bot || m.deleted || m.id === 'USLACKBOT') continue;
+        members.push({
+          slackUserId: m.id,
+          name: m.real_name || m.name,
+          email: m.profile?.email || null,
+          avatar: m.profile?.image_48 || null,
+        });
+      }
+      cursor = result.response_metadata?.next_cursor;
+    } while (cursor);
+    return members;
+  })();
+  memberCache.set(token, { pending });
+  try {
+    const members = await pending;
+    memberCache.set(token, { at: now(), members });
+    return members;
+  } catch (err) {
+    // A failed read is never kept, but only this read's own entry is dropped.
+    if (memberCache.get(token)?.pending === pending) memberCache.delete(token);
+    throw err;
+  }
+}
 
 /**
  * Validate a bot token by calling auth.test. Returns workspace info on success.
@@ -22,29 +81,12 @@ export async function testSlackConnection(token) {
 }
 
 /**
- * Search Slack users by name or email. Fetches the full member list and filters client-side
- * (Slack has no server-side user search endpoint).
+ * Search Slack users by name or email. Filters the (cached) member list here:
+ * Slack has no server-side user search endpoint.
  */
 export async function searchSlackUsers(token, query) {
-  const client = getSlackClient(token);
   const q = (query || '').toLowerCase().trim();
-
-  const members = [];
-  let cursor;
-  do {
-    const result = await client.users.list({ limit: 200, cursor });
-    for (const m of result.members || []) {
-      if (m.is_bot || m.deleted || m.id === 'USLACKBOT') continue;
-      members.push({
-        slackUserId: m.id,
-        name: m.real_name || m.name,
-        email: m.profile?.email || null,
-        avatar: m.profile?.image_48 || null,
-      });
-    }
-    cursor = result.response_metadata?.next_cursor;
-  } while (cursor);
-
+  const members = await listSlackMembers(token);
   if (!q) return members;
   return members.filter(m =>
     (m.name && m.name.toLowerCase().includes(q)) ||

@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Hono } from 'hono';
 import slackPlugin from '../../../plugins/slack/server/index.js';
@@ -145,5 +145,97 @@ describe('Slack invite message — grammar', () => {
     assert.equal(compose('', 'Acme'), "You've been invited to join *Acme*.");
     // Critically, the unnamed branch must NOT produce "invited you you to join":
     assert.doesNotMatch(compose(null, 'Acme'), /invited you you/);
+  });
+});
+
+// The 2026-11-17 alarm: each search re-read the whole workspace, Slack
+// rate-limited it, and the client waited out retry-after until the Lambda
+// timed out. Now the list is read once a minute and a 429 fails at once.
+describe('Slack member list — cached, and fails fast when rate limited', () => {
+  let slack; let calls; let mode;
+
+  async function fakeSlack() {
+    const { createServer } = await import('node:http');
+    const server = createServer((req, res) => {
+      calls++;
+      if (mode === 'ratelimited') {
+        res.writeHead(429, { 'retry-after': '30', 'content-type': 'application/json' });
+        return res.end('{"ok":false,"error":"ratelimited"}');
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, members: [
+        { id: 'U1', real_name: 'Ada Lovelace', profile: { email: 'ada@x.com' } },
+        { id: 'U2', real_name: 'Grace Hopper', profile: { email: 'grace@x.com' } },
+        { id: 'B1', real_name: 'Bot', is_bot: true },
+      ] }));
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    return server;
+  }
+
+  beforeEach(async () => {
+    const client = await import('../../../plugins/slack/server/slack-client.js');
+    client._resetMemberCache();
+    calls = 0; mode = 'ok';
+    slack?.close();
+    slack = await fakeSlack();
+    client._setSlackApiUrl(`http://127.0.0.1:${slack.address().port}/api/`);
+    db.getUserById = async () => ({ userId: 'usr_admin', role: 'admin', name: 'Admin' });
+    db.getSyncData = async (_u, key) => (key === 'plugins:activation' ? { data: { slack: { settings: { botToken: 'xoxb-1' } } } } : null);
+  });
+
+  after(async () => {
+    slack?.close();
+    (await import('../../../plugins/slack/server/slack-client.js'))._setSlackApiUrl(null);
+  });
+
+  it('a run of searches reads the workspace once', async () => {
+    const app = buildApp();
+    const all = await Promise.all(['a', 'ad', 'ada', 'grace'].map((q) => adminReq(app, 'GET', `/admin/users?q=${q}`)));
+    assert.deepEqual(all.map((r) => r.status), [200, 200, 200, 200]);
+    assert.deepEqual((await all[2].json()).map((u) => u.slackUserId), ['U1']);
+    assert.deepEqual((await all[3].json()).map((u) => u.slackUserId), ['U2']);
+    await adminReq(app, 'GET', '/admin/users?q=hopper');
+    assert.equal(calls, 1);
+  });
+
+  it('reads again once the minute is up', async () => {
+    const { listSlackMembers, MEMBER_CACHE_MS } = await import('../../../plugins/slack/server/slack-client.js');
+    let t = 1000;
+    await listSlackMembers('xoxb-1', () => t);
+    t += MEMBER_CACHE_MS - 1;
+    await listSlackMembers('xoxb-1', () => t);
+    assert.equal(calls, 1);
+    t += 1;
+    assert.equal((await listSlackMembers('xoxb-1', () => t)).length, 2);
+    assert.equal(calls, 2);
+  });
+
+  it('search: a rate-limited Slack is a quick 429, and the failure is not kept', async () => {
+    mode = 'ratelimited';
+    const app = buildApp();
+    const started = Date.now();
+    const res = await adminReq(app, 'GET', '/admin/users?q=ada');
+    assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+    assert.equal(res.status, 429);
+    assert.equal(res.headers.get('retry-after'), '60');
+    const data = await res.json();
+    assert.equal(data.code, 'slack_rate_limited');
+    assert.match(data.error, /Slack is busy/);
+    assert.equal(calls, 1, 'no retries');
+    mode = 'ok';
+    assert.equal((await adminReq(app, 'GET', '/admin/users?q=ada')).status, 200);
+  });
+
+  it('Slack link: a rate-limited Slack is a quick 429 and links nobody', async () => {
+    mode = 'ratelimited';
+    let updates = 0;
+    db.listAllUsers = async () => [{ userId: 'usr_1', email: 'ada@x.com' }];
+    db.updateUser = async () => { updates++; };
+    const started = Date.now();
+    const res = await adminReq(buildApp(), 'POST', '/admin/link', { userIds: ['usr_1'] });
+    assert.ok(Date.now() - started < 3000);
+    assert.equal(res.status, 429);
+    assert.equal(updates, 0);
   });
 });
