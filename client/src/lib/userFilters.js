@@ -79,7 +79,20 @@ export function matchesFilters(item, filters, facets) {
   return true;
 }
 
-export const activeFilterCount = (filters) => Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
+/**
+ * The facets and options whose label contains `query` (case-insensitive) for
+ * the Filters menu's search box. A facet whose own label matches keeps every
+ * option; a facet with no matches is dropped. Options are the same objects.
+ */
+export function searchFacets(facets, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return facets;
+  return facets
+    .map((f) => (f.label.toLowerCase().includes(q) ? f : { ...f, options: f.options.filter((o) => o.label.toLowerCase().includes(q)) }))
+    .filter((f) => f.options.length);
+}
+
+export const activeFilterCount =(filters) => Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
 
 /** `[{ key, label, values: [labels] }]` for the chips under the toolbar. */
 export function describeFilters(filters, facets) {
