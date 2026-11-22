@@ -156,7 +156,7 @@ export async function recoverMissingTags(parsed, repair) {
  * every-objective rule in applyCoachResponseToKB still lets it complete.
  * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
  */
-export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate }) {
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim }) {
   const plan = assessmentPlan(kb, parsed);
   if (!plan.check.length) return { parsed, assessment: null };
   const imageThisTurn = imageParts.length > 0;
@@ -229,7 +229,13 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     // The coach's words must agree with the hold. Its second try often still
     // said "this one is complete" (playground testing), so in code: a reply or
     // "Where you are" note that says the lesson is done is replaced.
-    if (claimsCompletion(out.text)) {
+    // Patterns first; for wording they don't know, a one-word model check
+    // (judgeClaim). A failed check keeps the reply.
+    let saysDone = claimsCompletion(out.text);
+    if (!saysDone && judgeClaim && out.text) {
+      try { saysDone = await judgeClaim(out.text); } catch { /* keep the reply */ }
+    }
+    if (saysDone) {
       out = { ...out, text: heldReply(kb, applied.outstanding, grounded.missing) };
       replaced = true;
     }
@@ -500,14 +506,16 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // The draft guard (#584): a reply that writes the learner's answer for them
   // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
   // feedback plus a question. Learners copied these drafts, and the grading
-  // check then (rightly) didn't count them. The rewrite streams in place; if
-  // it still drafts, the first reply stands.
+  // check then (rightly) didn't count them. The rewrite streams in place and
+  // is kept even when it still drafts: going back to the first reply made the
+  // learner watch it switch twice (playground: the rewrite still drafted 21
+  // of 26 times). A failed rewrite keeps the first reply.
   let coachReply = repaired;
   if (lessonKB.status !== 'completed' && draftsForLearner(repaired.text)) {
     try {
       const raw = await orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, DRAFT_ADDENDUM);
       const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw)));
-      if (again.text && !draftsForLearner(again.text)) coachReply = { ...again, draftRewritten: true };
+      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
     } catch { /* keep the first reply */ }
     orchestrator.reportEvent(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept', { lessonId });
   }
@@ -521,6 +529,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     imageParts: userParts.filter((p) => p.type === 'image'),
     assess: (input, images) => orchestrator.assessTurn(input, images),
     regenerate: (addendum) => orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, addendum),
+    judgeClaim: (t) => orchestrator.checkCompletionClaim(t),
   });
   const parsed = graded.parsed;
   const assessment = graded.assessment;

@@ -16,7 +16,7 @@ describe('ai-mock', () => {
       coach: 'Coach', 'lesson-owner': 'Lesson Owner', 'lesson-creator': 'Lesson Creator', 'lesson-extractor': 'Lesson Extractor',
       'knowledge-base-editor': 'Knowledge Base Editor', 'knowledge-base-extractor': 'Knowledge Base Extractor',
       'learner-profile-owner': 'Learner Profile Owner', 'learner-profile-update': 'Learner Profile Update',
-      'course-progress-update': 'Course Progress Updater', assessor: 'Assessor',
+      'course-progress-update': 'Course Progress Updater', assessor: 'Assessor', 'claim-check': 'Claim Check',
     };
     for (const [file, agent] of Object.entries(expected)) assert.equal(agentOf(prompt(file)), agent, file);
   });

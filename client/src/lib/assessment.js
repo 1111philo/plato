@@ -271,7 +271,7 @@ export function allObjectivesMet(kb) {
 // complete", against the progress bar. These catch that in code.
 
 const COMPLETION_CLAIM = [
-  /\b(?:you(?:'|’)ve|you have|you(?:'|’)re|you are)\s+(?:now\s+|fully\s+|officially\s+)?(?:met|achieved|demonstrated|nailed|completed|finished|done with|hit)\b[^.!?\n]{0,40}\b(?:exemplar|all (?:the |three |four |your |of the )?objectives|every objective|this lesson|the lesson)\b/i,
+  /\b(?:you(?:'|’)ve|you have|you(?:'|’)re|you are)\s+(?:(?:now|fully|officially|clearly|successfully|really)\s+){0,3}(?:met|achieved|demonstrated|nailed|completed|finished|done with|hit|reached)\b[^.!?\n]{0,40}\b(?:exemplar|all (?:the |three |four |your |of the )?objectives|every objective|this lesson|the lesson)\b/i,
   /\b(?:this|the) (?:lesson|one) is (?:now )?(?:complete|done|finished)\b/i,
   /\bthis is your exemplar\b/i,
   /\bexemplar (?:achieved|met|complete)\b/i,
@@ -281,14 +281,37 @@ const COMPLETION_CLAIM = [
   /\ball (?:the )?objectives (?:are )?(?:demonstrated|met|achieved|complete)\b/i,
 ];
 
+// More of the coach's real "done" wordings, measured on prod completing
+// replies (the first list caught 67%): wrap-up questions, "ready to move
+// on", "well done" after a result, "progress … 10".
+COMPLETION_CLAIM.push(
+  /\b(?:now that )?you(?:'|’)ve (?:wrapped (?:this|it) up|finished (?:this|the) lesson|completed (?:this|the) (?:lesson|exemplar))\b/i,
+  /\bprogress(?: is)?(?: now)?\s*[:=]?\s*10\b/i,
+  /\blesson complete\b/i,
+  /\b(?:we(?:'|’)re|you(?:'|’)re) (?:all )?(?:done|finished)\b/i,
+  /\byou(?:'|’)re ready to (?:move (?:on|into)|start|begin) (?:the next|your next|portfolio|the portfolio)/i,
+  /\bhow did (?:this|the) (?:lesson|course) feel\b/i,
+  /\bbefore we wrap\b/i,
+  /\bthat(?:'|’)s (?:the|your) exemplar\b/i,
+  /\b(?:exactly|fully) the exemplar\b/i,
+);
+
+/** Plain text for matching: no markdown emphasis or blockquote markers, one space. */
+const plainText = (text) => String(text ?? '').replace(/[*_`>#]+/g, '').replace(/\s+/g, ' ');
+
 /** True when text tells the learner the lesson (or every objective) is done. */
 export function claimsCompletion(text) {
-  const t = String(text ?? '');
+  const t = plainText(text);
   return COMPLETION_CLAIM.some((re) => re.test(t));
 }
 
-/** Words a sentence the coach writes for the learner needs before it counts as drafting their answer. */
-export const DRAFT_WORDS = 10;
+/**
+ * Words a passage the coach writes for the learner needs before it counts as
+ * drafting their answer. 20, not 10 (Blake, 2026-11-22): on prod 10 would fire
+ * on 29% of mid-lesson replies, 20 on 14%, and still covers 57% of the
+ * passages learners actually copied.
+ */
+export const DRAFT_WORDS = 20;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
 const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 
