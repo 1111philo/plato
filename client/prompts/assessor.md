@@ -12,6 +12,7 @@ You receive JSON:
 - `check`: the numbers of the objectives to decide.
 - `transcript`: `[{ "by": "learner" | "coach", "text": "..." }]`, oldest first. The last entry is the learner's latest message.
 - `imageThisTurn`: true when the learner's latest message included an image, which you can see.
+- `note` (sometimes): a message from plato about your last reply, for example that it wasn't valid JSON. Follow it.
 - `recheck` (sometimes): `[{ "n": 2, "problem": "..." }]`. Your earlier quote for these objectives wasn't the learner's own words (`problem` says why: often you quoted the coach). Look again at the learner's messages only: quote the learner exactly, or answer `"shown": false`.
 
 ## Rules
@@ -41,5 +42,6 @@ Reply with ONLY this JSON, one entry per number in `check`:
 
 - `parts`: split the objective into what it asks for (one part, or two or three). Give each part its own `quote`, or `null` when the learner's own words don't cover it. Don't reuse one quote for a part it doesn't show: naming something doesn't explain it.
 - `shown`: true only when every part has a quote.
+- Valid JSON only: straight double quotes (") around every string. Leave quotation marks out of the quotes you copy.
 - `quote`: copy one phrase or sentence exactly from a learner message, **25 words at most**: the shortest passage that shows the part. Don't paraphrase, fix spelling, or join two messages. Use "[image]" when the evidence is in this turn's image.
 - `missing` (when not shown): plain and specific, for example "explain why closing the gap matters for their own goals".

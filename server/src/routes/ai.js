@@ -18,6 +18,7 @@ const LESSON_ID_RE = /^[a-z0-9][a-z0-9_-]{0,99}$/i;
 const CLIENT_EVENTS = new Set([
   'coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long',
   'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed',
+  'coach_draft_rewritten', 'coach_draft_kept', 'coach_assessment_failed_open',
 ]);
 aiRoute.post('/v1/ai/events', async (c) => {
   const body = await c.req.json().catch(() => ({}));

@@ -14,8 +14,9 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
+  claimsCompletion, draftsForLearner,
 } = await import('../src/lib/assessment.js');
-const { applyCoachResponseToKB, checkGrading } = await import('../src/lib/lessonEngine.js');
+const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
 // What sendMessage does with a graded reply: merge the checklist, then apply.
@@ -271,16 +272,92 @@ describe('checkGrading', () => {
     assert.equal(finish(kb(), parsed).achieved, true);
   });
 
-  it('falls back to the coach’s grading when the check fails, so completion still works', async () => {
+  it('fails closed when the check can’t run: nothing new is checked off and the lesson stays open (playground 2026-11-21)', async () => {
+    let addendum = null;
     const { parsed, assessment } = await checkGrading({
       lesson, kb: kb(), messages: coachDrafted,
-      parsed: { text: 'Done', progress: 10, kbUpdate: null },
+      parsed: { text: 'You’ve demonstrated the exemplar. Well done.', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3, 4], learnerPosition: 'Has fully achieved the exemplar.' } },
       assess: async () => { throw new Error('busy'); },
-      regenerate: async () => '',
+      regenerate: async (a) => { addendum = a; return 'Nice work. You’ve demonstrated the exemplar!\n[PROGRESS: 10]\n[KB_UPDATE: {"learnerPosition":"All objectives demonstrated."}]'; },
     });
-    assert.deepEqual(assessment, { failed: true, checked: 2 });
+    assert.equal(assessment.failed, true);
+    assert.equal(assessment.held, true);
+    assert.match(addendum, /couldn’t be checked this turn/);
+    assert.deepEqual(parsed.kbUpdate.objectivesMet, [1]);
+    assert.equal(parsed.progress, HELD_PROGRESS);
+    // The second try still said "done": plato's words replace it, and the note.
+    assert.equal(assessment.replaced, true);
+    assert.match(parsed.text, /isn't complete yet/);
+    assert.match(parsed.kbUpdate.learnerPosition, /^Close to the exemplar/);
+    assert.equal(finish(kb(), parsed).achieved, false);
+  });
+
+  it('lets the coach’s grading stand on the second completing turn in a row that can’t be checked, so no one is stuck', async () => {
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb({ gradingCheckFailures: 1 }), messages: coachDrafted,
+      parsed: { text: 'Done!', progress: 10, kbUpdate: null },
+      assess: async () => 'not json',
+      regenerate: async () => { throw new Error('should not regenerate'); },
+    });
+    assert.equal(assessment.failedOpen, true);
+    assert.equal(assessment.held, false);
     assert.deepEqual(parsed.kbUpdate.objectivesMet, [1, 2, 3]);
     assert.equal(finish(kb(), parsed).achieved, true);
+  });
+
+  it('the retry after a malformed reply asks with a higher temperature', async () => {
+    const temps = [];
+    await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'x', progress: 7, kbUpdate: { objectivesMet: [2] } },
+      assess: async (_input, _images, opts) => { temps.push(opts?.temperature ?? 0); return temps.length === 1 ? 'nope' : JSON.stringify({ objectives: [{ n: 2, shown: false }] }); },
+    });
+    assert.deepEqual(temps, [0, 0.7]);
+  });
+
+  it('a failed check on an ordinary turn drops the coach’s new claims (fail closed)', async () => {
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'Good.', progress: 7, kbUpdate: { objectivesMet: [2] } },
+      assess: async () => 'not json',
+    });
+    assert.equal(assessment.failed, true);
+    assert.equal(assessment.held, false);
+    assert.deepEqual(parsed.kbUpdate.objectivesMet, []);
+    // Objective 1 was already checked off and stays; 2 isn't added.
+    assert.deepEqual(finish(kb(), parsed).lessonKB.objectivesMet, [0]);
+  });
+
+  it('repairs the curly-quote JSON the assessor wrote on playground instead of failing', async () => {
+    const broken = '{\n "objectives": [\n {"n": 2, "parts": [{"part": "name a value", "quote": "I like hearing different people out because it changes how i see things”\n }], "shown": true}\n ]\n}';
+    const t = assessmentTranscript([...coachDrafted.slice(0, 4)]);
+    const v = parseVerdict(broken);
+    assert.equal(v.objectives[0].parts[0].quote, 'I like hearing different people out because it changes how i see things');
+    assert.deepEqual(groundVerdict(v, t, [2]).shown, []); // not in this transcript's learner text, but it parsed
+  });
+
+  it('retries a malformed verdict with a note saying so', async () => {
+    const inputs = [];
+    await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'x', progress: 7, kbUpdate: { objectivesMet: [2] } },
+      assess: async (input) => { inputs.push(JSON.parse(input)); return inputs.length === 1 ? 'nope' : JSON.stringify({ objectives: [{ n: 2, shown: false }] }); },
+    });
+    assert.equal(inputs.length, 2);
+    assert.equal(inputs[0].note, undefined);
+    assert.match(inputs[1].note, /not valid JSON/);
+  });
+
+  it('replaces a held second try that still says the lesson is complete (playground 2026-11-21)', async () => {
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'Nailed it', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3] } },
+      assess: async () => notShown,
+      regenerate: async () => 'Yes—go ahead and start the next lesson. This one is complete.\n[PROGRESS: 8]',
+    });
+    assert.equal(assessment.held, true);
+    assert.equal(assessment.replaced, true);
+    assert.match(parsed.text, /^You're close, but this lesson isn't complete yet\. The next step is yours to write: \*\*explain why a value matters to them\*\*/);
   });
 
   it('asks the assessor once more when its first reply isn’t JSON', async () => {
@@ -350,7 +427,9 @@ describe('disclosure (Behind this response)', () => {
   });
   it('says plainly when the check could not run', () => {
     const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, checked: 1 } });
-    assert.match(agents.find((a) => a.agent === 'assessor').did[0], /coach’s assessment stands/);
+    assert.match(agents.find((a) => a.agent === 'assessor').did[0], /nothing new was checked off/);
+    const open = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, failedOpen: true, checked: 1 } });
+    assert.match(open.find((a) => a.agent === 'assessor').did[0], /coach’s assessment stands; the team can review it/);
   });
 });
 
@@ -362,5 +441,50 @@ describe('heldCompletionAddendum and normalizeForMatch', () => {
   });
   it('normalizes quotes, case, and punctuation', () => {
     assert.equal(normalizeForMatch('  I’M  “Sam”, hi! '), "i m sam hi");
+  });
+});
+
+describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)', () => {
+  it('catches the coach saying the lesson is done', () => {
+    for (const t of [
+      'Yes—go ahead and start the next lesson. This one is complete.',
+      '**This is your exemplar.** You’ve met all objectives — including clear writing.',
+      'You’ve fully mapped your tech stack… this meets all lesson objectives.',
+      '**You’ve demonstrated the exemplar.** Let’s celebrate.',
+      'Has fully achieved the exemplar: a memorable, authentic Slack message.',
+      'Tech stack fully mapped with fluency ratings and gap explanation. All objectives demonstrated.',
+    ]) assert.equal(claimsCompletion(t), true, t);
+  });
+  it('doesn’t catch ordinary coaching', () => {
+    for (const t of [
+      'You’re close to the exemplar. Next, explain why that gap matters.',
+      'You’ve met the first objective. Now name a value.',
+      'What would make this message feel complete to you?',
+      'When you finish this lesson, the next one builds on it.',
+    ]) assert.equal(claimsCompletion(t), false, t);
+  });
+  it('catches a sentence written for the learner to adopt', () => {
+    for (const t of [
+      'Try: *“I designed a writing curriculum that empowered my colleagues to adapt and own it — together, we lifted student scores.”*',
+      'Here’s a draft combining both: “I build systems that scale, like the writing curriculum I designed that helped my students.”',
+      'For example: “Capturing AI ideas in real time would let me reuse insights across lessons, saving 2 hours a week.”',
+    ]) assert.equal(draftsForLearner(t), true, t);
+  });
+  it('allows short examples of the kind of thing meant', () => {
+    for (const t of [
+      'What software do you use most? For example: Claude, ChatGPT, VS Code.',
+      'Think of something like “a deadline you hit” or “a process you fixed.”',
+      'Your phrase **impact through iteration** is strong.',
+    ]) assert.equal(draftsForLearner(t), false, t);
+  });
+});
+
+describe('nextGradingFailures', () => {
+  it('counts completing turns in a row the check couldn’t run, and resets when it runs', () => {
+    assert.equal(nextGradingFailures(0, { failed: true, held: true }), 1);
+    assert.equal(nextGradingFailures(1, { failed: true, failedOpen: true }), 0);
+    assert.equal(nextGradingFailures(1, { failed: true, held: false }), 1);
+    assert.equal(nextGradingFailures(1, { checked: 2, shown: 2, held: false }), 0);
+    assert.equal(nextGradingFailures(1, null), 1);
   });
 });
