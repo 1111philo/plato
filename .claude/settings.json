@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Slack__slack_send_message",
+      "mcp__github__add_issue_comment"
+    ]
+  }
+}
