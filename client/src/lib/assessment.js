@@ -305,8 +305,13 @@ export function claimsCompletion(text) {
   return COMPLETION_CLAIM.some((re) => re.test(t));
 }
 
-/** Words a sentence the coach writes for the learner needs before it counts as drafting their answer. */
-export const DRAFT_WORDS = 10;
+/**
+ * Words a passage the coach writes for the learner needs before it counts as
+ * drafting their answer. 20, not 10 (Blake, 2026-11-22): on prod 10 would fire
+ * on 29% of mid-lesson replies, 20 on 14%, and still covers 57% of the
+ * passages learners actually copied.
+ */
+export const DRAFT_WORDS = 20;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
 const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 

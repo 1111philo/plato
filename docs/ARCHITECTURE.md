@@ -1363,13 +1363,14 @@ about 94% together. A false yes on a held turn only swaps in the accurate
 **The draft guard.** Most held completions started with the coach writing
 the learner's answer ("Try: …", "Here's a draft combining both: …") and the
 learner pasting it back. `draftsForLearner` flags a reply with a quoted or
-italic passage of 10+ words, or one after a lead like "Try this:". Before
+italic passage of 20+ words, or one after a lead like "Try this:". Before
 grading, `sendMessage` asks the coach once to rewrite such a reply as
 feedback plus a question (`DRAFT_ADDENDUM`). The rewrite streams in place and
 is kept even if it still drafts: on playground it still drafted 21 of 26
 times, and switching back to the first reply made learners watch the reply
-change twice. Whether the guard earns its cost (about 29% of prod mid-lesson
-replies would trigger it) is an open product decision on #584. `coach.md` now asks for
+change twice. The threshold is 20 words (Blake, 2026-11-22): on prod's
+18,223 mid-lesson replies, 10 words would trigger on 29%, 20 on 14%, and 20
+still covers 57% of the passages learners copied into their next message. `coach.md` now asks for
 short example phrases, never sample sentences.
 
 The client logs `coach_completion_held`, `coach_objectives_unverified`,

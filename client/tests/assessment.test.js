@@ -496,12 +496,17 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       'When you finish this lesson, the next one builds on it.',
     ]) assert.equal(claimsCompletion(t), false, t);
   });
-  it('catches a sentence written for the learner to adopt', () => {
+  it('catches a passage of 20+ words written for the learner to adopt', () => {
     for (const t of [
-      'Try: *“I designed a writing curriculum that empowered my colleagues to adapt and own it — together, we lifted student scores.”*',
-      'Here’s a draft combining both: “I build systems that scale, like the writing curriculum I designed that helped my students.”',
-      'For example: “Capturing AI ideas in real time would let me reuse insights across lessons, saving 2 hours a week.”',
+      'Here’s a draft combining both: “I build systems that scale, like the writing curriculum I designed that helped my 5th graders hit 100% on state tests, and I thrive when I collaborate.”',
+      'Try: *“I designed a writing curriculum that empowered my colleagues to adapt and own it, and together we lifted student scores to 100% on the state ELA tests last spring.”*',
     ]) assert.equal(draftsForLearner(t), true, t);
+  });
+  it('lets shorter sample sentences through (the threshold is 20 words)', () => {
+    for (const t of [
+      'For example: “Capturing AI ideas in real time would let me reuse insights across lessons, saving 2 hours a week.”',
+      'Try: “I complete 80% of my time-blocked tasks each week.”',
+    ]) assert.equal(draftsForLearner(t), false, t);
   });
   it('allows short examples of the kind of thing meant', () => {
     for (const t of [
