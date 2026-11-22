@@ -156,7 +156,7 @@ export async function recoverMissingTags(parsed, repair) {
  * every-objective rule in applyCoachResponseToKB still lets it complete.
  * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
  */
-export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate }) {
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim }) {
   const plan = assessmentPlan(kb, parsed);
   if (!plan.check.length) return { parsed, assessment: null };
   const imageThisTurn = imageParts.length > 0;
@@ -229,7 +229,13 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     // The coach's words must agree with the hold. Its second try often still
     // said "this one is complete" (playground testing), so in code: a reply or
     // "Where you are" note that says the lesson is done is replaced.
-    if (claimsCompletion(out.text)) {
+    // Patterns first; for wording they don't know, a one-word model check
+    // (judgeClaim). A failed check keeps the reply.
+    let saysDone = claimsCompletion(out.text);
+    if (!saysDone && judgeClaim && out.text) {
+      try { saysDone = await judgeClaim(out.text); } catch { /* keep the reply */ }
+    }
+    if (saysDone) {
       out = { ...out, text: heldReply(kb, applied.outstanding, grounded.missing) };
       replaced = true;
     }
@@ -521,6 +527,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     imageParts: userParts.filter((p) => p.type === 'image'),
     assess: (input, images) => orchestrator.assessTurn(input, images),
     regenerate: (addendum) => orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, addendum),
+    judgeClaim: (t) => orchestrator.checkCompletionClaim(t),
   });
   const parsed = graded.parsed;
   const assessment = graded.assessment;

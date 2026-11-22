@@ -245,6 +245,24 @@ export async function assessTurn(input, imageParts = [], { temperature = 0 } = {
   return reply;
 }
 
+/**
+ * Does this coach reply tell the learner the lesson is done? (#584,
+ * prompts/claim-check.md.) Asked only on a turn plato held open, when the
+ * reply's wording didn't match a known pattern (assessment.claimsCompletion
+ * caught 80% of real completion messages on prod; this caught 71% of the
+ * rest, and said yes to 3.7% of ordinary replies). Throws on failure.
+ */
+export async function checkCompletionClaim(text) {
+  const systemPrompt = await loadPrompt('claim-check');
+  const { content } = await callApi({
+    model: LLM, systemPrompt,
+    messages: [{ role: 'user', content: String(text || '').slice(0, 8000) || '(empty)' }],
+    maxTokens: 5,
+    temperature: 0,
+  });
+  return /^\s*yes/i.test(content || '');
+}
+
 // -- Lesson Owner (LLM) -------------------------------------------------------
 
 export async function initializeLessonKB(lesson, profileSummary) {

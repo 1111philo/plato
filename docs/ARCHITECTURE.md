@@ -1350,7 +1350,15 @@ lesson", against the progress bar (Qwen ignores the addendum). So
 `claimsCompletion` checks the reply and its "Where you are" note, and when
 either says the lesson is done, plato replaces it with a plain message naming
 the next objective to show in the learner's own words (`heldReply`,
-`heldPosition`).
+`heldPosition`). Patterns alone missed real wordings ("You've now fully
+demonstrated the **exemplar** … Progress: 10 — lesson complete", playground
+2026-11-22): on prod's 2,228 completing coach replies the first patterns
+recognized 67%, the broadened ones (markdown stripped first) 80%. For the
+rest, a held reply the patterns don't flag goes to `client/prompts/claim-check.md`
+(YES/NO, temperature 0, 5 tokens), which said yes to 71% of the completing
+replies the patterns missed and to 3.7% of ordinary mid-lesson replies:
+about 94% together. A false yes on a held turn only swaps in the accurate
+"not complete yet" message.
 
 **The draft guard.** Most held completions started with the coach writing
 the learner's answer ("Try: …", "Here's a draft combining both: …") and the

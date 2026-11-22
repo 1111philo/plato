@@ -348,6 +348,34 @@ describe('checkGrading', () => {
     assert.match(inputs[1].note, /not valid JSON/);
   });
 
+  it('asks the claim check about held wording the patterns miss, and replaces it on yes', async () => {
+    const asked = [];
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'Nailed it', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3] } },
+      assess: async () => notShown,
+      regenerate: async () => 'That’s a wrap on this one, nicely handled.\n[PROGRESS: 8]',
+      judgeClaim: async (t) => { asked.push(t); return true; },
+    });
+    assert.equal(asked.length, 1);
+    assert.equal(assessment.replaced, true);
+    assert.match(parsed.text, /isn't complete yet/);
+  });
+
+  it('keeps a held reply when the claim check says no or fails', async () => {
+    for (const judgeClaim of [async () => false, async () => { throw new Error('busy'); }]) {
+      const { parsed, assessment } = await checkGrading({
+        lesson, kb: kb(), messages: coachDrafted,
+        parsed: { text: 'Nailed it', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3] } },
+        assess: async () => notShown,
+        regenerate: async () => 'In your own words, what value drives that?\n[PROGRESS: 8]',
+        judgeClaim,
+      });
+      assert.equal(assessment.replaced, undefined);
+      assert.match(parsed.text, /^In your own words/);
+    }
+  });
+
   it('replaces a held second try that still says the lesson is complete (playground 2026-11-21)', async () => {
     const { parsed, assessment } = await checkGrading({
       lesson, kb: kb(), messages: coachDrafted,
@@ -453,6 +481,11 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       '**You’ve demonstrated the exemplar.** Let’s celebrate.',
       'Has fully achieved the exemplar: a memorable, authentic Slack message.',
       'Tech stack fully mapped with fluency ratings and gap explanation. All objectives demonstrated.',
+      // Amanda, playground 2026-11-22: markdown inside the phrase, two adverbs.
+      'You’ve now fully demonstrated the **exemplar**: a Personal Productivity Plan.\n\n**Progress: 10 — lesson complete.**',
+      // Real prod completion messages the first patterns missed.
+      'Now that you’ve wrapped this up — how did the lesson feel?',
+      'You’re ready to move into portfolio building. How did the course feel overall?',
     ]) assert.equal(claimsCompletion(t), true, t);
   });
   it('doesn’t catch ordinary coaching', () => {

@@ -120,6 +120,7 @@ function replyFor(agent, messages, system) {
     case 'Coach': return coachReply(messages, system);
     case 'Lesson Owner': return lessonOwnerReply(messages);
     case 'Assessor': return assessorReply(messages);
+    case 'Claim Check': return /\b(complete|exemplar)\b/i.test(textOf(messages?.[0]?.content)) && !/isn'?t complete/i.test(textOf(messages?.[0]?.content)) ? 'YES' : 'NO';
     case 'Learner Profile Owner':
     case 'Learner Profile Update': return profileReply(messages);
     case 'Course Progress Updater': return JSON.stringify({ summary: 'Mock course progress note.' });

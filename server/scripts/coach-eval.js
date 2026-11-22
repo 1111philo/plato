@@ -64,6 +64,7 @@ const PROMPTS = {
   current: readFileSync(client('prompts/coach.md'), 'utf8'),
   baseline: execFileSync('git', ['show', `${opt['baseline-ref']}:client/prompts/coach.md`], { cwd: repo, encoding: 'utf8' }),
   assessor: readFileSync(client('prompts/assessor.md'), 'utf8'),
+  claimCheck: readFileSync(client('prompts/claim-check.md'), 'utf8'),
 };
 
 const bedrock = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-2', retryMode: 'adaptive', maxAttempts: 4 });
@@ -116,6 +117,7 @@ async function runTurn(mode, modelId, s) {
       lesson, kb: lessonKB, parsed, messages,
       assess: async (input) => { try { return (assessRaw = await converse(modelId, PROMPTS.assessor, [{ role: 'user', content: input }], 2048, stats, 0)); } catch (e) { assessRaw = `ERROR ${e.name}: ${e.message}`; throw e; } },
       regenerate: (addendum) => converse(modelId, system(addendum), messages, 2048, stats),
+      judgeClaim: async (t) => /^\s*yes/i.test(await converse(modelId, PROMPTS.claimCheck, [{ role: 'user', content: t }], 5, stats, 0)),
     });
     parsed = graded.parsed;
     assessment = graded.assessment;
