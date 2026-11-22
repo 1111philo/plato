@@ -506,14 +506,16 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // The draft guard (#584): a reply that writes the learner's answer for them
   // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
   // feedback plus a question. Learners copied these drafts, and the grading
-  // check then (rightly) didn't count them. The rewrite streams in place; if
-  // it still drafts, the first reply stands.
+  // check then (rightly) didn't count them. The rewrite streams in place and
+  // is kept even when it still drafts: going back to the first reply made the
+  // learner watch it switch twice (playground: the rewrite still drafted 21
+  // of 26 times). A failed rewrite keeps the first reply.
   let coachReply = repaired;
   if (lessonKB.status !== 'completed' && draftsForLearner(repaired.text)) {
     try {
       const raw = await orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, DRAFT_ADDENDUM);
       const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw)));
-      if (again.text && !draftsForLearner(again.text)) coachReply = { ...again, draftRewritten: true };
+      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
     } catch { /* keep the first reply */ }
     orchestrator.reportEvent(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept', { lessonId });
   }
