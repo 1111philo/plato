@@ -1334,10 +1334,15 @@ coach, never to the learner.
 **Fail closed.** A malformed reply is repaired first (the model copies a
 learner's curly ” as the end of a JSON string), then retried once with a note
 saying it wasn't valid JSON: at temperature 0 the same request returns the
-same reply. If that fails too, or Bedrock errors, nothing new is checked off
-and a completion waits for a turn the check can run. It first failed *open*,
-and on playground a lesson the check had held for 16 turns completed on the
-one turn it failed (2026-11-21).
+same reply, so the retry also runs at temperature 0.7. If that fails too, or
+Bedrock errors, nothing new is checked off and a completion waits for a turn
+the check can run. It first failed *open*, and on playground a lesson the check
+had held for 16 turns completed on the one turn it failed (2026-11-21). But
+failing closed forever would trap a learner whose conversation keeps breaking
+the assessor (0.4% of prod completions in the replay). So
+`lessonKB.gradingCheckFailures` counts completing turns in a row the check
+couldn't run (`nextGradingFailures`), and on the second the coach's grading
+stands and `coach_assessment_failed_open` is logged for review.
 
 **The coach's words follow the hold.** On a held turn the coach's second try
 often still said "this one is complete" or "go ahead and start the next

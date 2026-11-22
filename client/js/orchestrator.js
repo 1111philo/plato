@@ -228,7 +228,7 @@ export async function repairCoachTags(messages, reply) {
  * knowledge base, catalog, or language directive: it reads evidence and
  * writes JSON that plato reads, never the learner.
  */
-export async function assessTurn(input, imageParts = []) {
+export async function assessTurn(input, imageParts = [], { temperature = 0 } = {}) {
   const systemPrompt = await loadPrompt('assessor');
   const content = imageParts.length ? [{ type: 'text', text: input }, ...imageParts] : input;
   const { content: reply } = await callApi({
@@ -238,8 +238,9 @@ export async function assessTurn(input, imageParts = []) {
     maxTokens: 2048,
     // A grader: the same evidence should get the same verdict (measured: at
     // the default temperature it accepted "I need to upskill" as a reason in
-    // some runs and not others).
-    temperature: 0,
+    // some runs and not others). The retry after a malformed reply raises it,
+    // or the identical request would return the identical reply.
+    temperature,
   });
   return reply;
 }

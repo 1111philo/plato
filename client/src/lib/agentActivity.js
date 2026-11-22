@@ -73,7 +73,9 @@ function progressLine(before, after, { achieved, wasCompleted }) {
 function assessmentEntry(a) {
   if (!a) return null;
   const did = [];
-  if (a.failed) {
+  if (a.failedOpen) {
+    did.push('Couldn’t check this turn either, so the coach’s assessment stands; the team can review it');
+  } else if (a.failed) {
     did.push('Couldn’t check this turn, so nothing new was checked off; it will check again next turn');
   } else {
     did.push(`Checked ${plural(a.checked, 'objective')} against your own words: ${a.shown} shown`);

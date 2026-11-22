@@ -16,7 +16,7 @@ const {
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
   claimsCompletion, draftsForLearner,
 } = await import('../src/lib/assessment.js');
-const { applyCoachResponseToKB, checkGrading } = await import('../src/lib/lessonEngine.js');
+const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
 // What sendMessage does with a graded reply: merge the checklist, then apply.
@@ -292,6 +292,29 @@ describe('checkGrading', () => {
     assert.equal(finish(kb(), parsed).achieved, false);
   });
 
+  it('lets the coach’s grading stand on the second completing turn in a row that can’t be checked, so no one is stuck', async () => {
+    const { parsed, assessment } = await checkGrading({
+      lesson, kb: kb({ gradingCheckFailures: 1 }), messages: coachDrafted,
+      parsed: { text: 'Done!', progress: 10, kbUpdate: null },
+      assess: async () => 'not json',
+      regenerate: async () => { throw new Error('should not regenerate'); },
+    });
+    assert.equal(assessment.failedOpen, true);
+    assert.equal(assessment.held, false);
+    assert.deepEqual(parsed.kbUpdate.objectivesMet, [1, 2, 3]);
+    assert.equal(finish(kb(), parsed).achieved, true);
+  });
+
+  it('the retry after a malformed reply asks with a higher temperature', async () => {
+    const temps = [];
+    await checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'x', progress: 7, kbUpdate: { objectivesMet: [2] } },
+      assess: async (_input, _images, opts) => { temps.push(opts?.temperature ?? 0); return temps.length === 1 ? 'nope' : JSON.stringify({ objectives: [{ n: 2, shown: false }] }); },
+    });
+    assert.deepEqual(temps, [0, 0.7]);
+  });
+
   it('a failed check on an ordinary turn drops the coach’s new claims (fail closed)', async () => {
     const { parsed, assessment } = await checkGrading({
       lesson, kb: kb(), messages: coachDrafted,
@@ -405,6 +428,8 @@ describe('disclosure (Behind this response)', () => {
   it('says plainly when the check could not run', () => {
     const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, checked: 1 } });
     assert.match(agents.find((a) => a.agent === 'assessor').did[0], /nothing new was checked off/);
+    const open = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, failedOpen: true, checked: 1 } });
+    assert.match(open.find((a) => a.agent === 'assessor').did[0], /coach’s assessment stands; the team can review it/);
   });
 });
 
@@ -451,5 +476,15 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       'Think of something like “a deadline you hit” or “a process you fixed.”',
       'Your phrase **impact through iteration** is strong.',
     ]) assert.equal(draftsForLearner(t), false, t);
+  });
+});
+
+describe('nextGradingFailures', () => {
+  it('counts completing turns in a row the check couldn’t run, and resets when it runs', () => {
+    assert.equal(nextGradingFailures(0, { failed: true, held: true }), 1);
+    assert.equal(nextGradingFailures(1, { failed: true, failedOpen: true }), 0);
+    assert.equal(nextGradingFailures(1, { failed: true, held: false }), 1);
+    assert.equal(nextGradingFailures(1, { checked: 2, shown: 2, held: false }), 0);
+    assert.equal(nextGradingFailures(1, null), 1);
   });
 });

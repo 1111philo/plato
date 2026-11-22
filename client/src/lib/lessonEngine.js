@@ -28,6 +28,9 @@ import {
   FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM,
 } from './assessment.js';
 
+/** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
+const RETRY_TEMPERATURE = 0.7;
+
 function ts() { return Date.now(); }
 
 /**
@@ -166,7 +169,7 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     // orchestrator.callApi.
     let verdict;
     try { verdict = parseVerdict(await assess(input, imageParts)); } catch {
-      verdict = parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn, note: FORMAT_NOTE }), imageParts));
+      verdict = parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn, note: FORMAT_NOTE }), imageParts, { temperature: RETRY_TEMPERATURE }));
     }
     grounded = groundVerdict(verdict, transcript, plan.check, { imageThisTurn });
     // A "shown" whose quote wasn't the learner's (often the coach's paraphrase
@@ -185,8 +188,19 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
 
   // Fail closed: when the check can't run, nothing new is checked off and a
   // completion waits for a turn it can (playground, 2026-11-21: failing open
-  // completed a lesson the check had held for 16 turns).
+  // completed a lesson the check had held for 16 turns). But not forever: a
+  // conversation that keeps breaking the assessor (0.4% of prod completions
+  // in the replay) would leave that learner unable to finish. On the second
+  // completing turn in a row that can't be checked, the coach's grading
+  // stands, as before #584, and it's logged for review.
   const failed = !grounded;
+  if (failed && plan.completionClaimed && (kb.gradingCheckFailures || 0) >= 1) {
+    const all = (kb.objectives || []).map((_, i) => i + 1);
+    return {
+      parsed: { ...parsed, kbUpdate: { ...(parsed.kbUpdate || {}), objectivesMet: all } },
+      assessment: { failed: true, failedOpen: true, checked: plan.check.length, shown: 0, unverified: 0, held: false, regenerated: false },
+    };
+  }
   if (failed) {
     const why = 'couldn’t be checked this turn: ask them to share that part of their work in their own words';
     grounded = { shown: [], missing: Object.fromEntries(plan.check.map((n) => [n, why])), ungrounded: [] };
@@ -235,6 +249,18 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
       ...(failed ? { failed } : {}),
     },
   };
+}
+
+/**
+ * Completing turns in a row the grading check couldn't run, after this turn
+ * (checkGrading lets the coach's grading stand once it's 1 and the next one
+ * fails too). A turn the check ran, or a fallback, resets it; a failed check
+ * on an ordinary turn leaves it as it was.
+ */
+export function nextGradingFailures(prev = 0, assessment) {
+  if (!assessment) return prev || 0;
+  if (assessment.failedOpen || !assessment.failed) return 0;
+  return assessment.held ? (prev || 0) + 1 : prev || 0;
 }
 
 export function shouldUpdateProfile(parsed) {
@@ -498,7 +524,8 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   });
   const parsed = graded.parsed;
   const assessment = graded.assessment;
-  if (assessment?.failed) orchestrator.reportEvent('coach_assessment_failed', { lessonId });
+  if (assessment?.failedOpen) orchestrator.reportEvent('coach_assessment_failed_open', { lessonId });
+  else if (assessment?.failed) orchestrator.reportEvent('coach_assessment_failed', { lessonId });
   else if (assessment?.held) orchestrator.reportEvent('coach_completion_held', { lessonId });
   else if (assessment?.unverified) orchestrator.reportEvent('coach_objectives_unverified', { lessonId });
 
@@ -512,6 +539,12 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     .map((i) => withMet.objectives?.[i]?.objective).filter(Boolean);
   const applied = applyCoachResponseToKB(withMet, parsed, { now: ts });
   lessonKB = applied.lessonKB;
+  // Completing turns in a row the check couldn't run (checkGrading lets the
+  // coach's grading stand on the second). Any turn the check ran resets it.
+  if (assessment) {
+    const failures = nextGradingFailures(lessonKB.gradingCheckFailures, assessment);
+    if (failures || lessonKB.gradingCheckFailures) lessonKB = { ...lessonKB, gradingCheckFailures: failures };
+  }
   const { achieved, phase } = applied;
 
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
