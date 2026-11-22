@@ -74,13 +74,13 @@ function assessmentEntry(a) {
   if (!a) return null;
   const did = [];
   if (a.failed) {
-    did.push('Couldn’t check this turn, so the coach’s assessment stands');
+    did.push('Couldn’t check this turn, so nothing new was checked off; it will check again next turn');
   } else {
     did.push(`Checked ${plural(a.checked, 'objective')} against your own words: ${a.shown} shown`);
-    if (a.held) did.push(a.regenerated
-      ? 'Held the lesson open until the rest is in your own words, and asked the coach to reply again'
-      : 'Held the lesson open until the rest is in your own words');
   }
+  if (a.held) did.push(a.regenerated
+    ? 'Held the lesson open until the rest is in your own words, and asked the coach to reply again'
+    : 'Held the lesson open until the rest is in your own words');
   return entry('assessor', { read: ['This lesson’s objectives', 'Your messages in this lesson'], did });
 }
 
@@ -96,6 +96,7 @@ export function coachTurnActivity({ before, after, parsed, achieved = false, new
         : progressLine(before?.progress, after?.progress, { achieved, wasCompleted }),
       ...newlyMet.map((o) => `Checked off an objective: ${o}`),
       ...(parsed?.tagsRecovered ? ['Recorded what this reply left out in a second step'] : []),
+      ...(parsed?.draftRewritten ? ['Was asked to let you write it yourself, and replied again'] : []),
     ],
     notes: [
       ...(parsed?.kbUpdate?.insights || []),

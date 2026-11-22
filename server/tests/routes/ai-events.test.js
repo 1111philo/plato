@@ -26,10 +26,10 @@ describe('POST /v1/ai/events', () => {
   });
 
   it('logs a known code with the user and lesson', async () => {
-    for (const code of ['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long', 'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed']) {
+    for (const code of ['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long', 'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed', 'coach_draft_rewritten', 'coach_draft_kept']) {
       assert.equal((await post({ code, lessonId: 'les-1' })).status, 200);
     }
-    assert.deepEqual(logged.map(([c]) => c), ['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long', 'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed']);
+    assert.deepEqual(logged.map(([c]) => c), ['coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long', 'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed', 'coach_draft_rewritten', 'coach_draft_kept']);
     assert.deepEqual(logged[0][1], { userId: 'usr_ada', lessonId: 'les-1' });
   });
 

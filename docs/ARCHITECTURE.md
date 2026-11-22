@@ -1331,11 +1331,34 @@ counts only ("Checked 2 objectives against your own words: 1 shown"; "Held
 the lesson open until the rest is in your own words"). The reasons go to the
 coach, never to the learner.
 
-**Fail open.** If the assessor's reply isn't JSON, it's asked once more. If
-that fails too, or Bedrock errors, the coach's grading stands as it did
-before: a completing turn checks off every objective. The client logs
-`coach_completion_held`, `coach_objectives_unverified`, and
-`coach_assessment_failed` (OBSERVABILITY.md).
+**Fail closed.** A malformed reply is repaired first (the model copies a
+learner's curly ” as the end of a JSON string), then retried once with a note
+saying it wasn't valid JSON: at temperature 0 the same request returns the
+same reply. If that fails too, or Bedrock errors, nothing new is checked off
+and a completion waits for a turn the check can run. It first failed *open*,
+and on playground a lesson the check had held for 16 turns completed on the
+one turn it failed (2026-11-21).
+
+**The coach's words follow the hold.** On a held turn the coach's second try
+often still said "this one is complete" or "go ahead and start the next
+lesson", against the progress bar (Qwen ignores the addendum). So
+`claimsCompletion` checks the reply and its "Where you are" note, and when
+either says the lesson is done, plato replaces it with a plain message naming
+the next objective to show in the learner's own words (`heldReply`,
+`heldPosition`).
+
+**The draft guard.** Most held completions started with the coach writing
+the learner's answer ("Try: …", "Here's a draft combining both: …") and the
+learner pasting it back. `draftsForLearner` flags a reply with a quoted or
+italic passage of 10+ words, or one after a lead like "Try this:". Before
+grading, `sendMessage` asks the coach once to rewrite such a reply as
+feedback plus a question (`DRAFT_ADDENDUM`); the rewrite streams in place,
+and if it still drafts, the first reply stands. `coach.md` now asks for
+short example phrases, never sample sentences.
+
+The client logs `coach_completion_held`, `coach_objectives_unverified`,
+`coach_assessment_failed`, `coach_draft_rewritten`, and `coach_draft_kept`
+(OBSERVABILITY.md).
 
 **Measured** with `server/scripts/coach-eval.js` (10 synthetic scenarios,
 8 trials each, AI Leaders' knowledge base, Qwen3-VL). `baseline` is the coach
@@ -1351,6 +1374,18 @@ before this change; `harness` is what plato runs now.
 | Model cost per 1,000 turns | $3.72 | $5.26 |
 | Turn time, p50 | 3.2 s | 4.5 s |
 
+**After playground testing** (2026-11-22; the fixes above), same eval:
+
+| | baseline | harness |
+|---|---|---|
+| False completions | 13 of 64 | 0 of 64 |
+| Coach writes the message when asked outright | 4 of 8 | 0 of 8 |
+| Any reply writing a sentence for the learner | 26 of 80 | 13 of 80 |
+| Genuine self-assessment completed | 6 of 8 | 8 of 8 |
+| Model calls per turn | 1.09 | 2.19 |
+| Model cost per 1,000 turns | $3.80 | $6.79 |
+| Turn time, p50 / p90 | 3.1 s / 3.8 s | 5.2 s / 7.7 s |
+
 **Measured on prod** (2026-11-19, read-only, with Blake's go-ahead): every
 completed lesson on plato.courses (1,969), replayed through `checkGrading` at
 the moment the coach completed it, with every objective checked.
@@ -1359,7 +1394,7 @@ the moment the coach completed it, with every objective checked.
 |---|---|---|
 | No images in the conversation | 1,204 | 495 (41%) |
 | With images | 758 | 487 (64%) |
-| The check itself failed (coach's grading stands) | 7 | — |
+| The check itself failed (fail open at the time; now the lesson stays open) | 7 | — |
 
 The with-images figure overstates it: a replay can't show the check earlier
 screenshots, which the live check sees on the turn they're sent. Reading 26

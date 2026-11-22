@@ -85,18 +85,31 @@ export function assessmentTranscript(messages) {
  * on prod the assessor applied its examples ("YYYY-MM-DD", "label it on
  * track") as requirements and held learners who met the objective (#584).
  */
-export function assessmentInput({ lesson, kb, transcript, check, imageThisTurn = false, recheck = null }) {
+export function assessmentInput({ lesson, kb, transcript, check, imageThisTurn = false, recheck = null, note = null }) {
   const objectives = (kb?.objectives || []).map((o, i) => ({ n: i + 1, objective: typeof o === 'string' ? o : o?.objective }));
-  return JSON.stringify({ exemplar: lesson?.exemplar || '', objectives, check, transcript, imageThisTurn, ...(recheck ? { recheck } : {}) });
+  return JSON.stringify({ exemplar: lesson?.exemplar || '', objectives, check, transcript, imageThisTurn, ...(recheck ? { recheck } : {}), ...(note ? { note } : {}) });
 }
 
-/** The assessor's JSON, tolerating code fences or a sentence around it. Throws when there's none. */
+/**
+ * Repair the JSON mistake the model actually makes: copying a learner's curly
+ * closing quote (”) as the end of a string, so the string never closes
+ * (playground, 2026-11-21: a lesson completed because of it). A ” that ends a
+ * value, just before a comma, brace, bracket, or line break, becomes a
+ * straight quote.
+ */
+export function repairVerdictJson(text) {
+  return String(text).replace(/[”“](\s*(?:,|\}|\]|\n))/g, '"$1');
+}
+
+/** The assessor's JSON, tolerating code fences, a sentence around it, or a curly closing quote. Throws when there's none. */
 export function parseVerdict(raw) {
   const text = String(raw ?? '').replace(/```(?:json)?/g, '').trim();
-  try { return JSON.parse(text); } catch { /* look for the object */ }
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
-  if (start !== -1 && end > start) return JSON.parse(text.slice(start, end + 1));
+  const body = start !== -1 && end > start ? text.slice(start, end + 1) : text;
+  for (const candidate of [text, body, repairVerdictJson(body)]) {
+    try { return JSON.parse(candidate); } catch { /* next */ }
+  }
   throw new Error('assessor reply had no JSON');
 }
 
@@ -241,6 +254,9 @@ Write your reply to the learner's last message again, in your usual voice and le
 - End with your tags. [PROGRESS] is ${HELD_PROGRESS} or lower, and objectivesMet lists only objectives their own words showed.`;
 }
 
+/** Sent with the retry when the assessor's reply wasn't valid JSON (temperature 0 would repeat it otherwise). */
+export const FORMAT_NOTE = 'Your last reply was not valid JSON. Reply with valid JSON only. Use straight double quotes (") around every string, and leave any quotation marks out of the quotes you copy.';
+
 /** Every objective checked off, or the lesson has none. Used by applyCoachResponseToKB to allow completion. */
 export function allObjectivesMet(kb) {
   const n = kb?.objectives?.length || 0;
@@ -248,4 +264,82 @@ export function allObjectivesMet(kb) {
   const met = new Set(kb.objectivesMet || []);
   for (let i = 0; i < n; i++) if (!met.has(i)) return false;
   return true;
+}
+
+// What the coach says matters as much as the tags (#584 playground testing):
+// on a held turn the coach's second try still told learners "this one is
+// complete", against the progress bar. These catch that in code.
+
+const COMPLETION_CLAIM = [
+  /\b(?:you(?:'|’)ve|you have|you(?:'|’)re|you are)\s+(?:now\s+|fully\s+|officially\s+)?(?:met|achieved|demonstrated|nailed|completed|finished|done with|hit)\b[^.!?\n]{0,40}\b(?:exemplar|all (?:the |three |four |your |of the )?objectives|every objective|this lesson|the lesson)\b/i,
+  /\b(?:this|the) (?:lesson|one) is (?:now )?(?:complete|done|finished)\b/i,
+  /\bthis is your exemplar\b/i,
+  /\bexemplar (?:achieved|met|complete)\b/i,
+  /\b(?:go ahead and )?(?:start|move on to|continue to) the next lesson\b/i,
+  /\bmeets all (?:the )?(?:lesson )?objectives\b/i,
+  /\b(?:has|have)\s+(?:now\s+|fully\s+)?(?:met|achieved|demonstrated|completed)\b[^.!?\n]{0,40}\b(?:exemplar|all (?:the |three |four )?objectives)\b/i,
+  /\ball (?:the )?objectives (?:are )?(?:demonstrated|met|achieved|complete)\b/i,
+];
+
+/** True when text tells the learner the lesson (or every objective) is done. */
+export function claimsCompletion(text) {
+  const t = String(text ?? '');
+  return COMPLETION_CLAIM.some((re) => re.test(t));
+}
+
+/** Words a sentence the coach writes for the learner needs before it counts as drafting their answer. */
+export const DRAFT_WORDS = 10;
+const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
+const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
+
+/**
+ * True when a coach reply writes a sentence for the learner to adopt: a
+ * quoted or italic passage of DRAFT_WORDS+ words, or one after a lead like
+ * "Try this:" / "Here's a draft". Learners copied these back and were held
+ * for it, so plato asks the coach to rewrite such replies as a question.
+ */
+export function draftsForLearner(text) {
+  const t = String(text ?? '');
+  for (const m of t.matchAll(QUOTED)) {
+    const span = (m[1] ?? m[2] ?? '').trim();
+    if (span.split(/\s+/).filter(Boolean).length >= DRAFT_WORDS) return true;
+  }
+  for (const line of t.split('\n')) {
+    const lead = line.match(DRAFT_LEAD);
+    if (lead && line.slice(lead.index + lead[0].length).trim().split(/\s+/).filter(Boolean).length >= DRAFT_WORDS) return true;
+  }
+  return false;
+}
+
+/** The coach's addendum when its reply wrote the learner's text for them. */
+export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
+
+Your reply wrote a sentence or passage for the learner to use as their own answer. Learners copy these, and copied text doesn't count as their work. Write your reply again:
+- Give specific feedback on what they wrote.
+- Ask them to write the next piece themselves. You may suggest what it should cover in a few words (a short phrase, not a sentence they could copy).
+- No quoted or italic sample sentences. Keep your usual voice, length, and tags.`;
+
+/**
+ * The reply plato shows when completion is held and the coach's own words
+ * still say the lesson is done: plain, kind, and naming the first thing
+ * still needed.
+ */
+export function heldReply(kb, outstanding, missing) {
+  const names = outstanding.map((n) => {
+    const o = kb.objectives?.[n - 1];
+    return (typeof o === 'string' ? o : o?.objective || '').replace(/^Can\s+/i, '');
+  }).filter(Boolean);
+  const first = outstanding[0];
+  const why = missing?.[first] && !/^not yet shown/.test(missing[first]) ? ` (${missing[first]})` : '';
+  const list = names.length > 1 ? `\n\nStill to show in your own words:\n${names.map((x) => `- ${x}`).join('\n')}` : '';
+  return `You're close, but this lesson isn't complete yet. The next step is yours to write: **${names[0] || 'the remaining objective'}**${why}. Put it in your own words, even a few plain sentences, and send it when you're ready.${list}`;
+}
+
+/** The learner-visible "Where you are" note on a held turn, when the coach's says the lesson is done. */
+export function heldPosition(kb, outstanding) {
+  const names = outstanding.map((n) => {
+    const o = kb.objectives?.[n - 1];
+    return (typeof o === 'string' ? o : o?.objective || '').replace(/^Can\s+/i, '');
+  }).filter(Boolean);
+  return `Close to the exemplar. Still to show in your own words: ${names.join('; ')}.`;
 }

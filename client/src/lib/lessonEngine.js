@@ -25,6 +25,7 @@ import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
+  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM,
 } from './assessment.js';
 
 function ts() { return Date.now(); }
@@ -158,12 +159,15 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
   const imageThisTurn = imageParts.length > 0;
   const transcript = assessmentTranscript(messages);
   const input = assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn });
-  let grounded;
+  let grounded = null;
   try {
-    // One retry: a reply that isn't JSON (or a transient error) shouldn't hand
-    // grading back to the coach. orchestrator.callApi already retries busy errors.
+    // A reply that isn't JSON gets one retry that says so (at temperature 0
+    // the same request returns the same reply). Busy errors are retried by
+    // orchestrator.callApi.
     let verdict;
-    try { verdict = parseVerdict(await assess(input, imageParts)); } catch { verdict = parseVerdict(await assess(input, imageParts)); }
+    try { verdict = parseVerdict(await assess(input, imageParts)); } catch {
+      verdict = parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn, note: FORMAT_NOTE }), imageParts));
+    }
     grounded = groundVerdict(verdict, transcript, plan.check, { imageThisTurn });
     // A "shown" whose quote wasn't the learner's (often the coach's paraphrase
     // when the learner's own words were there too, measured on prod): ask once
@@ -177,31 +181,47 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
         grounded = { ...grounded, shown: [...grounded.shown, ...again.shown].sort((a, b) => a - b), missing };
       } catch { /* keep the first answer */ }
     }
-  } catch {
-    const all = (kb.objectives || []).map((_, i) => i + 1);
-    const fallback = plan.completionClaimed
-      ? { ...parsed, kbUpdate: { ...(parsed.kbUpdate || {}), objectivesMet: all } }
-      : parsed;
-    return { parsed: fallback, assessment: { failed: true, checked: plan.check.length } };
+  } catch { grounded = null; }
+
+  // Fail closed: when the check can't run, nothing new is checked off and a
+  // completion waits for a turn it can (playground, 2026-11-21: failing open
+  // completed a lesson the check had held for 16 turns).
+  const failed = !grounded;
+  if (failed) {
+    const why = 'couldn’t be checked this turn: ask them to share that part of their work in their own words';
+    grounded = { shown: [], missing: Object.fromEntries(plan.check.map((n) => [n, why])), ungrounded: [] };
   }
 
   const applied = applyVerdict(parsed, kb, plan, grounded);
   let out = applied.parsed;
   let regenerated = false;
-  if (applied.held && regenerate) {
-    try {
-      const second = parseCoachResponse(await regenerate(heldCompletionAddendum(kb, applied.outstanding, grounded.missing)));
-      if (second.text) {
-        regenerated = true;
-        const kept = applied.parsed.kbUpdate?.objectivesMet || [];
-        out = {
-          ...second,
-          progress: Math.min(second.progress ?? out.progress ?? 0, HELD_PROGRESS),
-          kbUpdate: { ...(second.kbUpdate || applied.parsed.kbUpdate || {}), objectivesMet: kept },
-          profileUpdate: second.profileUpdate || parsed.profileUpdate,
-        };
-      }
-    } catch { /* keep the first reply, with completion held */ }
+  let replaced = false;
+  if (applied.held) {
+    if (regenerate) {
+      try {
+        const second = parseCoachResponse(await regenerate(heldCompletionAddendum(kb, applied.outstanding, grounded.missing)));
+        if (second.text) {
+          regenerated = true;
+          const kept = applied.parsed.kbUpdate?.objectivesMet || [];
+          out = {
+            ...second,
+            progress: Math.min(second.progress ?? out.progress ?? 0, HELD_PROGRESS),
+            kbUpdate: { ...(second.kbUpdate || applied.parsed.kbUpdate || {}), objectivesMet: kept },
+            profileUpdate: second.profileUpdate || parsed.profileUpdate,
+          };
+        }
+      } catch { /* keep the first reply, with completion held */ }
+    }
+    // The coach's words must agree with the hold. Its second try often still
+    // said "this one is complete" (playground testing), so in code: a reply or
+    // "Where you are" note that says the lesson is done is replaced.
+    if (claimsCompletion(out.text)) {
+      out = { ...out, text: heldReply(kb, applied.outstanding, grounded.missing) };
+      replaced = true;
+    }
+    if (out.kbUpdate?.learnerPosition && claimsCompletion(out.kbUpdate.learnerPosition)) {
+      out = { ...out, kbUpdate: { ...out.kbUpdate, learnerPosition: heldPosition(kb, applied.outstanding) } };
+    }
   }
   return {
     parsed: out,
@@ -211,6 +231,8 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
       unverified: applied.unverified.length,
       held: applied.held,
       regenerated,
+      ...(replaced ? { replaced } : {}),
+      ...(failed ? { failed } : {}),
     },
   };
 }
@@ -449,12 +471,27 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     orchestrator.reportEvent(repaired.progress != null && repaired.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
   }
 
+  // The draft guard (#584): a reply that writes the learner's answer for them
+  // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
+  // feedback plus a question. Learners copied these drafts, and the grading
+  // check then (rightly) didn't count them. The rewrite streams in place; if
+  // it still drafts, the first reply stands.
+  let coachReply = repaired;
+  if (lessonKB.status !== 'completed' && draftsForLearner(repaired.text)) {
+    try {
+      const raw = await orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, DRAFT_ADDENDUM);
+      const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw)));
+      if (again.text && !draftsForLearner(again.text)) coachReply = { ...again, draftRewritten: true };
+    } catch { /* keep the first reply */ }
+    orchestrator.reportEvent(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept', { lessonId });
+  }
+
   // The grading check (#584): objectives stay checked off only when the
   // learner's own words show them, and a completion that isn't backed up is
   // held while the coach asks for what's missing (its second try streams in
   // place of the first).
   const graded = await checkGrading({
-    lesson, kb: lessonKB, parsed: repaired, messages,
+    lesson, kb: lessonKB, parsed: coachReply, messages,
     imageParts: userParts.filter((p) => p.type === 'image'),
     assess: (input, images) => orchestrator.assessTurn(input, images),
     regenerate: (addendum) => orchestrator.converseStream('coach', messages, cleanStream(onStream), 2048, addendum),

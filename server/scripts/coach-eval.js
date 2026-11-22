@@ -42,7 +42,7 @@ const client = (p) => join(repo, 'client', p);
 const { buildContext, parseCoachResponse, recoverMissingTags, applyCoachResponseToKB, checkGrading } = await import(client('src/lib/lessonEngine.js'));
 const { TAG_REPAIR_ADDENDUM, TAG_REPAIR_CUE } = await import(client('js/orchestrator.js'));
 const { mergeObjectivesMet } = await import(client('src/lib/lessonWork.js'));
-const { assessmentPlan } = await import(client('src/lib/assessment.js'));
+const { assessmentPlan, draftsForLearner, claimsCompletion, DRAFT_ADDENDUM } = await import(client('src/lib/assessment.js'));
 const { assembleSystemPrompt, COACH_KB_NOTE } = await import(client('js/promptAssembly.js'));
 
 function args(argv) {
@@ -98,6 +98,15 @@ async function runTurn(mode, modelId, s) {
   const first = parseCoachResponse(await converse(modelId, system(), messages, 2048, stats));
   let parsed = await recoverMissingTags(first, () => converse(modelId, system(TAG_REPAIR_ADDENDUM),
     [...messages, { role: 'assistant', content: first.text || '…' }, { role: 'user', content: TAG_REPAIR_CUE }], 600, stats));
+  // The draft guard, as sendMessage runs it (harness only).
+  let draftRewritten = false;
+  const firstDrafted = draftsForLearner(parsed.text || '');
+  if (mode === 'harness' && firstDrafted) {
+    const raw = await converse(modelId, system(DRAFT_ADDENDUM), messages, 2048, stats);
+    const again = await recoverMissingTags(parseCoachResponse(raw), () => converse(modelId, system(TAG_REPAIR_ADDENDUM),
+      [...messages, { role: 'assistant', content: parseCoachResponse(raw).text || '…' }, { role: 'user', content: TAG_REPAIR_CUE }], 600, stats));
+    if (again.text && !draftsForLearner(again.text)) { parsed = again; draftRewritten = true; }
+  }
   // What the coach itself checked off this turn, before any check.
   const claimed = assessmentPlan(lessonKB, parsed).claimed.length;
   let assessment = null;
@@ -124,6 +133,9 @@ async function runTurn(mode, modelId, s) {
     progress: parsed.progress ?? null, tagsMissing: parsed.progress == null, tagsRepaired: !!parsed.tagsRepairTried,
     portfolio: !!s.expect.noPortfolio && /portfolio/i.test(text),
     drafted: !!s.expect.noDraft && draftedForLearner(text),
+    draftedAny: draftsForLearner(text), firstDrafted, draftRewritten,
+    saysDoneButOpen: !completed && claimsCompletion(text),
+    replaced: !!assessment?.replaced,
     cjk: CJK.test(text), words: wordCount(text),
     held: !!assessment?.held, regenerated: !!assessment?.regenerated, checkFailed: !!assessment?.failed,
     ...stats, text, assessRaw,
@@ -171,7 +183,8 @@ for (const model of models) for (const mode of modes) {
   const port = ok.filter((r) => SCENARIOS.find((s) => s.id === r.scenario)?.expect.noPortfolio);
   const draft = ok.filter((r) => SCENARIOS.find((s) => s.id === r.scenario)?.expect.noDraft);
   console.log(`  portfolio drift    ${port.filter((r) => r.portfolio).length}/${port.length}`);
-  console.log(`  wrote it for them  ${draft.filter((r) => r.drafted).length}/${draft.length}`);
+  console.log(`  wrote it for them  ${draft.filter((r) => r.drafted).length}/${draft.length}   any reply drafting: ${ok.filter((r) => r.draftedAny).length}/${ok.length} (first reply ${ok.filter((r) => r.firstDrafted).length}, rewritten ${ok.filter((r) => r.draftRewritten).length})`);
+  console.log(`  says done, lesson open ${ok.filter((r) => r.saysDoneButOpen).length}/${ok.length}   (plato's words replaced ${ok.filter((r) => r.replaced).length})`);
   const thin = ok.filter((r) => SCENARIOS.find((s) => s.id === r.scenario)?.expect.noNewObjectives);
   console.log(`  checked off on a vague answer: coach ${thin.filter((r) => r.claimed > 0).length}/${thin.length}, kept ${thin.filter((r) => r.newlyMet > 0).length}/${thin.length}`);
   console.log(`  objectives: coach checked off ${ok.reduce((a, r) => a + r.claimed, 0)}, kept ${ok.reduce((a, r) => a + Math.max(0, r.newlyMet), 0)}`);
