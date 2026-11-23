@@ -308,7 +308,6 @@ test('the Entra plugin panel sets the button’s icon and colors, by keyboard, a
   await expect(form.getByRole('alert').filter({ hasText: 'Use a PNG' })).toHaveCount(0);
   await expectAccessible(page, { label: 'Entra panel with an icon and colors' });
 
-  // Save, by keyboard.
   await save.focus();
   await page.keyboard.press('Enter');
   await expect(form.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();

@@ -5,7 +5,6 @@ import { useStickToBottom } from '../../hooks/useStickToBottom.js';
 const ChatArea = forwardRef(function ChatArea({ children, announcement }, ref) {
   const logRef = useRef(null);
 
-  // Merge the forwarded ref with our internal logRef
   const setRefs = useCallback((node) => {
     logRef.current = node;
     if (typeof ref === 'function') ref(node);

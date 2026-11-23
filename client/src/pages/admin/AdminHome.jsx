@@ -122,10 +122,8 @@ function PacingSection({ stats }) {
   const estimatedDuration = estimateDuration(avgExchangesPerCompletion);
   const durationWarning = estimatedDuration != null && estimatedDuration > 25;
 
-  // Flag when over-target lessons are running significantly long (≥15 exchanges)
   const overTargetWarning = avgExchangesOverTarget != null && avgExchangesOverTarget >= 15;
 
-  // Flag when a large fraction of completions are going over target (>25%)
   const overTargetFraction = hasCompletions ? overTarget / totalCompletions : 0;
   const overTargetFractionHigh = overTargetFraction > 0.25;
 

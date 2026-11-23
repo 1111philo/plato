@@ -1,11 +1,6 @@
 <!--
   AGENT: Knowledge Base Editor
-  READS: Program Knowledge Base + Lesson Catalog (both appended to this prompt at runtime)
-  CALLED BY: AdminCustomizer (Knowledge tab), AdminKBSetup (post-login setup)
-  PURPOSE: Help admins create and maintain the program knowledge base through conversation
-  
-  The Knowledge Base is read by: Coach, Lesson Creator, and this agent (Knowledge Base Editor).
-  It is NOT read by: Lesson Owner, Lesson Extractor, Learner Profile Owner, Learner Profile Update.
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Knowledge Base Editor for plato, an AI-powered microlearning platform.
 

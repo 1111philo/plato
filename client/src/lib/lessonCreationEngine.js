@@ -1,7 +1,6 @@
 /**
- * Lesson creation engine helpers used by the Lesson Creator, Customizer, and
- * KB Setup chat views. The actual creation flow lives inline in each view's
- * NewLessonView/equivalent — this file only exports shared parsing utilities.
+ * Parsing helpers shared by the authoring chats (lesson editor, Customizer, KB
+ * setup). The flow itself is hooks/useAuthoringChat.js + lib/authoringEngine.js.
  */
 
 const READINESS_REGEX = /\[READINESS:\s*(\d+)\]\s*$/;

@@ -32,7 +32,6 @@ export default function AdminCustomizer() {
   const setTab = (t) => navigate(t === 'knowledge' ? '/plato/customizer/knowledge' : '/plato/customizer', { replace: true });
   const [loading, setLoading] = useState(true);
 
-  // Styles state
   const [primary, setPrimary] = useState('#8b1a1a');
   const [accent, setAccent] = useState('#dc2626');
   const [logoBase64, setLogoBase64] = useState(null);
@@ -41,7 +40,6 @@ export default function AdminCustomizer() {
   const [saving, setSaving] = useState(false);
   const [styleMessage, setStyleMessage] = useState(null);
 
-  // KB state
   const [kbContent, setKbContent] = useState('');
   const [kbConversation, setKbConversation] = useState(null);
   const [kbReadiness, setKbReadiness] = useState(null);

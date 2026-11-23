@@ -58,7 +58,6 @@ describe('WordPress Info query executor', () => {
       assert.ok(source.kind, `Source ${source.id} missing kind`);
       assert.ok(source.base, `Source ${source.id} missing base URL`);
 
-      // Verify base is a valid URL
       assert.doesNotThrow(
         () => new URL(source.base),
         `Source ${source.id} has invalid base URL: ${source.base}`

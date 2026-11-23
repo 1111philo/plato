@@ -7,8 +7,6 @@
 
 import { authenticatedFetch } from './auth.js';
 
-// -- In-memory cache ----------------------------------------------------------
-
 const _cache = new Map();
 const _versions = new Map();
 
@@ -112,8 +110,6 @@ async function deleteSyncData(syncKey) {
   } catch { /* best effort */ }
 }
 
-// -- Preferences --------------------------------------------------------------
-
 export async function getPreferences() {
   const data = await fetchSyncData('preferences');
   return data || { name: '' };
@@ -122,8 +118,6 @@ export async function getPreferences() {
 export async function savePreferences(prefs) {
   return putSyncData('preferences', prefs);
 }
-
-// -- Learner profile ----------------------------------------------------------
 
 export async function getLearnerProfile() {
   return fetchSyncData('profile');
@@ -141,8 +135,6 @@ export async function getLearnerProfileSummary() {
 export async function saveLearnerProfileSummary(summary) {
   return putSyncData('profileSummary', summary);
 }
-
-// -- Lesson KB ----------------------------------------------------------------
 
 export async function getLessonKB(lessonId) {
   return fetchSyncData(`lessonKB:${lessonId}`);
@@ -168,8 +160,6 @@ export async function getCourseProgress(courseId) {
 export async function saveCourseProgress(courseId, progress) {
   return putSyncData(`courseProgress:${courseId}`, progress);
 }
-
-// -- Activity KB --------------------------------------------------------------
 
 export async function getActivityKB(activityId) {
   // Activity KBs are stored as part of the lesson's activityKBs collection.
@@ -203,8 +193,6 @@ export async function deleteActivityKBsForLesson(lessonId) {
   await deleteSyncData(`activityKBs:${lessonId}`);
 }
 
-// -- Activities ---------------------------------------------------------------
-
 export async function getActivities(lessonId) {
   const data = await fetchSyncData(`activities:${lessonId}`);
   return Array.isArray(data) ? data : [];
@@ -224,15 +212,12 @@ export async function deleteActivitiesForLesson(lessonId) {
   await deleteSyncData(`activities:${lessonId}`);
 }
 
-// -- Drafts -------------------------------------------------------------------
-
 export async function getDrafts(lessonId) {
   const data = await fetchSyncData(`drafts:${lessonId}`);
   return Array.isArray(data) ? data : [];
 }
 
 export async function getDraftsForActivity(activityId) {
-  // Scan all draft collections in cache
   for (const [key, data] of _cache.entries()) {
     if (!key.startsWith('drafts:')) continue;
     if (Array.isArray(data)) {
@@ -256,8 +241,6 @@ export async function saveDraft(draft) {
 export async function deleteDraftsForLesson(lessonId) {
   await deleteSyncData(`drafts:${lessonId}`);
 }
-
-// -- Lesson messages (unified conversation per lesson) ------------------------
 
 export async function getLessonMessages(lessonId) {
   const data = await fetchSyncData(`messages:${lessonId}`);
@@ -318,8 +301,6 @@ export async function clearLessonMessages(lessonId) {
   await deleteSyncData(`messages:${lessonId}`);
 }
 
-// -- User-created lessons -----------------------------------------------------
-
 export async function saveUserLesson(lessonId, markdown) {
   await putSyncData(`lessons:${lessonId}`, { lessonId, markdown, createdAt: Date.now() });
 }
@@ -342,8 +323,6 @@ export async function getUserLessonMarkdown(lessonId) {
 export async function deleteUserLesson(lessonId) {
   await deleteSyncData(`lessons:${lessonId}`);
 }
-
-// -- Auth tokens (localStorage) -----------------------------------------------
 
 const AUTH_STORAGE_KEY = 'plato_auth';
 
@@ -388,8 +367,6 @@ export async function saveAuthUser(user) {
     localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ ...existing, user }));
   } catch { /* storage full or disabled */ }
 }
-
-// -- Onboarding ---------------------------------------------------------------
 
 export async function getOnboardingComplete() {
   // With login required, onboarding is always considered complete

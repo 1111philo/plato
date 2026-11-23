@@ -140,7 +140,6 @@ test.describe('Trace mode', () => {
   });
 
   test('View as User: an admin reads the learner’s trace, read-only', async ({ page }) => {
-    // The learner records a turn.
     await login(page, LEARNER);
     await setTrace(page, true);
     await page.goto(LESSON);

@@ -34,7 +34,7 @@ const routes = new Hono();
 // All Slack routes require auth + admin. The plugin host adds its own enabled-gate.
 routes.use('*', authenticate, requireAdmin);
 
-// Helper: read the plugin's stored bot token from the activation record.
+// The bot token is in the activation record.
 async function getSlackToken() {
   const item = await db.getSyncData('_system', 'plugins:activation');
   return item?.data?.slack?.settings?.botToken || null;

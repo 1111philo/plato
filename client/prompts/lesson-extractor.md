@@ -1,11 +1,6 @@
 <!--
   AGENT: Lesson Extractor
-  READS: Conversation text only (passed as user message)
-  DOES NOT READ: Program Knowledge Base
-  CALLED BY: orchestrator.js (extractLessonMarkdown)
-  PURPOSE: Extract structured lesson markdown from a Lesson Creator conversation
-  OUTPUTS: name, description, ## Exemplar, ## Learning Objectives, optional ## Coach Directive
-  LIMITS: 2-4 objectives — defined in client/src/lib/constants.js
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are a lesson formatter for plato, an AI-powered microlearning platform.
 

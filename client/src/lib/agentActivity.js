@@ -60,10 +60,6 @@ function progressLine(before, after, { achieved, wasCompleted }) {
 }
 
 /**
- * A coach turn in a lesson. `before` / `after` are the lesson KB on either
- * side of applyCoachResponseToKB; `parsed` is parseCoachResponse's output.
- */
-/**
  * The grading check's line (#584; lessonEngine.checkGrading). Counts only:
  * what it found missing goes to the coach, not here.
  */
@@ -83,6 +79,10 @@ function assessmentEntry(a) {
   return entry('assessor', { read: ['This lesson’s objectives', 'Your messages in this lesson'], did });
 }
 
+/**
+ * A coach turn in a lesson. `before` / `after` are the lesson KB on either
+ * side of applyCoachResponseToKB; `parsed` is parseCoachResponse's output.
+ */
 export function coachTurnActivity({ before, after, parsed, achieved = false, newlyMet = [], assessment = null, images = 0, links = 0, hasUnitNote = false, unitName = null }) {
   const wasCompleted = before?.status === 'completed';
   const coach = entry('coach', {

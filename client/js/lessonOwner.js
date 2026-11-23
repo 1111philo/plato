@@ -1,8 +1,3 @@
-/**
- * Lesson Owner — loads lesson prompts from markdown files
- * and parses their structure.
- */
-
 import { authenticatedFetch } from './auth.js';
 import { getUserLessons } from './storage.js';
 import { sortLessons } from '../src/lib/lessonOrder.js';
@@ -27,13 +22,10 @@ export async function loadLessons() {
         // #451 scale review: not the whole catalog's markdown); an older
         // server still sends `markdown`.
         if (lesson.parsed || lesson.markdown) {
-          // parseLessonPrompt only knows about fields encoded inside the
-          // markdown (name, description, exemplar, objectives). Top-level
-          // server fields need to be carried forward explicitly so they
-          // survive into the client-side lesson model used by the classroom
-          // UI and the coach context builder: `unit` and `program` (the
-          // Course → Unit → Lesson placement and order, #408) and the legacy
-          // `course` block, which is the unit.
+          // parseLessonPrompt only knows the fields inside the markdown, so
+          // top-level server fields are carried forward here: `unit` and
+          // `program` (Course → Unit → Lesson placement and order, #408) and
+          // the legacy `course` block, which is the unit.
           const parsed = lesson.parsed
             ? { lessonId: lesson.lessonId, ...lesson.parsed }
             : parseLessonPrompt(lesson.lessonId, lesson.markdown);
@@ -64,7 +56,6 @@ export async function loadLessons() {
   return lessonsCache;
 }
 
-/** Clear the cache so loadLessons() re-fetches on next call. */
 export function invalidateLessonsCache() {
   lessonsCache = null;
 }
@@ -83,9 +74,6 @@ export async function getLessonsInCourse(courseId) {
     .map(l => ({ name: l.name, description: l.description }));
 }
 
-/**
- * Parse a lesson prompt markdown file into structured data.
- */
 export function parseLessonPrompt(lessonId, markdown) {
   const lines = markdown.split('\n');
   let name = '';

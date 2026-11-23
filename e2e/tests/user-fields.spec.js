@@ -60,7 +60,6 @@ test('admins manage user fields and who sees them', async ({ page, browser, requ
   await expect(learner.getByLabel(/Cohort code/)).toBeVisible({ timeout: 15_000 });
   await expect(learner.getByLabel(/Internal note/)).toHaveCount(0);
 
-  // Delete from the editor, behind a confirmation.
   for (const name of ['Internal note', 'Cohort code']) {
     await dialog.getByRole('button', { name: `Edit ${name}` }).click();
     await dialog.getByRole('button', { name: 'Delete field' }).click();

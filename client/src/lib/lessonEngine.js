@@ -87,7 +87,7 @@ const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
  */
 function extractBracketedJSON(text, startPos) {
   let i = startPos;
-  while (i < text.length && /\s/.test(text[i])) i++; // skip whitespace
+  while (i < text.length && /\s/.test(text[i])) i++;
   if (text[i] !== '{') return null;
 
   let depth = 0;
@@ -143,7 +143,6 @@ export async function recoverMissingTags(parsed, repair) {
   };
 }
 
-/** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
 /**
  * The grading check for one coach turn (#584; lib/assessment.js). When the
  * reply checks off a new objective or scores 10, `assess(input, images)` asks
@@ -294,6 +293,7 @@ export function nextGradingFailures(prev = 0, assessment) {
   return assessment.held ? (prev || 0) + 1 : prev || 0;
 }
 
+/** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
 export function shouldUpdateProfile(parsed) {
   return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
 }
@@ -303,18 +303,15 @@ export function parseCoachResponse(raw) {
   let kbUpdate = null;
   let profileUpdate = null;
 
-  // Extract progress
   const progressMatch = raw.match(/\[PROGRESS:\s*(\d+)\]/);
   if (progressMatch) progress = parseInt(progressMatch[1], 10);
 
-  // Extract KB update — bracket-aware so }] inside string values don't mislead
   const kbIdx = raw.indexOf('[KB_UPDATE:');
   if (kbIdx !== -1) {
     const jsonStr = extractBracketedJSON(raw, kbIdx + '[KB_UPDATE:'.length);
     if (jsonStr) { try { kbUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
   }
 
-  // Extract profile update
   const profIdx = raw.indexOf('[PROFILE_UPDATE:');
   if (profIdx !== -1) {
     const jsonStr = extractBracketedJSON(raw, profIdx + '[PROFILE_UPDATE:'.length);
@@ -364,7 +361,6 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   const profileSummary = await getLearnerProfileSummary();
   trace?.step('lesson', lessonForTrace(lesson));
 
-  // Lesson Owner generates the KB
   if (onProgress) onProgress('initializing');
   const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary, { trace });
   // What the planner wrote, before plato's code sets the fields it owns.
@@ -374,7 +370,6 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   lessonKB.progress = 0;
   lessonKB.startedAt = ts();
 
-  // Emit lessonStarted hook and collect enrichments from plugins
   let enrichments = [];
   try {
     if (onProgress) onProgress('enriching', { enrichments: [] });
@@ -424,7 +419,6 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
   trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
 
-  // Coach opens the conversation
   if (onProgress) onProgress('starting');
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
@@ -591,7 +585,6 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     earlierLinks: allMsgs.filter((m) => m.metadata?.links?.length).length,
   });
 
-  // Build user message content (text, link page-text, then images)
   const userParts = buildUserParts(text, imageDataUrls, linkList);
 
   // Always include context as first message so coach has lesson + profile info
@@ -828,9 +821,6 @@ export async function migrateLegacyImages(lessonId, messages) {
   return changed ? migrated : messages;
 }
 
-/**
- * Resume an existing lesson. Loads messages and KB.
- */
 export async function resumeLesson(lessonId) {
   let messages = await getLessonMessages(lessonId);
   // Heal pre-#193 conversations whose embedded base64 images bloated the
@@ -888,7 +878,6 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   if (parsed.kbUpdate) {
     if (parsed.kbUpdate.insights?.length) {
       next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
-      // Prune old insights (keep last 10)
       if (next.insights.length > 10) {
         const older = next.insights.slice(0, next.insights.length - 10);
         next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];

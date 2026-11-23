@@ -125,7 +125,6 @@ export default function AdminLessons() {
     setLoading(false);
   }
 
-  // Open the editor for a lesson by navigating to its deep-linkable route.
   function openLessonEditor(lessonId) {
     navigate(`/plato/lessons/${encodeURIComponent(lessonId)}/edit`);
   }
@@ -148,10 +147,8 @@ export default function AdminLessons() {
         const initialCourse = data.course || null;
         const markdown = data.markdown || '';
         if (data.conversation?.length) {
-          // Resume the in-progress creation/edit conversation.
           setEditing({ lessonId: routeLessonId, conversation: data.conversation, readiness: data.readiness ?? (isDraft ? 1 : 8), isDraft, initialCourse, markdown });
         } else if (isDraft) {
-          // Empty draft — open the editor in create mode.
           setEditing({ lessonId: routeLessonId, conversation: null, readiness: 0, isDraft: true, initialCourse, markdown: '' });
         } else {
           // Finalized lesson with no stored conversation — seed one with the
@@ -323,7 +320,6 @@ export default function AdminLessons() {
   const shownColumns = visibleColumns(allColumns, columnPrefs);
   const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
 
-  // Lesson list
   if (loading) return spinner;
 
   return (
@@ -587,7 +583,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     }
     if (chatMessages.length > 0 && key === 0) return;
 
-    // Determine the opening message(s) to send to the agent
     const openingMessages = (needsAgentReply && initialMessages?.length)
       ? initialMessages.map(m => ({ role: m.role, content: m.content }))
       : [{ role: 'user', content: 'I want to create a new lesson.' }];

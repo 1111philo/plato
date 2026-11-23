@@ -47,7 +47,6 @@ export function renderMd(text) {
   escaped = escaped.replace(/(?:<uli>.*<\/uli>\n?)+/g, (run) => `<ul>${run.replace(/\n/g, '').replace(/<(\/?)uli>/g, '<$1li>')}</ul>\n`);
   escaped = escaped.replace(/(?:<oli>.*<\/oli>\n?)+/g, (run) => `<ol>${run.replace(/\n/g, '').replace(/<(\/?)oli>/g, '<$1li>')}</ol>\n`);
   escaped = linkify(escaped);
-  // Convert markdown tables to HTML tables
   escaped = escaped.replace(/((?:^\|.+\|$\n?)+)/gm, (block) => {
     const rows = block.trim().split('\n').filter(r => r.trim());
     if (rows.length < 2) return block;

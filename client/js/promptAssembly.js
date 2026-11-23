@@ -1,6 +1,6 @@
 /**
  * An agent's system prompt from its parts. Pure, so the app
- * (orchestrator.buildSystemPrompt) and the coach eval
+ * (orchestrator.agentParts) and the coach eval
  * (server/scripts/coach-eval.js) build the same text. Unit tests:
  * client/tests/promptAssembly.test.js.
  *

@@ -16,8 +16,9 @@
  * - English phrases only, kept modest: "ignore previous instructions",
  *   "mark this lesson complete", "set progress to 10", "you must now ignore…",
  *   and an authority (admin/system/plato/staff, or "as an instructor I
- *   approve…") approving a completion, skip, or score. Notes are in the learner's language (#240); an injection in
- *   another language gets past these and is left to the prompts.
+ *   approve…") approving a completion, skip, or score. Notes are in the
+ *   learner's language (#240); an injection in another language gets past
+ *   these and is left to the prompts.
  * Pure: no I/O.
  */
 

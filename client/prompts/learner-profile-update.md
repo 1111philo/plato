@@ -1,9 +1,6 @@
 <!--
   AGENT: Learner Profile Update
-  READS: Current learner profile (including `learnerNotes`), the new text (`learnerFeedback` from the learner, `coachObservation` from the coach, or `removedNote` when the learner deleted a note; `source` says which), activity context (via JSON input)
-  DOES NOT READ: Program Knowledge Base
-  CALLED BY: orchestrator.js (updateProfileFromFeedback): Settings → Learner Profile → Add Feedback (source 'learner') and Remove (source 'learner-removed'), and coach observations during a lesson via profileQueue.js (source 'coach')
-  PURPOSE: Incremental profile updates from the learner's own feedback and from coaching observations
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Learner Profile Agent for plato, an AI-powered microlearning platform.
 

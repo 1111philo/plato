@@ -97,17 +97,14 @@ for (const [path, target] of Object.entries(MARKETING_REDIRECTS)) {
 
 // SPA fallback — serve index.html for all non-API routes
 app.get('*', (c) => {
-  // Don't intercept API routes
   if (c.req.path.startsWith('/v1/')) return c.notFound();
 
-  // Try to serve a static file first (for css, js, images, etc.)
   const file = staticFiles[c.req.path];
   if (file) {
     c.header('Content-Type', file.type);
     return c.body(file.content);
   }
 
-  // SPA fallback: serve index.html for all other routes
   if (!indexHtml) return c.text('Client not built. Run: cd client && npm run build', 500);
   c.header('Content-Type', indexHtml.type);
   c.header('Cache-Control', 'no-cache');

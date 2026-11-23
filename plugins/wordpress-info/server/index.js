@@ -52,9 +52,8 @@ const SYNTHESIZER_SCHEMA = {
 };
 
 /**
- * Load agent prompts. These would normally be upserted to sync-data as
- * `prompt:plugin:wordpress-info:<name>`, but for Phase 1 we'll read directly
- * from the files and call the orchestrator. Phase 3's `agent` capability will
+ * Prompts are read from the plugin's own files, not upserted to sync-data as
+ * `prompt:plugin:wordpress-info:<name>`. Phase 3's `agent` capability will
  * formalize this.
  */
 async function loadPrompt(name) {
@@ -79,7 +78,6 @@ async function callAgentWithSchema(promptName, context, schema, ai, model, purpo
     messages: [{ role: 'user', content: fullPrompt }],
   }, { purpose });
 
-  // Extract text from response
   let text = response.content?.find(c => c.type === 'text')?.text || '';
 
   // Extract JSON from <StructuredOutput> tags or find JSON object in text
@@ -87,14 +85,12 @@ async function callAgentWithSchema(promptName, context, schema, ai, model, purpo
   if (structuredMatch) {
     text = structuredMatch[1];
   } else {
-    // Try to find JSON object in the text (between { and })
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       text = jsonMatch[0];
     }
   }
 
-  // Parse JSON from response
   try {
     const parsed = JSON.parse(text);
     // Validate against schema (basic check)
@@ -112,10 +108,7 @@ async function callAgentWithSchema(promptName, context, schema, ai, model, purpo
   }
 }
 
-/**
- * lessonStarted hook handler.
- * The payload includes an optional onProgress callback for reporting step status.
- */
+/** The payload's optional onProgress callback reports each step's status. */
 async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress }, ctx) {
   const { ai, LLM } = ctx;
   // A recorder only on a traced call (and only on a host that has one).
@@ -125,7 +118,6 @@ async function onLessonStarted({ userId, lessonId, lesson, lessonKB, onProgress 
   };
 
   try {
-    // Step 1: Scan for WordPress keywords
     reportProgress('scan-keywords', 'in_progress');
     const plannerContext = `
 **Exemplar:** ${lesson.exemplar || 'N/A'}
@@ -143,7 +135,6 @@ Analyze this lesson and decide whether to enrich it with WordPress documentation
       'Planner: decide whether this lesson is about WordPress and what to search for');
 
     if (!plan || !plan.shouldEnrich || !plan.queries || !plan.queries.length) {
-      // Not WordPress-related — mark scan complete, skip remaining steps
       trace?.note(!plan
         ? 'The planner’s reply couldn’t be read, so nothing was searched and no context was added.'
         : 'The planner decided this lesson doesn’t need WordPress reference material, so nothing was searched and no context was added.');
@@ -154,15 +145,12 @@ Analyze this lesson and decide whether to enrich it with WordPress documentation
       return null;
     }
 
-    // Step 2: Build queries (planner succeeded)
     reportProgress('scan-keywords', 'completed');
     reportProgress('build-queries', 'completed');
 
-    // Step 3: Execute queries
     reportProgress('execute-queries', 'in_progress');
     const queryResults = await executeQueries(plan.queries, SOURCES, trace);
 
-    // If no results, don't synthesize
     const totalResults = queryResults.reduce((sum, q) => sum + q.results.length, 0);
     trace?.note(`${plan.queries.length} search ${plan.queries.length === 1 ? 'query' : 'queries'} returned ${totalResults} result${totalResults === 1 ? '' : 's'}.`);
     if (totalResults === 0) {
@@ -172,7 +160,6 @@ Analyze this lesson and decide whether to enrich it with WordPress documentation
     }
     reportProgress('execute-queries', 'completed');
 
-    // Step 4: Synthesize context
     reportProgress('synthesize-context', 'in_progress');
     const resultsText = queryResults.map(qr => {
       const resultsStr = qr.results.map(r =>
@@ -220,17 +207,15 @@ Synthesize a concise, lesson-specific context note (~300 words).
       }
     }
 
-    // Return enrichment data
     return {
       pluginId: 'wordpress-info',
       label: 'WordPress.org',
       context: synthesis.context,
       reasoning: synthesis.reasoning,
-      sources: allSources.slice(0, 8), // Cap at 8 sources
+      sources: allSources.slice(0, 8),
     };
   } catch (err) {
     // Fail open — never block lesson start
-    // Mark current step as failed
     console.error('[wordpress-info] Enrichment failed:', err);
     trace?.note(`WordPress Info stopped with an error, so no context was added: ${err?.message || err}`);
     return null;

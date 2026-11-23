@@ -72,7 +72,6 @@ export default function ComposeBar({
   const { state: appState } = useApp();
   const sendKey = sendKeyOf(appState.preferences);
 
-  // Link-attach UI state.
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [fetchingLink, setFetchingLink] = useState(false);

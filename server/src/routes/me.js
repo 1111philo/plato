@@ -32,7 +32,6 @@ me.use('/v1/me/*', authenticate);
 me.use('/v1/plugins', authenticate);
 me.use('/v1/plugins/extension-points', authenticate);
 
-// GET /v1/me — get own profile
 me.get('/v1/me', async (c) => {
   const user = c.get('user');
   const defs = await loadFieldDefinitions();
@@ -73,7 +72,6 @@ me.get('/v1/me/fields', async (c) => {
   });
 });
 
-// PATCH /v1/me — update profile fields
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => null);
@@ -295,7 +293,6 @@ me.delete('/v1/me', async (c) => {
     await db.deleteSyncData(userId, item.dataKey);
   }
 
-  // Delete user record
   await db.deleteUser(userId);
 
   return c.json({ ok: true, message: 'Account and all associated data have been permanently deleted' });

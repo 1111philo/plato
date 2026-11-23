@@ -19,7 +19,6 @@ test('admins update a group or a field for the users they select', async ({ page
   await expect(table.getByRole('checkbox', { name: 'Select all users on this page' })).not.toBeChecked();
   await expectAccessible(page, { label: 'users with a selection' });
 
-  // Set a group.
   await bar.getByRole('button', { name: 'Update…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Update 2 users' });
   await expect(dialog.getByLabel('What to change')).toHaveValue('userGroup');

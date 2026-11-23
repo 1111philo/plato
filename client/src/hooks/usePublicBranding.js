@@ -15,7 +15,6 @@ export default function usePublicBranding(pageTitle) {
       .catch(() => setBranding({}));
   }, []);
 
-  // Set document title using classroom name
   useEffect(() => {
     if (!branding) return;
     const name = branding.classroomName || 'plato';
