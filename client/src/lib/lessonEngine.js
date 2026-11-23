@@ -647,7 +647,8 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     imageParts: userParts.filter((p) => p.type === 'image'),
     // Only the recorder and its label are passed on: the request itself is
     // the same with Trace on or off.
-    assess: (input, images, o) => (trace ? orchestrator.assessTurn(input, images, { trace, purpose: o?.purpose }) : orchestrator.assessTurn(input, images)),
+    // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
+    assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
     regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held')),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
     ...(trace ? { onStep: (type, data) => trace.step(type, data) } : {}),
