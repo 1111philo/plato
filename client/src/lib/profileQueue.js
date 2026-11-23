@@ -2,7 +2,7 @@
  * Sequential profile update queue — prevents concurrent updates from overwriting each other.
  */
 
-import { tracedFollowUp } from './traceSession.js';
+import { tracedFollowUp, openTrace } from './traceSession.js';
 import {
   getLearnerProfile, saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
@@ -72,7 +72,8 @@ export function mergeProfile(existing, returned) {
 
 async function saveProfileResult(existing, result, trace) {
   if (!result?.profile) {
-    console.error('[plato] Profile update agent returned no profile:', result);
+    // null: the note was screened out (learnerNoteFilter), which is expected.
+    if (result !== null) console.error('[plato] Profile update agent returned no profile:', result);
     trace?.step('profileUnchanged', { why: result === null ? 'the note was screened out, so the agent was not asked' : 'the agent returned no profile' });
     return;
   }
@@ -83,6 +84,68 @@ async function saveProfileResult(existing, result, trace) {
   if (result.summary) { savedSummary = await saveLearnerProfileSummary(result.summary); syncIfUnsaved(savedSummary, 'profileSummary'); }
   // The learner's own notes and the lesson lists are kept by code whatever the agent returned (mergeProfile).
   trace?.step('profileSaved', { before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
+}
+
+// -- The learner's own notes (Settings → Learner Profile) ---------------------
+//
+// Each is its own Trace turn in the `profile` scope when Trace mode is on
+// (#595): what the person did, the agent call, and what was saved.
+
+/**
+ * Add Feedback: keep the learner's words verbatim first (later updates can't
+ * drop them), then let the profile agent revise the profile. Throws if the
+ * agent call fails; the note itself is already saved by then.
+ */
+export async function addLearnerNote(text) {
+  const trace = await openTrace('profile', 'profile');
+  try {
+    const profile = withLearnerNote(await ensureProfileExists(), text);
+    const saved = await saveLearnerProfile(profile);
+    syncIfUnsaved(saved, 'profile');
+    trace?.step('noteChange', { action: 'added', text: String(text).trim(), saved: saved === true });
+    const result = await orchestrator.updateProfileFromFeedback(profile, String(text).trim(), {
+      lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
+    }, 'learner', trace ? { trace } : undefined);
+    await saveProfileResult(profile, result, trace);
+  } catch (e) {
+    trace?.fail(e);
+    throw e;
+  } finally {
+    trace?.flush();
+  }
+}
+
+/**
+ * Remove the note at `index`. The note goes at once; the profile agent then
+ * revises the profile in the background so it stops following that note.
+ * Returns `{ notes, done }` (`done` settles when the background update has),
+ * or null when there is no such note. `onSummary` hears a rewritten summary.
+ */
+export async function removeLearnerNote(index, { onSummary } = {}) {
+  const profile = await ensureProfileExists();
+  const removed = profile.learnerNotes?.[index];
+  if (!removed) return null;
+  const next = withoutLearnerNote(profile, index);
+  const saved = await saveLearnerProfile(next);
+  syncIfUnsaved(saved, 'profile');
+  const done = queueProfileUpdate(async () => {
+    const trace = await openTrace('profile', 'profile');
+    try {
+      trace?.step('noteChange', { action: 'removed', text: removed.text, saved: saved === true });
+      const current = await ensureProfileExists();
+      const result = await orchestrator.updateProfileFromFeedback(current, removed.text, {
+        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
+      }, 'learner-removed', trace ? { trace } : undefined);
+      await saveProfileResult(current, result, trace);
+      if (result?.profile && result.summary) onSummary?.(result.summary);
+    } catch (e) {
+      trace?.fail(e);
+      throw e;
+    } finally {
+      trace?.flush();
+    }
+  });
+  return { notes: next.learnerNotes, done };
 }
 
 export async function ensureProfileExists(name = '') {

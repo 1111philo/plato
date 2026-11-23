@@ -684,6 +684,43 @@ A request the trace can't reproduce means the trace is missing something.
   `client/tests/how-it-works.test.js` fails when the doc is out of date, so a
   change to the registry must regenerate it (`npm run docs:how-it-works`).
 
+### Beyond lessons
+Two more AI-driven places are recorded the same way, each under its own scope
+in the person's own records:
+
+| Scope | What | Trace button |
+|---|---|---|
+| `profile` | Settings → Learner Profile: each note added (Add Feedback) or removed is a turn: what the person did (`noteChange`), the profile agent's call (or `noteScreened` when the note filter held it back, with no call), and what was saved (`profileSaved` / `profileUnchanged`) | in the Learner Profile card, beside Add Feedback |
+| `author-<lessonId>` | the lesson editor's chat with the lesson creator, and each time the lesson writer is run (preview, Create/Update Lesson) | beside the editor's heading |
+| `kb` | the knowledge base editor (Customizer and first-time setup), and each run of the knowledge base writer | beside the editor's heading |
+
+- The flows live outside the pages so they can be tested from node:
+  `profileQueue.addLearnerNote` / `removeLearnerNote` (reusing
+  `saveProfileResult`, so the merge is the one the coach's observations use),
+  and `lib/authoringEngine.js` `authoringTurn` (one chat message: `authorInput`
+  or `authoringOpened`, `authoringTail`, the call, `authoringParsed` with the
+  `[READINESS: n]` score and the cleaned text) and `authoringExtract` (a writer
+  run: `extractAsked`, the call, `extracted` with the page's own check, and
+  `authoringSaved`). The three authoring pages share one hook,
+  `hooks/useAuthoringChat.js`, which replaced three copies of the same
+  streaming code.
+- A brand-new lesson already has its draft id when the editor opens
+  (`/plato/lessons/new` mints `admin-<ms>`), so its chat is recorded under that
+  lesson from the first message (`traceSession.authorScope`).
+- These conversations are session-only React state; the trace is the part
+  that is kept, in the admin's own sync records.
+- The buttons (`components/chat/TraceButton.jsx`) show while Trace mode is on
+  for the signed-in person; the profile one also when `profile` already has a
+  trace. Each opens `LessonTrace` as a dialog (`docked={false}`) and returns
+  focus to the button on close.
+- **Size.** These scopes have no record to carry `bytes`, so the first trace
+  opened for one in a session sums the JSON size of its stored `t` and `b`
+  records once (`traceSession.storedTraceBytes`, cached per scope); the session
+  adds each flush to that. Nothing is listed while Trace mode is off. A
+  different person signing in on the same tab starts the counts afresh.
+- Record ids are the start time in ms; two turns of one scope that start in the
+  same millisecond get consecutive ids, so neither overwrites the other.
+
 ### What only the server knows
 `POST /v1/ai/messages` with `trace: true` adds a `plato` object (a `plato`
 event at the start and end of a stream):

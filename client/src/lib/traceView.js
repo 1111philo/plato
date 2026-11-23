@@ -84,6 +84,8 @@ function saveSentence(s) {
   return `Saving ${what} failed (${why}). plato tries once more in the background.`;
 }
 
+const WHAT = { lesson: 'lesson', knowledgeBase: 'knowledge base' };
+
 /** The plain sentence and exact text for every step type but `call`. */
 const DESCRIBE = {
   lesson: (s) => ({
@@ -230,7 +232,7 @@ const DESCRIBE = {
   event: (s) => ({ summary: `${EVENTS[s.code] || s.code} (logged as “${s.code}”, with the lesson’s id and no conversation text.)` }),
   followUp: (s) => ({ summary: `${agentLabel(s.agent)} will run in the background because ${s.why}.`, details: s.observation ? [{ label: 'The coach’s observation', text: s.observation }] : [] }),
   followUpStart: (s) => ({ summary: `${agentLabel(s.agent)} ran because ${s.why}.` }),
-  noteScreened: () => ({ summary: 'The note read like an instruction, so it wasn’t given to the agent. The note itself is still saved and you can remove it.' }),
+  noteScreened: (s) => ({ summary: s.source === 'learner-removed' ? 'The removed note read like an instruction, so the agent had never been given it. There was nothing to undo.' : 'The note read like an instruction, so it wasn’t given to the agent. The note itself is still saved and you can remove it.' }),
   profileSaved: (s) => ({
     summary: `Your profile was updated${s.summary ? ' and its summary rewritten' : ''}.`,
     details: [
@@ -243,6 +245,37 @@ const DESCRIBE = {
   profileUnchanged: (s) => ({ summary: `Your profile wasn’t changed: ${s.why}.` }),
   unitNoteSaved: (s) => ({ summary: 'The unit note was rewritten.', change: { before: s.before || '(no note yet)', after: s.after } }),
   unitNoteUnchanged: (s) => ({ summary: `The unit note wasn’t changed: ${s.why}.` }),
+  noteChange: (s) => ({
+    summary: `You ${s.action === 'removed' ? 'removed' : 'added'} a note: “${clip(s.text, 120)}”. ${s.action === 'removed' ? 'It was taken off your profile' : 'It was kept with your profile, word for word'}${s.saved ? '' : ', and plato is still saving that'}.`,
+    details: [{ label: 'The note', text: s.text }],
+  }),
+  authorInput: (s) => ({ summary: `You wrote: “${clip(s.text, 120)}”.`, details: [{ label: 'Your message', text: s.text }] }),
+  authoringOpened: (s) => ({
+    summary: s.resumed ? 'plato’s code sent the saved conversation so the agent could reply to its last message.' : 'plato’s code sent a fixed first message so the agent could open the conversation.',
+    details: [{ label: s.resumed ? 'The last message sent' : 'The first message', text: s.opening }],
+  }),
+  authoringTail: (s) => ({
+    summary: `${plural(s.sent, 'message')} sent to the agent.${s.olderLeftOut ? ` ${plural(s.olderLeftOut, 'older message')} left out (only the last 15 are sent).` : ''}`,
+  }),
+  authoringParsed: (s) => ({
+    summary: s.readiness != null
+      ? `Readiness score: ${s.readiness} of 10${s.readinessBefore != null && s.readinessBefore !== s.readiness ? ` (it was ${s.readinessBefore})` : ''}. plato’s code took the score off the text you were shown.`
+      : 'The reply had no readiness score, so the readiness bar stayed where it was.',
+    details: [
+      { label: 'The reply with its score, as the model wrote it', text: s.raw },
+      { label: 'The text shown to you', text: s.text },
+    ],
+  }),
+  extractAsked: (s) => ({
+    summary: `You asked plato to write the ${WHAT[s.what] || s.what} from the conversation${s.messages != null ? ` (${plural(s.messages, 'message')})` : ''}, ${s.why === 'save' ? 'and save it' : 'for the preview'}.`,
+  }),
+  extracted: (s) => ({
+    summary: s.problem
+      ? `The model wrote ${plural((s.markdown || '').length, 'character')}, but plato’s code couldn’t use it: ${s.problem} Nothing was saved.`
+      : `The model wrote the ${WHAT[s.what] || s.what} (${plural((s.markdown || '').length, 'character')}). ${s.use === 'save' ? 'plato’s code found it complete and went on to save it.' : 'It was shown in the preview and not saved.'}`,
+    details: [{ label: `The ${WHAT[s.what] || s.what} as written`, text: s.markdown || '(nothing)' }],
+  }),
+  authoringSaved: (s) => ({ summary: s.ok ? `The ${WHAT[s.what] || s.what} was saved.` : `Saving the ${WHAT[s.what] || s.what} failed (${s.why || 'unknown reason'}).` }),
   shown: (s) => ({
     summary: s.replaced ? 'You watched a first reply arrive, and then it was replaced by the one below.' : 'The reply you saw is the one the model wrote.',
     change: s.replaced ? { before: s.firstStreamed, after: s.text } : null,
@@ -296,6 +329,9 @@ function flagsFor(record) {
     if (s.type === 'save' && !s.ok) add(`save-${s.record}`, saveSentence(s));
     if (s.type === 'save' && s.conflict && s.ok) add('conflict', 'Another device had saved a newer copy of this lesson; this turn replaced it.');
     if (s.type === 'profileUnchanged' || s.type === 'unitNoteUnchanged') add(s.type, DESCRIBE[s.type](s).summary);
+    if (s.type === 'noteScreened') add('noteScreened', 'A note read like an instruction, so it wasn’t given to the AI model.');
+    if (s.type === 'extracted' && s.problem) add('extractUnusable', `What the model wrote couldn’t be used: ${s.problem}`);
+    if (s.type === 'authoringSaved' && !s.ok) add('authoringSave', DESCRIBE.authoringSaved(s).summary);
   }
   return flags;
 }
@@ -304,7 +340,7 @@ const CODE_RULES = new Set(['cappedAt9', 'heldAt8', 'clamped', 'objectivesNotBac
 
 /** Who shaped what the person saw this turn: the model, plato's instructions, or plato's code. */
 function verdictFor(record) {
-  if (record.failed) return { source: 'code', text: 'This attempt failed, so nothing was saved from it.' };
+  if (record.failed) return { source: 'code', text: record.kind === 'profile' ? 'Updating your profile failed. The change to your notes had already been saved.' : 'This attempt failed, so nothing was saved from it.' };
   const types = new Set(record.steps.map((s) => s.type));
   const rules = record.steps.filter((s) => s.type === 'applied').flatMap((s) => s.rules || []).filter((r) => CODE_RULES.has(r));
   if (types.has('replyReplaced') || rules.length) {
@@ -313,6 +349,17 @@ function verdictFor(record) {
   if (types.has('heldRewrite') || [...record.steps].some((s) => (s.type === 'draftGuard' && s.used) || s.type === 'tagRepair')) {
     return { source: 'instructions', text: 'plato asked the model to answer again with an added instruction. The reply and score are the model’s second answer.' };
   }
+  if (record.kind === 'profile') {
+    if (types.has('noteScreened')) return { source: 'code', text: 'plato’s code held the note back, so the AI model wasn’t asked and your profile stayed as it was.' };
+    if (types.has('profileSaved')) return { source: 'model', text: 'The model rewrote your profile from your note. plato’s code kept your own notes and lesson lists as they were.' };
+    return { source: 'code', text: 'Your profile stayed as it was.' };
+  }
+  if (record.kind === 'authoring') {
+    const written = record.steps.find((s) => s.type === 'extracted');
+    if (written?.problem) return { source: 'code', text: 'The model wrote the text, and plato’s code found it incomplete, so it wasn’t used.' };
+    if (written) return { source: 'model', text: `The text is the model’s own, written from the conversation. plato’s code checked it${written.use === 'save' ? ' and saved it' : ' and showed it in the preview'}.` };
+    return { source: 'model', text: 'The reply and its readiness score are the model’s own, following plato’s standing instructions. plato’s code only took the score off the text shown.' };
+  }
   if (record.kind === 'followup') return { source: 'model', text: 'A background agent’s output, merged into your saved data by plato’s code.' };
   return { source: 'model', text: 'The reply and score are the model’s own, following plato’s standing instructions. plato’s code changed nothing.' };
 }
@@ -320,6 +367,16 @@ function verdictFor(record) {
 function titleFor(record) {
   if (record.kind === 'start') return 'Lesson start';
   if (record.kind === 'followup') return `Follow-up: ${agentLabel(record.steps.find((s) => s.type === 'followUpStart')?.agent || '')}`;
+  if (record.kind === 'profile') {
+    const note = record.steps.find((s) => s.type === 'noteChange');
+    return note ? `You ${note.action === 'removed' ? 'removed' : 'added'} a note: “${clip(note.text, 60)}”` : 'A change to your profile notes';
+  }
+  if (record.kind === 'authoring') {
+    const asked = record.steps.find((s) => s.type === 'extractAsked');
+    if (asked) return `${asked.why === 'save' ? 'Save' : 'Preview'}: writing the ${WHAT[asked.what] || asked.what}`;
+    const wrote = record.steps.find((s) => s.type === 'authorInput');
+    return wrote ? `Your message: “${clip(wrote.text, 60)}”` : 'Conversation start';
+  }
   const input = record.steps.find((s) => s.type === 'input');
   return input?.text ? `Your message: “${clip(input.text, 60)}”` : input?.images?.length ? 'Your message: an image' : 'Your message';
 }

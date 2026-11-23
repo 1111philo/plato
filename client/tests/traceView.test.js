@@ -88,6 +88,39 @@ describe('describeTrace', () => {
     assert.ok(context.details.some((d) => d.label === 'Your first name (A person)' && d.text === 'Ada'));
   });
 
+  it('profile notes and authoring chats: titles, verdicts and sentences that fit them', async () => {
+    const { addLearnerNote, removeLearnerNote } = await import('../src/lib/profileQueue.js');
+    const { authoringTurn, authoringExtract } = await import('../src/lib/authoringEngine.js');
+    const { resetTraceSession } = await import('../src/lib/traceSession.js');
+    reset(); clearCache(); resetTraceSession(); signIn();
+    await savePreferences({ name: '', traceMode: true });
+    await addLearnerNote('I use a Chromebook.');
+    await (await removeLearnerNote(0)).done;
+    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', messages: [{ role: 'user', content: 'I want to create a knowledge base for my program.' }] });
+    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'We teach adults.', messages: [{ role: 'user', content: 'We teach adults.' }], readinessBefore: 1 });
+    await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: 'User: We teach adults.', save: async () => {} });
+    await settle();
+    const of = (scope) => describeTrace([...store.keys()].filter((k) => k.startsWith(`trace:${scope}:`)).map((dataKey) => ({ dataKey, data: store.get(dataKey) })));
+
+    const profile = of('profile');
+    assert.deepEqual(profile.turns.map((t) => t.title), ['You added a note: “I use a Chromebook.”', 'You removed a note: “I use a Chromebook.”']);
+    assert.match(profile.turns[0].steps[0].summary, /^You added a note: “I use a Chromebook\.”\. It was kept with your profile, word for word\.$/);
+    assert.equal(profile.turns[0].steps[0].source, 'person');
+    assert.equal(profile.turns[0].verdict.source, 'model');
+    assert.match(profile.turns[0].verdict.text, /kept your own notes/);
+
+    const kb = of('kb');
+    assert.deepEqual(kb.turns.map((t) => t.title), ['Conversation start', 'Your message: “We teach adults.”', 'Save: writing the knowledge base']);
+    const parsed = kb.turns[1].steps.find((s) => s.type === 'authoringParsed');
+    assert.match(parsed.summary, /^Readiness score: 2 of 10 \(it was 1\)\./);
+    assert.equal(parsed.source, 'code');
+    assert.match(kb.turns[1].verdict.text, /readiness score are the model’s own/);
+    assert.match(kb.turns[2].verdict.text, /checked it and saved it/);
+    for (const turn of [...profile.turns, ...kb.turns]) {
+      for (const s of turn.steps) assert.ok(s.summary && !/undefined|\[object Object\]|NaN/.test(s.title + s.summary), `${s.type}: "${s.summary}"`);
+    }
+  });
+
   it('tolerates an empty or unknown trace', () => {
     assert.deepEqual(describeTrace([]), { turns: [], flags: [], partial: false });
     assert.deepEqual(describeTrace(null).turns, []);

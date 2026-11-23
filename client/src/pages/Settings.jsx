@@ -5,7 +5,6 @@ import PasswordField from '../components/PasswordField.jsx';
 import {
   savePreferences,
   getLearnerProfileSummary, getLearnerProfile,
-  saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
 import { updateProfile, getMyFields, authenticatedFetch } from '../../js/auth.js';
 import { useApp } from '../contexts/AppContext.jsx';
@@ -14,9 +13,9 @@ import { missingRequired, pickValues } from '../lib/userFields.js';
 import CustomFieldInput from '../components/CustomFieldInput.jsx';
 import NameFields from '../components/NameFields.jsx';
 import { fetchSsoProviders, providerName, ssoReasonMessage } from '../lib/sso.js';
-import * as orchestrator from '../../js/orchestrator.js';
 import { syncIfUnsaved } from '../lib/syncDebounce.js';
-import { ensureProfileExists, mergeProfile, withLearnerNote, withoutLearnerNote, queueProfileUpdate } from '../lib/profileQueue.js';
+import { addLearnerNote, removeLearnerNote } from '../lib/profileQueue.js';
+import TraceButton from '../components/chat/TraceButton.jsx';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,22 +37,8 @@ export default function Settings() {
   // Remove one of the learner's notes. The profile agent then revises the
   // profile so it stops following that note (in the background).
   async function removeNote(index) {
-    const profile = await ensureProfileExists();
-    const removed = profile.learnerNotes?.[index];
-    if (!removed) return;
-    const next = withoutLearnerNote(profile, index);
-    syncIfUnsaved(await saveLearnerProfile(next), 'profile');
-    setLearnerNotes(next.learnerNotes);
-    queueProfileUpdate(async () => {
-      const current = await ensureProfileExists();
-      const result = await orchestrator.updateProfileFromFeedback(current, removed.text, {
-        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
-      }, 'learner-removed');
-      if (result?.profile) {
-        syncIfUnsaved(await saveLearnerProfile(mergeProfile(current, result.profile)), 'profile');
-        if (result.summary) { syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary'); setProfileSummary(result.summary); }
-      }
-    });
+    const removed = await removeLearnerNote(index, { onSummary: setProfileSummary });
+    if (removed) setLearnerNotes(removed.notes);
   }
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -301,9 +286,12 @@ export default function Settings() {
               </ul>
             </div>
           )}
-          <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
-            Add Feedback
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
+              Add Feedback
+            </Button>
+            <TraceButton scope="profile" whenRecorded size="default" label="Trace: what plato did with your notes" />
+          </div>
         </CardContent>
       </Card>
 
@@ -491,17 +479,7 @@ function ProfileFeedbackDialog({ open, onOpenChange, onDone }) {
     if (!text.trim()) return;
     setSubmitting(true);
     try {
-      // Keep the learner's words verbatim first: later updates can't drop them.
-      const profile = withLearnerNote(await ensureProfileExists(), text);
-      syncIfUnsaved(await saveLearnerProfile(profile), 'profile');
-      const result = await orchestrator.updateProfileFromFeedback(profile, text.trim(), {
-        lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User-provided profile feedback',
-      }, 'learner');
-      if (result?.profile) {
-        const merged = mergeProfile(profile, result.profile);
-        syncIfUnsaved(await saveLearnerProfile(merged), 'profile');
-        if (result.summary) syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary');
-      }
+      await addLearnerNote(text);
       onOpenChange(false);
       setText('');
       if (onDone) onDone();
