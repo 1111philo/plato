@@ -127,7 +127,6 @@ export default function Signup() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Signup failed');
-      // Log in with the returned credentials
       await login(data.user?.email || email.trim(), password);
       // A username the server made up is shown once on the Lessons page.
       navigate('/lessons', { replace: true, state: !username.trim() && data.user?.username ? { newUsername: data.user.username } : null });

@@ -72,7 +72,6 @@ export default function LessonChat() {
     lesson ? `${lesson.name} — plato` : 'Lesson — plato'
   );
 
-  // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
   // The lesson overview (#438); `?view=overview` opens it (from the lessons
   // page; `?view=work` is the old name).

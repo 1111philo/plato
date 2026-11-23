@@ -49,7 +49,6 @@ export default function AdminLayout() {
     fetch('/v1/version').then(r => r.json()).then(d => setVersion(d.version)).catch(() => {});
   }, []);
 
-  // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   const handleSignOut = async () => {

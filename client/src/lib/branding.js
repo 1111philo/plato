@@ -14,7 +14,6 @@ export function contrastText(bgHex) {
   return luminance(bgHex) < 0.4 ? '#ffffff' : '#1a1a1a';
 }
 
-/** Convert hex to oklch string. */
 export function hexToOklch(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -67,7 +66,6 @@ export function generateFavicon(logoBase64, primaryColor, classroomName = '') {
     canvas.height = size;
     const ctx = canvas.getContext('2d');
 
-    // Rounded rect background
     const radius = 6;
     ctx.beginPath();
     ctx.moveTo(radius, 0);
@@ -84,7 +82,6 @@ export function generateFavicon(logoBase64, primaryColor, classroomName = '') {
     ctx.fill();
 
     if (logoBase64) {
-      // Draw logo image centered with padding
       const img = new Image();
       img.onload = () => {
         const pad = 4;
@@ -98,7 +95,6 @@ export function generateFavicon(logoBase64, primaryColor, classroomName = '') {
       img.onerror = () => resolve(null);
       img.src = logoBase64;
     } else {
-      // Draw text initial
       const initial = (classroomName || 'P').charAt(0).toUpperCase();
       const textColor = lum(primaryColor) < 0.4 ? '#ffffff' : '#1a1a1a';
       ctx.fillStyle = textColor;

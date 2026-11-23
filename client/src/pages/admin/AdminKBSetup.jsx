@@ -35,7 +35,6 @@ export default function AdminKBSetup() {
     document.title = 'Set Up Knowledge Base — plato';
   }, []);
 
-  // Start conversation
   useEffect(
     () => start([{ role: 'user', content: 'I want to create a knowledge base for my program.' }], { fallbackReadiness: 1 }),
     [start],
