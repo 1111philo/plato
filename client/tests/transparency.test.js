@@ -64,6 +64,60 @@ describe('every AI call goes through the recorder', () => {
   });
 });
 
+describe('plugins that act when a lesson starts', () => {
+  // A plugin's `lessonStarted` handler runs on the server, where the browser's
+  // recorder can't see it. The host gives a traced call a recorder
+  // (`ctx.trace`) and records `ctx.ai` calls itself (server/src/lib/plugins/
+  // trace.js). A plugin that hooks lesson start without using them leaves a
+  // hole in the Trace, and fails here.
+  const hooked = readdirSync(join(REPO, 'plugins')).filter((id) => {
+    try { return (JSON.parse(read('plugins', id, 'plugin.json')).extensionPoints?.hooks || []).includes('lessonStarted'); } catch { return false; }
+  });
+  const serverCode = (id) => files(`plugins/${id}`).filter((f) => !/\/client\//.test(f.path));
+
+  it('the scan finds the plugins that hook lesson start', () => {
+    assert.ok(hooked.includes('wordpress-info'));
+  });
+
+  it('each one reports what it did to the recorder', () => {
+    for (const id of hooked) {
+      const code = serverCode(id);
+      const all = code.map((f) => f.text).join('\n');
+      assert.match(all, /\bctx\.trace\b/, `plugins/${id} hooks lessonStarted but never uses ctx.trace, so its work is missing from the Trace`);
+      assert.match(all, /\btrace\??\.(note|record|fetch)\(/, `plugins/${id} never records a step`);
+    }
+  });
+
+  it('each one’s AI calls go through ctx.ai, which the host records', () => {
+    for (const id of hooked) {
+      for (const f of serverCode(id)) {
+        assert.doesNotMatch(f.text, /ai-provider|@aws-sdk\/client-bedrock|bedrock\.js/, `${f.path} calls the AI outside ctx.ai, so the call isn't recorded`);
+      }
+    }
+  });
+
+  it('each one’s outbound requests go through the recorder', () => {
+    for (const id of hooked) {
+      for (const f of serverCode(id)) {
+        // Every bare `fetch(` must sit beside a `trace.fetch(` on the same
+        // line (the traced/untraced choice), or be recorded by hand.
+        const bare = f.text.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l) && /(?<![.\w])fetch\(/.test(l));
+        for (const line of bare) {
+          assert.ok(/\btrace\.fetch\(/.test(line) || /\btrace\??\.record\(\{\s*type: 'fetch'/.test(f.text), `${f.path} sends a request the Trace won't show:\n${line.trim()}`);
+        }
+      }
+    }
+  });
+
+  it('the host asks for and returns plugin steps only when tracing', () => {
+    assert.equal(read('client/src/lib/lessonEngine.js').split("...(trace ? { trace: true } : {})").length - 1, 1);
+    const route = read('server/src/routes/sync.js');
+    assert.match(route, /const tracing = trace === true;/);
+    assert.match(route, /\.\.\.\(tracing \? \{ trace: true \} : \{\}\)/);
+    assert.match(route, /if \(!collector\) return c\.json\(\{ enrichments, startupSteps \}\);/);
+  });
+});
+
 describe('agents', () => {
   it('the registry has exactly the prompt files', () => {
     const prompts = readdirSync(join(CLIENT, 'prompts')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
@@ -171,6 +225,17 @@ describe('outside services', () => {
     }
     assert.ok(hosts.has('developer.wordpress.org') && hosts.size >= 2, 'the scan finds the hosts plugins call');
     for (const h of hosts) assert.ok(SERVICES[HOSTS[h]], `${h} isn't mapped to a described service`);
+  });
+
+  it('every host a plugin allows itself to call belongs to a described service', async () => {
+    // Plugins that guard their requests with an allowlist (SSRF defense)
+    // export it; a host added there must be described here too.
+    const lists = SERVER_CODE.filter((f) => /^plugins\//.test(f.path) && /export const ALLOWED_HOSTS\b/.test(f.text));
+    assert.ok(lists.some((f) => f.path === 'plugins/wordpress-info/server/sources.js'));
+    for (const f of lists) {
+      const { ALLOWED_HOSTS } = await import(join(REPO, f.path));
+      for (const h of ALLOWED_HOSTS) assert.ok(SERVICES[HOSTS[h]], `${h} (${f.path}) isn't mapped to a described service`);
+    }
   });
 
   it('the browser only talks to plato’s own server', () => {

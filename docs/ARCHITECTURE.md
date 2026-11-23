@@ -689,6 +689,41 @@ characters (`describeAiError`): any signed-in user can send `trace: true`, so
 nothing in the reply may identify the AWS account. Nothing is stored or logged
 server-side for a trace.
 
+### Plugins
+A plugin's `lessonStarted` handler runs on the server, out of the browser
+recorder's sight, so the plugin contract (API 1.7.0) carries its work back.
+
+- The browser sends `trace: true` in the `POST /v1/sync/lesson-started` body
+  only when a recorder exists. The route then adds `trace: true` to the hook
+  payload and makes one collector for that request
+  (`lib/plugins/trace.js`), handed to the hook bus beside the payload, never
+  in it.
+- For each plugin the registry builds a recorder from that collector:
+  `ctx.trace` (`note`, `record`, `fetch`), and a `ctx.ai` that records every
+  call. A handler may also return `trace: [step, …]`. Steps are `ai`, `fetch`
+  or `note`.
+- **Per call, never shared.** Nothing in `trace.js` or the registry keeps a
+  recorder: two learners starting lessons in one container each get their own.
+- **Cleaned and bounded on the server**: known types and fields only, 50
+  steps and 200 KB per plugin (250 KB for all, so the start's trace record
+  fits one item), 20,000 characters per field, credentials removed from URLs
+  and text. It never throws; a bad trace is dropped and the enrichment kept.
+- The response gains `pluginTraces: { [pluginId]: steps }`, apart from
+  `enrichments`. The browser stores `enrichments` on the lessonKB for the
+  coach, and puts `pluginTraces` only in the `plugins` trace step. A `trace`
+  key is taken off anything a handler returns, traced or not.
+- Steps recorded before a plugin throws, or before the route's 30 s timeout,
+  are still returned.
+- Off is a no-op: the same payload, `ctx.ai` is the provider itself,
+  `ctx.trace` is a stand-in that records nothing, and the response has no
+  `pluginTraces`.
+
+Coverage: `transparency.test.js` fails for a plugin whose manifest hooks
+`lessonStarted` but whose server code doesn't use the recorder, calls the AI
+outside `ctx.ai`, or sends a request the recorder doesn't see.
+`server/tests/routes/lesson-started-trace.test.js` runs WordPress Info through
+the real route with a fake model and fake searches.
+
 ### The admin flag
 `PATCH /v1/admin/users/:userId { traceMode }` (`users.write`) writes a
 `trace_mode_changed { on }` audit entry when it changes. Bulk update takes
@@ -857,7 +892,7 @@ and objectives), where they can reference it throughout the lesson.
 
 1. **Lesson start** — `client/src/lib/lessonEngine.js#startLesson()` calls
    `POST /v1/sync/lesson-started` (server route in `sync.js`)
-2. **Hook emit** — server emits `lessonStarted` with `{ userId, lessonId, lesson: { name, markdown, exemplar, learningObjectives }, lessonKB }`
+2. **Hook emit** — server emits `lessonStarted` with `{ userId, lessonId, lesson: { name, markdown, exemplar, learningObjectives }, lessonKB }` (plus `trace: true` when the learner is recording a Trace; see the Plugins part of [Trace mode](#trace-mode-595))
 3. **Plugin handlers** — each plugin with `hook.lessonStarted` + `lessonEnrichment`
    capability runs; non-null return values are collected
 4. **Return to client** — `{ enrichments: [...] }` returned to `startLesson()`

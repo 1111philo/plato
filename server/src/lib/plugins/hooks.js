@@ -31,15 +31,19 @@ export function on(event, fn, meta = {}) {
  * stop other handlers). Awaitable; resolves once every handler has finished.
  * Returns an array of non-null return values from handlers (for enrichment
  * collection). Most hooks ignore return values; lessonStarted collects them.
+ *
+ * `extra` is host-only and never part of the payload: the registry's wrapper
+ * reads it (a traced lesson start passes `{ traceCollector }`, #595). A
+ * plugin's handler never receives it.
  */
-export async function emit(event, payload) {
+export async function emit(event, payload, extra) {
   const list = handlers.get(event);
   if (!list || list.length === 0) return [];
   const results = [];
   // Snapshot in case a handler unsubscribes during iteration.
   for (const entry of [...list]) {
     try {
-      const result = await entry.fn(payload);
+      const result = await entry.fn(payload, extra);
       if (result != null) results.push(result);
     } catch (err) {
       logger.error('plugin_hook_failed', {

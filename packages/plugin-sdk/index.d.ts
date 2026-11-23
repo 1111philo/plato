@@ -121,6 +121,128 @@ export interface HookContext {
   settings: Record<string, unknown>;
   /** Emit an event on the open hook bus. Use the convention `<plugin-id>.<event>`. */
   emit(event: string, payload: unknown): Promise<void>;
+  /**
+   * The host's AI provider. Never import `ai-provider.js` yourself. On a traced
+   * `lessonStarted` call (API 1.7.0) every call made through it is recorded as
+   * an `ai` trace step; name the call with `{ purpose }`.
+   */
+  ai: PluginAi;
+  /** The one model every plato agent uses. Pass it to `ai.invoke`. */
+  LLM: string;
+  /**
+   * Trace mode recorder (API 1.7.0). Always present. `on` is true only on a
+   * traced `lessonStarted` call; otherwise it records nothing and `fetch` is
+   * plain `fetch`. It belongs to one call: never keep it, or steps, in a
+   * module-level variable. On a host before 1.7.0 it is undefined.
+   */
+  trace: PluginTrace;
+}
+
+// ---------- Trace mode (API 1.7.0, #595) ----------
+
+export interface PluginAiBody {
+  max_tokens?: number;
+  system?: string | { type: 'text'; text: string }[];
+  messages: { role: 'user' | 'assistant'; content: unknown }[];
+  [key: string]: unknown;
+}
+
+export interface PluginAiOptions {
+  /** One line saying what this call is for. Shown in a Trace; ignored otherwise. */
+  purpose?: string;
+}
+
+export interface PluginAi {
+  invoke(model: string, body: PluginAiBody, opts?: PluginAiOptions): Promise<{
+    content: { type: string; text?: string }[];
+    usage?: { input_tokens: number; output_tokens: number };
+    stop_reason?: string;
+  }>;
+  invokeStream(model: string, body: PluginAiBody, opts?: PluginAiOptions): AsyncIterable<unknown>;
+}
+
+/** One AI call: `system` and `messages` are what the plugin sent, `reply` what came back. */
+export interface TraceAiStep {
+  type: 'ai';
+  purpose: string;
+  model: string;
+  system: string;
+  messages: { role: string; content: string }[];
+  reply: string;
+  /** Token counts, e.g. `{ input_tokens, output_tokens }`. Numbers only. */
+  usage?: Record<string, number>;
+  ms?: number;
+  error?: string;
+}
+
+/** One outbound request. The URL only: never credentials, headers or a body. */
+export interface TraceFetchStep {
+  type: 'fetch';
+  purpose: string;
+  url: string;
+  status?: number;
+  ms?: number;
+  bytes?: number;
+  error?: string;
+}
+
+/** Anything else worth telling a person: a decision, an outcome. */
+export interface TraceNoteStep {
+  type: 'note';
+  text: string;
+}
+
+/**
+ * What a plugin did, in order. The host keeps only these types and fields,
+ * at most 50 steps and 200 KB per plugin per lesson start, 20,000 characters
+ * per text field, and removes credentials from URLs and text.
+ */
+export type TraceStep = TraceAiStep | TraceFetchStep | TraceNoteStep;
+
+export interface PluginTrace {
+  /** True on a traced `lessonStarted` call. */
+  readonly on: boolean;
+  /** Record a step. A step the host doesn't know is dropped. Never throws. */
+  record(step: TraceStep): void;
+  /** Record a `note` step. */
+  note(text: string): void;
+  /**
+   * `fetch(url, init)`, recorded as a `fetch` step (URL, status, time, stated
+   * size). Returns the Response untouched; a failure is recorded and rethrown.
+   */
+  fetch(purpose: string, url: string | URL, init?: RequestInit): Promise<Response>;
+}
+
+/** Payload of the `lessonStarted` hook. */
+export interface LessonStartedPayload {
+  userId: string;
+  lessonId: string;
+  lesson: {
+    name: string;
+    markdown?: string;
+    exemplar?: string;
+    learningObjectives?: string[];
+    coachDirective?: string;
+  };
+  lessonKB: Record<string, unknown>;
+  /** Present (and true) only when the learner is recording a Trace (API 1.7.0). */
+  trace?: true;
+}
+
+/** What a `lessonStarted` handler may return (`lessonEnrichment` capability), or null. */
+export interface LessonEnrichment {
+  pluginId: string;
+  label: string;
+  context: string;
+  reasoning: string;
+  sources?: { url: string; title: string; excerpt?: string }[];
+  /**
+   * Steps to add to the Trace, after those recorded through `ctx.trace` and
+   * `ctx.ai` (API 1.7.0). The host moves them out of the enrichment: they are
+   * never stored on `lessonKB.enrichments` or given to the coach. Return
+   * `{ trace }` alone to report steps without adding an enrichment.
+   */
+  trace?: TraceStep[];
 }
 
 // ---------- Lifecycle ----------
@@ -133,6 +255,8 @@ export interface PluginLifecycleContext {
   setSettings(next: Record<string, unknown>): Promise<void>;
   /** Read-only views of host data. */
   db: PluginDbView;
+  /** Always the stand-in here (`on: false`): only `lessonStarted` is traced (API 1.7.0). */
+  trace: PluginTrace;
 }
 
 // ---------- Plugin exports ----------
@@ -141,7 +265,10 @@ export interface ServerPluginExports {
   /** Hono router. Mounted under /v1/plugins/<id>/. Use plato's auth middleware re-exported from this SDK. */
   routes?: Hono;
   /** Subscribers to lifecycle events. Each handler receives a typed payload + context. */
-  hooks?: Partial<Record<HookName, (payload: unknown, ctx: HookContext) => void | Promise<void>>>;
+  hooks?: Partial<Record<HookName, (payload: unknown, ctx: HookContext) => unknown | Promise<unknown>>> & {
+    /** May return an enrichment (and/or trace steps), or null. */
+    lessonStarted?(payload: LessonStartedPayload, ctx: HookContext): LessonEnrichment | { trace: TraceStep[] } | null | void | Promise<LessonEnrichment | { trace: TraceStep[] } | null | void>;
+  };
   /** KPI definitions (Phase 2). */
   kpis?: KpiDefinition[];
   /** Called once when admin enables the plugin AND once at boot if already enabled. Idempotent. */

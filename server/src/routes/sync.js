@@ -5,6 +5,7 @@ import { isPublicLessonRecord } from '../lib/lesson-visibility.js';
 import { emit as emitHook } from '../lib/plugins/hooks.js';
 import { pluginRegistry } from '../lib/plugins/registry.js';
 import { logger } from '../lib/logger.js';
+import { createTraceCollector } from '../lib/plugins/trace.js';
 import { resolveReadUserId } from '../lib/view-as.js';
 
 const sync = new Hono();
@@ -357,10 +358,16 @@ sync.delete('/v1/sync/:dataKey', async (c) => {
  *   - lessonId: string (required)
  *   - lesson: { name, markdown, exemplar, learningObjectives, coachDirective? } (required)
  *   - lessonKB: object (required)
+ *   - trace: true (optional; Trace mode, #595). Sent only when the learner's
+ *     browser is recording. Without it this route behaves exactly as before.
  *
  * Response:
  *   - enrichments: array of enrichment objects from plugins
  *   - startupSteps: array of startup step definitions (future use)
+ *   - pluginTraces: { [pluginId]: steps } (only with `trace: true`): what
+ *     each plugin did, cleaned and bounded by lib/plugins/trace.js. Kept
+ *     apart from `enrichments`, which the client stores on the lessonKB and
+ *     gives to the coach; a trace must never get there.
  *
  * Enrichment object shape:
  *   - pluginId: string
@@ -381,7 +388,8 @@ sync.post('/v1/sync/lesson-started', async (c) => {
   const reject = rejectWriteIfImpersonating(c);
   if (reject) return reject;
   const userId = c.get('userId');
-  const { lessonId, lesson, lessonKB } = await c.req.json();
+  const { lessonId, lesson, lessonKB, trace } = await c.req.json();
+  const tracing = trace === true;
 
   if (!lessonId || !lesson || !lessonKB) {
     return c.json({ error: 'lessonId, lesson, and lessonKB are required' }, 400);
@@ -415,7 +423,11 @@ sync.post('/v1/sync/lesson-started', async (c) => {
   // Cap at 30s so a slow plugin never holds up lesson start indefinitely —
   // the client's fail-open handler treats any non-200 as "no enrichment".
   const ENRICHMENT_TIMEOUT_MS = 30_000;
-  const enrichments = await Promise.race([
+  // One collector per traced request, never shared: two learners can start
+  // lessons at once in this container.
+  const collector = tracing ? createTraceCollector() : null;
+  let timer;
+  const collected = await Promise.race([
     emitHook('lessonStarted', {
       userId,
       lessonId,
@@ -426,20 +438,31 @@ sync.post('/v1/sync/lesson-started', async (c) => {
         learningObjectives: lesson.learningObjectives,
         coachDirective: lesson.coachDirective,
       },
-      lessonKB
+      lessonKB,
+      ...(tracing ? { trace: true } : {}),
+    }, collector ? { traceCollector: collector } : undefined),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('lessonStarted enrichment timed out')), ENRICHMENT_TIMEOUT_MS);
     }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('lessonStarted enrichment timed out')), ENRICHMENT_TIMEOUT_MS)
-    ),
   ]).catch((err) => {
     logger.error('lesson_enrichment_timeout', { lessonId, error: err?.message });
     return [];
-  });
+  }).finally(() => clearTimeout(timer));
 
-  return c.json({
-    enrichments: enrichments || [],
-    startupSteps,
-  });
+  // A handler's `trace` list belongs in `pluginTraces`, never in an
+  // enrichment (the registry has already moved it there on a traced call).
+  const enrichments = [];
+  for (const e of collected || []) {
+    if (!e || typeof e !== 'object' || Array.isArray(e) || !('trace' in e)) { enrichments.push(e); continue; }
+    const { trace: _steps, ...rest } = e;
+    if (Object.keys(rest).length) enrichments.push(rest);
+  }
+
+  if (!collector) return c.json({ enrichments, startupSteps });
+
+  let pluginTraces = {};
+  try { pluginTraces = collector.result(); } catch { /* a bad trace is dropped */ }
+  return c.json({ enrichments, startupSteps, pluginTraces });
 });
 
 export default sync;

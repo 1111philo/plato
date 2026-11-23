@@ -5,12 +5,17 @@ Plato's plugin API is versioned with semver. The host declares a single `PLUGIN_
 ## Current host version
 
 ```
-PLUGIN_API_VERSION = '1.6.1'
+PLUGIN_API_VERSION = '1.7.0'
 ```
 
 Defined in `server/src/lib/plugins/version.js`.
 
 ## Changelog
+
+### 1.7.0 (additive, #595)
+- **Added** Trace mode for the `lessonStarted` hook. When the learner is recording a Trace, the payload carries `trace: true` and the handler's context carries a recorder, `ctx.trace` (`on`, `note(text)`, `record(step)`, `fetch(purpose, url, init)`); `ctx.ai` records every `invoke` / `invokeStream` call by itself, named by an optional third argument `{ purpose }`. A handler may also return `trace: [step, …]` beside its enrichment. Steps are `{ type: 'ai' | 'fetch' | 'note', … }`; the host cleans and bounds them and returns them from `POST /v1/sync/lesson-started` as `pluginTraces: { [pluginId]: steps }`, never inside an enrichment. See [EXTENSION_REFERENCE.md](./EXTENSION_REFERENCE.md#tracing-what-your-plugin-did-api-170).
+- **Added** `ctx.trace` to every hook and lifecycle context. Outside a traced `lessonStarted` call it is a stand-in with `on: false` that records nothing and whose `fetch` is plain `fetch`, so a plugin needs one code path.
+- Without `trace: true` nothing changes: the same payload, `ctx.ai` is the provider itself, and the same response. A plugin that ignores all of this keeps working; a plugin that must also run on a host before 1.7.0 reads `ctx.trace?.on`.
 
 ### 1.6.1 (fix)
 - **Changed** `PUT /v1/admin/plugins/:id/settings` refuses (400) a string value longer than the `maxLength` its `settingsSchema` property declares. All plugins' settings share one stored record, so a declared cap is now enforced on the server, not only in the form.
