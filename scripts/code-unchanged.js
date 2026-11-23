@@ -43,7 +43,7 @@ const parse = (src) => strip(Parser.parse(src, { ecmaVersion: 'latest', sourceTy
 let bad = 0;
 for (const file of changed) {
   let before = null;
-  try { before = execFileSync('git', ['show', `${ref}:${file}`], { encoding: 'utf8', maxBuffer: 64 << 20 }); } catch { console.log(`new   ${file}`); continue; }
+  try { before = execFileSync('git', ['show', `${ref}:${file}`], { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { console.log(`new   ${file}`); continue; }
   let after;
   try { after = execFileSync('cat', [file], { encoding: 'utf8', maxBuffer: 64 << 20 }); } catch { console.log(`gone  ${file}`); bad++; continue; }
   try {
