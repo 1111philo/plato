@@ -3,7 +3,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFacets, matchesFilters, activeFilterCount, describeFilters } from '../src/lib/userFilters.js';
+import { buildFacets, matchesFilters, activeFilterCount, describeFilters, searchFacets } from '../src/lib/userFilters.js';
 
 const FIELDS = [
   { id: 'fld_org', label: 'Org', type: 'dropdown', options: ['UIC', 'MIT'] },
@@ -144,5 +144,47 @@ describe('expired invites', () => {
     assert.equal(count('expired'), 1);
     assert.equal(count('invited'), 1);
     assert.deepEqual(list.filter((i) => matchesFilters(i, { status: ['expired'] }, f)).map((i) => i.email), ['a']);
+  });
+});
+
+describe('searchFacets', () => {
+  const keys = (q) => searchFacets(facets, q).map((f) => `${f.key}:${f.options.map((o) => o.value).join(',')}`);
+  it('an empty or blank query shows everything', () => {
+    assert.equal(searchFacets(facets, ''), facets);
+    assert.equal(searchFacets(facets, '  '), facets);
+  });
+  it('matches option labels, case-insensitively, and drops facets with no match', () => {
+    assert.deepEqual(keys('uic'), ['field:fld_org:UIC']);
+    assert.deepEqual(keys('EMPTY'), ['field:fld_org:__empty', 'field:fld_bio:__empty']);
+  });
+  it('a facet label match keeps the whole facet', () => {
+    assert.deepEqual(keys('group'), ['group:A,B,__none']);
+  });
+  it('nothing matches → no facets; counts are untouched', () => {
+    assert.deepEqual(searchFacets(facets, 'zzz'), []);
+    const org = searchFacets(facets, 'mit')[0].options[0];
+    assert.equal(org, facets.find((f) => f.key === 'field:fld_org').options[1]);
+  });
+});
+
+describe('live counts', () => {
+  const counts = (fs) => Object.fromEntries(fs.map((f) => [f.key, Object.fromEntries(f.options.map((o) => [o.value, o.count]))]));
+  const build = (filters) => counts(buildFacets({ items, groups: ['A', 'B'], userFields: FIELDS, filters }));
+  it('no filters: every option counts over all items, as before', () => {
+    assert.deepEqual(build({}), {
+      status: { active: 3, invited: 1, expired: 0, waitlist: 1 },
+      role: { admin: 1, educator: 0, learner: 2, tester: 0 },
+      group: { A: 2, B: 1, __none: 2 },
+      'field:fld_org': { UIC: 2, MIT: 1, __empty: 1 },
+      'field:fld_bio': { __set: 1, __empty: 3 },
+    });
+    assert.deepEqual(build({}), counts(facets));
+  });
+  it('another facet\'s filter narrows the counts', () => {
+    assert.deepEqual(build({ group: ['A'] }).status, { active: 1, invited: 0, expired: 0, waitlist: 1 });
+  });
+  it('a facet ignores its own selection, but not the other facets\'', () => {
+    assert.deepEqual(build({ group: ['A'] }).group, { A: 2, B: 1, __none: 2 });
+    assert.deepEqual(build({ group: ['A'], status: ['active'] }).group, { A: 1, B: 1, __none: 1 });
   });
 });

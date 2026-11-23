@@ -1,7 +1,9 @@
+import { useRef, useState } from 'react';
 import * as DropdownMenuRadix from '@radix-ui/react-dropdown-menu';
 import Check from 'lucide-react/dist/esm/icons/check';
-import { activeFilterCount } from '../../lib/userFilters.js';
+import { activeFilterCount, searchFacets } from '../../lib/userFilters.js';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const item = 'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none hover:bg-accent focus:bg-accent';
 
@@ -9,15 +11,19 @@ const item = 'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text
  * The Admin → Users Filters menu (#362): one group of checkbox items per
  * facet (lib/userFilters.js), with Select all / Clear per facet. Checking
  * keeps the menu open. Non-modal, like the classroom menus (a modal Radix
- * menu aria-hides the page).
+ * menu aria-hides the page). A search box at the top narrows the options
+ * (searchFacets); Select all then adds only the ones shown.
  */
 export default function FiltersMenu({ facets, filters, onChange }) {
   const count = activeFilterCount(filters);
   const set = (key, values) => onChange({ ...filters, [key]: values });
   const keepOpen = (fn) => (e) => { e.preventDefault(); fn(); };
+  const [query, setQuery] = useState('');
+  const searchRef = useRef(null);
+  const shown = searchFacets(facets, query);
 
   return (
-    <DropdownMenuRadix.Root modal={false}>
+    <DropdownMenuRadix.Root modal={false} onOpenChange={(open) => { if (!open) setQuery(''); }}>
       <DropdownMenuRadix.Trigger asChild>
         <Button variant="outline" aria-label={count ? `Filters, ${count} on` : 'Filters'}>
           Filters{count ? <span aria-hidden="true" className="ml-1 rounded-full bg-primary px-1.5 text-xs text-primary-foreground">{count}</span> : null}
@@ -25,8 +31,21 @@ export default function FiltersMenu({ facets, filters, onChange }) {
       </DropdownMenuRadix.Trigger>
       <DropdownMenuRadix.Portal>
         <DropdownMenuRadix.Content align="start" sideOffset={4}
+          onOpenAutoFocus={(e) => { e.preventDefault(); searchRef.current?.focus(); }}
           className="z-50 max-h-[min(70dvh,32rem)] w-72 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
-          {facets.map((facet, fi) => {
+          <div className="sticky -top-1 z-10 -mx-1 -mt-1 mb-1 bg-popover p-1">
+            {/* Radix's typeahead and arrow keys would take the keystrokes; Escape
+                still closes the menu, and ArrowDown moves into the options. */}
+            <Input ref={searchRef} type="search" aria-label="Search filters" placeholder="Search filters" className="h-8"
+              value={query} onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') return;
+                e.stopPropagation();
+                if (e.key === 'ArrowDown') { e.preventDefault(); e.currentTarget.closest('[role="menu"]')?.querySelector('[role^="menuitem"]')?.focus(); }
+              }} />
+          </div>
+          {!shown.length && <p className="px-2 py-1.5 text-sm text-muted-foreground">No matching filters</p>}
+          {shown.map((facet, fi) => {
             const checked = filters[facet.key] || [];
             return (
               <DropdownMenuRadix.Group key={facet.key} aria-label={facet.label}>
@@ -48,7 +67,7 @@ export default function FiltersMenu({ facets, filters, onChange }) {
                   </DropdownMenuRadix.CheckboxItem>
                 ))}
                 <div className="flex gap-1 px-1 pb-1">
-                  <DropdownMenuRadix.Item className={`${item} text-xs text-primary`} onSelect={keepOpen(() => set(facet.key, facet.options.map((o) => o.value)))}>
+                  <DropdownMenuRadix.Item className={`${item} text-xs text-primary`} onSelect={keepOpen(() => set(facet.key, [...new Set([...checked, ...facet.options.map((o) => o.value)])]))}>
                     Select all<span className="sr-only"> {facet.label}</span>
                   </DropdownMenuRadix.Item>
                   <DropdownMenuRadix.Item className={`${item} text-xs text-primary`} onSelect={keepOpen(() => set(facet.key, []))}>

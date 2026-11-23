@@ -30,7 +30,9 @@ function valuesOf(item, facet) {
 }
 
 /**
- * The facets to offer, with counts over `items`:
+ * The facets to offer, with counts over `items` that match every other
+ * facet's current `filters` (a facet ignores its own selection, so checking
+ * one group doesn't zero out the others):
  * `[{ key, label, options: [{ value, label, count }] }]`. Custom fields offer
  * their dropdown options (plus Empty), or Has a value / Empty. `slack` adds
  * Slack: Linked / Not linked (signed-up users only), shown when the Slack
@@ -38,7 +40,7 @@ function valuesOf(item, facet) {
  * only; someone with both matches both) and Status → Wait list: email verified,
  * shown when single sign-on is in play (lib/signIn.js `ssoInPlay`).
  */
-export function buildFacets({ items, groups = [], userFields = [], slack = false, sso = false }) {
+export function buildFacets({ items, groups = [], userFields = [], slack = false, sso = false, filters = {} }) {
   const facets = [
     { key: 'status', label: 'Status', options: [
       { value: 'active', label: 'Signed up' }, { value: 'invited', label: 'Invited' }, { value: 'expired', label: 'Invite expired' }, { value: 'waitlist', label: 'Wait list' },
@@ -63,7 +65,8 @@ export function buildFacets({ items, groups = [], userFields = [], slack = false
     facets.push({ key: `field:${f.id}`, label: f.label, field: f, options });
   }
   for (const facet of facets) {
-    for (const o of facet.options) o.count = items.filter((i) => (valuesOf(i, facet) || []).includes(o.value)).length;
+    const pool = items.filter((i) => matchesFilters(i, { ...filters, [facet.key]: [] }, facets));
+    for (const o of facet.options) o.count = pool.filter((i) => (valuesOf(i, facet) || []).includes(o.value)).length;
   }
   return facets;
 }
@@ -77,6 +80,19 @@ export function matchesFilters(item, filters, facets) {
     if (!have || !have.some((v) => want.includes(v))) return false;
   }
   return true;
+}
+
+/**
+ * The facets and options whose label contains `query` (case-insensitive) for
+ * the Filters menu's search box. A facet whose own label matches keeps every
+ * option; a facet with no matches is dropped. Options are the same objects.
+ */
+export function searchFacets(facets, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return facets;
+  return facets
+    .map((f) => (f.label.toLowerCase().includes(q) ? f : { ...f, options: f.options.filter((o) => o.label.toLowerCase().includes(q)) }))
+    .filter((f) => f.options.length);
 }
 
 export const activeFilterCount = (filters) => Object.values(filters).reduce((n, v) => n + (v?.length || 0), 0);
