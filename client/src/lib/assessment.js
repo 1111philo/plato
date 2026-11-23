@@ -142,6 +142,21 @@ function appearsIn(quote, text) {
   return hits / qw.length >= 0.8;
 }
 
+/** groundVerdict's reason when the words that would show an objective were the coach's. */
+export const COACH_WROTE = 'the words that would show it were written by the coach';
+
+/**
+ * An objective as a step addressed to the learner. Objectives are written
+ * about the learner ("Can ... confirm their profile"); held replies speak to
+ * them ("confirm your profile"), playground 2026-11-23.
+ */
+export function objectiveForLearner(o) {
+  return (typeof o === 'string' ? o : o?.objective || '')
+    .replace(/^Can\s+/i, '')
+    .replace(/\btheirs\b/gi, 'yours').replace(/\btheir\b/gi, 'your')
+    .replace(/\bthemselves\b/gi, 'yourself').replace(/\bthem\b/gi, 'you').replace(/\bthey\b/gi, 'you');
+}
+
 /**
  * Keep an assessor "shown" only when its quote is really the learner's:
  * found in a learner message, and not text the coach wrote first that the
@@ -201,7 +216,7 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     for (const q of pieces) {
       const learnerAt = firstIndex('learner', q);
       const coachAt = words(q).length >= COPY_WORDS ? firstIndex('coach', q) : -1;
-      if (coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt)) return 'the words that would show it were written by the coach';
+      if (coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt)) return COACH_WROTE;
       if (learnerAt === -1) return 'not yet shown in the learner’s own words';
     }
     return true;
@@ -348,21 +363,18 @@ Your reply wrote a sentence or passage for the learner to use as their own answe
  * still needed.
  */
 export function heldReply(kb, outstanding, missing) {
-  const names = outstanding.map((n) => {
-    const o = kb.objectives?.[n - 1];
-    return (typeof o === 'string' ? o : o?.objective || '').replace(/^Can\s+/i, '');
-  }).filter(Boolean);
-  const first = outstanding[0];
-  const why = missing?.[first] && !/^not yet shown/.test(missing[first]) ? ` (${missing[first]})` : '';
+  const names = outstanding.map((n) => objectiveForLearner(kb.objectives?.[n - 1])).filter(Boolean);
+  // The reasons in `missing` are written for the coach ("the learner's own
+  // words"), so they stay out of this learner-facing reply. The one worth
+  // telling the learner is that their message repeated the coach's wording.
+  const copied = outstanding.some((n) => missing?.[n] === COACH_WROTE)
+    ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.' : '';
   const list = names.length > 1 ? `\n\nStill to show in your own words:\n${names.map((x) => `- ${x}`).join('\n')}` : '';
-  return `You're close, but this lesson isn't complete yet. The next step is yours to write: **${names[0] || 'the remaining objective'}**${why}. Put it in your own words, even a few plain sentences, and send it when you're ready.${list}`;
+  return `You're close, but this lesson isn't complete yet.${copied} The next step is yours: **${names[0] || 'the remaining objective'}**. A few plain sentences in your own words is enough. Send it when you're ready.${list}`;
 }
 
 /** The learner-visible "Where you are" note on a held turn, when the coach's says the lesson is done. */
 export function heldPosition(kb, outstanding) {
-  const names = outstanding.map((n) => {
-    const o = kb.objectives?.[n - 1];
-    return (typeof o === 'string' ? o : o?.objective || '').replace(/^Can\s+/i, '');
-  }).filter(Boolean);
+  const names = outstanding.map((n) => objectiveForLearner(kb.objectives?.[n - 1])).filter(Boolean);
   return `Close to the exemplar. Still to show in your own words: ${names.join('; ')}.`;
 }
