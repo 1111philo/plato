@@ -599,6 +599,44 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
 A trace is written by the learner's own browser, so a learner can alter or
 delete theirs. It explains behaviour; it is not tamper-proof evidence.
 
+### Recording (the browser)
+Prompts are assembled in the browser, so that is where a trace is recorded.
+
+- `lib/traceSession.js` `openTrace(scope, kind)` returns a recorder when
+  either switch is on, else `undefined`. Every caller passes it on as `trace`
+  and reaches it only through `trace?.…`. That is the whole off switch.
+- `lib/lessonTrace.js` is the recorder (pure): ordered steps, each AI call
+  with its request and raw reply, and `flush()`, which writes the new prompt
+  parts and then the turn's record. `flush` runs in a `finally`, so a turn
+  that throws (cut off, busy, timed out) still leaves its trace.
+- Every AI call is built by `orchestrator.agentParts()` and sent by `callApi`
+  or `converseStream`, which record it. Nothing else calls the AI.
+- `lessonEngine.sendMessage` / `startLesson` record what the code did around
+  the calls: the learner's input, the context, what was parsed, tag repair,
+  the draft guard, each grading-check decision (`checkGrading`'s `onStep`,
+  with which message each quote was found in), the rules applied
+  (`rulesApplied`), saves with their HTTP status, and events.
+- Follow-up agents (profile, unit note) write their own `b` records
+  (`tracedFollowUp`), since they finish after the turn was saved.
+- `lessonKB.trace = { since, by, partial? }` marks a lesson as recorded: set
+  at the start when Trace is on, or on the first recorded turn (`partial`).
+  It is removed from anything given to an agent. Recording follows the
+  switches, not the stamp: turn Trace off and it stops.
+
+**Who decided.** `lib/transparency.js` is plato's one description of itself:
+every agent, context field, prompt part, recorded step, rule, threshold,
+event and outside service, in plain words, each with a `source` (the model,
+plato's instructions, plato's code, or a person). The Trace view reads it, so
+a person can tell the model's output from what the harness did to it.
+
+**Coverage is enforced.** `client/tests/transparency.test.js` fails when the
+code gains an AI call outside the recorder, or an agent, context field,
+prompt part, step, rule, scoring constant, event code, AWS client or outside
+host that isn't described. `client/tests/trace-engine.test.js` runs real
+lessons against a fake server: the requests are the same with Trace on or
+off, and every request can be rebuilt from the stored trace alone (replay).
+A request the trace can't reproduce means the trace is missing something.
+
 ### What only the server knows
 `POST /v1/ai/messages` with `trace: true` adds a `plato` object (a `plato`
 event at the start and end of a stream):

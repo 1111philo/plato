@@ -167,8 +167,14 @@ export function objectiveForLearner(o) {
  * missing, ungrounded }`: 1-based numbers shown, `{ n: why }` for the rest of
  * `check`, and the numbers the assessor called shown with a quote that failed
  * (checkGrading asks it once more about those).
+ *
+ * With `evidence` (Trace mode), also `evidence: { n: [{ quote, learnerAt,
+ * coachAt, ok }] }`: for each quote piece, which transcript message it was
+ * found in (−1: nowhere), so a person can see why a quote did or didn't count.
  */
-export function groundVerdict(verdict, transcript, check, { imageThisTurn = false } = {}) {
+export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false } = {}) {
+  const found = {};
+  let current = null;
   const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text));
   const byN = new Map();
   for (const o of Array.isArray(verdict?.objectives) ? verdict.objectives : []) {
@@ -196,6 +202,7 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
       continue;
     }
     let failed = null;
+    current = n;
     for (const quote of textQuotes) {
       const result = groundQuote(quote);
       if (result !== true) { failed = result; break; }
@@ -203,7 +210,7 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     if (!failed) shown.push(n);
     else { missing[n] = failed; ungrounded.push(n); }
   }
-  return { shown, missing, ungrounded };
+  return { shown, missing, ungrounded, ...(evidence ? { evidence: found } : {}) };
 
   /** true, or why the quote isn't the learner's. */
   function groundQuote(quote) {
@@ -216,7 +223,9 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     for (const q of pieces) {
       const learnerAt = firstIndex('learner', q);
       const coachAt = words(q).length >= COPY_WORDS ? firstIndex('coach', q) : -1;
-      if (coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt)) return COACH_WROTE;
+      const coachFirst = coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt);
+      if (evidence) (found[current] ||= []).push({ quote: q, learnerAt, coachAt, ok: !coachFirst && learnerAt !== -1 });
+      if (coachFirst) return COACH_WROTE;
       if (learnerAt === -1) return 'not yet shown in the learner’s own words';
     }
     return true;

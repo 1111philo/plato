@@ -41,6 +41,9 @@ export async function loadLessons() {
           if (lesson.unit) parsed.unit = lesson.unit;
           if (lesson.program) parsed.program = lesson.program;
           if (lesson.startHere) parsed.startHere = true; // bundled orientation (#443)
+          // When the lesson was last edited: a Trace shows it, so a lesson
+          // changed after someone started it can be told apart.
+          if (lesson.updatedAt) parsed.updatedAt = lesson.updatedAt;
           lessons.push(parsed);
         }
       }

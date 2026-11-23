@@ -2,6 +2,7 @@
  * Sequential profile update queue — prevents concurrent updates from overwriting each other.
  */
 
+import { tracedFollowUp } from './traceSession.js';
 import {
   getLearnerProfile, saveLearnerProfile, saveLearnerProfileSummary,
 } from '../../js/storage.js';
@@ -69,14 +70,19 @@ export function mergeProfile(existing, returned) {
   return merged;
 }
 
-async function saveProfileResult(existing, result) {
+async function saveProfileResult(existing, result, trace) {
   if (!result?.profile) {
     console.error('[plato] Profile update agent returned no profile:', result);
+    trace?.step('profileUnchanged', { why: result === null ? 'the note was screened out, so the agent was not asked' : 'the agent returned no profile' });
     return;
   }
   const merged = mergeProfile(existing, result.profile);
-  syncIfUnsaved(await saveLearnerProfile(merged), 'profile');
-  if (result.summary) syncIfUnsaved(await saveLearnerProfileSummary(result.summary), 'profileSummary');
+  const savedProfile = await saveLearnerProfile(merged);
+  syncIfUnsaved(savedProfile, 'profile');
+  let savedSummary = null;
+  if (result.summary) { savedSummary = await saveLearnerProfileSummary(result.summary); syncIfUnsaved(savedSummary, 'profileSummary'); }
+  // The learner's own notes and the lesson lists are kept by code whatever the agent returned (mergeProfile).
+  trace?.step('profileSaved', { before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
 }
 
 export async function ensureProfileExists(name = '') {
@@ -105,10 +111,10 @@ export function updateProfileInBackground(lessonId, assessmentResult) {
  * Deep profile update on lesson completion (LLM call).
  */
 export function updateProfileOnCompletionInBackground(lessonKB, lesson) {
-  queueProfileUpdate(async () => {
+  queueProfileUpdate(() => tracedFollowUp(lesson.lessonId, 'learner-profile-owner', 'the lesson was completed', async (trace) => {
     const profile = await ensureProfileExists();
     const result = await orchestrator.updateProfileOnCompletion(
-      profile, lessonKB, lesson.name, lesson.lessonId, lessonKB.activitiesCompleted
+      profile, lessonKB, lesson.name, lesson.lessonId, lessonKB.activitiesCompleted, trace ? { trace } : undefined
     );
     // masteredLessons is system-managed (no longer echoed by the agent —
     // see orchestrator.profileForAgent). Record the completion in code so
@@ -116,20 +122,22 @@ export function updateProfileOnCompletionInBackground(lessonKB, lesson) {
     if (result?.profile) {
       result.profile.masteredLessons = [...new Set([...(result.profile.masteredLessons || []), lesson.lessonId])];
     }
-    await saveProfileResult(profile, result);
-  });
+    await saveProfileResult(profile, result, trace);
+  }));
 }
 
 /**
  * Profile update from a coach observation (LLM call).
  */
 export function updateProfileFromObservation(lessonKB, observation) {
-  queueProfileUpdate(async () => {
+  // Traced under the lesson it came from, when the lesson is known.
+  const run = async (trace) => {
     const profile = await ensureProfileExists();
     const result = await orchestrator.updateProfileFromFeedback(profile, observation, {
       lessonName: lessonKB.name || 'Lesson', activityType: 'coaching', activityGoal: 'Coach observation',
-    }, 'coach');
-    await saveProfileResult(profile, result);
-  });
+    }, 'coach', trace ? { trace } : undefined);
+    await saveProfileResult(profile, result, trace);
+  };
+  queueProfileUpdate(() => (lessonKB?.lessonId ? tracedFollowUp(lessonKB.lessonId, 'learner-profile-update', 'the coach noted something about the learner', run) : run(undefined)));
 }
 

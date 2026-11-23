@@ -40,12 +40,24 @@ export function splitAtMarker(prompt) {
  * @param {string} [p.addendum] - a one-turn instruction from plato (tag repair, a held completion)
  * @param {string} [p.languageDirective] - from language.js; '' for English
  */
-export function assembleSystemPrompt({ prompt, kb = '', kbNote = '', catalog = '', catalogHeading = 'Lessons in This Classroom', addendum = '', languageDirective = '' }) {
+export function assembleSystemPrompt(p) {
+  return systemPromptParts(p).map((part) => part.text).join('');
+}
+
+/**
+ * The same prompt as its parts, in order: `[{ kind, text }]`, where the texts
+ * joined are exactly the prompt sent (each part carries its own separator and
+ * heading). Trace mode stores and shows the parts, so a person can see which
+ * instructions came from the prompt file, the classroom's knowledge base, the
+ * lesson list, a one-turn addition from plato, or the language directive.
+ */
+export function systemPromptParts({ prompt, kb = '', kbNote = '', catalog = '', catalogHeading = 'Lessons in This Classroom', addendum = '', languageDirective = '' }) {
   const { before, after } = splitAtMarker(prompt);
-  let out = before;
-  if (kb) out += `\n\n---\n\n## Program Knowledge Base${kbNote ? '\n\n' + kbNote : ''}\n\n${kb}`;
-  if (catalog) out += `\n\n---\n\n## ${catalogHeading}\n\n${catalog}`;
-  if (after) out += `\n\n---\n\n${after}`;
-  if (addendum) out += `\n\n---\n\n${addendum}`;
-  return out + (languageDirective || '');
+  const parts = [{ kind: 'prompt', text: before }];
+  if (kb) parts.push({ kind: 'knowledgeBase', text: `\n\n---\n\n## Program Knowledge Base${kbNote ? '\n\n' + kbNote : ''}\n\n${kb}` });
+  if (catalog) parts.push({ kind: 'catalog', text: `\n\n---\n\n## ${catalogHeading}\n\n${catalog}` });
+  if (after) parts.push({ kind: 'promptAfter', text: `\n\n---\n\n${after}` });
+  if (addendum) parts.push({ kind: 'addendum', text: `\n\n---\n\n${addendum}` });
+  if (languageDirective) parts.push({ kind: 'language', text: languageDirective });
+  return parts;
 }
