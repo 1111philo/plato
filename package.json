@@ -11,6 +11,7 @@
     "test:client": "cd client && npm test",
     "test:server": "cd server && npm test",
     "test": "npm run test:client && npm run test:server",
+    "docs:how-it-works": "node scripts/generate-how-it-works.js",
     "deploy": "npm run build && cd server && sam deploy"
   }
 }

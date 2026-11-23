@@ -669,6 +669,21 @@ A request the trace can't reproduce means the trace is missing something.
   the limit holds across sessions; past it the stamp gets `full: true` and
   the view says so.
 
+### Technology, download, and the single source
+- **Technology and services** (a tab in the Trace): every outside service
+  from `SERVICES`, what each is sent, and whether this classroom uses it
+  (plugin-backed services follow `GET /v1/plugins`). The model and region
+  come from the server's own account in a recorded call (`plato.provider`),
+  so a stand-in model in testing says so.
+- **Download**: the trace as readable text (`traceToText`, the same
+  sentences as the view) or as its stored JSON records.
+- **One description, many readers.** `transparency.js` feeds the Trace,
+  "Behind this response" labels, the agent and rules sections of
+  `/how-assessment-works`, the services section of `/privacy`, and
+  `docs/HOW_IT_WORKS.md`, which `scripts/generate-how-it-works.js` writes.
+  `client/tests/how-it-works.test.js` fails when the doc is out of date, so a
+  change to the registry must regenerate it (`npm run docs:how-it-works`).
+
 ### What only the server knows
 `POST /v1/ai/messages` with `trace: true` adds a `plato` object (a `plato`
 event at the start and end of a stream):

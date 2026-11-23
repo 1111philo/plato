@@ -14,17 +14,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import X from 'lucide-react/dist/esm/icons/x';
 import { listTraceRecords } from '../../../js/storage.js';
-import { describeTrace } from '../../lib/traceView.js';
+import { describeTrace, technologyFor, traceToText } from '../../lib/traceView.js';
+import { authenticatedFetch } from '../../../js/auth.js';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { subscribeTrace } from '../../lib/traceSession.js';
 import { STEPS, AGENTS } from '../../lib/transparency.js';
 import TraceTimeline from './TraceTimeline.jsx';
+import TraceTechnology from './TraceTechnology.jsx';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const liveTitle = (step) => (step.type === 'call' ? `${AGENTS[step.agent]?.label || step.agent}${step.purpose ? `: ${step.purpose}` : ''}` : STEPS[step.type]?.title || step.type);
 
-export default function LessonTrace({ scope, open, onClose, docked, focusAt, stamp, recording, frame }) {
+export default function LessonTrace({ scope, open, onClose, docked, focusAt, stamp, recording, frame, title }) {
   const [view, setView] = useState(null);
+  const [items, setItems] = useState([]);
+  const [plugins, setPlugins] = useState([]);
+  const [tab, setTab] = useState('timeline');
   const [loading, setLoading] = useState(false);
   const [live, setLive] = useState([]);
   const [announce, setAnnounce] = useState('');
@@ -33,8 +39,38 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setView(describeTrace(await listTraceRecords(scope))); } finally { setLoading(false); }
+    try {
+      const records = await listTraceRecords(scope);
+      setItems(records);
+      setView(describeTrace(records));
+    } finally { setLoading(false); }
   }, [scope]);
+
+  // Which plugins this classroom has turned on, for the Technology tab.
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    authenticatedFetch('/v1/plugins').then((r) => (r.ok ? r.json() : [])).then((list) => {
+      if (!cancelled) setPlugins((Array.isArray(list) ? list : []).filter((p) => p.enabled).map((p) => p.id));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [open]);
+
+  // "Open the trace for this reply" always lands on the timeline.
+  useEffect(() => { if (focusAt) requestAnimationFrame(() => setTab('timeline')); }, [focusAt]);
+
+  const download = (kind) => {
+    const name = `plato-trace-${scope}`;
+    const blob = kind === 'json'
+      ? new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' })
+      : new Blob([traceToText(view, { title: `plato trace: ${title || scope}` })], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.${kind === 'json' ? 'json' : 'txt'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // After the commit, not during it: the load sets state.
   useEffect(() => {
@@ -70,9 +106,25 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
   }, [open, docked]);
 
   if (!open) return null;
+  const linkButton = 'rounded-sm text-xs text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring disabled:text-muted-foreground disabled:no-underline';
   const body = (
     <>
-      <TraceTimeline view={view} loading={loading} live={live} focusAt={focusAt} stamp={stamp} recording={recording} />
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="mb-3" aria-label="Trace sections">
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="technology">Technology and services</TabsTrigger>
+        </TabsList>
+        <TabsContent value="timeline">
+          <TraceTimeline view={view} loading={loading} live={live} focusAt={focusAt} stamp={stamp} recording={recording} />
+          <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1">
+            <button type="button" className={linkButton} disabled={!view?.turns.length} onClick={() => download('text')}>Download as text</button>
+            <button type="button" className={linkButton} disabled={!view?.turns.length} onClick={() => download('json')}>Download the data (JSON)</button>
+          </p>
+        </TabsContent>
+        <TabsContent value="technology">
+          <TraceTechnology services={technologyFor(items, { plugins })} />
+        </TabsContent>
+      </Tabs>
       <p className="sr-only" role="status" aria-live="polite">{announce}</p>
     </>
   );

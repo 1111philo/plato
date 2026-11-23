@@ -115,7 +115,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 - `client/src/lib/imageCompression.js` — downscales pasted screenshots under the 400 KB item limit
 - `client/src/lib/constants.js` — microlearning limits + shared constants
 - `client/src/lib/lessonTrace.js` / `traceSession.js` — Trace mode's recorder (pure) and the switch that opens one
-- `client/src/lib/transparency.js` — plato's one plain-language description of every agent, step, rule and service; `traceView.js` turns a stored trace into what's shown
+- `client/src/lib/transparency.js` — plato's one plain-language description of every agent, step, rule and service; `traceView.js` turns a stored trace into what's shown. Also feeds `/how-assessment-works`, `/privacy` and the generated `docs/HOW_IT_WORKS.md` (regenerate with `npm run docs:how-it-works`; a test fails when it's stale)
 - `client/src/components/chat/LessonTrace.jsx` / `TraceTimeline.jsx` — the Trace panel (docked at 1024 px and up, a dialog below)
 - `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow chat navigation
 - `client/src/hooks/useStickToBottom.js` — chat auto-scroll (follow while at bottom; jump on send). Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#chat-auto-scroll-319-321) before touching it — three non-obvious traps live here
@@ -129,6 +129,7 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 ## Reference docs
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — subsystem deep-dives + incident history
+- [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) — generated: every agent, coach-context field, rule, Trace step and outside service in plain words
 - [`docs/AUTOMATION.md`](docs/AUTOMATION.md) — CI/CD, agentic workflows, branch protection, versioning
 - [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECTION.md) — why Qwen3-VL: constraints, benchmarks, rejected candidates
 - [`docs/WAITLIST_API.md`](docs/WAITLIST_API.md) — public wait-list API guide for outside forms/integrations

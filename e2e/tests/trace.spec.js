@@ -174,4 +174,34 @@ test.describe('Trace mode', () => {
     expect(writes).toEqual([]);
     await page.getByRole('button', { name: /^Exit viewing as/ }).click();
   });
+
+  test('Technology and services, and downloading the trace', async ({ page }) => {
+    await login(page, LEARNER);
+    await setTrace(page, true);
+    await page.goto(LESSON);
+    await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
+    await page.getByRole('button', { name: 'Trace: what plato did behind this conversation' }).click();
+    const panel = page.getByRole('complementary', { name: 'Trace' });
+    await expect(panel.getByRole('heading', { name: 'Timeline' })).toBeVisible();
+
+    // Download, by keyboard (enabled once the trace has loaded).
+    await expect(panel.getByRole('button', { name: 'Download as text' })).toBeEnabled();
+    const [text] = await Promise.all([page.waitForEvent('download'), panel.getByRole('button', { name: 'Download as text' }).press('Enter')]);
+    expect(text.suggestedFilename()).toBe(`plato-trace-${LESSONS[1].id}.txt`);
+    const [json] = await Promise.all([page.waitForEvent('download'), panel.getByRole('button', { name: 'Download the data (JSON)' }).click()]);
+    expect(json.suggestedFilename()).toBe(`plato-trace-${LESSONS[1].id}.json`);
+
+    // The Technology tab: arrow keys move between tabs, Enter opens one.
+    await panel.getByRole('tab', { name: 'Timeline' }).focus();
+    await page.keyboard.press('ArrowRight');
+    const tech = panel.getByRole('tab', { name: 'Technology and services' });
+    await expect(tech).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(tech).toHaveAttribute('aria-selected', 'true');
+    await expect(panel.getByRole('heading', { name: 'Used by this classroom' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Amazon Bedrock' })).toBeVisible();
+    await expect(panel.getByText('This install is using a stand-in model for testing, not a real AI model.')).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Not turned on here' })).toBeVisible();
+    await expectAccessible(page, { include: '#lesson-trace', label: 'trace technology tab' });
+  });
 });

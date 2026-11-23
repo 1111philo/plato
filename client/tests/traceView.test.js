@@ -8,7 +8,7 @@ import { store, LESSON, reset, signIn, settle } from './helpers/fake-plato.js';
 
 const { clearCache, savePreferences } = await import('../js/storage.js');
 const { startLesson, sendMessage } = await import('../src/lib/lessonEngine.js');
-const { describeTrace } = await import('../src/lib/traceView.js');
+const { describeTrace, traceToText, technologyFor } = await import('../src/lib/traceView.js');
 const { STEPS } = await import('../src/lib/transparency.js');
 
 const ID = LESSON.lessonId;
@@ -93,5 +93,50 @@ describe('describeTrace', () => {
     assert.deepEqual(describeTrace(null).turns, []);
     const odd = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [{ n: 1, type: 'somethingNew', ms: 0 }] } }]);
     assert.equal(odd.turns[0].steps[0].title, 'somethingNew');
+  });
+
+  it('downloads as plain text: every turn, who decided, rules, before and after, exact text', async () => {
+    const view = await record(['My first answer.', 'MOCK_COMPLETE MOCK_UNBACKED done?']);
+    const text = traceToText(view, { title: 'plato trace: Trace lesson' });
+    assert.match(text, /^plato trace: Trace lesson\n=+/);
+    assert.match(text, /Things worth a look/);
+    assert.match(text, /Lesson start · \d{4}-/);
+    assert.match(text, /\[plato’s code\]/);
+    assert.match(text, /Rule: .*held/i);
+    assert.match(text, /Before:\n {6}/);
+    assert.match(text, /The model’s raw reply:\n {6}/);
+    assert.doesNotMatch(text, /undefined|\[object Object\]/);
+  });
+
+  it('plugin steps recorded at lesson start are shown', () => {
+    const view = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'start', steps: [{ n: 1, type: 'plugins', ms: 0, status: 200, enrichments: [], pluginTraces: { 'wordpress-info': [
+      { type: 'ai', purpose: 'plan the searches', model: 'm', system: 'You plan.', messages: [{ role: 'user', content: 'lesson' }], reply: '{"q":[]}', usage: { input_tokens: 3, output_tokens: 4 } },
+      { type: 'fetch', purpose: 'search the handbook', url: 'https://developer.wordpress.org/?s=x', status: 200 },
+      { type: 'note', text: 'Nothing relevant was found.' },
+    ] } }] } }]);
+    const detail = view.turns[0].steps[0].details.find((d) => /wordpress-info: every step/.test(d.label));
+    assert.match(detail.text, /1\. Asked the AI model \(m\): plan the searches/);
+    assert.match(detail.text, /2\. Requested https:\/\/developer\.wordpress\.org\/\?s=x: search the handbook \(answered 200\)/);
+    assert.match(detail.text, /3\. Nothing relevant was found\./);
+  });
+});
+
+describe('technologyFor', () => {
+  const call = (provider) => [{ dataKey: 'trace:x:t:1', data: { steps: [{ type: 'call', server: { provider } }] } }];
+  it('lists every service, says which this classroom uses, and names the model and region a call reported', () => {
+    const tech = technologyFor(call({ provider: 'bedrock', model: 'qwen.qwen3-vl-235b-a22b', region: 'us-east-2' }), { plugins: ['slack'] });
+    const by = Object.fromEntries(tech.map((t) => [t.id, t]));
+    assert.equal(by.bedrock.inUse, true);
+    assert.equal(by.bedrock.detail, 'Region: us-east-2.');
+    assert.match(by.model.detail, /qwen\.qwen3-vl-235b-a22b/);
+    assert.equal(by.slack.inUse, true);
+    assert.equal(by.sso.inUse, false);
+    assert.equal(by.wordpress.inUse, false);
+    assert.ok(tech.every((t) => t.name && t.role && t.sent));
+  });
+  it('says so when the model is a stand-in, and copes with no trace', () => {
+    assert.match(technologyFor(call({ provider: 'mock', model: 'mock' }))[1].detail, /stand-in model/);
+    assert.ok(technologyFor([]).length >= 10);
+    assert.equal(technologyFor(null).find((t) => t.id === 'model').detail, null);
   });
 });

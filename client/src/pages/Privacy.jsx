@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
+import { SERVICES } from '../lib/transparency.js';
 import {
   Card, CardHeader, CardTitle, CardContent,
 } from '@/components/ui/card';
@@ -64,19 +65,37 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold mb-2">AI Provider</h2>
+            <h2 className="text-lg font-semibold mb-2">Services plato Uses, and What Each Is Sent</h2>
             <p className="text-muted-foreground mb-2">
-              plato uses Amazon Bedrock to power the AI coach and other lesson features. Bedrock is Amazon’s
-              managed AI service that provides access to foundation models.
+              plato has no analytics or tracking. These are the outside services it uses. The ones marked
+              &ldquo;only when&rdquo; depend on what your classroom has turned on.
             </p>
-            <p className="text-muted-foreground">
-              Your conversation messages are sent to Bedrock to generate coaching responses. Amazon states that
-              Bedrock does not use your prompts or responses to train AI models. Review Amazon’s <a
+            <dl className="space-y-2 text-muted-foreground">
+              {Object.entries(SERVICES).map(([id, svc]) => (
+                <div key={id}>
+                  <dt className="font-medium text-foreground">{svc.name}{svc.when !== 'always' ? ` (only ${svc.when})` : ''}</dt>
+                  <dd>{svc.role} {svc.sent}{svc.note ? ` ${svc.note}` : ''}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-muted-foreground mt-2">
+              Amazon states that Bedrock does not use your prompts or responses to train AI models. Review Amazon’s <a
                 href="https://aws.amazon.com/bedrock/data-privacy/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline hover:text-foreground"
               >Bedrock data privacy documentation</a> for details.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Trace Mode</h2>
+            <p className="text-muted-foreground">
+              If you turn on Trace mode in Settings, or your classroom team turns it on for you, plato records
+              what it does behind your conversations: the instructions given to the AI model, what was sent
+              and what came back, and what plato’s code did with it. The record is saved with your lesson, you
+              can read and download it from the lesson’s Trace button, and your classroom team can read it too.
+              It includes the first part of any web page you attach. Resetting a lesson deletes its trace.
             </p>
           </section>
 
