@@ -558,6 +558,75 @@ Background agents (learner profile, unit progress) are listed as "Asked to…":
 the reply records the hand-off, not whether the background run later
 succeeded.
 
+## Trace mode (#595)
+
+A readable record of everything behind a conversation: what was sent to the
+model, what came back, and every place plato's instructions or code shaped the
+result. Any user can turn it on in Settings (`preferences.traceMode`); an admin
+can turn it on for a person (`user.traceMode`, Admin → Users). Either one
+records. "Audit" keeps its older meaning here (the audit log, View as User).
+
+**It is off by default and a strict no-op when off.** A request without
+`trace: true` gets byte-identical responses, and no record is written.
+
+### Records
+Traces are the caller's own sync-data, never part of `messages:` (which has a
+340 KB budget and sheds metadata to fit):
+
+| Key | Holds |
+|---|---|
+| `trace:<scope>:t:<ms>` | one turn, or the lesson start |
+| `trace:<scope>:b:<ms>` | one follow-up agent (profile, unit note) |
+| `trace:<scope>:p:<hash>` | one part of a system prompt, stored once per distinct text |
+
+`<scope>` is a lesson id, `profile`, `kb`, or `author-<lessonId>`.
+
+- **Out of the bulk load.** `GET /v1/sync` skips `trace:` at the database, as
+  it does `screenshot:` (`getSyncDataExcept` takes a list; the ranges come from
+  `lib/key-ranges.js`). A conversation's trace can reach about 1.5 MB, and the
+  bulk load runs on every login and tab refocus.
+- **Listed by scope.** `GET /v1/sync?prefix=trace:<scope>:` (optionally
+  `…:t:`). Only those prefixes are accepted, so the list can't be used to read
+  anything else. A server from before Trace mode ignores `prefix` and returns
+  the bulk payload, so the client filters what comes back.
+- **Deleted key by key.** Never add a prefix to `DELETE /v1/sync`: a rolled-back
+  server would ignore it and delete all of the learner's data.
+- **Read-only for staff.** View as User (`?asUserId=`) reads a learner's trace
+  like any other record; writes are refused as everywhere.
+- No migration. RC-232 ignores the new keys and fields (covered by
+  `upgrade-from-rc232.test.js`).
+
+A trace is written by the learner's own browser, so a learner can alter or
+delete theirs. It explains behaviour; it is not tamper-proof evidence.
+
+### What only the server knows
+`POST /v1/ai/messages` with `trace: true` adds a `plato` object (a `plato`
+event at the start and end of a stream):
+
+| Field | Meaning |
+|---|---|
+| `provider` | the real model id, region and API (`ai.describe()`) |
+| `applied` | the token limit in force and whether it was the default, the temperature (null: the model's default), fields the proxy dropped |
+| `attempts`, `ms`, `firstEventMs` | SDK attempts and timing |
+| `limit` | on a 429: which per-user limit tripped (`rate` or `in_flight`) |
+| `error` | on failure: the provider's own error name, status and message |
+
+The model's reasoning, which `converse.js` otherwise drops, comes back as
+`reasoning` (or `reasoning_delta` stream deltas, which the chat ignores).
+
+`error.message` has ARNs and account numbers removed and is capped at 300
+characters (`describeAiError`): any signed-in user can send `trace: true`, so
+nothing in the reply may identify the AWS account. Nothing is stored or logged
+server-side for a trace.
+
+### The admin flag
+`PATCH /v1/admin/users/:userId { traceMode }` (`users.write`) writes a
+`trace_mode_changed { on }` audit entry when it changes. Bulk update takes
+`{ field: 'traceMode', value: true|false }` for accounts (wait-list entries
+have no lessons). `/v1/me` returns `traceMode` so the learner's app records and
+Settings can say who turned it on. The flag is honoured by the client; it is a
+diagnostic, not a control.
+
 ## Chat auto-scroll (#319, #321)
 
 `useStickToBottom` (consumed by `ChatArea`) follows streamed output while the

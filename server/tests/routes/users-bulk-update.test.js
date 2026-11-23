@@ -52,6 +52,20 @@ beforeEach(() => {
 });
 
 describe('bulk user update', () => {
+  it('turns Trace mode on or off for accounts, skips those already set, and leaves wait-list entries alone', async () => {
+    users.usr_b.traceMode = true;
+    const res = await bulk({ userIds: ['usr_a', 'usr_b'], waitlistTokens: ['wl_1'], set: { field: 'traceMode', value: true } });
+    assert.deepEqual(await res.json(), { updated: 1, unchanged: 2, failed: [] });
+    assert.deepEqual(updates, [['usr_a', { traceMode: true }]]);
+    assert.equal(invites.wl_1.profile.traceMode, undefined);
+    assert.equal(audits[0].details.field, 'traceMode');
+    assert.equal(audits[0].details.on, true);
+    const off = await bulk({ userIds: ['usr_a', 'usr_b'], set: { field: 'traceMode', value: false } });
+    assert.deepEqual(await off.json(), { updated: 2, unchanged: 0, failed: [] });
+    assert.equal((await bulk({ userIds: ['usr_a'], set: { field: 'traceMode', value: 'yes' } })).status, 400);
+    assert.equal((await bulk({ userIds: ['usr_a'], set: { field: 'userGroup', value: true } })).status, 400);
+  });
+
   it('sets a group for everyone selected, skipping those already in it', async () => {
     const res = await bulk({ userIds: ['usr_a', 'usr_b'], set: { field: 'userGroup', value: 'Cohort A' } });
     assert.deepEqual(await res.json(), { updated: 1, unchanged: 1, failed: [] });

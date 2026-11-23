@@ -160,6 +160,20 @@ describe('upgrade from Beta-RC-232', () => {
     assert.deepEqual(diffSnapshots(after1, await snapshot(db)), { added: [], removed: [], changed: [] });
   });
 
+  // Trace mode adds records and fields without a migration. Put them in the
+  // database RC-232 is about to read, so the rollback check below covers them.
+  it('Trace mode data: a trace record, a stamped lesson, a flagged user', async () => {
+    await db.putSyncData('usr_ada', 'trace:les-f1:t:1763900000000', { steps: [{ kind: 'context' }] }, 0);
+    await db.putSyncData('usr_ada', 'trace:les-f1:p:ab12cd34', { text: 'prompt part' }, 0);
+    const kb = await db.getSyncData('usr_ada', 'lessonKB:les-f1');
+    await db.putSyncData('usr_ada', 'lessonKB:les-f1', { ...kb.data, trace: { since: 1763900000000, by: 'learner' } }, kb.version);
+    await db.updateUser('usr_ada', { traceMode: true });
+    assert.equal(!!(await db.getUserById('usr_ada')).traceMode, true);
+    await db.updateUser('usr_ada', { traceMode: false });
+    assert.equal(!!(await db.getUserById('usr_ada')).traceMode, false);
+    await db.updateUser('usr_ada', { traceMode: true });
+  });
+
   it('Beta-RC-232 route handlers still serve the migrated data (rollback safety)', (t) => {
     const hasTag = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${TAG}^{commit}`], { cwd: REPO_DIR }).status === 0;
     if (!hasTag) {

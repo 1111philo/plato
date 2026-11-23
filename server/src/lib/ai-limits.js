@@ -40,9 +40,17 @@ export const MAX_IN_FLIGHT = 4;
 
 const textOf = (v) => (typeof v === 'string' ? v : Array.isArray(v) ? v.map((b) => (typeof b?.text === 'string' ? b.text : '')).join('') : '');
 
+// Everything the proxy reads from a request; any other field is dropped.
+const KNOWN_FIELDS = new Set(['model', 'max_tokens', 'system', 'messages', 'stream', 'temperature', 'trace']);
+
 /**
  * Check a request body. Returns `{ aiBody, stream }` ready for the provider,
  * or `{ error }` (a 400). `rawBytes` is the body's size as received.
+ *
+ * `trace` is true for a Trace request (`trace: true` in the body); `applied`
+ * is what the proxy did to the request, which only the server knows: the
+ * token limit in force and whether it was the default, the temperature (null
+ * means the model's own default), and any fields it dropped.
  */
 export function validateAiRequest(body, rawBytes = 0) {
   if (rawBytes > MAX_BODY_BYTES) return { error: `Request is too large (over ${MAX_BODY_BYTES / 1024 / 1024} MB)`, status: 413 };
@@ -85,7 +93,17 @@ export function validateAiRequest(body, rawBytes = 0) {
     return { error: 'temperature must be a number from 0 to 1' };
   }
 
-  return { aiBody: { max_tokens: tokens, ...(system ? { system } : {}), messages, ...(typeof temperature === 'number' ? { temperature } : {}) }, stream: !!stream };
+  return {
+    aiBody: { max_tokens: tokens, ...(system ? { system } : {}), messages, ...(typeof temperature === 'number' ? { temperature } : {}) },
+    stream: !!stream,
+    trace: body.trace === true,
+    applied: {
+      max_tokens: tokens,
+      maxTokensDefaulted: maxTokens === undefined || maxTokens === null,
+      temperature: typeof temperature === 'number' ? temperature : null,
+      dropped: Object.keys(body).filter((k) => !KNOWN_FIELDS.has(k)).slice(0, 20).map((k) => String(k).slice(0, 60)),
+    },
+  };
 }
 
 // ── Per-user rate (token bucket) and concurrency, per container ──────────
@@ -143,4 +161,17 @@ export function classifyAiError(err) {
     return { status: 504, code: 'timeout', message: 'The reply took too long. Please try again.' };
   }
   return { status: 502, code: 'failed', message: 'The AI service returned an error. Please try again.' };
+}
+
+/**
+ * The real provider error, for a Trace: its name, HTTP status and message,
+ * with AWS identifiers (ARNs, account numbers) removed and the text capped.
+ * Any signed-in user can ask for a Trace, so nothing here may name the account.
+ */
+export function describeAiError(err) {
+  const message = String(err?.message || err || '')
+    .replace(/arn:[^\s"',)]+/gi, '[arn]')
+    .replace(/\b\d{12}\b/g, '[account]')
+    .slice(0, 300);
+  return { name: String(err?.name || 'Error').slice(0, 80), status: err?.$metadata?.httpStatusCode ?? null, attempts: err?.$metadata?.attempts ?? null, message };
 }

@@ -73,4 +73,14 @@ describe('ai-mock', () => {
     }
     assert.equal(text, replyFor('Coach', msgs));
   });
+
+  it('ends a stream like Bedrock does: a stop reason, then usage', async () => {
+    const msgs = [{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }];
+    const events = [];
+    for await (const e of mockAi.invokeStream('x', { system: prompt('coach'), messages: msgs })) events.push(e);
+    assert.deepEqual(events.at(-2), { type: 'message_delta', delta: { stop_reason: 'end_turn' } });
+    assert.equal(events.at(-1).type, 'message_stop');
+    assert.deepEqual(Object.keys(events.at(-1).usage).sort(), ['input_tokens', 'output_tokens']);
+    assert.equal(mockAi.describe().provider, 'mock');
+  });
 });

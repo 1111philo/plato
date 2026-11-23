@@ -133,6 +133,10 @@ function replyFor(agent, messages, system) {
 }
 
 const mockAi = {
+  describe() {
+    return { provider: 'mock', model: 'mock', region: null, api: 'mock' };
+  },
+
   async invoke(_model, body) {
     const text = replyFor(agentOf(body.system), body.messages, body.system);
     return { content: [{ type: 'text', text }], usage: MOCK_USAGE, stop_reason: 'end_turn' };
@@ -156,14 +160,16 @@ const mockAi = {
       if (delay > 5) await new Promise((r) => setTimeout(r, 2000));
       yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(0, Math.floor(text.length / 2)) } };
       yield { type: 'message_delta', delta: { stop_reason: 'max_tokens' } };
-      yield { type: 'message_stop' };
+      yield { type: 'message_stop', usage: MOCK_USAGE };
       return;
     }
     for (let i = 0; i < text.length; i += 24) {
       await new Promise((r) => setTimeout(r, delay));
       yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 24) } };
     }
-    yield { type: 'message_stop' };
+    // Same closing events as Bedrock: the stop reason, then the usage.
+    yield { type: 'message_delta', delta: { stop_reason: 'end_turn' } };
+    yield { type: 'message_stop', usage: MOCK_USAGE };
   },
 };
 
