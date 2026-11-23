@@ -1350,7 +1350,14 @@ lesson", against the progress bar (Qwen ignores the addendum). So
 `claimsCompletion` checks the reply and its "Where you are" note, and when
 either says the lesson is done, plato replaces it with a plain message naming
 the next objective to show in the learner's own words (`heldReply`,
-`heldPosition`). Patterns alone missed real wordings ("You've now fully
+`heldPosition`). That message talks to the learner: objectives are written
+about them ("confirm their profile"), so `objectiveForLearner` turns them into
+"confirm your profile", and the grounding reasons (written for the coach) stay
+out of it except one plain line when the learner's message repeated the
+coach's wording. Replaying playground testers' late turns through this code,
+Qwen's reply was swapped for this message on 16 of 63, and the first version
+read as notes to the coach ("(the words that would show it were written by the
+coach)"), playground 2026-11-23. Patterns alone missed real wordings ("You've now fully
 demonstrated the **exemplar** … Progress: 10 — lesson complete", playground
 2026-11-22): on prod's 2,228 completing coach replies the first patterns
 recognized 67%, the broadened ones (markdown stripped first) 80%. For the

@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner,
+  claimsCompletion, draftsForLearner, heldReply, heldPosition, objectiveForLearner, COACH_WROTE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -385,7 +385,7 @@ describe('checkGrading', () => {
     });
     assert.equal(assessment.held, true);
     assert.equal(assessment.replaced, true);
-    assert.match(parsed.text, /^You're close, but this lesson isn't complete yet\. The next step is yours to write: \*\*explain why a value matters to them\*\*/);
+    assert.match(parsed.text, /^You're close, but this lesson isn't complete yet\. Some of what you sent repeats my wording, and that doesn’t count as yours\. The next step is yours: \*\*explain why a value matters to you\*\*/);
   });
 
   it('asks the assessor once more when its first reply isn’t JSON', async () => {
@@ -524,5 +524,33 @@ describe('nextGradingFailures', () => {
     assert.equal(nextGradingFailures(1, { failed: true, held: false }), 1);
     assert.equal(nextGradingFailures(1, { checked: 2, shown: 2, held: false }), 0);
     assert.equal(nextGradingFailures(1, null), 1);
+  });
+});
+
+describe('held reply copy (playground 2026-11-23)', () => {
+  const k = { objectives: [
+    { objective: 'Can upload a screenshot of their passing ticket' },
+    { objective: 'Can state one specific, actionable career goal and confirm their profile' },
+    { objective: 'Can explain why a value matters to them in their own words' },
+  ] };
+
+  it('turns an objective about the learner into a step addressed to them', () => {
+    assert.equal(objectiveForLearner(k.objectives[1]), 'state one specific, actionable career goal and confirm your profile');
+    assert.equal(objectiveForLearner('Can explain why a value matters to them in their own words'), 'explain why a value matters to you in your own words');
+  });
+
+  it('never shows the coach-facing reason', () => {
+    const t = heldReply(k, [2], { 2: COACH_WROTE });
+    assert.doesNotMatch(t, /written by the coach|the learner|their profile/);
+    assert.match(t, /\*\*state one specific, actionable career goal and confirm your profile\*\*/);
+    assert.match(t, /repeats my wording/);
+    const assessorWhy = heldReply(k, [2], { 2: 'the learner only restated the example' });
+    assert.doesNotMatch(assessorWhy, /the learner|restated|repeats my wording/);
+  });
+
+  it('lists every objective still to show, addressed to the learner', () => {
+    const t = heldReply(k, [2, 3], {});
+    assert.match(t, /Still to show in your own words:\n- state one .* confirm your profile\n- explain why a value matters to you/);
+    assert.equal(heldPosition(k, [3]), 'Close to the exemplar. Still to show in your own words: explain why a value matters to you in your own words.');
   });
 });
