@@ -43,6 +43,12 @@ describe('ai-mock', () => {
     assert.deepEqual(no.objectives.map((o) => o.shown), [false, false]);
   });
 
+  it('assessor answers MOCK_GARBLED with a reply that isn’t JSON, until the retry’s format note (#604)', () => {
+    const ask = (note) => [{ role: 'user', content: JSON.stringify({ check: [1], transcript: [{ by: 'learner', text: 'MOCK_GARBLED' }], ...(note ? { note } : {}) }) }];
+    assert.throws(() => JSON.parse(replyFor('Assessor', ask())));
+    assert.equal(JSON.parse(replyFor('Assessor', ask('Reply with valid JSON only.'))).objectives[0].shown, true);
+  });
+
   it('coach’s second try after a held completion asks for more instead of completing', () => {
     const msgs = [{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, { role: 'assistant', content: 'c' }, { role: 'user', content: 'MOCK_COMPLETE' }];
     const reply = replyFor('Coach', msgs, `${prompt('coach')}\n\n## Assessment check (from plato, not the learner)\n…`);

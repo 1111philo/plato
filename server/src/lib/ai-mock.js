@@ -15,7 +15,9 @@
  * Assessor (the grading check, #584): backs every objective it's asked about
  * with a quote from the learner's latest message, so MOCK_COMPLETE still
  * completes a lesson in fewer turns than it has objectives. A latest message
- * containing MOCK_UNBACKED backs none, so the completion is held.
+ * containing MOCK_UNBACKED backs none, so the completion is held. One
+ * containing MOCK_GARBLED gets a reply that isn't JSON, until plato retries
+ * with its format note (#604).
  */
 
 const MOCK_USAGE = { input_tokens: 0, output_tokens: 0 };
@@ -72,6 +74,7 @@ function assessorReply(messages) {
   const input = lastUserJson(messages);
   const learner = [...(input.transcript || [])].reverse().find((m) => m.by === 'learner')?.text || '';
   const unbacked = /MOCK_UNBACKED/.test(learner);
+  if (/MOCK_GARBLED/.test(learner) && !input.note) return 'Here is my verdict: objective 1 looks shown.';
   return JSON.stringify({
     objectives: (input.check || []).map((n) => (unbacked
       ? { n, shown: false, missing: 'show it in your own words' }
