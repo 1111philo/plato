@@ -1,7 +1,7 @@
 /**
  * Turns stored Trace records (lib/lessonTrace.js) into what the Trace view
  * shows (#595): for each turn, a one-line verdict on who shaped the result,
- * the things worth a look, and every step as a plain sentence with the exact
+ * what was unusual, and every step as a plain sentence with the exact
  * text behind it. The wording for agents, steps, rules and sources comes from
  * lib/transparency.js.
  *
@@ -301,7 +301,10 @@ function pluginStepText(st, i) {
   return `${n} ${pretty(st)}`;
 }
 
-/** Things worth a look in one turn: `[{ id, text }]`. */
+/**
+ * What was unusual in one turn: anything that went wrong, and every place
+ * plato's code or instructions changed the model's answer. `[{ id, text }]`.
+ */
 function flagsFor(record) {
   const flags = [];
   const add = (id, text) => { if (!flags.some((f) => f.id === id)) flags.push({ id, text }); };
@@ -534,7 +537,7 @@ export function traceToText(view, { title = 'Trace' } = {}) {
     if (e.you) out.push('You sent:', indent(e.you, ''));
     if (e.saw) out.push('You saw:', indent(e.saw, ''));
     out.push(`${e.verdict.sourceLabel}: ${e.verdict.text}`);
-    for (const f of e.flags) out.push(`Worth a look: ${f.text}`);
+    for (const f of e.flags) out.push(`Unusual: ${f.text}`);
     out.push('');
     e.stages.forEach((st, i) => {
       out.push(`  ${i + 1}) ${st.title}`);

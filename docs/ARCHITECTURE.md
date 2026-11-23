@@ -669,11 +669,12 @@ A request the trace can't reproduce means the trace is missing something.
   - **The list of exchanges**: one row per stored turn ("Lesson start",
     "Your message: …"), with what changed ("Progress 3 → 6 of 10"), who shaped
     it ("The model's own answer" / "Shaped by plato's instructions" / "Changed
-    by plato's code"), and how many things are worth a look. A checkbox narrows
+    by plato's code"), and how many unusual things happened (anything that went
+    wrong, or a place plato changed the model's answer). A checkbox narrows
     it to those.
   - **One exchange**: a bar pinned to the top (All exchanges, Previous, Next);
     what you sent and what you saw (and the reply that streamed first, when
-    plato replaced it); the verdict; its "worth a look" items; then **What
+    plato replaced it); the verdict; "What was unusual"; then **What
     happened, in order**, in the stages of `STAGES` (`transparency.js`): You
     sent → plato prepared what the AI model is given → The AI model answered →
     plato checked the answer → plato recorded the result → In the background.

@@ -114,9 +114,12 @@ function errorInfo(err) {
  * @param {Set} [o.knownParts] hashes already stored for this scope (shared across turns)
  * @param {function} [o.onStep] called with each step as it is recorded (the live panel)
  * @param {function} [o.now]
+ * @param {number} [o.at]    the start time, when the caller reserved one (it is the record's id)
  */
-export function createTrace({ scope, kind, save, app = {}, partial = false, knownParts = new Set(), onStep, now = Date.now, record = 't' }) {
-  const startedAt = now();
+export function createTrace({ scope, kind, save, app = {}, partial = false, knownParts = new Set(), onStep, now = Date.now, record = 't', at }) {
+  // `at`: a start time reserved by the caller (traceSession), which is also the
+  // record's id.
+  const startedAt = at ?? now();
   const steps = [];
   const pendingParts = new Map(); // hash -> text
   let base = null; // the turn's messages, stored once and shared by its calls
@@ -124,7 +127,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
   let flushed = false;
 
   const step = (type, data = {}) => {
-    const s = { n: steps.length + 1, type, ms: now() - startedAt, ...data };
+    const s = { n: steps.length + 1, type, ms: Math.max(0, now() - startedAt), ...data };
     steps.push(s);
     try { onStep?.(s); } catch { /* a listener must never break a turn */ }
     return s;
@@ -209,7 +212,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
           if (res?.ok) knownParts.add(hash);
         }
         const data = {
-          v: TRACE_VERSION, kind, at: startedAt, took: now() - startedAt,
+          v: TRACE_VERSION, kind, at: startedAt, took: Math.max(0, now() - startedAt),
           app, ...(partial ? { partial: true } : {}), ...(failure ? { failed: true } : {}),
           steps,
         };

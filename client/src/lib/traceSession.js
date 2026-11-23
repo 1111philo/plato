@@ -107,10 +107,11 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
   const slot = `${scope}:${record}`;
   const startAt = Math.max(Date.now(), (lastStart.get(slot) || 0) + 1);
   lastStart.set(slot, startAt);
-  const skew = startAt - Date.now();
+  // The reserved time is the record's id, passed as is: reading the clock
+  // again here could land a millisecond later, onto the next trace's slot
+  // (a lost record, seen under load in CI).
   const trace = createTrace({
-    scope, kind, record, partial,
-    ...(skew > 0 ? { now: () => Date.now() + skew } : {}),
+    scope, kind, record, partial, at: startAt,
     save: putTraceRecord,
     knownParts: knownParts.get(scope),
     app: {

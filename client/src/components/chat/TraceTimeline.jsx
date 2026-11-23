@@ -143,7 +143,7 @@ function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
 
       {e.flags.length > 0 && (
         <div className="rounded-md border border-amber-700 bg-amber-50 p-2 dark:border-amber-400 dark:bg-amber-950">
-          <p className="flex items-center gap-1 font-medium"><TriangleAlert aria-hidden="true" className="size-4" /> Worth a look</p>
+          <p className="flex items-center gap-1 font-medium"><TriangleAlert aria-hidden="true" className="size-4" /> What was unusual</p>
           <ul className="mt-1 list-disc space-y-1 pl-5">{e.flags.map((f) => <li key={f.id}>{f.text}</li>)}</ul>
         </div>
       )}
@@ -186,7 +186,7 @@ function Row({ exchange: e, onOpen, buttonRef }) {
         </span>
         {e.flags.length > 0 && (
           <span className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-900 dark:text-amber-200">
-            <TriangleAlert aria-hidden="true" className="size-3.5" /> {e.flags.length} worth a look
+            <TriangleAlert aria-hidden="true" className="size-3.5" /> {e.flags.length} unusual {e.flags.length === 1 ? 'thing' : 'things'}
           </span>
         )}
       </button>
@@ -280,7 +280,7 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
           {view?.flagged > 0 && (
             <label className="flex items-center gap-1.5 text-xs">
               <input type="checkbox" className="accent-primary" checked={onlyFlagged} onChange={(e) => setOnlyFlagged(e.target.checked)} />
-              Only the {view.flagged} worth a look
+              Only show the {view.flagged} where something unusual happened
             </label>
           )}
         </div>
