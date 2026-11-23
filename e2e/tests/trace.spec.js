@@ -79,21 +79,27 @@ test.describe('Trace mode', () => {
     await expect(exchange.getByRole('heading', { name: /^Exchange 2 of 2/ })).toBeFocused();
     await expect(exchange.getByRole('blockquote').filter({ hasText: 'My first answer about the key idea.' })).toBeVisible();
     await expect(exchange.getByText(/plato’s code changed nothing/)).toBeVisible();
-    for (const stage of ['1. You sent', '2. plato prepared what the AI model is given', '3. The AI model answered', '5. plato recorded the result', '6. In the background']) {
+    for (const stage of ['1. You sent', '2. plato prepared and sent the request', '3. The AI model answered', '5. plato recorded the result', '6. In the background']) {
       await expect(exchange.getByRole('heading', { name: stage })).toBeVisible();
     }
     // No lesson step on a later turn: it's shown once, at the start.
     await expect(exchange.getByText('The lesson', { exact: true })).toHaveCount(0);
     await exchange.getByRole('link', { name: '3. The AI model answered' }).click();
     await expect(exchange.getByRole('heading', { name: '3. The AI model answered' })).toBeFocused();
-    await expect(exchange.getByText('Coach: reply')).toBeVisible();
+    // A call is the request (with its size) and the reply (size, time, why it stopped).
+    await expect(exchange.getByText('Sent to the AI model, for the coach: reply')).toBeVisible();
+    await expect(exchange.getByText(/^plato sent a stand-in model used for testing the coach’s instructions \([\d,]+ characters/)).toBeVisible();
+    await expect(exchange.getByText(/^[\d,]+ characters, after [\d.]+ m?s\. It stopped because it had finished\.$/).first()).toBeVisible();
+    await expect(exchange.getByText(/^at [\d.]+ m?s · took [\d.]+ m?s$/).first()).toBeVisible();
     // The exact text, one disclosure per step.
-    const call = exchange.getByRole('listitem').filter({ has: page.getByText('Coach: reply', { exact: true }) }).last();
-    await call.getByText(/^Show the exact text/).click();
-    await call.getByText('The model’s raw reply').click();
-    await expect(call.locator('details[open] > pre').filter({ hasText: /\[PROGRESS: \d+\]/ }).first()).toBeVisible();
-    await call.getByText(/^Instructions: The agent’s instructions/).first().click();
-    await expect(call.locator('details[open] > pre').filter({ hasText: 'AGENT: Coach' }).first()).toBeVisible();
+    const reply = exchange.getByRole('listitem').filter({ has: page.getByText('The AI model replied to the coach', { exact: true }) }).last();
+    await reply.getByText(/^Show the exact text/).click();
+    await reply.getByText('The model’s raw reply').click();
+    await expect(reply.locator('details[open] > pre').filter({ hasText: /\[PROGRESS: \d+\]/ }).first()).toBeVisible();
+    const request = exchange.getByRole('listitem').filter({ has: page.getByText('Sent to the AI model, for the coach: reply', { exact: true }) }).last();
+    await request.getByText(/^Show the exact text/).click();
+    await request.getByText(/^Instructions: The agent’s instructions/).first().click();
+    await expect(request.locator('details[open] > pre').filter({ hasText: 'AGENT: Coach' }).first()).toBeVisible();
     await expectAccessible(page, { label: 'lesson chat with the trace docked and an exchange open' });
 
     // Nothing in the panel is wider than the panel.
@@ -137,23 +143,29 @@ test.describe('Trace mode', () => {
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
     await expect(exchange.getByRole('blockquote').filter({ hasText: 'MOCK_COMPLETE MOCK_UNBACKED I think I am done' })).toBeVisible();
-    await expect(exchange.getByText('What was unusual')).toBeVisible();
-    await expect(exchange.getByText(/completion was held/).first()).toBeVisible();
+    // No separate list of what was unusual: it's said on the step where it happened.
+    await expect(exchange.getByText('What was unusual')).toHaveCount(0);
+    await expect(exchange.getByText(/^plato stepped in: plato held the lesson open/)).toBeVisible();
     await expect(exchange.getByText(/plato’s code changed the result/)).toBeVisible();
     await expect(exchange.getByText('A different reply appeared first, then plato replaced it')).toBeVisible();
     await expect(exchange.getByRole('heading', { name: '4. plato checked the answer' })).toBeVisible();
+    // Every check plato runs, as a question with its answer, even those that found nothing.
+    await expect(exchange.getByRole('heading', { name: '4.a Did the reply include its tags?' })).toBeVisible();
+    await expect(exchange.getByRole('heading', { name: '4.b Did the reply write your answer for you?' })).toBeVisible();
+    await expect(exchange.getByRole('heading', { name: '4.c Is every objective the coach checked off shown in your own words?' })).toBeVisible();
+    await expect(exchange.getByText(/^Yes: the reply had the progress score and the notes/)).toBeVisible();
     await expect(exchange.getByText('The assessment check’s verdict')).toBeVisible();
     await expect(exchange.getByText(/^Rule:/).first()).toBeVisible();
     await expect(exchange.getByText('Before', { exact: true }).first()).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace with a held completion open' });
 
-    // The list can be narrowed to the exchanges where something unusual happened.
+    // The list can be narrowed to where plato stepped in or something went wrong.
     await exchange.getByRole('button', { name: 'All exchanges' }).click();
-    const filter = panel.getByRole('checkbox', { name: /^Only show the \d+ where something unusual happened$/ });
+    const filter = panel.getByRole('checkbox', { name: /^Only where plato stepped in or something went wrong \(\d+\)$/ });
     await filter.check();
     const rows = panel.getByRole('list').last().getByRole('button');
-    await expect(rows.first()).toContainText(/\d+ unusual things?/);
-    for (const r of await rows.all()) await expect(r).toContainText(/\d+ unusual things?/);
+    for (const r of await rows.all()) await expect(r).toContainText(/Changed by plato’s code|Shaped by plato’s instructions|Something went wrong/);
+    await expect(panel.getByRole('button', { name: /^1\. Lesson start/ })).toHaveCount(0);
   });
 
   test('narrow screens get the trace as a dialog', async ({ page }) => {
@@ -259,7 +271,8 @@ test.describe('Trace mode', () => {
     const turn = dialog.getByRole('article');
     await expect(turn.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
     await expect(turn.getByText('What you did', { exact: true })).toBeVisible();
-    await expect(turn.getByText('Learner profile: profile update (learner)')).toBeVisible();
+    await expect(turn.getByText('Sent to the AI model, for the learner profile: profile update (learner)')).toBeVisible();
+    await expect(turn.getByText(/Who’s this\? Learner profile is one of plato’s AI helpers/)).toBeVisible();
     await expect(turn.getByText('The learner profile was updated')).toBeVisible();
     await expectAccessible(page, { include: '[role=dialog]', label: 'settings: profile trace dialog' });
     await page.keyboard.press('Escape');
@@ -291,7 +304,7 @@ test.describe('Trace mode', () => {
     const turn = dialog.getByRole('article');
     await expect(turn.getByText(/readiness score are the model’s own/)).toBeVisible();
     await expect(turn.getByText('What you wrote', { exact: true })).toBeVisible();
-    await expect(turn.getByText('Lesson creator: reply')).toBeVisible();
+    await expect(turn.getByText('The AI model replied to the lesson creator')).toBeVisible();
     await expect(turn.getByText(/^Readiness score: \d+ of 10/)).toBeVisible();
     const parsed = turn.getByRole('listitem').filter({ has: page.getByText('What plato read from the reply', { exact: true }) }).last();
     await parsed.getByText(/^Show the exact text/).click();

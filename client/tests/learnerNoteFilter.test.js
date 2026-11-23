@@ -136,3 +136,10 @@ describe('profile agent input', () => {
     assert.equal(fetchCalls, 0);
   });
 });
+
+describe('NOTE_RULE_REASONS', () => {
+  it('gives a plain reason for every rule', async () => {
+    const { LEARNER_NOTE_RULES, NOTE_RULE_REASONS } = await import('../js/learnerNoteFilter.js');
+    for (const { id } of LEARNER_NOTE_RULES) assert.ok(NOTE_RULE_REASONS[id], `rule "${id}" has no reason`);
+  });
+});

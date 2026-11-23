@@ -610,6 +610,9 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
 
   const firstParse = parseCoachResponse(coachMsg);
   trace?.step('parsed', { raw: coachMsg, ...firstParse });
+  // Each check is recorded whether or not it finds anything, so the Trace
+  // says it ran.
+  trace?.step('tagCheck', tagsFound(firstParse));
   const repaired = await recoverMissingTags(
     firstParse,
     () => orchestrator.repairCoachTags(messages, stripTags(coachMsg), opts('tag repair')),
@@ -628,10 +631,14 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // learner watch it switch twice (playground: the rewrite still drafted 21
   // of 26 times). A failed rewrite keeps the first reply.
   let coachReply = repaired;
-  if (lessonKB.status !== 'completed' && draftsForLearner(repaired.text)) {
+  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
+  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts });
+  if (drafts) {
     try {
       const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them'));
-      const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite')));
+      const rewriteParse = parseCoachResponse(raw);
+      trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
+      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite')));
       if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
       trace?.step('draftGuard', { before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
@@ -954,6 +961,11 @@ async function loadCourseProgressSummary(lesson) {
   } catch {
     return undefined;
   }
+}
+
+/** Which of the coach's tags a reply carried, for a Trace. */
+function tagsFound(parsed) {
+  return { progress: parsed.progress != null, notes: !!parsed.kbUpdate, profile: !!parsed.profileUpdate };
 }
 
 /** The lesson as the author wrote it, for a Trace: which lesson, which version, and the parts the coach is given. */

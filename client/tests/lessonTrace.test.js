@@ -131,6 +131,8 @@ describe('rulesApplied', () => {
     assert.deepEqual(rules({ before: kb(), after: kb({ progress: 10, status: 'completed', objectivesMet: [0, 1] }), modelProgress: 10, parsed: { progress: 10 }, achieved: true }), ['completed']);
     assert.deepEqual(rules({ before: kb(), after: kb({ progress: 8 }), modelProgress: 10, parsed: { progress: 8 }, assessment: { held: true, unverified: 1, replaced: true } }), ['heldAt8', 'objectivesNotBackedUp', 'replyReplaced']);
     assert.deepEqual(rules({ before: kb(), after: kb(), modelProgress: null, parsed: { progress: null } }), ['noProgressTag']);
+    // The first reply had no score, but asking again for the tags got one: it was recorded.
+    assert.deepEqual(rules({ before: kb(), after: kb({ progress: 5 }), modelProgress: null, parsed: { progress: 5 } }), []);
     assert.deepEqual(rules({ before: kb({ status: 'completed' }), after: kb({ status: 'completed' }), modelProgress: 4, parsed: { progress: 4 } }), ['frozenAfterCompletion']);
     assert.deepEqual(rules({ before: kb(), after: kb(), modelProgress: 5, parsed: { progress: 5 }, assessment: { failed: true } }), ['checkFailedNothingCounted']);
     assert.deepEqual(rules({ before: kb(), after: kb(), modelProgress: 10, parsed: { progress: 10 }, assessment: { failed: true, failedOpen: true }, achieved: true }), ['checkFailedTwiceGradingStood', 'completed']);

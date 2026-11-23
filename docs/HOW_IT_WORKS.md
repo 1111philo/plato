@@ -174,9 +174,9 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 
 With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
 
-1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the planner’s version of it, and anything plugins added.
+1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the lesson planner’s version of it, and anything plugins added.
 2. **You sent.** What you wrote or did, exactly as plato received it.
-3. **plato prepared what the AI model is given.** Before any AI call, plato’s code gathers the conversation so far and what it knows about you and the lesson.
+3. **plato prepared and sent the request.** plato’s code gathers the conversation so far and what it knows about you and the lesson, then sends it to the AI model.
 4. **The AI model answered.** The request to the model, its raw reply, and what plato read from it.
 5. **plato checked the answer.** Checks plato runs on the model’s answer, and what they changed.
 6. **plato recorded the result.** What was saved, the rules plato’s code applied, and what was reported to the logs.
@@ -185,17 +185,19 @@ With Trace mode on, each exchange of a conversation is recorded step by step. Th
 | Step | Stage | Decided by | Meaning |
 |---|---|---|---|
 | The lesson (`lesson`) | plato set up the lesson | A person | The lesson as its author wrote it, and when it was last edited. |
-| The lesson planner’s setup (`planned`) | plato set up the lesson | The AI model | The planner restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording. |
-| Checked the planner’s setup (`validation`) | plato set up the lesson | plato’s code | plato’s code checked the setup had the right shape. If not, it asked once more and used the second answer. |
+| The lesson planner’s setup (`planned`) | plato set up the lesson | The AI model | The lesson planner, an AI helper, restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording. |
+| plato checked the lesson planner’s setup (`validation`) | plato set up the lesson | plato’s code | plato’s code checked the setup had everything the coach and the assessment check need (the exact list is shown). If not, it asked once more and used the second answer. |
 | Extra context from plugins (`plugins`) | plato set up the lesson | plato’s code | Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes. |
 | What you sent (`input`) | You sent | A person | Your message, with any images and attached web pages. |
-| Where the lesson stood (`state`) | plato prepared what the AI model is given | plato’s code | The progress and objectives on record before this message. |
-| The conversation so far (`tail`) | plato prepared what the AI model is given | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
-| What plato told the coach about you and the lesson (`context`) | plato prepared what the AI model is given | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
-| The messages sent to the model (`history`) | plato prepared what the AI model is given | plato’s code | The exact list of messages every coach call on this turn starts from. |
+| Where the lesson stood (`state`) | plato prepared and sent the request | plato’s code | The progress and objectives on record before this message. |
+| The conversation so far (`tail`) | plato prepared and sent the request | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
+| What plato told the coach about you and the lesson (`context`) | plato prepared and sent the request | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
+| The messages sent to the model (`history`) | plato prepared and sent the request | plato’s code | The exact list of messages every coach call on this turn starts from. |
 | A call to the AI model (`call`) | The AI model answered | The AI model | One request to the model and its raw reply. |
 | What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them. |
-| The reply’s tags were missing (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
+| Were the reply’s tags there? (`tagCheck`) | plato checked the answer | plato’s code | plato’s code looks for the two tags it needs: the progress score and the notes. Without them, nothing from the reply can be recorded. |
+| Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
+| What the second request got back (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
 | The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
 | Whether to check the grading (`gradingPlan`) | plato checked the answer | plato’s code | The assessment check runs only when the coach checks off an objective or scores 10. |
 | The assessment check’s answer couldn’t be read (`gradingRetry`) | plato checked the answer | plato’s code | Its reply wasn’t in the expected format, so plato asked once more. |
@@ -221,7 +223,7 @@ With Trace mode on, each exchange of a conversation is recorded step by step. Th
 | What you did (`noteChange`) | You sent | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
 | What you wrote (`authorInput`) | You sent | A person | Your message in the editing conversation. |
 | plato started the conversation (`authoringOpened`) | You sent | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
-| The conversation so far (`authoringTail`) | plato prepared what the AI model is given | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
+| The conversation so far (`authoringTail`) | plato prepared and sent the request | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
 | What plato read from the reply (`authoringParsed`) | The AI model answered | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
 | What you asked for (`extractAsked`) | You sent | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
 | What was written, and whether it could be used (`extracted`) | The AI model answered | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
