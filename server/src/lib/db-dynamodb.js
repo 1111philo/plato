@@ -419,7 +419,6 @@ const db = {
       KeyConditionExpression: 'email = :email',
       ExpressionAttributeValues: { ':email': email.toLowerCase() },
     }));
-    // Return the most recent pending invite if any
     const pending = (result.Items || []).filter(i => i.status === 'pending');
     return pending[0] || null;
   },

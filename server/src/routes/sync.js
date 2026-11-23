@@ -184,7 +184,6 @@ sync.get('/v1/sync', async (c) => {
     .map(shape));
 });
 
-// GET /v1/sync/:dataKey — get specific item
 sync.get('/v1/sync/:dataKey', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
@@ -225,8 +224,8 @@ sync.put('/v1/sync/batch', async (c) => {
     if (!validateDataKey(item.dataKey) || item.data === undefined) {
       return { dataKey: item.dataKey, status: 'error', error: 'Invalid item' };
     }
-    // Size guard for screenshots (same defense-in-depth as single PUT)
-    // Every key, not just screenshots: DynamoDB refuses items over 400 KB.
+    // Same defense-in-depth size guard as the single PUT, on every key:
+    // DynamoDB refuses items over 400 KB.
     const size = estimateSyncDataSize(userId, item.dataKey, item.data);
     if (size > MAX_ITEM_SIZE) {
       if (!item.dataKey.startsWith('screenshot:')) logger.error('sync_item_too_large', { dataKey: item.dataKey.split(':')[0], size, limit: MAX_ITEM_SIZE });
@@ -333,7 +332,6 @@ sync.delete('/v1/sync', async (c) => {
   return c.json({ ok: true, deleted: deletable.length });
 });
 
-// DELETE /v1/sync/:dataKey
 sync.delete('/v1/sync/:dataKey', async (c) => {
   const reject = rejectWriteIfImpersonating(c);
   if (reject) return reject;
@@ -400,7 +398,6 @@ sync.post('/v1/sync/lesson-started', async (c) => {
     return c.json({ error: 'lesson.markdown exceeds 100k character limit' }, 413);
   }
 
-  // Collect startup steps from enabled plugins that declare lessonStartupSteps
   const startupSteps = [];
   for (const entry of pluginRegistry.list()) {
     if (entry.enabled && entry.manifest?.extensionPoints?.lessonStartupSteps) {
