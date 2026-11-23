@@ -152,7 +152,8 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 ### `lessonStarted`
 
 - **Capability:** `hook.lessonStarted`
-- **Payload:** `{ userId: string, lessonId: string, lesson: { name, markdown, exemplar, learningObjectives }, lessonKB: object }`
+- **Payload:** `{ userId: string, lessonId: string, lesson: { name, markdown, exemplar, learningObjectives, coachDirective? }, lessonKB: object, trace?: true }`. `trace: true` is present only when the learner is recording a Trace (API 1.7.0); see [Tracing what your plugin did](#tracing-what-your-plugin-did-api-170).
+- **Returns:** an enrichment object, or `null`. Optionally `trace: [step, …]` beside the enrichment.
 - **Emit point:** `server/src/routes/sync.js` POST `/v1/sync/lesson-started` — called by `client/src/lib/lessonEngine.js#startLesson()` after the Lesson Owner agent initializes the KB but before the Coach opens the conversation
 - **Phase:** 1 (wired)
 - **Gotchas:** Plugins can use this to enrich the lesson at start time (e.g., fetch external docs, add context from a knowledge base). The lesson markdown and objectives are included so plugins can decide whether to act. Enrichment responses (if the plugin returns data) are collected by the endpoint and stored on `lessonKB.enrichments`. Plugins MUST fail open — errors must never block lesson start.
@@ -211,12 +212,68 @@ A `lessonStarted` hook handler with `lessonEnrichment` capability can return an 
 ### Lifecycle
 
 1. Learner starts a lesson → `client/src/lib/lessonEngine.js#startLesson()` calls `POST /v1/sync/lesson-started`
-2. Server emits `lessonStarted` hook with `{ userId, lessonId, lesson, lessonKB }`
+2. Server emits `lessonStarted` hook with `{ userId, lessonId, lesson, lessonKB }` (plus `trace: true` when the learner is recording a Trace)
 3. Each plugin handler runs; non-null returns are collected
-4. Server returns `{ enrichments: [...] }` to client
+4. Server returns `{ enrichments: [...] }` to client (plus `pluginTraces` on a traced call)
 5. Client stores `lessonKB.enrichments` (one-time — never re-runs on resume)
 6. `buildContext()` injects enrichments into coach system prompt
 7. `LessonChat` renders `<EnrichmentArtifact>` above first coach message
+
+### Tracing what your plugin did (API 1.7.0)
+
+Trace mode (#595) lets a person read everything behind a lesson conversation: every AI call with what was sent and what came back, what plato's code did, and what went to outside services. Your handler runs on the server, where the learner's browser can't see it, so **a plugin that hooks `lessonStarted` must report its own work**. `client/tests/transparency.test.js` fails for one that doesn't.
+
+When the learner is recording, the payload has `trace: true` and the host gives that one call a recorder. When they aren't, nothing below runs and nothing is returned.
+
+**What the host does for you**
+
+| You call | What is recorded |
+|---|---|
+| `ctx.ai.invoke(ctx.LLM, body, { purpose })` (or `invokeStream`) | An `ai` step, by itself: the `system` and `messages` you sent, the reply, token usage, the time taken, and the provider's error if it failed. `purpose` is one line saying what the call is for. |
+| `ctx.trace.fetch(purpose, url, init)` | A `fetch` step: the URL, status, time taken, and the size when the server states one. It returns the `Response` untouched and rethrows a failure. |
+| `ctx.trace.note(text)` | A `note` step: a decision or outcome worth telling a person ("The planner decided this lesson doesn't need WordPress material"). |
+| `ctx.trace.record(step)` | Any step below, for work the helpers don't cover. |
+
+`ctx.trace.on` is `true` on a traced call. On every other call `ctx.trace` is a stand-in: `on` is `false`, `note` and `record` do nothing, and `fetch` is plain `fetch`. So you write one code path:
+
+```js
+async function onLessonStarted({ lesson }, ctx) {
+  const plan = await ctx.ai.invoke(ctx.LLM, { max_tokens: 1024, messages: [...] }, { purpose: 'Decide what to search for' });
+  const res = await ctx.trace.fetch('Search the docs', `https://docs.example.com/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) { ctx.trace.note('The docs search failed, so nothing was added.'); return null; }
+  // …
+  return { pluginId: 'my-plugin', label: 'Docs', context, reasoning, sources };
+}
+```
+
+A plugin that must also load on a host older than 1.7.0 reads `ctx.trace?.on` and falls back to `fetch`.
+
+**Step shapes**
+
+```ts
+{ type: 'ai', purpose, model, system, messages: [{ role, content }], reply, usage?, ms?, error? }
+{ type: 'fetch', purpose, url, status?, ms?, bytes?, error? }
+{ type: 'note', text }
+```
+
+A handler may also return its steps as `trace: [step, …]` beside the enrichment (or `{ trace: [...] }` alone when it adds no enrichment). Steps recorded through `ctx.trace` and `ctx.ai` come first, in the order recorded; returned steps follow. Steps are kept even when the handler returns `null` or throws, so a person can see why nothing was added.
+
+**What the host does to every step** (`server/src/lib/plugins/trace.js`)
+
+- Keeps only the three types and the fields listed above. Anything else is dropped, so headers and request bodies can't ride along.
+- Caps each text field at 20,000 characters (`purpose`, `model`, `error` at 500; a URL at 2,000), with a note of how much was left out. Non-text message content (an image) is named, not copied. At most 50 messages per `ai` step.
+- Keeps at most **50 steps** and **200 KB** per plugin per lesson start (250 KB across all plugins, shared equally when over), and closes with a note when steps were left out.
+- From a URL, removes `user:password@`, the fragment, and the value of any query parameter named like a credential (`token`, `key`, `secret`, `signature`, …). Only `http(s)` URLs are kept.
+- From text, removes what looks like an `Authorization`, API-key or `Cookie` header and `Bearer …` / `Basic …` tokens.
+- Never throws. A bad step is dropped, a bad trace is empty, and your enrichment is returned either way.
+
+**Rules for plugin authors**
+
+- **Never put a secret in a step**: no tokens, keys, cookies or auth headers, and no plugin setting marked `writeOnly`. The scrubbing above is a backstop, not permission. Any signed-in user can ask for a trace, and it is stored in that user's own data.
+- **Record what was actually sent and received**, not a summary or a tidied version. `ctx.ai` and `ctx.trace.fetch` do this for you; with `record`, pass the real `system`, `messages` and reply.
+- **Don't change what you do because a trace was asked for.** The same AI calls and requests must go out traced or not.
+- **Keep nothing between calls.** The recorder belongs to one call of your handler. Two learners can start lessons at once in one server, so never store `ctx.trace`, or steps, in a module-level variable.
+- The trace never reaches the coach. The host returns it as `pluginTraces: { [pluginId]: steps }`, apart from `enrichments`, and takes a `trace` key off anything you return before it is stored on `lessonKB.enrichments`.
 
 ### Fail-open requirements
 

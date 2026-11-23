@@ -18,6 +18,15 @@ export const store = new Map();
 const versions = new Map();
 export const ai = []; // every /v1/ai/messages request body, in order
 export const events = []; // every /v1/ai/events code
+export const lessonStarts = []; // every /v1/sync/lesson-started request body
+// What the fake's one plugin did, returned only to a request that asks (`trace: true`), as the server does.
+export const PLUGIN_TRACES = {
+  'wordpress-info': [
+    { type: 'ai', purpose: 'Planner', model: 'mock', system: '', messages: [{ role: 'user', content: 'Is this lesson about WordPress?' }], reply: '{"shouldEnrich":false}', usage: { input_tokens: 9, output_tokens: 4 }, ms: 3 },
+    { type: 'fetch', purpose: 'Search WordPress Developer Docs', url: 'https://developer.wordpress.org/wp-json/wp/v2/search?search=hooks', status: 200, ms: 5, bytes: 120 },
+    { type: 'note', text: 'Nothing was added.' },
+  ],
+};
 export let user = { userId: 'usr_test', firstName: 'Ada', name: 'Ada Lovelace' };
 
 export const LESSON = {
@@ -68,7 +77,10 @@ globalThis.fetch = async (url, opts = {}) => {
   if (path.startsWith('/v1/prompts/')) return json({ content: readFileSync(join(PROMPTS, `${decodeURIComponent(path.slice(12))}.md`), 'utf8'), updatedAt: '2026-11-01T00:00:00Z' });
   if (path === '/v1/knowledge-base') return json({ content: '# Program\n\nA program for tests. '.padEnd(900, 'About the program. ') });
   if (path === '/v1/lessons') return json([]);
-  if (path === '/v1/sync/lesson-started') return json({ enrichments: [] });
+  if (path === '/v1/sync/lesson-started') {
+    lessonStarts.push(body);
+    return json({ enrichments: [], startupSteps: [], ...(body.trace === true ? { pluginTraces: PLUGIN_TRACES } : {}) });
+  }
   if (path === '/v1/sync' && method === 'GET') {
     const prefix = u.searchParams.get('prefix');
     const keys = [...store.keys()].filter((k) => (prefix ? k.startsWith(prefix) : !k.startsWith('trace:') && !k.startsWith('screenshot:')));
@@ -103,7 +115,7 @@ export function signIn({ traceMode = false } = {}) {
 }
 
 export function reset() {
-  store.clear(); versions.clear(); ai.length = 0; events.length = 0;
+  store.clear(); versions.clear(); ai.length = 0; events.length = 0; lessonStarts.length = 0;
   signIn();
 }
 

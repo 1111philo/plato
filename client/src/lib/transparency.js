@@ -151,7 +151,7 @@ export const STEPS = Object.freeze({
   lesson: { title: 'The lesson', source: 'person', means: 'The lesson as its author wrote it, and when it was last edited.' },
   planned: { title: 'The lesson planner’s setup', source: 'model', means: 'The planner restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording.' },
   validation: { title: 'Checked the planner’s setup', source: 'code', means: 'plato’s code checked the setup had the right shape. If not, it asked once more and used the second answer.' },
-  plugins: { title: 'Extra context from plugins', source: 'code', means: 'Plugins the classroom has turned on can add background for the coach when a lesson starts.' },
+  plugins: { title: 'Extra context from plugins', source: 'code', means: 'Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes.' },
   input: { title: 'What you sent', source: 'person', means: 'Your message, with any images and attached web pages.' },
   state: { title: 'Where the lesson stood', source: 'code', means: 'The progress and objectives on record before this message.' },
   tail: { title: 'The conversation so far', source: 'code', means: 'plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again.' },

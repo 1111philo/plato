@@ -13,7 +13,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { store, ai, events, LESSON, reset, signIn, traces, settle } from './helpers/fake-plato.js';
+import { store, ai, events, lessonStarts, PLUGIN_TRACES, LESSON, reset, signIn, traces, settle } from './helpers/fake-plato.js';
 
 const { clearCache, savePreferences, deleteLessonProgress, getLessonKB } = await import('../js/storage.js');
 const { startLesson, sendMessage } = await import('../src/lib/lessonEngine.js');
@@ -47,6 +47,12 @@ describe('Trace off', () => {
     assert.ok(requests.every((b) => !('trace' in b)));
     assert.deepEqual([...store.keys()].filter((k) => k.startsWith('trace:')), []);
     assert.equal((await getLessonKB(ID)).trace, undefined, 'no stamp on the lesson');
+  });
+
+  it('doesn’t ask plugins for their steps', async () => {
+    await lesson([]);
+    assert.equal(lessonStarts.length, 1);
+    assert.deepEqual(Object.keys(lessonStarts[0]), ['lessonId', 'lesson', 'lessonKB'], 'the lesson-started body is what it always was');
   });
 });
 
@@ -97,6 +103,25 @@ describe('Trace on', () => {
     const bulk = await (await fetch('/v1/sync')).json();
     assert.ok(bulk.every((i) => !i.dataKey.startsWith('trace:')));
     assert.ok(all.t.every((r) => r.app.build && r.app.by === 'self'));
+  });
+
+  it('plugins: what each one did at the start is in the trace, and nowhere else', async () => {
+    await lesson([], { trace: true });
+    assert.equal(lessonStarts.length, 1);
+    assert.equal(lessonStarts[0].trace, true);
+    const { trace: _asked, ...rest } = lessonStarts[0];
+    assert.deepEqual(Object.keys(rest), ['lessonId', 'lesson', 'lessonKB'], 'only `trace: true` is added');
+
+    const step = traces(ID).t[0].steps.find((s) => s.type === 'plugins');
+    assert.equal(step.status, 200);
+    assert.deepEqual(step.pluginTraces, PLUGIN_TRACES);
+    assert.deepEqual(step.pluginTraces['wordpress-info'].map((s) => s.type), ['ai', 'fetch', 'note']);
+
+    // Never on the lesson's record, so never in what the coach is given.
+    const kb = await getLessonKB(ID);
+    assert.doesNotMatch(JSON.stringify(kb), /pluginTraces|Is this lesson about WordPress/);
+    assert.equal(kb.enrichments, undefined);
+    assert.ok(ai.every((b) => !JSON.stringify(b).includes('Is this lesson about WordPress')), 'no AI request carries a plugin’s steps');
   });
 
   it('records each kind of turn so a person can see what happened', async () => {

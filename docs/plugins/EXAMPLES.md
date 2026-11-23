@@ -190,7 +190,10 @@ Located at `plugins/wordpress-info/`. Demonstrates:
 // Hook handler with enrichment return value
 export default {
   hooks: {
-    lessonStarted: async ({ userId, lessonId, lesson, lessonKB }) => {
+    // ctx.ai records each AI call in a Trace by itself; send outbound requests
+    // with ctx.trace.fetch(purpose, url, init) and say why with ctx.trace.note(text)
+    // (EXTENSION_REFERENCE.md, "Tracing what your plugin did").
+    lessonStarted: async ({ userId, lessonId, lesson, lessonKB }, ctx) => {
       try {
         // Decide whether to enrich
         const plan = await callPlannerAgent(lesson);

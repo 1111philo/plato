@@ -89,6 +89,8 @@ Lets a plugin supply a **single sign-on provider** (API 1.6.0). The server modul
 
 Allows a plugin to enrich lessons at start time by providing additional context, sources, and reasoning. Plugins with this capability can register a `lessonStarted` hook handler that returns enrichment data: `{ context: string, sources: [{ url, title, excerpt }], reasoning: string, pluginId, label }`. The enrichment is stored on `lessonKB.enrichments`, injected into the coach's system context, and displayed to the learner as a collapsible artifact panel above the first coach message.
 
+**Trace mode (API 1.7.0):** when the learner is recording a Trace, the hook payload carries `trace: true` and the plugin must report what it did. AI calls through `ctx.ai` are recorded by the host; outbound requests go through `ctx.trace.fetch(purpose, url, init)`; decisions are `ctx.trace.note(text)`. A handler may also return `trace: [step, …]`. Steps (`ai`, `fetch`, `note`) are cleaned and bounded by the host (50 steps and 200 KB per plugin, 20,000 characters per text field, credentials removed) and returned as `pluginTraces`, never as part of an enrichment. Implemented: `server/src/lib/plugins/trace.js`, `plugins/wordpress-info`. Full contract: [EXTENSION_REFERENCE.md](./EXTENSION_REFERENCE.md#tracing-what-your-plugin-did-api-170).
+
 **Use cases:** fetching relevant documentation (WordPress, React, etc.), querying internal knowledge bases, pulling recent bug reports or release notes, adding company-specific context.
 
 **Contract:** Enrichments are informational only — they provide reference material the coach can draw on but MUST NOT override completion semantics. The coach (`applyCoachResponseToKB`) remains the single owner of progress and completion.

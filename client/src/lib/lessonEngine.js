@@ -391,13 +391,22 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
           coachDirective: lesson.coachDirective,
         },
         lessonKB,
+        // Trace mode (#595): ask each plugin for what it did (its AI calls
+        // and outside requests). Not sent otherwise, so the request is the
+        // same as it always was.
+        ...(trace ? { trace: true } : {}),
       }),
     });
+    // What each plugin did, by plugin id. Only ever recorded in the trace:
+    // it is not part of an enrichment, so it never reaches the lessonKB or
+    // the coach.
+    let pluginTraces = {};
     if (res.ok) {
       const data = await res.json();
       enrichments = data.enrichments || [];
+      if (trace && data.pluginTraces && typeof data.pluginTraces === 'object') pluginTraces = data.pluginTraces;
     }
-    trace?.step('plugins', { status: res.status, enrichments });
+    trace?.step('plugins', { status: res.status, enrichments, pluginTraces });
   } catch (err) {
     // Fail open — enrichment errors must never block lesson start
     console.warn('[startLesson] Failed to collect enrichments:', err);

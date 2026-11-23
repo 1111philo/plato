@@ -51,6 +51,14 @@ accessible throughout the lesson.
   before the Coach opens the conversation. The enrichment is computed once at
   start and cached on the lessonKB — it never re-runs on resume.
 
+- **Trace mode (#595).** When the learner is recording a Trace (`ctx.trace.on`),
+  the plugin's work is reported: both AI calls (recorded by the host's wrapper
+  around `ctx.ai`, named by the `purpose` passed to `invoke`), every search
+  (`ctx.trace.fetch`, URL and status only), and a note for each decision.
+  Tracing must never change which calls or requests go out. Any new AI call
+  or `fetch` must go through `ctx.ai` / the recorder, or
+  `client/tests/transparency.test.js` fails.
+
 ## Files
 
 - `server/index.js` — hook handler, orchestrates the 3-agent pipeline
