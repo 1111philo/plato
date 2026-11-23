@@ -238,8 +238,8 @@ export const EVENTS = Object.freeze({
 /**
  * Every outside service the app uses. `sent` is what plato gives it; `when`
  * says whether every install uses it (`always`) or only when the classroom
- * turns something on. The Technology view adds this install's facts (region,
- * which plugins are on).
+ * turns something on (`plugin` names the plugin that brings it in). The
+ * Technology view adds this install's facts (region, which plugins are on).
  */
 export const SERVICES = Object.freeze({
   bedrock: { name: 'Amazon Bedrock', role: 'Runs the AI model.', when: 'always', sent: 'Each AI call: the agent’s instructions, the context plato assembled, the recent conversation, and this message’s images and attached page text.', note: 'Amazon does not use prompts or replies to train models.' },
@@ -251,7 +251,7 @@ export const SERVICES = Object.freeze({
   ses: { name: 'Amazon SES', role: 'Sends plato’s email.', when: 'always', sent: 'Invites, password resets, reminders and digests: your email address, name, and lesson names. Never conversation text.' },
   ssm: { name: 'AWS Systems Manager', role: 'Holds the server’s settings.', when: 'always', sent: 'Nothing about learners.' },
   linkFetch: { name: 'Web pages you attach', role: 'plato’s server reads a page you attach to a message.', when: 'when a learner attaches a link', sent: 'A request for that page from plato’s server. The site doesn’t learn who you are.' },
-  sso: { name: 'Your institution’s sign-in (Microsoft Entra)', role: 'Signs you in with your institution account.', when: 'when the classroom turns on single sign-on', sent: 'A sign-in request. plato receives your name, email and an id; nothing about your lessons is sent.' },
-  slack: { name: 'Slack', role: 'Invites and links classroom members.', when: 'when the classroom connects Slack', sent: 'Email addresses, to find or invite members. Never lesson content.' },
-  wordpress: { name: 'WordPress.org and GitHub', role: 'Background for lessons about WordPress.', when: 'when the classroom turns on the WordPress Info plugin', sent: 'Search terms written from the lesson (not from your messages) to developer.wordpress.org, make.wordpress.org and api.github.com.' },
+  sso: { name: 'Your institution’s sign-in (Microsoft Entra)', role: 'Signs you in with your institution account.', plugin: 'entra-sso', when: 'when the classroom turns on single sign-on', sent: 'A sign-in request. plato receives your name, email and an id; nothing about your lessons is sent.' },
+  slack: { name: 'Slack', role: 'Invites and links classroom members.', plugin: 'slack', when: 'when the classroom connects Slack', sent: 'Email addresses, to find or invite members. Never lesson content.' },
+  wordpress: { name: 'WordPress.org and GitHub', role: 'Background for lessons about WordPress.', plugin: 'wordpress-info', when: 'when the classroom turns on the WordPress Info plugin', sent: 'Search terms written from the lesson (not from your messages) to developer.wordpress.org, make.wordpress.org and api.github.com.' },
 });

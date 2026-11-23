@@ -3,6 +3,12 @@ import usePublicBranding from '../hooks/usePublicBranding.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { AGENTS, RULES } from '../lib/transparency.js';
+
+// The AI helpers that work on a lesson, and the rules plato's code applies
+// to what they return, straight from plato's description of itself
+// (lib/transparency.js), so this page can't drift from the Trace.
+const LESSON_AGENTS = ['coach', 'assessor', 'claim-check', 'lesson-owner', 'learner-profile-update', 'learner-profile-owner', 'course-progress-update'];
 
 /**
  * Public "How assessment works" page (#257): how plato's assessment works,
@@ -54,6 +60,29 @@ export default function HowAssessmentWorks() {
               button) shows the objectives the coach has checked off, its notes on where you are, and
               everything you&rsquo;ve shared.
              For the full record, turn on Trace mode in Settings: each lesson then has a Trace showing every step, the exact instructions the coach was given, and anything plato&rsquo;s code changed.</p>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold">The AI helpers behind a lesson</h2>
+            <p className="text-muted-foreground">Each is the same AI model, given different instructions.</p>
+            <dl className="space-y-2 text-muted-foreground">
+              {LESSON_AGENTS.map((id) => (
+                <div key={id}>
+                  <dt className="font-medium text-foreground">{AGENTS[id].label}</dt>
+                  <dd>{AGENTS[id].purpose} {AGENTS[id].when}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-lg font-semibold">Rules plato&rsquo;s code applies</h2>
+            <p className="text-muted-foreground">
+              The AI suggests a score; plato&rsquo;s code decides what is recorded. These rules apply whatever the AI says.
+            </p>
+            <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
+              {Object.entries(RULES).map(([id, text]) => <li key={id}>{text}</li>)}
+            </ul>
           </section>
 
           <section className="space-y-2">

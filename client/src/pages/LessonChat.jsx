@@ -601,7 +601,7 @@ export default function LessonChat() {
 
       <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
       <LessonTrace scope={lessonGroupId} open={showTrace} onClose={closeTrace} docked={traceDocked} focusAt={traceFocusAt}
-        stamp={lessonKB?.trace} recording={recording} frame={traceFrame} />
+        stamp={lessonKB?.trace} recording={recording} frame={traceFrame} title={lesson.name} />
 
 
       {confirmModal && (

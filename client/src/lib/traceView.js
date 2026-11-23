@@ -7,7 +7,7 @@
  *
  * Pure. Unit tests: client/tests/traceView.test.js.
  */
-import { AGENTS, STEPS, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS } from './transparency.js';
+import { AGENTS, STEPS, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS, SERVICES } from './transparency.js';
 import { rebuildRequest } from './lessonTrace.js';
 
 const pretty = (v) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
@@ -108,11 +108,15 @@ const DESCRIBE = {
   }),
   plugins: (s) => ({
     summary: s.failed ? `Asking plugins for background failed (${s.failed}); the lesson started without it.` : s.enrichments?.length ? `${plural(s.enrichments.length, 'plugin')} added background for the coach: ${s.enrichments.map((e) => e.label || e.pluginId).join(', ')}.` : 'No plugin added anything.',
-    details: (s.enrichments || []).flatMap((e) => [
-      { label: `${e.label || e.pluginId}: what it gave the coach`, text: e.context || '(nothing)' },
-      { label: `${e.label || e.pluginId}: why`, text: e.reasoning || '(not given)' },
-      ...(e.sources?.length ? [{ label: `${e.label || e.pluginId}: sources`, text: e.sources.map((x) => `${x.title || x.url}\n${x.url}`).join('\n\n') }] : []),
-    ]),
+    details: [
+      ...(s.enrichments || []).flatMap((e) => [
+        { label: `${e.label || e.pluginId}: what it gave the coach`, text: e.context || '(nothing)' },
+        { label: `${e.label || e.pluginId}: why`, text: e.reasoning || '(not given)' },
+        ...(e.sources?.length ? [{ label: `${e.label || e.pluginId}: sources`, text: e.sources.map((x) => `${x.title || x.url}\n${x.url}`).join('\n\n') }] : []),
+      ]),
+      // What each plugin did to get there: its own AI calls and outside requests.
+      ...Object.entries(s.pluginTraces || {}).map(([id, steps]) => ({ label: `${id}: every step it took (${(steps || []).length})`, text: (steps || []).map(pluginStepText).join('\n\n') || '(nothing recorded)' })),
+    ],
   }),
   input: (s) => {
     const notSent = (s.images || []).filter((i) => !i.sent);
@@ -247,6 +251,23 @@ const DESCRIBE = {
   error: (s) => ({ summary: `${s.error.message}${s.error.type ? ` (${s.error.type})` : ''}`, details: [{ label: 'The error', text: pretty(s.error) }] }),
 };
 
+/** One step a plugin recorded at lesson start (server lib/plugins/trace.js), as text. */
+function pluginStepText(st, i) {
+  const n = `${i + 1}.`;
+  if (st?.type === 'ai') {
+    return [
+      `${n} Asked the AI model${st.model ? ` (${st.model})` : ''}: ${st.purpose || 'no purpose given'}${st.error ? `. It failed: ${st.error}` : ''}`,
+      st.system ? `Instructions:\n${st.system}` : null,
+      st.messages?.length ? `Sent:\n${st.messages.map((m) => `${m.role}: ${contentText(m.content)}`).join('\n')}` : null,
+      st.reply != null ? `Reply:\n${st.reply}` : null,
+      st.usage ? `${st.usage.input_tokens ?? '?'} tokens in, ${st.usage.output_tokens ?? '?'} out${st.ms != null ? `, ${seconds(st.ms)}` : ''}` : null,
+    ].filter(Boolean).join('\n');
+  }
+  if (st?.type === 'fetch') return `${n} Requested ${st.url}: ${st.purpose || 'no purpose given'}${st.status ? ` (answered ${st.status})` : ''}${st.error ? `. It failed: ${st.error}` : ''}`;
+  if (st?.type === 'note') return `${n} ${st.text}`;
+  return `${n} ${pretty(st)}`;
+}
+
 /** Things worth a look in one turn: `[{ id, text }]`. */
 function flagsFor(record) {
   const flags = [];
@@ -349,4 +370,50 @@ export function describeTrace(items) {
     flags: turns.flatMap((t) => t.flags.map((f) => ({ ...f, turn: t.id, turnTitle: t.title }))),
     partial: turns.some((t) => t.partial),
   };
+}
+
+/**
+ * The trace as plain text, for downloading and sharing: the same sentences
+ * the view shows, with the exact text under each step.
+ */
+export function traceToText(view, { title = 'Trace' } = {}) {
+  const out = [title, '='.repeat(title.length), ''];
+  if (view.flags.length) {
+    out.push('Things worth a look', '-------------------');
+    for (const f of view.flags) out.push(`- ${f.text} (${f.turnTitle})`);
+    out.push('');
+  }
+  for (const t of view.turns) {
+    const head = `${t.title} · ${new Date(t.at).toISOString()}`;
+    out.push(head, '-'.repeat(Math.min(head.length, 80)), `${t.verdict.sourceLabel}: ${t.verdict.text}`, '');
+    for (const s of t.steps) {
+      out.push(`${s.n}. ${s.title} [${s.sourceLabel}]`, `   ${s.summary}`);
+      for (const r of s.rules) out.push(`   Rule: ${r.text}`);
+      if (s.change) out.push('   Before:', indent(s.change.before), '   After:', indent(s.change.after));
+      for (const d of s.details) out.push(`   ${d.label}:`, indent(d.text));
+      out.push('');
+    }
+  }
+  return out.join('\n');
+}
+const indent = (text) => String(text).split('\n').map((l) => `      ${l}`).join('\n');
+
+/**
+ * "Technology and services": every outside service, what it is sent, and
+ * whether this install uses it. `provider` is the server's own account of the
+ * model (from a recorded call); `plugins` is the ids of the plugins turned on.
+ */
+export function technologyFor(items, { plugins = [] } = {}) {
+  let provider = null;
+  for (const { data } of items || []) {
+    for (const s of data?.steps || []) if (s.type === 'call' && s.server?.provider) provider = s.server.provider;
+  }
+  const on = new Set(plugins);
+  return Object.entries(SERVICES).map(([id, svc]) => {
+    const inUse = svc.plugin ? on.has(svc.plugin) : true;
+    let detail = null;
+    if (id === 'model' && provider) detail = provider.provider === 'mock' ? 'This install is using a stand-in model for testing, not a real AI model.' : `This conversation used ${provider.model}.`;
+    if (id === 'bedrock' && provider?.region) detail = `Region: ${provider.region}.`;
+    return { id, name: svc.name, role: svc.role, sent: svc.sent, note: svc.note || null, when: svc.when, inUse, detail };
+  });
 }
