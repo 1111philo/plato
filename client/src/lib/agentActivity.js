@@ -5,14 +5,11 @@
 // assistant message as `metadata.agents` and rendered by
 // components/chat/AgentActivity.jsx. Unit tests: client/tests/agentActivity.test.js.
 
+import { AGENTS } from './transparency.js';
+
+// One name per agent, from plato's description of itself (lib/transparency.js).
 export const AGENT_LABELS = Object.freeze({
-  coach: 'Coach',
-  'lesson-owner': 'Lesson planner',
-  'learner-profile-update': 'Learner profile',
-  'course-progress-update': 'Unit progress',
-  assessor: 'Assessment check',
-  'lesson-creator': 'Lesson creator',
-  'knowledge-base-editor': 'Knowledge base editor',
+  ...Object.fromEntries(Object.entries(AGENTS).map(([id, a]) => [id, a.label])),
   plugins: 'Plugins',
 });
 

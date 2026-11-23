@@ -44,8 +44,21 @@ async function fetchSyncData(syncKey) {
  * migration) check this rather than assuming the cache write stuck.
  */
 export async function putSyncData(syncKey, data) {
+  const result = await putSyncDataDetailed(syncKey, data);
+  _lastSave.set(syncKey, result);
+  return result.ok;
+}
+
+// How the latest write of each key went, for a Trace: HTTP status, the
+// server's error code, and whether a version conflict was resolved by writing
+// over the newer copy.
+const _lastSave = new Map();
+export function lastSaveResult(syncKey) { return _lastSave.get(syncKey) || null; }
+
+async function putSyncDataDetailed(syncKey, data) {
   _cache.set(syncKey, data);
   const version = _versions.get(syncKey) || 0;
+  const refusal = async (res) => ({ ok: false, status: res.status, code: (await res.json().catch(() => ({})))?.code || null });
   try {
     const res = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`, {
       method: 'PUT',
@@ -55,7 +68,7 @@ export async function putSyncData(syncKey, data) {
     if (res.ok) {
       const result = await res.json();
       _versions.set(syncKey, result.version);
-      return true;
+      return { ok: true, status: res.status };
     } else if (res.status === 409) {
       // Version conflict — fetch latest version and retry once
       const current = await authenticatedFetch(`/v1/sync/${encodeURIComponent(syncKey)}`);
@@ -70,24 +83,24 @@ export async function putSyncData(syncKey, data) {
         if (retry.ok) {
           const retryResult = await retry.json();
           _versions.set(syncKey, retryResult.version);
-          return true;
+          return { ok: true, status: retry.status, conflict: true };
         }
       }
       console.error(`[storage] sync write conflict unresolved for "${syncKey}"`);
-      return false;
+      return { ok: false, status: 409, conflict: true };
     } else {
       // A non-OK, non-conflict response means the server rejected the write
       // (e.g. an oversized item). The cache still holds the data for this
       // session, but it is NOT durable — surface it instead of losing it
       // silently, which is how conversation loss went undiagnosed (#193).
       console.error(`[storage] sync write rejected for "${syncKey}": HTTP ${res.status}`);
-      return false;
+      return refusal(res);
     }
   } catch (err) {
     // Network failure — cache is still updated for this session but the
     // write did not reach the server. Log so the loss isn't invisible.
     console.error('[storage] sync write failed for %s:', syncKey, err);
-    return false;
+    return { ok: false, status: null, code: 'network' };
   }
 }
 
@@ -416,6 +429,58 @@ export async function deleteLessonProgress(lessonId) {
   await deleteActivityKBsForLesson(lessonId);
   await deleteLessonKB(lessonId);
   await clearLessonMessages(lessonId);
+  // The lesson's Trace goes with it (best effort).
+  await deleteTrace(lessonId).catch(() => {});
+}
+
+// -- Trace records -------------------------------------------------------------
+//
+// Trace mode (lib/lessonTrace.js) keeps its own `trace:<scope>:<t|b|p>:<id>`
+// records. They never enter the cache: a conversation's trace can be over a
+// megabyte, and it is only read when someone opens it. Each is written once,
+// so no version is tracked.
+
+/** Write one Trace record. Never throws; `{ ok, status }`. */
+export async function putTraceRecord(key, data) {
+  try {
+    const res = await authenticatedFetch(`/v1/sync/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data, version: 0 }),
+    });
+    return { ok: res.ok, status: res.status };
+  } catch {
+    return { ok: false, status: null };
+  }
+}
+
+/**
+ * Every Trace record in a scope (or one kind: 't', 'b', 'p'), oldest first.
+ * A server from before Trace mode ignores `prefix` and returns everything, so
+ * the reply is filtered here.
+ */
+export async function listTraceRecords(scope, kind = '') {
+  const prefix = `trace:${scope}:${kind ? kind + ':' : ''}`;
+  try {
+    const res = await authenticatedFetch(`/v1/sync?prefix=${encodeURIComponent(prefix)}`);
+    if (!res.ok) return [];
+    const items = await res.json();
+    return (Array.isArray(items) ? items : [])
+      .filter((i) => typeof i?.dataKey === 'string' && i.dataKey.startsWith(prefix))
+      .sort((a, b) => (a.dataKey < b.dataKey ? -1 : 1));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Delete a scope's Trace, one key at a time. Never by prefix on
+ * DELETE /v1/sync: an older server would ignore the prefix and delete all of
+ * the learner's data.
+ */
+export async function deleteTrace(scope) {
+  const items = await listTraceRecords(scope);
+  await Promise.all(items.map((i) => authenticatedFetch(`/v1/sync/${encodeURIComponent(i.dataKey)}`, { method: 'DELETE' }).catch(() => {})));
 }
 
 // -- Screenshots --------------------------------------------------------------

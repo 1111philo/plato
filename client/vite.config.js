@@ -6,7 +6,12 @@ import { resolve } from 'path';
 
 const pluginsDir = resolve(import.meta.dirname, '..', 'plugins');
 
+// A Trace records which build of the app produced it (lib/traceSession.js),
+// so a tab left open across a deploy can be told from the current code.
+const BUILD_ID = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13);
+
 export default defineConfig({
+  define: { __PLATO_BUILD__: JSON.stringify(BUILD_ID) },
   plugins: [
     react(),
     tailwindcss(),

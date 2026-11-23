@@ -9,7 +9,7 @@ import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
 import { screenLearnerNotes, learnerNoteFlag, LEARNER_TEXT_FRAMING } from './learnerNoteFilter.js';
 import { loadLessons } from './lessonOwner.js';
-import { assembleSystemPrompt, COACH_KB_NOTE } from './promptAssembly.js';
+import { systemPromptParts, COACH_KB_NOTE } from './promptAssembly.js';
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -82,13 +82,15 @@ function parseJSON(text) {
   throw new ApiError('parse', 'Failed to parse agent JSON response.');
 }
 
-async function callWithValidation(agentFn, validator) {
-  const parsed = await agentFn();
+async function callWithValidation(agentFn, validator, trace) {
+  const parsed = await agentFn('first try');
   const error = validator(parsed);
-  if (!error) return parsed;
+  if (!error) { trace?.step('validation', { ok: true }); return parsed; }
   console.error(`[plato] Validation failed (retrying): ${error}`);
-  const retry = await agentFn();
+  const retry = await agentFn('second try, after the first failed validation');
   const retryError = validator(retry);
+  // The second try is used even when it also fails validation, unless it is unsafe.
+  trace?.step('validation', { ok: !retryError, firstError: error, ...(retryError ? { secondError: retryError, accepted: !retryError.includes('unsafe') } : {}) });
   if (retryError) {
     console.error(`[plato] Validation failed after retry: ${retryError}`);
     if (retryError.includes('unsafe')) throw new ApiError('safety', retryError);
@@ -96,12 +98,18 @@ async function callWithValidation(agentFn, validator) {
   return retry;
 }
 
-async function callApi({ model, systemPrompt, messages, maxTokens = 1024, temperature }) {
+// `trace` (lib/lessonTrace.js) is a recorder while Trace mode is recording
+// this conversation, else undefined. With it, the request also asks the
+// server for what only it knows (`trace: true`); without it the request is
+// exactly what it always was.
+async function callApi({ agent, purpose, model, parts, messages, maxTokens = 1024, temperature, trace }) {
+  const systemPrompt = joinParts(parts);
+  const call = trace?.begin({ agent, purpose, model, maxTokens, temperature, parts, messages });
   const attempt = async () => {
     const resp = await authenticatedFetch('/v1/ai/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages, ...(temperature != null ? { temperature } : {}) }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system: systemPrompt, messages, ...(temperature != null ? { temperature } : {}), ...(trace ? { trace: true } : {}) }),
     });
     return parseResponse(resp);
   };
@@ -112,9 +120,14 @@ async function callApi({ model, systemPrompt, messages, maxTokens = 1024, temper
   const RETRIES = 2;
   let lastError;
   for (let i = 0; i <= RETRIES; i++) {
-    try { return await attempt(); } catch (e) {
+    try {
+      const result = await attempt();
+      call?.end(result.content, { usage: result.usage, stopReason: result.stopReason, reasoning: result.reasoning, plato: result.plato });
+      return result;
+    } catch (e) {
       lastError = e;
-      if (!isRetryable(e) || i === RETRIES) throw e;
+      if (!isRetryable(e) || i === RETRIES) { call?.fail(e); throw e; }
+      call?.attempt(e);
       await new Promise(r => setTimeout(r, backoffMs(i, e.retryAfterMs)));
     }
   }
@@ -129,13 +142,17 @@ export async function isReady() {
 
 // -- Streaming conversations --------------------------------------------------
 
+// Agents whose output plato reads, never a person: no language directive.
+const NO_LANGUAGE_AGENTS = ['assessor', 'claim-check'];
+
 /**
- * An agent's full system prompt: its prompt file, plus the program knowledge
- * base and lesson catalog for the agents that get them, plus `addendum`, in
- * the learner's language (#240). Shared by the streamed call and the coach's
- * tag repair, so a repair is judged under the same prompt as the reply.
+ * An agent's system prompt as its parts (promptAssembly.systemPromptParts):
+ * its prompt file, plus the program knowledge base and lesson catalog for the
+ * agents that get them, plus `addendum`, then the learner's language (#240).
+ * The texts joined are the prompt sent. Every AI call builds its prompt here,
+ * so a Trace can show which instructions came from where.
  */
-async function buildSystemPrompt(promptName, addendum = '') {
+async function agentParts(promptName, addendum = '') {
   const prompt = await loadPrompt(promptName);
   const kb = KB_AGENTS.includes(promptName) ? await loadKnowledgeBase() : '';
   let catalog = '';
@@ -148,23 +165,38 @@ async function buildSystemPrompt(promptName, addendum = '') {
   }
   // The learner's language, if not English (#240) — see language.js. Order and
   // the coach's knowledge-base note: promptAssembly.js (#584).
-  return withLanguage(assembleSystemPrompt({
+  return systemPromptParts({
     prompt, kb, kbNote: promptName === 'coach' ? COACH_KB_NOTE : '', catalog, catalogHeading, addendum,
-  }));
+    languageDirective: NO_LANGUAGE_AGENTS.includes(promptName) ? '' : withLanguage(''),
+  });
 }
+
+const joinParts = (parts) => parts.map((p) => p.text).join('');
 
 /**
  * Stream an agent's reply. `addendum` is a one-turn instruction from plato
  * appended to the system prompt (the coach's second try after a held
  * completion, #584).
  */
-export async function converseStream(promptName, messages, onChunk, maxTokens = 512, addendum = '') {
-  const systemPrompt = await buildSystemPrompt(promptName, addendum);
+export async function converseStream(promptName, messages, onChunk, maxTokens = 512, addendum = '', { trace, purpose } = {}) {
+  const parts = await agentParts(promptName, addendum);
+  const systemPrompt = joinParts(parts);
+  const call = trace?.begin({ agent: promptName, purpose, model: LLM, maxTokens, stream: true, parts, messages });
+  try {
+    const reply = await streamOnce({ promptName, systemPrompt, messages, onChunk, maxTokens, trace, call });
+    call?.end(reply);
+    return reply;
+  } catch (e) {
+    call?.fail(e);
+    throw e;
+  }
+}
 
+async function streamOnce({ promptName, systemPrompt, messages, onChunk, maxTokens, trace, call }) {
   const send = () => authenticatedFetch('/v1/ai/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: LLM, max_tokens: maxTokens, system: systemPrompt, messages, stream: true }),
+    body: JSON.stringify({ model: LLM, max_tokens: maxTokens, system: systemPrompt, messages, stream: true, ...(trace ? { trace: true } : {}) }),
   });
   let resp = await send();
   // Busy before anything streamed (the server waits for the first chunk
@@ -172,6 +204,7 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   if (resp.status === 429 || resp.status === 503) {
     const body = await resp.clone().json().catch(() => ({}));
     if (body?.code !== 'rate_limited') {
+      call?.attempt({ type: body?.code || 'busy', message: body?.error, status: resp.status, retryAfterMs: Number(body?.retryAfterMs) || undefined, plato: body?.plato });
       await new Promise((r) => setTimeout(r, backoffMs(0, Number(body?.retryAfterMs) || undefined)));
       resp = await send();
     }
@@ -179,13 +212,14 @@ export async function converseStream(promptName, messages, onChunk, maxTokens = 
   const contentType = resp.headers.get('content-type') || '';
   if (resp.ok && contentType.includes('text/event-stream')) {
     let full = '';
-    for await (const chunk of parseSSEStream(resp.body, undefined, { failOnTruncation: promptName === 'coach' })) { full += chunk; onChunk(full); }
+    for await (const chunk of parseSSEStream(resp.body, undefined, { failOnTruncation: promptName === 'coach', onMeta: call?.meta })) { full += chunk; onChunk(full); }
     return full;
   }
   // Non-streaming response (proxy returned JSON)
-  const { content } = await parseResponse(resp);
-  onChunk(content);
-  return content;
+  const result = await parseResponse(resp);
+  call?.meta({ usage: result.usage, stopReason: result.stopReason, reasoning: result.reasoning, plato: result.plato });
+  onChunk(result.content);
+  return result.content;
 }
 
 // The coach sometimes ends a reply without its tag block, so nothing is
@@ -211,10 +245,10 @@ export function reportEvent(code, meta = {}) {
 /** The coach's system-prompt addendum for a tag repair (also used by server/scripts/coach-eval.js). */
 export const TAG_REPAIR_ADDENDUM = `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`;
 
-export async function repairCoachTags(messages, reply) {
-  const systemPrompt = await buildSystemPrompt('coach', TAG_REPAIR_ADDENDUM);
+export async function repairCoachTags(messages, reply, { trace, purpose = 'tag repair' } = {}) {
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'coach', purpose, trace,
+    model: LLM, parts: await agentParts('coach', TAG_REPAIR_ADDENDUM),
     messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
     maxTokens: 600,
   });
@@ -228,11 +262,11 @@ export async function repairCoachTags(messages, reply) {
  * knowledge base, catalog, or language directive: it reads evidence and
  * writes JSON that plato reads, never the learner.
  */
-export async function assessTurn(input, imageParts = [], { temperature = 0 } = {}) {
-  const systemPrompt = await loadPrompt('assessor');
+export async function assessTurn(input, imageParts = [], { temperature = 0, trace, purpose = 'grading check' } = {}) {
   const content = imageParts.length ? [{ type: 'text', text: input }, ...imageParts] : input;
   const { content: reply } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'assessor', purpose, trace,
+    model: LLM, parts: await agentParts('assessor'),
     messages: [{ role: 'user', content }],
     // A part and a short quote per objective; 800 cut long replies off mid-JSON on prod.
     maxTokens: 2048,
@@ -252,10 +286,10 @@ export async function assessTurn(input, imageParts = [], { temperature = 0 } = {
  * caught 80% of real completion messages on prod; this caught 71% of the
  * rest, and said yes to 3.7% of ordinary replies). Throws on failure.
  */
-export async function checkCompletionClaim(text) {
-  const systemPrompt = await loadPrompt('claim-check');
+export async function checkCompletionClaim(text, { trace, purpose = 'does the reply say the lesson is done?' } = {}) {
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'claim-check', purpose, trace,
+    model: LLM, parts: await agentParts('claim-check'),
     messages: [{ role: 'user', content: String(text || '').slice(0, 8000) || '(empty)' }],
     maxTokens: 5,
     temperature: 0,
@@ -265,23 +299,23 @@ export async function checkCompletionClaim(text) {
 
 // -- Lesson Owner (LLM) -------------------------------------------------------
 
-export async function initializeLessonKB(lesson, profileSummary) {
-  let systemPrompt = await loadPrompt('lesson-owner');
-  systemPrompt = withLanguage(systemPrompt);
+export async function initializeLessonKB(lesson, profileSummary, { trace } = {}) {
+  const parts = await agentParts('lesson-owner');
   const userContent = JSON.stringify({
     lessonId: lesson.lessonId, lessonName: lesson.name,
     lessonDescription: lesson.description, exemplar: lesson.exemplar,
     learningObjectives: lesson.learningObjectives,
     learnerProfile: profileSummary || 'New learner, no profile yet.',
   });
-  const callAgent = async () => {
+  const callAgent = async (purpose) => {
     const { content } = await callApi({
-      model: LLM, systemPrompt,
+      agent: 'lesson-owner', purpose, trace,
+      model: LLM, parts,
       messages: [{ role: 'user', content: userContent }], maxTokens: 1536,
     });
     return parseJSON(content);
   };
-  return callWithValidation(callAgent, validateLessonKB);
+  return callWithValidation(callAgent, validateLessonKB, trace);
 }
 
 // The profile-update agents only revise the "soft" fields (name, goal,
@@ -323,12 +357,13 @@ export function profileUpdateInput(fullProfile, text, activityContext, source = 
 
 // -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
 
-export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted) {
-  let systemPrompt = await loadPrompt('learner-profile-owner');
-  systemPrompt = withLanguage(systemPrompt);
-  const userContent = JSON.stringify({ untrustedText: LEARNER_TEXT_FRAMING, currentProfile: profileForAgent(fullProfile), lessonKB, activitiesCompleted, lessonName, lessonId });
+export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted, { trace } = {}) {
+  // The Trace stamp is bookkeeping about the recording, not about the learner.
+  const { trace: _stamp, ...kbForAgent } = lessonKB || {};
+  const userContent = JSON.stringify({ untrustedText: LEARNER_TEXT_FRAMING, currentProfile: profileForAgent(fullProfile), lessonKB: kbForAgent, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'learner-profile-owner', purpose: 'profile update on completion', trace,
+    model: LLM, parts: await agentParts('learner-profile-owner'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
   return parseJSON(content);
@@ -346,16 +381,16 @@ export function incrementalProfileUpdate(profile, lessonId) {
 
 // -- Profile feedback (LLM) --------------------------------------------------
 
-export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner') {
+export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner', { trace } = {}) {
   // A learner note that reads as instructions never reaches the agent, whether
   // it's being added or removed (it was never shown, so there's nothing to
   // undo). The note itself is already saved; the profile is left as it was.
-  if (source !== 'coach' && learnerNoteFlag(feedbackText)) return null;
-  let systemPrompt = await loadPrompt('learner-profile-update');
-  systemPrompt = withLanguage(systemPrompt);
+  const flag = source !== 'coach' ? learnerNoteFlag(feedbackText) : null;
+  if (flag) { trace?.step('noteScreened', { reason: flag, source }); return null; }
   const userContent = JSON.stringify(profileUpdateInput(fullProfile, feedbackText, activityContext, source));
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'learner-profile-update', purpose: `profile update (${source})`, trace,
+    model: LLM, parts: await agentParts('learner-profile-update'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
   return parseJSON(content);
@@ -363,9 +398,7 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
 
 // -- Course Progress Updater (LLM — distill cross-lesson progress) ------------
 
-export async function updateCourseProgress(courseName, lessonsInCourse, priorSummary, completedLesson, completedLessonIds) {
-  let systemPrompt = await loadPrompt('course-progress-update');
-  systemPrompt = withLanguage(systemPrompt);
+export async function updateCourseProgress(courseName, lessonsInCourse, priorSummary, completedLesson, completedLessonIds, { trace } = {}) {
   const userContent = JSON.stringify({
     courseName,
     lessonsInCourse,
@@ -374,7 +407,8 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
     completedLessonIds: completedLessonIds || [],
   });
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'course-progress-update', purpose: 'unit note on completion', trace,
+    model: LLM, parts: await agentParts('course-progress-update'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
   return parseJSON(content);
@@ -382,11 +416,10 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
 
 // -- Lesson markdown extraction (from conversation) ---------------------------
 
-export async function extractLessonMarkdown(conversationText) {
-  let systemPrompt = await loadPrompt('lesson-extractor');
-  systemPrompt = withLanguage(systemPrompt);
+export async function extractLessonMarkdown(conversationText, { trace } = {}) {
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'lesson-extractor', purpose: 'write the lesson from the conversation', trace,
+    model: LLM, parts: await agentParts('lesson-extractor'),
     messages: [{ role: 'user', content: conversationText }], maxTokens: 1536,
   });
   return content.trim();
@@ -394,14 +427,13 @@ export async function extractLessonMarkdown(conversationText) {
 
 // -- Knowledge base markdown extraction (from conversation) -------------------
 
-export async function extractKBMarkdown(conversationText, existingKB = '') {
-  let systemPrompt = await loadPrompt('knowledge-base-extractor');
-  systemPrompt = withLanguage(systemPrompt);
+export async function extractKBMarkdown(conversationText, existingKB = '', { trace } = {}) {
   const userContent = existingKB
     ? `## EXISTING KNOWLEDGE BASE\n\n${existingKB}\n\n## CONVERSATION\n\n${conversationText}`
     : `## EXISTING KNOWLEDGE BASE\n\n(none — creating from scratch)\n\n## CONVERSATION\n\n${conversationText}`;
   const { content } = await callApi({
-    model: LLM, systemPrompt,
+    agent: 'knowledge-base-extractor', purpose: 'write the knowledge base from the conversation', trace,
+    model: LLM, parts: await agentParts('knowledge-base-extractor'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 4096,
   });
   return content.trim();

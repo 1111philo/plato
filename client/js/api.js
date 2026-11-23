@@ -46,7 +46,10 @@ function aiErrorMessage(type, retryAfterMs) {
 
 /**
  * Parse a Messages API response.
- * Expects a fetch Response object. Returns { content, usage }.
+ * Expects a fetch Response object. Returns `{ content, usage }`, plus what a
+ * Trace records: `stopReason`, and for a Trace request the model's
+ * `reasoning` and the server's facts (`plato`). A failure carries the
+ * server's facts as `error.plato`.
  */
 export async function parseResponse(resp) {
   if (!resp.ok) {
@@ -56,11 +59,12 @@ export async function parseResponse(resp) {
     const msg = body?.error?.message || body?.error || `API returned ${status}`;
     const retryAfterMs = Number(body?.retryAfterMs) || (Number(resp.headers?.get?.('retry-after')) * 1000) || undefined;
 
-    if (status === 401) throw new ApiError('invalid_key', 'Session expired. Please sign in again.', status);
+    const fail = (...args) => { throw Object.assign(new ApiError(...args), body?.plato ? { plato: body.plato } : {}); };
+    if (status === 401) fail('invalid_key', 'Session expired. Please sign in again.', status);
     const type = TYPE_FOR_CODE[body?.code] || (status === 429 ? 'rate_limit' : status === 503 || status === 529 ? 'overloaded' : status === 504 ? 'timeout' : null);
-    if (type) throw new ApiError(type, aiErrorMessage(type, retryAfterMs), status, retryAfterMs);
-    if (status === 500) throw new ApiError('api', 'Internal server error. This may be a temporary issue.', status);
-    throw new ApiError('api', msg, status);
+    if (type) fail(type, aiErrorMessage(type, retryAfterMs), status, retryAfterMs);
+    if (status === 500) fail('api', 'Internal server error. This may be a temporary issue.', status);
+    fail('api', msg, status);
   }
 
   let data;
@@ -77,7 +81,7 @@ export async function parseResponse(resp) {
     console.warn('[plato] Response truncated — max_tokens reached. Output may be incomplete.');
   }
 
-  return { content: textBlock.text, usage: data.usage };
+  return { content: textBlock.text, usage: data.usage, stopReason: data.stop_reason ?? null, reasoning: data.reasoning, plato: data.plato };
 }
 
 /**
@@ -94,7 +98,10 @@ export async function parseResponse(resp) {
 // stop_reason 'max_tokens') throws instead of returning, for callers that
 // parse tags out of the full text (the coach: a clipped [PROGRESS]/[KB_UPDATE]
 // would be saved as a real turn). Authoring chats keep their partial text.
-export async function* parseSSEStream(body, onDone, { failOnTruncation = false } = {}) {
+// `onMeta`: everything in the stream that isn't reply text, for a Trace:
+// `{ usage }`, `{ stopReason }`, `{ reasoning }` (a delta), `{ plato }` (the
+// server's facts).
+export async function* parseSSEStream(body, onDone, { failOnTruncation = false, onMeta } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -123,9 +130,16 @@ export async function* parseSSEStream(body, onDone, { failOnTruncation = false }
         if (event.type === 'error') {
           const type = TYPE_FOR_CODE[event.error?.code];
           const retryAfterMs = Number(event.error?.retryAfterMs) || undefined;
+          if (event.plato) onMeta?.({ plato: event.plato });
           throw new ApiError(type || 'api', (type && aiErrorMessage(type, retryAfterMs)) || 'The response failed partway through. Please try again.', undefined, retryAfterMs);
         }
         if (event.type === 'message_delta' && event.delta?.stop_reason === 'max_tokens') truncated = true;
+        if (onMeta) {
+          if (event.type === 'plato') { const { type: _t, ...facts } = event; onMeta({ plato: facts }); }
+          if (event.type === 'message_delta' && event.delta?.stop_reason) onMeta({ stopReason: event.delta.stop_reason });
+          if (event.type === 'message_stop' && event.usage) onMeta({ usage: event.usage });
+          if (event.type === 'content_block_delta' && event.delta?.type === 'reasoning_delta') onMeta({ reasoning: event.delta.text });
+        }
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           yield event.delta.text;
         }
