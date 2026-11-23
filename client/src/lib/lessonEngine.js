@@ -22,7 +22,7 @@ import { updateCourseProgressOnCompletionInBackground } from './courseProgressQu
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
 import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
-import { openTrace } from './traceSession.js';
+import { openTrace, traceBytes, traceFull } from './traceSession.js';
 import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
@@ -508,8 +508,16 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   let lessonKB = await getLessonKB(lessonId);
   // Trace mode (#595): a recorder when it's on, else undefined. A lesson that
   // started before it was turned on is recorded from here and marked partial.
-  const trace = await openTrace(lessonId, 'turn', { partial: !lessonKB?.trace || !!lessonKB.trace.partial });
+  const trace = await openTrace(lessonId, 'turn', { partial: !lessonKB?.trace || !!lessonKB.trace.partial, used: lessonKB?.trace?.bytes });
   if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), by: trace.app?.by || 'self', partial: true } };
+  // The stamp carries the trace's size so far, so the limit holds across
+  // sessions and devices; past it, recording stops and the stamp says so.
+  if (lessonKB?.trace && (trace || traceFull(lessonId))) {
+    const bytes = traceBytes(lessonId);
+    if (bytes !== lessonKB.trace.bytes || traceFull(lessonId) !== !!lessonKB.trace.full) {
+      lessonKB = { ...lessonKB, trace: { ...lessonKB.trace, bytes, ...(traceFull(lessonId) ? { full: true } : {}) } };
+    }
+  }
   try {
     return await sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, onStream, lessonKB, trace);
   } catch (e) {

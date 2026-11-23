@@ -53,7 +53,7 @@ export default function HowAssessmentWorks() {
               read and did, including how your progress changed. The lesson overview (that same &ldquo;Progress&rdquo;
               button) shows the objectives the coach has checked off, its notes on where you are, and
               everything you&rsquo;ve shared.
-            </p>
+             For the full record, turn on Trace mode in Settings: each lesson then has a Trace showing every step, the exact instructions the coach was given, and anything plato&rsquo;s code changed.</p>
           </section>
 
           <section className="space-y-2">

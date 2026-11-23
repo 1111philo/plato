@@ -84,10 +84,6 @@ function saveSentence(s) {
   return `Saving ${what} failed (${why}). plato tries once more in the background.`;
 }
 
-function objectiveList(nums, objectives = []) {
-  return (nums || []).map((n) => `${n}. ${objectives[n - 1]?.objective || objectives[n - 1] || ''}`.trim()).join('\n') || 'none';
-}
-
 /** The plain sentence and exact text for every step type but `call`. */
 const DESCRIBE = {
   lesson: (s) => ({

@@ -113,6 +113,9 @@ Full procedure, SSM parameters, environments (prod / playground), CloudFront, an
 - `client/js/orchestrator.js` — AI agent orchestration
 - `client/src/lib/imageCompression.js` — downscales pasted screenshots under the 400 KB item limit
 - `client/src/lib/constants.js` — microlearning limits + shared constants
+- `client/src/lib/lessonTrace.js` / `traceSession.js` — Trace mode's recorder (pure) and the switch that opens one
+- `client/src/lib/transparency.js` — plato's one plain-language description of every agent, step, rule and service; `traceView.js` turns a stored trace into what's shown
+- `client/src/components/chat/LessonTrace.jsx` / `TraceTimeline.jsx` — the Trace panel (docked at 1024 px and up, a dialog below)
 - `client/src/hooks/useChatKeyboardNav.js` — Alt+Arrow chat navigation
 - `client/src/hooks/useStickToBottom.js` — chat auto-scroll (follow while at bottom; jump on send). Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#chat-auto-scroll-319-321) before touching it — three non-obvious traps live here
 - `client/src/hooks/useTitleNotification.js` — document title flash for new-message notifications

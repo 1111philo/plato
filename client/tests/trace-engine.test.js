@@ -15,9 +15,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { store, ai, events, LESSON, reset, signIn, traces, settle } from './helpers/fake-plato.js';
 
-const { clearCache, savePreferences, deleteLessonProgress, getLessonKB } = await import('../js/storage.js');
+const { clearCache, savePreferences, deleteLessonProgress, getLessonKB, saveLessonKB } = await import('../js/storage.js');
 const { startLesson, sendMessage } = await import('../src/lib/lessonEngine.js');
-const { rebuildRequest, storableBody } = await import('../src/lib/lessonTrace.js');
+const { rebuildRequest, storableBody, MAX_SCOPE_BYTES } = await import('../src/lib/lessonTrace.js');
 const { STEPS, RULES, AGENTS } = await import('../src/lib/transparency.js');
 
 const ID = LESSON.lessonId;
@@ -181,6 +181,24 @@ describe('Trace on', () => {
     await sendMessage(ID, LESSON, 'Off again.', null, [], noop);
     await settle();
     assert.equal(traces(ID).t.length, 1);
+  });
+
+  it('stops recording at the size limit, and the lesson’s stamp says so', async () => {
+    await lesson(['My first answer.'], { trace: true });
+    // The size is known once a turn's trace is written, so the next turn stamps it.
+    await sendMessage(ID, LESSON, 'A second answer.', null, [], noop);
+    await settle();
+    const kb = await getLessonKB(ID);
+    assert.ok(kb.trace.bytes > 10_000, 'the stamp carries the size so far');
+    // As if earlier sessions had filled it.
+    await saveLessonKB(ID, { ...kb, trace: { ...kb.trace, bytes: MAX_SCOPE_BYTES } });
+    const before = traces(ID).t.length;
+    ai.length = 0;
+    await sendMessage(ID, LESSON, 'One more.', null, [], noop);
+    await settle();
+    assert.equal(traces(ID).t.length, before, 'nothing more is recorded');
+    assert.ok(ai.every((b) => !('trace' in b)));
+    assert.equal((await getLessonKB(ID)).trace.full, true);
   });
 
   it('the stamp never reaches an agent', async () => {
