@@ -194,16 +194,18 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
 
     /**
      * Write the trace: new prompt parts first, then the turn's record. Never
-     * throws, and never runs twice. Returns `{ key, ok }`.
+     * throws, and never runs twice. Returns `{ key, ok, bytes }`.
      */
     async flush() {
       if (flushed) return null;
       flushed = true;
       const id = String(startedAt).padStart(13, '0');
       const key = traceKey(scope, record, id);
+      let bytes = 0;
+      const put = async (k, data) => { bytes += JSON.stringify(data).length; return save(k, data); };
       try {
         for (const [hash, text] of pendingParts) {
-          const res = await save(traceKey(scope, 'p', hash), { v: TRACE_VERSION, hash, text });
+          const res = await put(traceKey(scope, 'p', hash), { v: TRACE_VERSION, hash, text });
           if (res?.ok) knownParts.add(hash);
         }
         const data = {
@@ -211,8 +213,8 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
           app, ...(partial ? { partial: true } : {}), ...(failure ? { failed: true } : {}),
           steps,
         };
-        const res = await save(key, data);
-        return { key, ok: !!res?.ok };
+        const res = await put(key, data);
+        return { key, ok: !!res?.ok, bytes };
       } catch {
         return { key, ok: false };
       }

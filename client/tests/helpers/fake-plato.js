@@ -118,8 +118,15 @@ export function traces(scope) {
   return out;
 }
 
-/** Wait for background agents and trace writes to finish: nothing new for 150 ms. */
+/**
+ * Wait for background agents and trace writes to finish: the follow-up queues
+ * are empty, then nothing new for 150 ms.
+ */
 export async function settle() {
+  const { queueProfileUpdate } = await import('../../src/lib/profileQueue.js');
+  const { queueCourseProgressUpdate } = await import('../../src/lib/courseProgressQueue.js');
+  await queueProfileUpdate(() => {});
+  await queueCourseProgressUpdate(() => {});
   let quiet = 0;
   let seen = '';
   for (let i = 0; i < 300 && quiet < 15; i++) {

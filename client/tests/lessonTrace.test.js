@@ -69,7 +69,9 @@ describe('createTrace', () => {
     b.fail({ type: 'timeout', message: 'slow' });
 
     const first = await trace.flush();
-    assert.deepEqual(first, { key: 'trace:wp-1:t:1763900000005', ok: true });
+    assert.equal(first.key, 'trace:wp-1:t:1763900000005');
+    assert.equal(first.ok, true);
+    assert.ok(first.bytes > 1000, 'reports how much it wrote, for the size limit');
     assert.equal(await trace.flush(), null, 'never written twice');
 
     assert.equal(saved.length, 2, 'one part record, one turn record');

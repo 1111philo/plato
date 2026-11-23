@@ -7,8 +7,12 @@ import { activitySummary } from '../../lib/agentActivity.js';
  * the reply it got, listing the agents that worked on the reply, what each
  * read, and what it did (lib/agentActivity.js builds `agents`). A real
  * button with aria-expanded, so it's reachable by Tab inside the chat log.
+ *
+ * `onOpenTrace`: when this conversation has a Trace (#595), a button that
+ * opens it at this reply. The summary here is always on; the Trace is the
+ * full record.
  */
-export default function AgentActivity({ agents }) {
+export default function AgentActivity({ agents, onOpenTrace }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   if (!Array.isArray(agents) || agents.length === 0) return null;
@@ -54,6 +58,11 @@ export default function AgentActivity({ agents }) {
             </li>
           ))}
         </ul>
+        {onOpenTrace && (
+          <button type="button" onClick={onOpenTrace} className="mt-2 rounded-sm text-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+            Open the trace for this reply
+          </button>
+        )}
       </div>
     </div>
   );

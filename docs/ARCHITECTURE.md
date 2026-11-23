@@ -637,6 +637,38 @@ lessons against a fake server: the requests are the same with Trace on or
 off, and every request can be rebuilt from the stored trace alone (replay).
 A request the trace can't reproduce means the trace is missing something.
 
+### The Trace view
+- **Settings → Trace mode** sets `preferences.traceMode`. If an admin set
+  `user.traceMode`, the box is checked and disabled, with "Turned on by your
+  classroom team".
+- **Lesson header**: a Trace button (footprints) when the lesson has a stamp
+  or is being recorded. `components/chat/LessonTrace.jsx` shows it **docked
+  beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
+  focus trap; Escape closes it from inside; focus returns to the button), and
+  as a **dialog below that**. Docked, it is `position: fixed` in the space
+  `<main>` occupies, the page gets `pr-[26rem]`, and the pinned header and
+  composer overlays stop at the panel. The chat's scroll container and
+  `useStickToBottom` are untouched.
+- **Content** (`components/chat/TraceTimeline.jsx`, from `lib/traceView.js`):
+  "Things worth a look" across the conversation, then each turn with a
+  one-line verdict (the model's own, shaped by instructions, or changed by
+  code), its flags, and on request every step: a plain sentence, who decided,
+  the rule applied, before and after where something was changed, and the
+  exact text in `<details>`. Exact text is always in a `<pre>`, never
+  rendered as markdown: it includes model output and attached pages.
+- **Live**: while a turn runs, "Happening now" lists its steps
+  (`subscribeTrace`); when its trace is saved the timeline reloads and screen
+  readers hear one polite "Trace updated".
+- **"Behind this response"** stays as the always-on summary and gains "Open
+  the trace for this reply", which opens the turn recorded just before that
+  message and focuses its heading.
+- **View as User** shows the learner's trace read-only: the button depends on
+  the lesson's stamp, never on the viewer's own switches.
+- **Size**: a conversation's trace stops at about 1.5 MB
+  (`MAX_SCOPE_BYTES`). The running size rides on `lessonKB.trace.bytes`, so
+  the limit holds across sessions; past it the stamp gets `full: true` and
+  the view says so.
+
 ### What only the server knows
 `POST /v1/ai/messages` with `trace: true` adds a `plato` object (a `plato`
 event at the start and end of a stream):

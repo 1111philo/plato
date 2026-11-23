@@ -20,6 +20,10 @@ import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
 import AgentActivity from '../components/chat/AgentActivity.jsx';
 import LessonOverview from '../components/chat/LessonOverview.jsx';
+import LessonTrace from '../components/chat/LessonTrace.jsx';
+import Footprints from 'lucide-react/dist/esm/icons/footprints';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
+import { isTraceOn } from '../lib/lessonTrace.js';
 import { progressLabel } from '../lib/lessonWork.js';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
@@ -32,7 +36,7 @@ export default function LessonChat() {
   const { state, dispatch } = useApp();
   const { lessons } = state;
   const lesson = lessons.find(c => c.lessonId === lessonGroupId);
-  const { impersonatedUser } = useAuth();
+  const { impersonatedUser, user } = useAuth();
   const impersonating = !!impersonatedUser;
 
   // The resume/start effect below must run once per lesson — NOT every time
@@ -73,6 +77,32 @@ export default function LessonChat() {
   // The lesson overview (#438); `?view=overview` opens it (from the lessons
   // page; `?view=work` is the old name).
   const [showOverview, setShowOverview] = useState(() => ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')));
+  // The Trace (#595): offered when this lesson has one or is being recorded.
+  // Wide screens dock it beside the chat; narrow ones open a dialog. While
+  // viewing as a learner, only what they recorded counts (the switches read
+  // here would be the admin's).
+  const [showTrace, setShowTrace] = useState(false);
+  const [traceFocusAt, setTraceFocusAt] = useState(null);
+  const [traceFrame, setTraceFrame] = useState({ top: 0, bottom: 0 });
+  const traceButtonRef = useRef(null);
+  const wide = useMediaQuery('(min-width: 1024px)');
+  const recording = !impersonating && isTraceOn({ preferences: state.preferences, user });
+  const hasTrace = !!lessonKB?.trace || recording;
+  const traceDocked = showTrace && wide;
+  const openTrace = (focusAt = null) => { setTraceFocusAt(focusAt); setShowTrace(true); };
+  const closeTrace = () => { setShowTrace(false); setTraceFocusAt(null); traceButtonRef.current?.focus(); };
+  // The docked panel fills the space the page's <main> has (below the app
+  // header, above the footer).
+  useEffect(() => {
+    if (!traceDocked) return undefined;
+    const measure = () => {
+      const rect = document.getElementById('main-content')?.getBoundingClientRect();
+      if (rect) setTraceFrame({ top: rect.top, bottom: Math.max(0, window.innerHeight - rect.bottom) });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [traceDocked]);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
@@ -327,7 +357,7 @@ export default function LessonChat() {
       case MSG_TYPES.GUIDE:
         return (
           <div key={idx}>
-            <AgentActivity agents={msg.metadata?.agents} />
+            <AgentActivity agents={msg.metadata?.agents} onOpenTrace={lessonKB?.trace ? () => openTrace(msg.timestamp || Date.now()) : undefined} />
             <AssistantMessage content={msg.content} />
           </div>
         );
@@ -384,13 +414,13 @@ export default function LessonChat() {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-theme(spacing.20))]">
+    <div className={`flex flex-col min-h-[calc(100vh-theme(spacing.20))] ${traceDocked ? 'pr-[26rem]' : ''}`}>
       {/* Fixed header clone — appears when inline header scrolls out of view.
           aria-hidden (a screen reader would hear the header twice), so its
           controls are out of the Tab order too (axe aria-hidden-focus); the
           inline header's controls are the keyboard path, #584 e2e. */}
       {headerPinned && (
-        <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
+        <div id="lesson-header-pinned" aria-hidden="true" className={`fixed top-0 left-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md ${traceDocked ? 'right-[26rem]' : 'right-0'}`}>
           <div className="mx-auto max-w-5xl flex items-center gap-2">
             <Button variant="ghost" size="icon-sm" tabIndex={-1} aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
               &larr;
@@ -411,6 +441,11 @@ export default function LessonChat() {
               </div>
               <ProgressBar lessonKB={lessonKB} />
             </div>
+            {hasTrace && (
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={() => (showTrace ? closeTrace() : openTrace())} title="Trace">
+                <Footprints className="size-4" />
+              </Button>
+            )}
             {isCustomLesson && (
               <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleExport} title="Export lesson markdown">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -451,6 +486,12 @@ export default function LessonChat() {
             </div>
             <ProgressBar lessonKB={lessonKB} />
           </div>
+          {hasTrace && (
+            <Button ref={traceButtonRef} variant="ghost" size="icon-sm" onClick={() => (showTrace ? closeTrace() : openTrace())}
+              aria-label="Trace: what plato did behind this conversation" aria-expanded={showTrace} aria-controls="lesson-trace" title="Trace">
+              <Footprints aria-hidden="true" className="size-4" />
+            </Button>
+          )}
           {isCustomLesson && (
             <Button variant="ghost" size="icon-sm" onClick={handleExport} aria-label="Export lesson" title="Export lesson markdown">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -538,7 +579,7 @@ export default function LessonChat() {
 
       {/* Fixed compose overlay — interactive when pinned */}
       {phase && composePinned && (
-        <div className="fixed bottom-9 left-0 right-0 z-50">
+        <div className={`fixed bottom-9 left-0 z-50 ${traceDocked ? 'right-[26rem]' : 'right-0'}`}>
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
@@ -559,6 +600,8 @@ export default function LessonChat() {
       )}
 
       <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+      <LessonTrace scope={lessonGroupId} open={showTrace} onClose={closeTrace} docked={traceDocked} focusAt={traceFocusAt}
+        stamp={lessonKB?.trace} recording={recording} frame={traceFrame} />
 
 
       {confirmModal && (
