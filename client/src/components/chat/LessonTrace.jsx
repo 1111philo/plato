@@ -109,16 +109,18 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
   const linkButton = 'rounded-sm text-xs text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring disabled:text-muted-foreground disabled:no-underline';
   const body = (
     <>
-      <Tabs value={tab} onValueChange={setTab}>
+      {/* Docked, the top padding is inside the scrolled content, so the exchange
+          bar can stick flush to the top. */}
+      <Tabs value={tab} onValueChange={setTab} className={docked ? 'pt-4' : undefined}>
         <TabsList className="mb-3" aria-label="Trace sections">
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
+          <TabsTrigger value="timeline">What happened</TabsTrigger>
           <TabsTrigger value="technology">Technology and services</TabsTrigger>
         </TabsList>
         <TabsContent value="timeline">
           <TraceTimeline view={view} loading={loading} live={live} focusAt={focusAt} stamp={stamp} recording={recording} />
           <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1">
-            <button type="button" className={linkButton} disabled={!view?.turns.length} onClick={() => download('text')}>Download as text</button>
-            <button type="button" className={linkButton} disabled={!view?.turns.length} onClick={() => download('json')}>Download the data (JSON)</button>
+            <button type="button" className={linkButton} disabled={!view?.exchanges.length} onClick={() => download('text')}>Download as text</button>
+            <button type="button" className={linkButton} disabled={!view?.exchanges.length} onClick={() => download('json')}>Download the data (JSON)</button>
           </p>
         </TabsContent>
         <TabsContent value="technology">
@@ -145,7 +147,7 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
             <X aria-hidden="true" className="size-4" />
           </Button>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
+        <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
           {body}
         </div>
       </aside>
@@ -154,12 +156,12 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent id="lesson-trace" className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent id="lesson-trace" className="sm:max-w-2xl max-h-[85vh] flex flex-col bg-stone-50 dark:bg-stone-950">
         <DialogHeader>
           <DialogTitle ref={titleRef} tabIndex={-1}>Trace</DialogTitle>
           <DialogDescription>What plato did behind this conversation.</DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto flex-1 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
+        <div className="min-w-0 overflow-y-auto overflow-x-hidden flex-1 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
           {body}
         </div>
       </DialogContent>

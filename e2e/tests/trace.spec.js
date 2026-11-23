@@ -63,25 +63,49 @@ test.describe('Trace mode', () => {
     await expect(trace).toHaveAttribute('aria-expanded', 'true');
     await expect(panel.getByRole('heading', { name: 'Trace', exact: true })).toBeFocused();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(panel.getByRole('heading', { name: /^Lesson start/ })).toBeVisible();
+    // The list of exchanges: one per message, with what changed.
+    await expect(panel.getByRole('button', { name: /^1\. Lesson start/ })).toBeVisible();
 
     await say(page, 'My first answer about the key idea.');
     await expect(page.getByText(/Can you give a specific example/).first()).toBeVisible({ timeout: 20_000 });
-    const turn = panel.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Your message: “My first answer/ }) }).first();
-    await expect(turn).toBeVisible({ timeout: 20_000 });
-    await expect(turn.getByText('The AI model').first()).toBeVisible();
-    await expect(turn.getByText(/plato’s code changed nothing/)).toBeVisible();
+    const row = panel.getByRole('button', { name: /^2\. Your message: “My first answer/ });
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await expect(row).toContainText(/Progress \d+ → \d+ of 10 · The model’s own answer/);
 
-    // Every step, with the exact text behind it.
-    await turn.getByRole('button', { name: /^Show all \d+ steps$/ }).click();
-    await expect(turn.getByRole('heading', { name: 'What you sent' })).toBeVisible();
-    await expect(turn.getByRole('heading', { name: 'Coach: reply' })).toBeVisible();
-    await expect(turn.getByText('plato’s code').first()).toBeVisible();
-    await turn.getByText('The model’s raw reply').first().click();
-    await expect(turn.locator('details[open] pre').filter({ hasText: /\[PROGRESS: \d+\]/ }).first()).toBeVisible();
-    await turn.getByText(/^Instructions: The agent’s instructions/).first().click();
-    await expect(turn.locator('details[open] pre').filter({ hasText: 'AGENT: Coach' }).first()).toBeVisible();
-    await expectAccessible(page, { label: 'lesson chat with the trace docked and a turn open' });
+    // One exchange: what was sent and seen, then what happened, in stages.
+    await row.focus();
+    await page.keyboard.press('Enter');
+    const exchange = panel.getByRole('article');
+    await expect(exchange.getByRole('heading', { name: /^Exchange 2 of 2/ })).toBeFocused();
+    await expect(exchange.getByRole('blockquote').filter({ hasText: 'My first answer about the key idea.' })).toBeVisible();
+    await expect(exchange.getByText(/plato’s code changed nothing/)).toBeVisible();
+    for (const stage of ['1. You sent', '2. plato prepared what the AI model is given', '3. The AI model answered', '5. plato recorded the result', '6. In the background']) {
+      await expect(exchange.getByRole('heading', { name: stage })).toBeVisible();
+    }
+    // No lesson step on a later turn: it's shown once, at the start.
+    await expect(exchange.getByText('The lesson', { exact: true })).toHaveCount(0);
+    await exchange.getByRole('link', { name: '3. The AI model answered' }).click();
+    await expect(exchange.getByRole('heading', { name: '3. The AI model answered' })).toBeFocused();
+    await expect(exchange.getByText('Coach: reply')).toBeVisible();
+    // The exact text, one disclosure per step.
+    const call = exchange.getByRole('listitem').filter({ has: page.getByText('Coach: reply', { exact: true }) }).last();
+    await call.getByText(/^Show the exact text/).click();
+    await call.getByText('The model’s raw reply').click();
+    await expect(call.locator('details[open] > pre').filter({ hasText: /\[PROGRESS: \d+\]/ }).first()).toBeVisible();
+    await call.getByText(/^Instructions: The agent’s instructions/).first().click();
+    await expect(call.locator('details[open] > pre').filter({ hasText: 'AGENT: Coach' }).first()).toBeVisible();
+    await expectAccessible(page, { label: 'lesson chat with the trace docked and an exchange open' });
+
+    // Nothing in the panel is wider than the panel.
+    const widths = await panel.getByRole('region', { name: 'Trace steps' }).evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    expect(widths[0]).toBeLessThanOrEqual(widths[1]);
+
+    // Previous, and back to the list, by keyboard.
+    await exchange.getByRole('button', { name: 'Previous exchange' }).click();
+    await expect(exchange.getByRole('heading', { name: /^Lesson start/ })).toBeFocused();
+    await expect(exchange.getByRole('heading', { name: '1. plato set up the lesson' })).toBeVisible();
+    await exchange.getByRole('button', { name: 'All exchanges' }).click();
+    await expect(panel.getByRole('button', { name: /^1\. Lesson start/ })).toBeFocused();
 
     // The pinned header and composer leave room for the panel.
     const panelBox = await panel.boundingBox();
@@ -110,15 +134,26 @@ test.describe('Trace mode', () => {
     await behind.click();
     await page.getByRole('button', { name: 'Open the trace for this reply' }).last().click();
     const panel = page.getByRole('complementary', { name: 'Trace' });
-    await expect(panel.getByRole('heading', { name: 'Things worth a look' })).toBeVisible();
-    await expect(panel.getByRole('button', { name: /completion was held/ })).toBeVisible();
-    const turn = panel.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Your message: “MOCK_COMPLETE MOCK_UNBACKED/ }) }).first();
-    await expect(turn.getByRole('heading', { name: /^Your message/ })).toBeFocused();
-    await expect(turn.getByText(/plato’s code changed the result/)).toBeVisible();
-    await expect(turn.getByRole('heading', { name: 'The assessment check’s verdict' })).toBeVisible();
-    await expect(turn.getByText(/^Rule:/).first()).toBeVisible();
-    await expect(turn.getByText('Before', { exact: true }).first()).toBeVisible();
+    const exchange = panel.getByRole('article');
+    await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
+    await expect(exchange.getByRole('blockquote').filter({ hasText: 'MOCK_COMPLETE MOCK_UNBACKED I think I am done' })).toBeVisible();
+    await expect(exchange.getByText('Worth a look')).toBeVisible();
+    await expect(exchange.getByText(/completion was held/).first()).toBeVisible();
+    await expect(exchange.getByText(/plato’s code changed the result/)).toBeVisible();
+    await expect(exchange.getByText('A different reply appeared first, then plato replaced it')).toBeVisible();
+    await expect(exchange.getByRole('heading', { name: '4. plato checked the answer' })).toBeVisible();
+    await expect(exchange.getByText('The assessment check’s verdict')).toBeVisible();
+    await expect(exchange.getByText(/^Rule:/).first()).toBeVisible();
+    await expect(exchange.getByText('Before', { exact: true }).first()).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace with a held completion open' });
+
+    // The list can be narrowed to the exchanges worth a look.
+    await exchange.getByRole('button', { name: 'All exchanges' }).click();
+    const filter = panel.getByRole('checkbox', { name: /^Only the \d+ worth a look$/ });
+    await filter.check();
+    const rows = panel.getByRole('list').last().getByRole('button');
+    await expect(rows.first()).toContainText('worth a look');
+    for (const r of await rows.all()) await expect(r).toContainText('worth a look');
   });
 
   test('narrow screens get the trace as a dialog', async ({ page }) => {
@@ -130,7 +165,7 @@ test.describe('Trace mode', () => {
     await page.getByRole('button', { name: 'Trace: what plato did behind this conversation' }).click();
     const dialog = page.getByRole('dialog', { name: 'Trace' });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole('heading', { name: 'Timeline' })).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
     const box = await dialog.boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
@@ -167,7 +202,7 @@ test.describe('Trace mode', () => {
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Trace: what plato did behind this conversation' }).click();
     const panel = page.getByRole('complementary', { name: 'Trace' });
-    await expect(panel.getByRole('heading', { name: /^Your message: “A turn for my teacher/ })).toBeVisible({ timeout: 20_000 });
+    await expect(panel.getByRole('button', { name: /^\d+\. Your message: “A turn for my teacher/ })).toBeVisible({ timeout: 20_000 });
     await expect(panel.getByText('Trace mode is off now, so new messages aren’t recorded.')).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace in View as User' });
     expect(writes).toEqual([]);
@@ -181,7 +216,7 @@ test.describe('Trace mode', () => {
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Trace: what plato did behind this conversation' }).click();
     const panel = page.getByRole('complementary', { name: 'Trace' });
-    await expect(panel.getByRole('heading', { name: 'Timeline' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
 
     // Download, by keyboard (enabled once the trace has loaded).
     await expect(panel.getByRole('button', { name: 'Download as text' })).toBeEnabled();
@@ -191,7 +226,7 @@ test.describe('Trace mode', () => {
     expect(json.suggestedFilename()).toBe(`plato-trace-${LESSONS[1].id}.json`);
 
     // The Technology tab: arrow keys move between tabs, Enter opens one.
-    await panel.getByRole('tab', { name: 'Timeline' }).focus();
+    await panel.getByRole('tab', { name: 'What happened' }).focus();
     await page.keyboard.press('ArrowRight');
     const tech = panel.getByRole('tab', { name: 'Technology and services' });
     await expect(tech).toBeFocused();
@@ -220,12 +255,12 @@ test.describe('Trace mode', () => {
     const dialog = page.getByRole('dialog', { name: 'Trace' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Trace', exact: true })).toBeFocused();
-    const turn = dialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^You added a note: “I use a Chromebook at the library\.”/ }) }).first();
-    await expect(turn).toBeVisible({ timeout: 20_000 });
-    await turn.getByRole('button', { name: /^Show all \d+ steps$/ }).click();
-    await expect(turn.getByRole('heading', { name: 'What you did' })).toBeVisible();
-    await expect(turn.getByRole('heading', { name: 'Learner profile: profile update (learner)' })).toBeVisible();
-    await expect(turn.getByRole('heading', { name: 'The learner profile was updated' })).toBeVisible();
+    await dialog.getByRole('button', { name: /^\d+\. You added a note: “I use a Chromebook at the library\.”/ }).click({ timeout: 20_000 });
+    const turn = dialog.getByRole('article');
+    await expect(turn.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
+    await expect(turn.getByText('What you did', { exact: true })).toBeVisible();
+    await expect(turn.getByText('Learner profile: profile update (learner)')).toBeVisible();
+    await expect(turn.getByText('The learner profile was updated')).toBeVisible();
     await expectAccessible(page, { include: '[role=dialog]', label: 'settings: profile trace dialog' });
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
@@ -251,16 +286,17 @@ test.describe('Trace mode', () => {
     await button.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Trace' });
-    await expect(dialog.getByRole('heading', { name: /^Conversation start/ })).toBeVisible({ timeout: 20_000 });
-    const turn = dialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Your message: “Learners write a clear bug report\.”/ }) }).first();
-    await expect(turn).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^1\. Conversation start/ })).toBeVisible({ timeout: 20_000 });
+    await dialog.getByRole('button', { name: /^\d+\. Your message: “Learners write a clear bug report\.”/ }).click();
+    const turn = dialog.getByRole('article');
     await expect(turn.getByText(/readiness score are the model’s own/)).toBeVisible();
-    await turn.getByRole('button', { name: /^Show all \d+ steps$/ }).click();
-    await expect(turn.getByRole('heading', { name: 'What you wrote' })).toBeVisible();
-    await expect(turn.getByRole('heading', { name: 'Lesson creator: reply' })).toBeVisible();
+    await expect(turn.getByText('What you wrote', { exact: true })).toBeVisible();
+    await expect(turn.getByText('Lesson creator: reply')).toBeVisible();
     await expect(turn.getByText(/^Readiness score: \d+ of 10/)).toBeVisible();
+    const parsed = turn.getByRole('listitem').filter({ has: page.getByText('What plato read from the reply', { exact: true }) }).last();
+    await parsed.getByText(/^Show the exact text/).click();
     await turn.getByText('The reply with its score, as the model wrote it').click();
-    await expect(turn.locator('details[open] pre').filter({ hasText: /\[READINESS: \d+\]/ })).toBeVisible();
+    await expect(turn.locator('details[open] > pre').filter({ hasText: /\[READINESS: \d+\]/ })).toBeVisible();
     await expectAccessible(page, { include: '[role=dialog]', label: 'lesson editor: trace dialog' });
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
