@@ -9,7 +9,7 @@
  * every caller passes on as `trace`; nothing else in the app checks the
  * switches.
  */
-import { getPreferences, getAuthUser, putTraceRecord } from '../../js/storage.js';
+import { getPreferences, getAuthUser, putTraceRecord, listTraceRecords } from '../../js/storage.js';
 import { createTrace, isTraceOn, traceTurnedOnBy, MAX_SCOPE_BYTES } from './lessonTrace.js';
 
 /* global __PLATO_BUILD__ */
@@ -21,6 +21,41 @@ const listeners = new Map(); // scope -> Set<fn>
 // How much each scope's trace holds (characters written), and which are full.
 const scopeBytes = new Map();
 const full = new Set();
+// Scopes with no record of their own to carry the size (`profile`, `kb`,
+// `author-<lessonId>`): what is already stored, read once a session.
+const stored = new Map(); // scope -> Promise<number>
+const SELF_SIZED = new Set(['profile', 'authoring']);
+// Whose trace this session has been counting. A different person signing in
+// in the same tab starts from nothing.
+let owner = null;
+const lastStart = new Map(); // `${scope}:${record}` -> ms
+
+/** Forget everything this session knows about traces (a new person; tests). */
+export function resetTraceSession() {
+  knownParts.clear(); scopeBytes.clear(); full.clear(); stored.clear();
+}
+
+/**
+ * The scope for a lesson's authoring chat: `author-<lessonId>`, in the
+ * characters a sync key allows.
+ */
+export function authorScope(lessonId) {
+  return `author-${String(lessonId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 110)}`;
+}
+
+/**
+ * What a scope's stored turns and follow-ups add up to (characters of JSON).
+ * Asked for once per scope a session, and only when a trace is being opened,
+ * so nothing is read while Trace mode is off.
+ */
+export function storedTraceBytes(scope) {
+  if (!stored.has(scope)) {
+    stored.set(scope, Promise.all([listTraceRecords(scope, 't'), listTraceRecords(scope, 'b')])
+      .then((lists) => lists.flat().reduce((n, item) => n + JSON.stringify(item.data ?? null).length, 0))
+      .catch(() => 0));
+  }
+  return stored.get(scope);
+}
 
 /** What a scope's trace holds so far, as far as this session knows. */
 export function traceBytes(scope) { return scopeBytes.get(scope) || 0; }
@@ -43,16 +78,22 @@ function emit(scope, event) {
 /** Who has Trace mode on for the signed-in person: `{ on, by }`. */
 export async function traceStatus() {
   const [preferences, user] = await Promise.all([getPreferences().catch(() => null), getAuthUser().catch(() => null)]);
-  return { on: isTraceOn({ preferences, user }), by: traceTurnedOnBy({ user }) };
+  return { on: isTraceOn({ preferences, user }), by: traceTurnedOnBy({ user }), userId: user?.userId || null };
 }
 
 /**
  * A recorder for one turn in `scope`, or undefined when Trace mode is off.
- * `record` is 't' (a turn) or 'b' (a follow-up agent).
+ * `record` is 't' (a turn) or 'b' (a follow-up agent). `kind` is 'start' |
+ * 'turn' | 'followup' (a lesson), 'profile' (Settings → Learner Profile) or
+ * 'authoring' (the lesson editor and knowledge base chats).
  */
 export async function openTrace(scope, kind, { partial = false, record = 't', used = 0 } = {}) {
   const status = await traceStatus().catch(() => ({ on: false }));
   if (!status.on) return undefined;
+  if (status.userId !== owner) { resetTraceSession(); owner = status.userId; }
+  // Lessons carry their size on lessonKB.trace.bytes (`used`); the other
+  // scopes have no such record, so their stored size is summed once.
+  if (SELF_SIZED.has(kind)) used = Math.max(used || 0, await storedTraceBytes(scope));
   // A lesson starting (again, after a reset) has no stored parts and no
   // size: its trace was deleted with it.
   if (kind === 'start' || !knownParts.has(scope)) knownParts.set(scope, new Set());
@@ -60,8 +101,16 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
   // `used` is what the lesson's own record says was written before this session.
   scopeBytes.set(scope, Math.max(used || 0, traceBytes(scope)));
   if (traceBytes(scope) >= MAX_SCOPE_BYTES) { full.add(scope); return undefined; }
+  // A record is keyed by the millisecond it started. Two turns in a scope
+  // can start in the same one (a preview straight after a save), so the
+  // second is moved on a millisecond rather than overwrite the first.
+  const slot = `${scope}:${record}`;
+  const startAt = Math.max(Date.now(), (lastStart.get(slot) || 0) + 1);
+  lastStart.set(slot, startAt);
+  const skew = startAt - Date.now();
   const trace = createTrace({
     scope, kind, record, partial,
+    ...(skew > 0 ? { now: () => Date.now() + skew } : {}),
     save: putTraceRecord,
     knownParts: knownParts.get(scope),
     app: {

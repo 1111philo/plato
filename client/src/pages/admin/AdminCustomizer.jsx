@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
@@ -8,11 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 import { renderMd } from '../../lib/helpers.js';
-import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
-import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useTitleNotification } from '../../hooks/useTitleNotification.js';
+import { buildConversationText } from '../../lib/lessonCreationEngine.js';
+import { authoringExtract, kbProblem } from '../../lib/authoringEngine.js';
+import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
+import TraceButton from '../../components/chat/TraceButton.jsx';
 import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -283,15 +283,13 @@ function KBViewer({ content, updatedAt, updatedByName, onEdit }) {
 
 function KBEditor({ initialContent, onSave, onCancel, initialConversation, initialReadiness }) {
   const isEditing = !!initialContent;
-  const [chatMessages, setChatMessages] = useState(initialConversation || []);
-  const [readiness, setReadiness] = useState(initialReadiness ?? 0);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-
-  const [streamingText, setStreamingText] = useState(null);
-  const pendingRef = useRef(null);
-  const [srAnnouncement, setSrAnnouncement] = useState('');
-  const notifyTitle = useTitleNotification('Customizer — Admin');
+  const {
+    chatMessages, setChatMessages, readiness, busy, setBusy, error, setError,
+    streamingText, srAnnouncement, start, handleSend,
+  } = useAuthoringChat({
+    agent: 'knowledge-base-editor', scope: 'kb', title: 'Customizer — Admin',
+    initialMessages: initialConversation, initialReadiness,
+  });
 
   // Markdown preview pane. Refreshed manually via the knowledge-base-extractor
   // agent; never persisted until the admin clicks Save. Mirrors the lesson
@@ -313,29 +311,9 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     adminApi('PUT', '/v1/admin/knowledge-base/conversation', { conversation, readiness: readinessRef.current }).catch(() => {});
   }, [chatMessages]);
 
-  useEffect(() => {
-    if (streamingText === null && pendingRef.current) {
-      const { msgs, r } = pendingRef.current;
-      pendingRef.current = null;
-      if (msgs) {
-        setChatMessages(prev => [...prev, ...msgs]);
-        if (msgs.some(m => m.role === 'assistant')) {
-          setSrAnnouncement('');
-          requestAnimationFrame(() => setSrAnnouncement('New message received'));
-          notifyTitle();
-        }
-      }
-      if (r != null) setReadiness(r);
-      setBusy('');
-    }
-  }, [streamingText]);
-
   // Start conversation — skip if resuming from a saved conversation
   useEffect(() => {
-    if (initialConversation?.length) return;
-    let cancelled = false;
-    setBusy('starting');
-    setStreamingText('');
+    if (initialConversation?.length) return undefined;
 
     const openingMessage = isEditing
       ? `I want to edit my existing knowledge base. Here is the current content:\n\n${initialContent}\n\nWhat would you like to know about the changes I want to make?`
@@ -344,74 +322,28 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     if (isEditing) {
       setChatMessages([{ role: 'user', content: openingMessage, msgType: MSG_TYPES.USER, timestamp: Date.now() }]);
     }
-
-    (async () => {
-      try {
-        const raw = await converseStream(
-          'knowledge-base-editor',
-          [{ role: 'user', content: openingMessage }],
-          cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
-          512
-        );
-        if (cancelled) return;
-        const { text, readiness: r } = parseResponse(raw);
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: null, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-        pendingRef.current = { msgs: [msg], r: r ?? (isEditing ? 8 : 1) };
-        setStreamingText(null);
-      } catch (e) {
-        if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, []);
-
-  const chatMessagesRef = useRef(chatMessages);
-  useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
-
-  const handleSend = useCallback(async ({ text }) => {
-    if (!text?.trim()) return;
-    setError('');
-    setBusy('qa');
-    setStreamingText('');
-
-    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, timestamp: Date.now() };
-    setChatMessages(prev => [...prev, userMsg]);
-
-    try {
-      const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
-      const raw = await converseStream(
-        'knowledge-base-editor',
-        tail,
-        cleanStream((partial) => setStreamingText(partial)),
-        512
-      );
-      const { text: respText, readiness: r } = parseResponse(raw);
-      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: readinessRef.current, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-      pendingRef.current = { msgs: [assistantMsg], r };
-      setStreamingText(null);
-    } catch (e) {
-      setError(e.message || 'Failed to send.');
-      setStreamingText(null);
-      setBusy('');
-    }
+    return start([{ role: 'user', content: openingMessage }], { fallbackReadiness: isEditing ? 8 : 1 });
   }, []);
 
   async function handleSaveKB() {
     setError('');
     setBusy('creating');
     try {
-      const md = await extractKBMarkdown(buildConversationText(chatMessages), initialContent);
-      if (!md || md.length < 50) {
-        setError('Could not generate a knowledge base from the conversation. Keep adding information.');
+      const { problem } = await authoringExtract({
+        scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent, messages: chatMessages.length,
+        check: kbProblem,
+        save: async (md) => {
+          // Keep the preview in sync with what we're about to save.
+          setPreviewMarkdown(md);
+          setPreviewSyncedAt(chatMessages.length);
+          const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+          await onSave(md, conversation, readiness);
+        },
+      });
+      if (problem) {
+        setError(problem);
         setBusy('');
-        return;
       }
-      // Keep the preview in sync with what we're about to save.
-      setPreviewMarkdown(md);
-      setPreviewSyncedAt(chatMessages.length);
-      const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
-      await onSave(md, conversation, readiness);
     } catch (e) {
       setError(e.message || 'Failed to save.');
       setBusy('');
@@ -431,7 +363,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const md = await extractKBMarkdown(buildConversationText(chatMessages), initialContent);
+      const { markdown: md } = await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent, messages: chatMessages.length });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -456,6 +388,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to knowledge base">&larr; Back</Button>
         <h2 className="text-lg font-semibold">{isEditing ? 'Edit Knowledge Base' : 'Create Knowledge Base'}</h2>
+        <TraceButton scope="kb" className="ml-auto" label="Trace: what plato did behind this conversation" />
       </div>
 
       {error && (

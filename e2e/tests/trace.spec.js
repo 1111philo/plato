@@ -204,4 +204,67 @@ test.describe('Trace mode', () => {
     await expect(panel.getByRole('heading', { name: 'Not turned on here' })).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace technology tab' });
   });
+
+  test('Settings: a learner adds profile feedback and reads its trace in a dialog, by keyboard', async ({ page }) => {
+    await login(page, LEARNER);
+    await setTrace(page, true);
+    await page.goto('/settings');
+    await page.getByRole('button', { name: 'Add Feedback' }).click();
+    const feedback = page.getByRole('dialog', { name: 'Add Profile Feedback' });
+    await feedback.getByRole('textbox', { name: 'Profile feedback' }).fill('I use a Chromebook at the library.');
+    await feedback.getByRole('button', { name: 'Submit' }).click();
+    await expect(feedback).toHaveCount(0, { timeout: 20_000 });
+
+    const button = page.getByRole('button', { name: 'Trace: what plato did with your notes' });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Trace' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Trace', exact: true })).toBeFocused();
+    const turn = dialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^You added a note: “I use a Chromebook at the library\.”/ }) }).first();
+    await expect(turn).toBeVisible({ timeout: 20_000 });
+    await turn.getByRole('button', { name: /^Show all \d+ steps$/ }).click();
+    await expect(turn.getByRole('heading', { name: 'What you did' })).toBeVisible();
+    await expect(turn.getByRole('heading', { name: 'Learner profile: profile update (learner)' })).toBeVisible();
+    await expect(turn.getByRole('heading', { name: 'The learner profile was updated' })).toBeVisible();
+    await expectAccessible(page, { include: '[role=dialog]', label: 'settings: profile trace dialog' });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+
+    // Remove the note again so other specs see the profile as they left it.
+    await page.getByRole('button', { name: 'Remove note: I use a Chromebook at the library.' }).click();
+    await expect(page.getByRole('list', { name: 'Your notes' })).toHaveCount(0);
+  });
+
+  test('lesson editor: an admin sends one message and reads its trace', async ({ page }) => {
+    await login(page, ADMIN);
+    await setTrace(page, true);
+    await page.goto('/plato/lessons/new');
+    await expect(page.getByRole('button', { name: /^Behind this response/ }).first()).toBeVisible({ timeout: 20_000 });
+    const composer = page.getByRole('textbox', { name: 'Your message' }).last();
+    await expect(composer).toBeEnabled({ timeout: 20_000 });
+    await composer.fill('Learners write a clear bug report.');
+    await composer.press(`${MOD}+Enter`);
+    await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2, { timeout: 20_000 });
+
+    const button = page.getByRole('button', { name: 'Trace: what plato did behind this conversation' });
+    await button.focus();
+    await page.keyboard.press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Trace' });
+    await expect(dialog.getByRole('heading', { name: /^Conversation start/ })).toBeVisible({ timeout: 20_000 });
+    const turn = dialog.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /^Your message: “Learners write a clear bug report\.”/ }) }).first();
+    await expect(turn).toBeVisible();
+    await expect(turn.getByText(/readiness score are the model’s own/)).toBeVisible();
+    await turn.getByRole('button', { name: /^Show all \d+ steps$/ }).click();
+    await expect(turn.getByRole('heading', { name: 'What you wrote' })).toBeVisible();
+    await expect(turn.getByRole('heading', { name: 'Lesson creator: reply' })).toBeVisible();
+    await expect(turn.getByText(/^Readiness score: \d+ of 10/)).toBeVisible();
+    await turn.getByText('The reply with its score, as the model wrote it').click();
+    await expect(turn.locator('details[open] pre').filter({ hasText: /\[READINESS: \d+\]/ })).toBeVisible();
+    await expectAccessible(page, { include: '[role=dialog]', label: 'lesson editor: trace dialog' });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(button).toBeFocused();
+  });
 });

@@ -210,6 +210,14 @@ With Trace mode on, each turn of a conversation is recorded as these steps.
 | The learner profile was not changed (`profileUnchanged`) | plato’s code | Nothing usable came back, so the profile stayed as it was. |
 | The unit note was updated (`unitNoteSaved`) | plato’s code | The short note the coach in this unit’s other lessons will see. |
 | The unit note was not changed (`unitNoteUnchanged`) | plato’s code | Nothing usable came back, so the note stayed as it was. |
+| What you did (`noteChange`) | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
+| What you wrote (`authorInput`) | A person | Your message in the editing conversation. |
+| plato started the conversation (`authoringOpened`) | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
+| The conversation so far (`authoringTail`) | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
+| What plato read from the reply (`authoringParsed`) | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
+| What you asked for (`extractAsked`) | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
+| What was written, and whether it could be used (`extracted`) | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
+| Saved (`authoringSaved`) | plato’s code | Whether what was written reached plato’s database. |
 | What you were shown (`shown`) | plato’s code | The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed. |
 | This attempt failed (`error`) | plato’s code | Nothing from this attempt was saved to the conversation. |
 
