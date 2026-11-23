@@ -32,7 +32,8 @@ const BEDROCK_TIMEOUT_MS = 115_000;
 // Adaptive retries: the SDK backs off on throttles and slows its own sending
 // rate when Bedrock pushes back, instead of retrying at full speed (#451 scale
 // review H3). What's left after its attempts reaches the route as a typed error.
-const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION || 'us-east-2', retryMode: 'adaptive', maxAttempts: 3 });
+const REGION = process.env.AWS_REGION || 'us-east-2';
+const client = new BedrockRuntimeClient({ region: REGION, retryMode: 'adaptive', maxAttempts: 3 });
 
 // Map friendly model IDs to Bedrock model / inference-profile IDs. Open-weight
 // models are invoked by bare model ID (no `us.` cross-region prefix); Anthropic
@@ -68,8 +69,16 @@ function withTimeout(label) {
   return { abortSignal: abortController.signal, clear: () => clearTimeout(timer) };
 }
 
+// `opts.trace` (a Trace request, routes/ai.js) adds what only the server
+// knows: the model's reasoning and how many attempts the SDK made.
 const ai = {
-  async invoke(model, body) {
+  /** What this provider is, for the Trace: the real model id, where, and how. */
+  describe() {
+    const model = MODEL_MAP[LLM] || LLM;
+    return { provider: 'bedrock', model, region: REGION, api: usesLegacyInvoke(model) ? 'invoke-model' : 'converse' };
+  },
+
+  async invoke(model, body, opts = {}) {
     const modelId = resolveModel(model);
     const { abortSignal, clear } = withTimeout('invoke');
     try {
@@ -85,13 +94,14 @@ const ai = {
       }
 
       const response = await client.send(new ConverseCommand(toConverseRequest(modelId, body)), { abortSignal });
-      return fromConverseResponse(response);
+      const result = fromConverseResponse(response, { reasoning: !!opts.trace });
+      return opts.trace ? { ...result, attempts: response.$metadata?.attempts ?? 1 } : result;
     } finally {
       clear();
     }
   },
 
-  async *invokeStream(model, body) {
+  async *invokeStream(model, body, opts = {}) {
     const modelId = resolveModel(model);
     const { abortSignal, clear } = withTimeout('stream');
     try {
@@ -112,8 +122,9 @@ const ai = {
       }
 
       const response = await client.send(new ConverseStreamCommand(toConverseRequest(modelId, body)), { abortSignal });
+      if (opts.trace) yield { type: 'plato', attempts: response.$metadata?.attempts ?? 1 };
       for await (const event of response.stream) {
-        const translated = fromConverseStreamEvent(event);
+        const translated = fromConverseStreamEvent(event, { reasoning: !!opts.trace });
         if (translated) yield translated;
       }
     } finally {

@@ -64,6 +64,7 @@ admin.get('/v1/admin/users', async (c) => {
     userGroup: p.userGroup,
     role: normalizeRole(p.role),
     slackUserId: p.slackUserId || null,
+    traceMode: !!p.traceMode,
     customFields: visibleFieldValues(fieldDefs, p.customFields),
     createdAt: p.createdAt,
     // Sign-in methods: a linked single sign-on identity, and whether a password is set.
@@ -136,6 +137,7 @@ admin.get('/v1/admin/users/:userId', async (c) => {
     ...nameFields(user),
     userGroup: user.userGroup,
     role: normalizeRole(user.role),
+    traceMode: !!user.traceMode,
     customFields: visibleFieldValues(getFieldDefinitions(settings?.data), user.customFields),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
@@ -680,13 +682,20 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
   if (ids.length + tokens.length > BULK_MAX_USERS) return c.json({ error: `Update at most ${BULK_MAX_USERS} people at a time` }, 400);
   const field = body.set?.field;
   const raw = body.set?.value;
-  if (raw != null && typeof raw !== 'string') return c.json({ error: 'The new value must be text' }, 400);
-  const value = raw == null ? '' : raw.trim();
+  // Trace mode is the one on/off change; every other value is text.
+  const isTrace = field === 'traceMode';
+  if (isTrace && typeof raw !== 'boolean') return c.json({ error: 'Trace mode is on or off' }, 400);
+  if (!isTrace && raw != null && typeof raw !== 'string') return c.json({ error: 'The new value must be text' }, 400);
+  const value = isTrace ? raw : raw == null ? '' : raw.trim();
   const settings = (await db.getSyncData('_system', 'settings'))?.data || {};
 
   let apply; // (user) => updates | null when nothing changes
   let label;
-  if (field === 'userGroup') {
+  if (isTrace) {
+    // Accounts only: a wait-list entry has no lessons to record.
+    label = 'Trace mode';
+    apply = (u) => (u.userId && !!u.traceMode !== value ? { traceMode: value } : null);
+  } else if (field === 'userGroup') {
     if (value && !(settings.userGroups || []).includes(value)) return c.json({ error: 'Choose one of the classroom’s groups' }, 400);
     label = 'Group';
     apply = (u) => ((u.userGroup || '') === value ? null : { userGroup: value || null });
@@ -768,7 +777,7 @@ admin.post('/v1/admin/users/bulk-update', async (c) => {
   }, { size: BULK_CONCURRENCY });
   await db.createAuditLog({
     action: 'users_bulk_updated', userId: null, performedBy: c.get('user').userId,
-    details: { field, label, cleared: !value, count: result.updated, waitlist: waitlistUpdated, failed: result.failed.length },
+    details: { field, label, cleared: !value, ...(isTrace ? { on: value } : {}), count: result.updated, waitlist: waitlistUpdated, failed: result.failed.length },
   });
   return c.json(result);
 });
@@ -821,6 +830,13 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
     updates.username = body.username.toLowerCase();
   }
   if (body.userGroup !== undefined) updates.userGroup = body.userGroup;
+  // Trace mode for this person (docs/ARCHITECTURE.md "Trace mode"). Recorded
+  // in the audit log, since it changes what the app keeps about them.
+  let traceChanged = false;
+  if (body.traceMode !== undefined) {
+    if (typeof body.traceMode !== 'boolean') return c.json({ error: 'Trace mode is on or off' }, 400);
+    if (!!user.traceMode !== body.traceMode) { updates.traceMode = body.traceMode; traceChanged = true; }
+  }
   if (body.customFields !== undefined) {
     // Same rule as learner self-edits: the result must have every required
     // field filled. (Users who simply haven't been edited yet are prompted by
@@ -830,8 +846,15 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
     if (merged.error) return c.json({ error: merged.error }, 400);
     updates.customFields = merged.values;
   }
-  if (Object.keys(updates).length === 0) return c.json({ error: 'No valid fields' }, 400);
+  // Trace mode set to what it already is: nothing to write, not an error.
+  if (Object.keys(updates).length === 0) return body.traceMode !== undefined ? c.json({ ok: true }) : c.json({ error: 'No valid fields' }, 400);
   await db.updateUser(userId, updates);
+  if (traceChanged) {
+    await db.createAuditLog({
+      action: 'trace_mode_changed', userId, email: user.email, performedBy: c.get('user').userId,
+      details: { on: updates.traceMode },
+    });
+  }
   return c.json({ ok: true });
 });
 

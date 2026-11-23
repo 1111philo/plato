@@ -1568,6 +1568,46 @@ describe('PATCH /v1/admin/users/:userId email', () => {
   });
 });
 
+describe('PATCH /v1/admin/users/:userId traceMode', () => {
+  let updates, audits, target;
+  beforeEach(() => {
+    updates = []; audits = [];
+    target = { userId: 'usr_a', role: 'learner', email: 'a@x.com' };
+    db.getUserById = async (id) => (id === 'usr_admin' ? { userId: 'usr_admin', role: 'admin' } : target);
+    db.updateUser = async (userId, u) => { updates.push({ userId, ...u }); Object.assign(target, u); };
+    db.createAuditLog = async (a) => { audits.push(a); };
+    db.getSyncData = async () => null;
+  });
+  const app = () => { const a = new Hono(); a.route('/', admin); return a; };
+
+  it('turns it on and off, with an audit entry each time it changes', async () => {
+    assert.equal((await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { traceMode: true })).status, 200);
+    assert.deepEqual(updates, [{ userId: 'usr_a', traceMode: true }]);
+    assert.equal(audits[0].action, 'trace_mode_changed');
+    assert.deepEqual(audits[0].details, { on: true });
+    assert.equal(audits[0].performedBy, 'usr_admin');
+    // Already on: fine, nothing written, nothing logged.
+    assert.equal((await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { traceMode: true })).status, 200);
+    assert.equal(updates.length, 1);
+    assert.equal(audits.length, 1);
+    await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { traceMode: false });
+    assert.deepEqual(audits[1].details, { on: false });
+  });
+
+  it('must be true or false', async () => {
+    assert.equal((await adminReq(app(), 'PATCH', '/v1/admin/users/usr_a', { traceMode: 'on' })).status, 400);
+    assert.equal(updates.length, 0);
+  });
+
+  it('is on the user and the users list', async () => {
+    target.traceMode = 1; // as SQLite stores it
+    assert.equal((await (await adminReq(app(), 'GET', '/v1/admin/users/usr_a')).json()).traceMode, true);
+    db.listAllUsers = async () => [target, { userId: 'usr_b', role: 'learner' }];
+    const rows = await (await adminReq(app(), 'GET', '/v1/admin/users')).json();
+    assert.deepEqual(rows.map((r) => r.traceMode), [true, false]);
+  });
+});
+
 describe('PATCH /v1/admin/users/:userId name (#402)', () => {
   let updates;
   beforeEach(() => {

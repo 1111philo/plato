@@ -288,6 +288,11 @@ function rowToInvite(row) {
   return row;
 }
 
+// Trace mode, turned on for this user by an admin (0/1; routes/admin.js).
+if (sqlite.prepare("SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name = 'traceMode'").get().count === 0) {
+  sqlite.exec('ALTER TABLE users ADD COLUMN traceMode INTEGER');
+}
+
 // -- Helper: user row (de)serialization ---------------------------------------
 
 function rowToUser(row) {
@@ -349,7 +354,8 @@ const db = {
     const keys = Object.keys(fields);
     if (keys.length === 0) return;
     const sets = keys.map(k => `${k} = ?`).join(', ');
-    const values = keys.map(k => (k === 'customFields' && fields[k] != null ? JSON.stringify(fields[k]) : fields[k]));
+    // SQLite can't bind a boolean; flags are stored 0/1 and read with `!!`.
+    const values = keys.map(k => (k === 'customFields' && fields[k] != null ? JSON.stringify(fields[k]) : typeof fields[k] === 'boolean' ? Number(fields[k]) : fields[k]));
     values.push(new Date().toISOString(), userId);
     sqlite.prepare(`UPDATE users SET ${sets}, updatedAt = ? WHERE userId = ?`).run(...values);
   },
@@ -622,10 +628,11 @@ const db = {
   },
 
   // Same contract as db-dynamodb.js getSyncDataExcept.
-  async getSyncDataExcept(userId, prefix) {
+  async getSyncDataExcept(userId, prefixes) {
+    const list = [].concat(prefixes);
     const rows = sqlite.prepare(
-      'SELECT * FROM sync_data WHERE userId = ? AND dataKey NOT LIKE ? ESCAPE ?'
-    ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+      `SELECT * FROM sync_data WHERE userId = ?${list.map(() => ' AND dataKey NOT LIKE ? ESCAPE ?').join('')}`
+    ).all(userId, ...list.flatMap((p) => [`${p.replace(/[%_\\]/g, '\\$&')}%`, '\\']));
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
 

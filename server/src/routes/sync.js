@@ -12,7 +12,19 @@ const sync = new Hono();
 sync.use('/v1/sync', authenticate);
 sync.use('/v1/sync/*', authenticate);
 
-const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseProgress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete)$/;
+// `trace:<scope>:<t|b|p>:<id>` is Trace mode's record of one conversation
+// (docs/ARCHITECTURE.md "Trace mode"): scope is a lesson id, `profile`, `kb`
+// or `author-<lessonId>`; t = a turn, b = a follow-up agent, p = one stored
+// prompt part.
+const VALID_DATA_KEYS = /^(profile|profileSummary|preferences|work|progress:.+|courseProgress:.+|lessonKB:.+|activities:.+|activityKBs:.+|drafts:.+|messages:.+|screenshot:.+|lessons:.+|onboardingComplete|trace:[A-Za-z0-9_-]{1,120}:[tbp]:[A-Za-z0-9]{1,64})$/;
+
+// The only prefixes GET /v1/sync?prefix= lists: one Trace scope, or one kind
+// of record within it.
+const LISTABLE_PREFIX = /^trace:[A-Za-z0-9_-]{1,120}:([tbp]:)?$/;
+
+// Left out of the bulk GET /v1/sync, at the database: fetched by key or by
+// prefix when something needs them.
+const BULK_EXCLUDED = ['screenshot:', 'trace:'];
 
 function validateDataKey(dataKey) {
   return VALID_DATA_KEYS.test(dataKey);
@@ -138,28 +150,37 @@ function estimateSyncDataSize(userId, dataKey, data) {
 
 const MAX_ITEM_SIZE = 380 * 1024; // 380 KB — slightly under DynamoDB's 400 KB limit for safety
 
-// GET /v1/sync — get all synced data. Two record families are filtered out:
+// GET /v1/sync — get all synced data. Three record families are filtered out:
 //   - `userMeta:<pluginId>` — plugin-owned, admin-only by default; the
 //     plugin's own routes are responsible for any learner exposure.
 //   - `screenshot:<key>` — pasted images, stored one-per-record and often
 //     hundreds of KB each. Bundling them into this bulk payload (fetched on
 //     every login *and* every tab refocus) would be wasteful; they're
 //     fetched on demand by key via GET /v1/sync/:dataKey instead.
+//   - `trace:*` — Trace mode records, up to about 1.5 MB per conversation,
+//     read only when someone opens a Trace.
+//
+// GET /v1/sync?prefix=trace:<scope>: lists one Trace scope instead. A server
+// from before Trace mode ignores `prefix` and returns the bulk payload, so
+// callers filter what comes back.
 sync.get('/v1/sync', async (c) => {
   const resolved = await resolveReadUserId(c);
   if (resolved.error) return resolved.error;
-  // Screenshots are skipped at the database (often 3–10 MB per learner,
-  // #451 scale review); the rest are filtered here.
-  const items = await db.getSyncDataExcept(resolved.userId, 'screenshot:');
+  const shape = (item) => ({ dataKey: item.dataKey, data: item.data, version: item.version, updatedAt: item.updatedAt });
+
+  const prefix = c.req.query('prefix');
+  if (prefix !== undefined) {
+    if (!LISTABLE_PREFIX.test(prefix)) return c.json({ error: 'Invalid prefix' }, 400);
+    return c.json((await db.getSyncDataByPrefix(resolved.userId, prefix)).map(shape));
+  }
+
+  // Screenshots and traces are skipped at the database (screenshots alone are
+  // often 3–10 MB per learner, #451 scale review); the rest are filtered here.
+  const items = await db.getSyncDataExcept(resolved.userId, BULK_EXCLUDED);
   return c.json(items
     // notify:* is server-only bookkeeping (opt-outs come from /v1/me/notifications).
-    .filter((item) => !item.dataKey?.startsWith('userMeta:') && !item.dataKey?.startsWith('screenshot:') && !item.dataKey?.startsWith('notify:'))
-    .map((item) => ({
-      dataKey: item.dataKey,
-      data: item.data,
-      version: item.version,
-      updatedAt: item.updatedAt,
-    })));
+    .filter((item) => !['userMeta:', 'notify:', ...BULK_EXCLUDED].some((p) => item.dataKey?.startsWith(p)))
+    .map(shape));
 });
 
 // GET /v1/sync/:dataKey — get specific item

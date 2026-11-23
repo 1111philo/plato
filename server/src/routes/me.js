@@ -45,6 +45,9 @@ me.get('/v1/me', async (c) => {
     role: normalizeRole(user.role),
     customFields: visibleFieldValues(learnerFields(defs), user.customFields),
     createdAt: user.createdAt,
+    // Trace mode turned on for this person by an admin. The learner's own
+    // switch is in their `preferences`; either one turns recording on.
+    traceMode: !!user.traceMode,
     // Sign-in methods (Settings): whether a password is set, and the linked
     // single sign-on identity, if any (routes/sso.js).
     signIn: {
