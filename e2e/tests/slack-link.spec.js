@@ -34,7 +34,6 @@ test('admins filter by Slack link and link selected accounts', async ({ page }) 
   await expect(table.getByRole('row').filter({ hasText: EDUCATOR.name })).toHaveCount(1);
   await page.getByRole('list', { name: 'Filters on' }).getByRole('button', { name: 'Clear all' }).click();
 
-  // Bulk: Slack link, by keyboard.
   for (const u of [EDUCATOR, TESTER]) {
     await table.getByRole('checkbox', { name: `Select ${u.name}` }).focus();
     await page.keyboard.press('Space');

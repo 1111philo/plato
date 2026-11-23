@@ -1,8 +1,5 @@
 import { WebClient } from '../../../src/lib/plugins/sdk.js';
 
-/**
- * Create a Slack WebClient for the given bot token.
- */
 export function getSlackClient(token, options) {
   return new WebClient(token, apiUrl ? { ...options, slackApiUrl: apiUrl } : options);
 }
@@ -127,7 +124,6 @@ export async function listSlackChannels(token) {
 export async function listChannelMembers(token, channelId) {
   const client = getSlackClient(token);
 
-  // Get member IDs
   const memberIds = [];
   let cursor;
   do {
@@ -136,7 +132,6 @@ export async function listChannelMembers(token, channelId) {
     cursor = result.response_metadata?.next_cursor;
   } while (cursor);
 
-  // Fetch user info for each member
   const members = [];
   for (const id of memberIds) {
     try {
@@ -156,9 +151,6 @@ export async function listChannelMembers(token, channelId) {
   return members;
 }
 
-/**
- * Send a DM to a Slack user.
- */
 export async function sendSlackDM(token, slackUserId, text) {
   const client = getSlackClient(token);
   const { channel } = await client.conversations.open({ users: slackUserId });

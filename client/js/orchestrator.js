@@ -1,8 +1,3 @@
-/**
- * Agent orchestration — loads prompts, assembles context, routes to models,
- * parses structured JSON responses.
- */
-
 import { parseSSEStream, parseResponse, LLM, ApiError, backoffMs, isRetryable } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
@@ -139,8 +134,6 @@ export function invalidateLessonCatalog() { adminCatalog = null; }
 export async function isReady() {
   return true;
 }
-
-// -- Streaming conversations --------------------------------------------------
 
 // Agents whose output plato reads, never a person: no language directive.
 const NO_LANGUAGE_AGENTS = ['assessor', 'claim-check'];
@@ -297,8 +290,6 @@ export async function checkCompletionClaim(text, { trace, purpose = 'does the re
   return /^\s*yes/i.test(content || '');
 }
 
-// -- Lesson Owner (LLM) -------------------------------------------------------
-
 export async function initializeLessonKB(lesson, profileSummary, { trace } = {}) {
   const parts = await agentParts('lesson-owner');
   const userContent = JSON.stringify({
@@ -323,10 +314,9 @@ export async function initializeLessonKB(lesson, profileSummary, { trace } = {})
 // `activeLessons` are system-managed bookkeeping arrays that grow without
 // bound as a learner progresses; `mergeProfile` always reunions them from the
 // stored profile, so the agent's copy is discarded anyway. Round-tripping them
-// through the model wasted input tokens and — worse — inflated the agent's JSON
-// output until it overran `max_tokens` and came back truncated/unparseable
-// (issue #228 console: "max_tokens reached" → "Failed to parse agent JSON").
-// Strip them before the call so the agent's output stays small and bounded.
+// through the model inflated the agent's JSON output until it overran
+// `max_tokens` and came back unparseable (#228: "max_tokens reached" →
+// "Failed to parse agent JSON").
 // `learnerNotes` (the learner's own corrections, #451 testing) stays in: the
 // agents must keep the profile consistent with it. mergeProfile ignores any
 // copy they send back. Notes that read as instructions or authority claims
@@ -355,8 +345,6 @@ export function profileUpdateInput(fullProfile, text, activityContext, source = 
   };
 }
 
-// -- Learner Profile Owner (LLM — deep update on lesson completion) -----------
-
 export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonName, lessonId, activitiesCompleted, { trace } = {}) {
   // The Trace stamp is bookkeeping about the recording, not about the learner.
   const { trace: _stamp, ...kbForAgent } = lessonKB || {};
@@ -369,8 +357,6 @@ export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonNam
   return parseJSON(content);
 }
 
-// -- Learner Profile Owner (code — incremental merge) -------------------------
-
 export function incrementalProfileUpdate(profile, lessonId) {
   const updated = { ...profile };
   if (!updated.activeLessons) updated.activeLessons = [];
@@ -378,8 +364,6 @@ export function incrementalProfileUpdate(profile, lessonId) {
   updated.updatedAt = Date.now();
   return updated;
 }
-
-// -- Profile feedback (LLM) --------------------------------------------------
 
 export async function updateProfileFromFeedback(fullProfile, feedbackText, activityContext, source = 'learner', { trace } = {}) {
   // A learner note that reads as instructions never reaches the agent, whether
@@ -395,8 +379,6 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
   });
   return parseJSON(content);
 }
-
-// -- Course Progress Updater (LLM — distill cross-lesson progress) ------------
 
 export async function updateCourseProgress(courseName, lessonsInCourse, priorSummary, completedLesson, completedLessonIds, { trace } = {}) {
   const userContent = JSON.stringify({
@@ -414,8 +396,6 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
   return parseJSON(content);
 }
 
-// -- Lesson markdown extraction (from conversation) ---------------------------
-
 export async function extractLessonMarkdown(conversationText, { trace } = {}) {
   const { content } = await callApi({
     agent: 'lesson-extractor', purpose: 'write the lesson from the conversation', trace,
@@ -424,8 +404,6 @@ export async function extractLessonMarkdown(conversationText, { trace } = {}) {
   });
   return content.trim();
 }
-
-// -- Knowledge base markdown extraction (from conversation) -------------------
 
 export async function extractKBMarkdown(conversationText, existingKB = '', { trace } = {}) {
   const userContent = existingKB

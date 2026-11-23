@@ -10,7 +10,6 @@ test('admin builds and orders the Course → Unit → Lesson structure by keyboa
   await expect(page.getByRole('heading', { name: 'Courses & Units' })).toBeVisible();
   await expect(page.getByRole('heading', { name: PROGRAM.name })).toBeVisible();
 
-  // Add a second unit to the seeded course.
   const course = page.locator('[data-slot=card]', { has: page.getByRole('heading', { name: PROGRAM.name }) });
   await course.getByRole('button', { name: 'Add unit' }).click();
   await page.keyboard.type('Second Unit');
@@ -27,7 +26,6 @@ test('admin builds and orders the Course → Unit → Lesson structure by keyboa
   const order = await units.locator(':scope > li').allInnerTexts();
   expect(order[0]).toContain('Second Unit');
 
-  // Expand the seeded unit and reorder its lessons.
   await page.getByRole('button', { name: new RegExp(`^${COURSE.name} ·`) }).click();
   const lessons = page.getByRole('list', { name: `Lessons in ${COURSE.name}` });
   await expect(lessons).toBeVisible();

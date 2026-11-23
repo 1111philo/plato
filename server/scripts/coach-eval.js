@@ -171,7 +171,6 @@ console.error(`${jobs.length} turns (${modes.join(', ')} × ${models.length} mod
 const results = await pool(jobs, Number(opt.concurrency));
 if (opt.json) writeFileSync(opt.json, JSON.stringify(results, null, 1));
 
-// Summary
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '—');
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 for (const model of models) for (const mode of modes) {

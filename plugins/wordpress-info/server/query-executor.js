@@ -34,9 +34,7 @@ function stripHtml(text) {
   return result.trim();
 }
 
-/**
- * Validate that a URL's host is in the allowlist. Throws if not.
- */
+/** Throws unless the URL's host is in the allowlist. */
 function validateHost(url) {
   const parsed = new URL(url);
   if (!ALLOWED_HOSTS.includes(parsed.hostname)) {
@@ -44,9 +42,6 @@ function validateHost(url) {
   }
 }
 
-/**
- * Fetch with timeout. Returns the Response or throws.
- */
 async function fetchWithTimeout(url, options = {}, trace = null, purpose = '') {
   validateHost(url);
   const controller = new AbortController();
@@ -153,9 +148,6 @@ async function queryGitHubCode(source, query, trace) {
   }
 }
 
-/**
- * Route a single query to the appropriate source handler.
- */
 async function querySource(source, query, trace) {
   switch (source.kind) {
     case 'wporg-docs':
@@ -183,7 +175,6 @@ export async function executeQueries(queries, availableSources, trace = null) {
     const queryResults = [];
     const sourcesToQuery = availableSources.filter(s => q.sources.includes(s.kind));
 
-    // Run all sources for this query in parallel
     const sourcePromises = sourcesToQuery.map(source => querySource(source, q.text, trace));
     const sourceResults = await Promise.all(sourcePromises);
 

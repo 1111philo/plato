@@ -14,7 +14,6 @@ test('admins filter lessons by course and change visibility in bulk', async ({ p
   const rowOf = (name) => table.getByRole('row').filter({ hasText: name });
   await expect(rowOf(ONE.name)).toBeVisible();
 
-  // Filter: Course.
   await page.getByRole('button', { name: /^Filters/ }).focus();
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu');
