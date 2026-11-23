@@ -294,7 +294,7 @@ describe('WordPress Info, traced', () => {
     const fetches = steps.filter((s) => s.type === 'fetch');
     assert.deepEqual(fetches.map((s) => s.url).sort(), onCalls.fetch.map((c) => c.url).sort(), 'every outbound request, by URL');
     assert.deepEqual([...new Set(fetches.map((s) => new URL(s.url).hostname))].sort(), ['api.github.com', 'developer.wordpress.org', 'make.wordpress.org']);
-    assert.deepEqual(fetches.filter((s) => s.url.includes('make.wordpress.org')).map((s) => s.status), [503, 503, 503]);
+    assert.deepEqual(fetches.filter((s) => new URL(s.url).hostname === 'make.wordpress.org').map((s) => s.status), [503, 503, 503]);
     assert.ok(fetches.every((s) => /^Search .+ for “register block type”$/.test(s.purpose)));
     assert.ok(fetches.every((s) => Object.keys(s).every((k) => ['type', 'purpose', 'url', 'status', 'ms', 'bytes'].includes(k))), 'no headers, no bodies');
     assert.match(steps.find((s) => s.type === 'note').text, /1 search query returned 2 results/);
