@@ -134,7 +134,7 @@ describe('Trace on, beyond lessons', () => {
     assert.deepEqual(types(turn), ['noteChange', 'noteScreened', 'profileUnchanged']);
     assert.equal(step(turn, 'noteScreened').reason, 'ignore-instructions');
     assert.equal((await getLearnerProfile()).learnerNotes.length, 1, 'the note itself is still saved');
-    const [shown] = view('profile').turns;
+    const [shown] = view('profile').exchanges;
     assert.equal(shown.verdict.source, 'code');
     assert.match(shown.verdict.text, /held the note back/);
     assert.ok(shown.flags.some((f) => f.id === 'noteScreened'));
@@ -156,7 +156,7 @@ describe('Trace on, beyond lessons', () => {
     assert.equal(turn.failed, true);
     assert.equal(turn.steps.at(-1).type, 'error');
     assert.equal((await getLearnerProfile()).learnerNotes.length, 1);
-    assert.match(view('profile').turns[0].verdict.text, /had already been saved/);
+    assert.match(view('profile').exchanges[0].verdict.text, /had already been saved/);
   });
 
   it('authoring: each message and each extraction is a turn in the lesson’s own scope', async () => {
@@ -219,7 +219,7 @@ describe('Trace on, beyond lessons', () => {
     assert.equal(step(first, 'authoringSaved'), undefined);
     assert.deepEqual({ ok: step(second, 'authoringSaved').ok, why: step(second, 'authoringSaved').why }, { ok: false, why: 'Server said no' });
     assert.equal(second.failed, true);
-    const flags = view('kb').flags.map((f) => f.id);
+    const flags = view('kb').exchanges.flatMap((e) => e.flags.map((f) => f.id));
     assert.ok(flags.includes('extractUnusable') && flags.includes('authoringSave'));
   });
 
@@ -234,7 +234,7 @@ describe('Trace on, beyond lessons', () => {
         assert.ok(STEPS[s.type], `step "${s.type}" has no description in transparency.js`);
         if (s.type === 'call') assert.ok(AGENTS[s.agent]);
       }
-      for (const turn of view(scope).turns) {
+      for (const turn of view(scope).exchanges) {
         assert.ok(turn.title && !/undefined|\[object Object\]/.test(turn.title), turn.title);
         assert.ok(turn.verdict.text && turn.verdict.sourceLabel);
         for (const s of turn.steps) {

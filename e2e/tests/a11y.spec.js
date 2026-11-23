@@ -131,7 +131,7 @@ test.describe('learner pages', () => {
       await page.goto(`/lessons/${LESSONS[0].id}`);
       await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
       await page.getByRole('button', { name: 'Trace: what plato did behind this conversation' }).click();
-      await expect(page.getByRole('heading', { name: 'Timeline' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
       await expectAccessible(page, { include: '#lesson-trace', label: 'lesson trace' });
       await expectAccessible(page, { label: 'lesson chat with the trace open' });
     } finally {

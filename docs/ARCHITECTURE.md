@@ -657,16 +657,39 @@ A request the trace can't reproduce means the trace is missing something.
   beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
   focus trap; Escape closes it from inside; focus returns to the button), and
   as a **dialog below that**. Docked, it is `position: fixed` in the space
-  `<main>` occupies, the page gets `pr-[26rem]`, and the pinned header and
+  `<main>` occupies, clamped to the window, and re-measured when `<main>`
+  resizes or anything scrolls: an admin's extra bar makes the page itself
+  scroll, and a panel measured once ended up over the app header (Blake's
+  test, 2026-11-23). The page gets `pr-[26rem]`, and the pinned header and
   composer overlays stop at the panel. The chat's scroll container and
   `useStickToBottom` are untouched.
-- **Content** (`components/chat/TraceTimeline.jsx`, from `lib/traceView.js`):
-  "Things worth a look" across the conversation, then each turn with a
-  one-line verdict (the model's own, shaped by instructions, or changed by
-  code), its flags, and on request every step: a plain sentence, who decided,
-  the rule applied, before and after where something was changed, and the
-  exact text in `<details>`. Exact text is always in a `<pre>`, never
-  rendered as markdown: it includes model output and attached pages.
+- **Content** (`components/chat/TraceTimeline.jsx`, from `lib/traceView.js`),
+  conversation first (Blake, 2026-11-23: "a comprehensive step-by-step
+  human-readable look at what happens that can easily be navigated"):
+  - **The list of exchanges**: one row per stored turn ("Lesson start",
+    "Your message: …"), with what changed ("Progress 3 → 6 of 10"), who shaped
+    it ("The model's own answer" / "Shaped by plato's instructions" / "Changed
+    by plato's code"), and how many things are worth a look. A checkbox narrows
+    it to those.
+  - **One exchange**: a bar pinned to the top (All exchanges, Previous, Next);
+    what you sent and what you saw (and the reply that streamed first, when
+    plato replaced it); the verdict; its "worth a look" items; then **What
+    happened, in order**, in the stages of `STAGES` (`transparency.js`): You
+    sent → plato prepared what the AI model is given → The AI model answered →
+    plato checked the answer → plato recorded the result → In the background.
+    Every step type names its stage; a call's stage follows its agent and
+    purpose. "Jump to" links go to each stage. Each step is a sentence, who
+    decided it, the rule applied, before and after where something was
+    changed, and one "Show the exact text" disclosure.
+  - **Noise left out**: the lesson as written is shown once, at the start,
+    unless it was edited after the learner started (then it's shown and
+    flagged). Background agents' records join the exchange that set them off.
+  - Exact text is always in a `<pre>`, never rendered as markdown: it includes
+    model output and attached pages. Long words wrap (`overflow-wrap:
+    anywhere`), so nothing is wider than the panel.
+- **Focus**: opening an exchange focuses its heading; All exchanges returns
+  focus to its row. Both wait two frames, because the row clicked is gone and
+  a dialog's own focus handling reacts first.
 - **Live**: while a turn runs, "Happening now" lists its steps
   (`subscribeTrace`); when its trace is saved the timeline reloads and screen
   readers hear one polite "Trace updated".

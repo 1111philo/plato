@@ -7,7 +7,7 @@
  *
  * Pure. Unit tests: client/tests/traceView.test.js.
  */
-import { AGENTS, STEPS, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS, SERVICES } from './transparency.js';
+import { AGENTS, STEPS, STAGES, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS, SERVICES } from './transparency.js';
 import { rebuildRequest } from './lessonTrace.js';
 
 const pretty = (v) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
@@ -381,79 +381,174 @@ function titleFor(record) {
   return input?.text ? `Your message: “${clip(input.text, 60)}”` : input?.images?.length ? 'Your message: an image' : 'Your message';
 }
 
+/** One recorded step as the view shows it. */
+function describeStep(s, { history, parts }) {
+  const meta = STEPS[s.type] || { title: s.type, source: 'code', means: '', stage: 'recorded' };
+  const d = s.type === 'call' ? callStep(s, { history, parts }) : (DESCRIBE[s.type]?.(s) || { summary: '' });
+  return {
+    n: s.n, type: s.type, ms: s.ms,
+    stage: s.type === 'call' ? callStage(s) : meta.stage,
+    title: d.title || meta.title,
+    source: meta.source, sourceLabel: SOURCES[meta.source].label, means: meta.means,
+    summary: d.summary, rules: d.rules || [], change: d.change || null,
+    details: (d.details || []).filter((x) => x.text != null && x.text !== ''),
+  };
+}
+
+// The model call that produces the answer belongs to "answered"; every other
+// call is plato checking, setting up, or working in the background.
+function callStage(s) {
+  if (s.agent === 'lesson-owner') return 'setup';
+  if (['course-progress-update', 'learner-profile-owner'].includes(s.agent)) return 'background';
+  if (s.agent === 'learner-profile-update') return /coach/.test(s.purpose || '') ? 'background' : 'answered';
+  if (['lesson-creator', 'knowledge-base-editor', 'lesson-extractor', 'knowledge-base-extractor'].includes(s.agent)) return 'answered';
+  if (s.agent === 'coach' && /^(reply|opening message)$/.test(s.purpose || '')) return 'answered';
+  return 'checked';
+}
+
+const STAGE_ORDER = Object.keys(STAGES);
+
+/** What changed, in a few words, for the list of exchanges. */
+function headline(record) {
+  const applied = record.steps.find((x) => x.type === 'applied');
+  if (record.failed) return 'Failed: nothing was saved';
+  if (record.kind === 'start') return applied ? `Lesson set up; opening score ${applied.progress ?? 0} of 10` : 'Lesson set up';
+  if (applied?.status && applied.status.before !== applied.status.after) return 'Lesson completed';
+  if (applied?.progress) return applied.progress.before === applied.progress.after ? `Progress stayed at ${applied.progress.after} of 10` : `Progress ${applied.progress.before} → ${applied.progress.after} of 10`;
+  if (record.kind === 'profile') return record.steps.some((x) => x.type === 'profileSaved') ? 'Profile updated' : 'Profile not changed';
+  if (record.kind === 'authoring') {
+    const r = record.steps.find((x) => x.type === 'authoringParsed');
+    if (r?.readiness != null) return `Readiness ${r.readiness} of 10`;
+    const saved = record.steps.find((x) => x.type === 'authoringSaved');
+    if (saved) return saved.ok ? 'Saved' : 'Not saved';
+  }
+  return '';
+}
+
+const SHORT_VERDICT = { model: 'The model’s own answer', instructions: 'Shaped by plato’s instructions', code: 'Changed by plato’s code', person: 'Written by a person' };
+
 /**
- * One record as the view shows it.
- * `{ id, kind, title, at, took, partial, failed, app, verdict, flags, steps }`
- * where each step is `{ n, type, title, source, sourceLabel, means, summary,
- * rules?, change?, details: [{ label, note?, text }] }`.
+ * One exchange (a stored turn, plus the background agents it set off) as the
+ * view shows it:
+ * `{ id, n, kind, at, title, headline, you, saw, firstSeen, verdict, flags,
+ *    stages: [{ id, title, means, steps, followups? }] }`.
  */
-export function describeRecord(record, { parts = {} } = {}) {
-  const history = record.steps.find((s) => s.type === 'history');
-  const steps = record.steps.map((s) => {
-    const meta = STEPS[s.type] || { title: s.type, source: 'code', means: '' };
-    const d = s.type === 'call' ? callStep(s, { history, parts }) : (DESCRIBE[s.type]?.(s) || { summary: '' });
+function describeExchange(record, followups, { parts, startLesson }) {
+  const history = record.steps.find((x) => x.type === 'history');
+  const input = record.steps.find((x) => ['input', 'authorInput', 'noteChange'].includes(x.type));
+  const shown = record.steps.find((x) => x.type === 'shown');
+  const opener = record.kind === 'start' ? record.steps.find((x) => x.type === 'parsed') : null;
+  const authored = record.steps.find((x) => x.type === 'authoringParsed');
+  // The lesson is part of setting it up. On later turns it is noise, unless
+  // it was edited after the learner started.
+  const lessonNow = record.steps.find((x) => x.type === 'lesson');
+  const edited = record.kind === 'turn' && lessonNow && startLesson && lessonNow.updatedAt && startLesson.updatedAt && lessonNow.updatedAt !== startLesson.updatedAt;
+  const kept = record.steps.filter((x) => x.type !== 'shown' && (x.type !== 'lesson' || record.kind === 'start' || edited));
+  const steps = kept.map((x) => describeStep(x, { history, parts }));
+  if (edited) {
+    const lesson = steps.find((x) => x.type === 'lesson');
+    lesson.stage = 'prepared';
+    lesson.title = 'The lesson was edited after you started it';
+    lesson.summary = `${lesson.summary} The objectives you’re working to were set when you started; the coach now sees the edited lesson text.`;
+  }
+  const background = followups.map((f) => {
+    const fHistory = f.steps.find((x) => x.type === 'history');
+    const startStep = f.steps.find((x) => x.type === 'followUpStart');
     return {
-      n: s.n, type: s.type, ms: s.ms,
-      title: d.title || meta.title,
-      source: meta.source, sourceLabel: SOURCES[meta.source].label, means: meta.means,
-      summary: d.summary, rules: d.rules || [], change: d.change || null, details: (d.details || []).filter((x) => x.text != null && x.text !== ''),
+      title: agentLabel(startStep?.agent || ''),
+      why: startStep?.why || '',
+      failed: !!f.failed,
+      steps: f.steps.filter((x) => x.type !== 'followUpStart').map((x) => describeStep(x, { history: fHistory, parts })),
     };
   });
+  const stages = STAGE_ORDER.map((id) => ({
+    id, title: STAGES[id].title, means: STAGES[id].means,
+    steps: steps.filter((x) => x.stage === id),
+    ...(id === 'background' && background.length ? { followups: background } : {}),
+  })).filter((st) => st.steps.length || st.followups);
+  const verdict = verdictFor(record);
+  const flags = [...flagsFor(record), ...(edited ? [{ id: 'edited', text: 'The lesson was edited after you started it.' }] : []), ...followups.flatMap((f) => flagsFor(f))];
   return {
-    id: record.at, kind: record.kind, title: titleFor(record), at: record.at, took: record.took,
-    partial: !!record.partial, failed: !!record.failed, app: record.app || {},
-    verdict: (() => { const v = verdictFor(record); return { ...v, sourceLabel: SOURCES[v.source].label }; })(),
-    flags: flagsFor(record), steps,
+    id: record.at, kind: record.kind, at: record.at, took: record.took, partial: !!record.partial, failed: !!record.failed, app: record.app || {},
+    title: titleFor(record), headline: headline(record),
+    you: input ? (input.text ?? null) : null,
+    saw: shown?.text ?? opener?.text ?? authored?.text ?? null,
+    firstSeen: shown?.replaced ? shown.firstStreamed : null,
+    verdict: { ...verdict, sourceLabel: SOURCES[verdict.source].label, short: record.failed ? 'Failed' : SHORT_VERDICT[verdict.source] },
+    flags: flags.filter((f, i) => flags.findIndex((g) => g.id === f.id) === i),
+    stages,
+    // Every step in order, background agents' included (the download and tests).
+    steps: stages.flatMap((st) => [...st.steps, ...(st.followups || []).flatMap((f) => f.steps)]),
   };
 }
 
 /**
- * A scope's stored records (`[{ dataKey, data }]` from storage.listTraceRecords)
- * as the timeline: turns oldest first, each follow-up agent placed after the
- * turn it came from, and every flag gathered at the top.
+ * A scope's stored records (`[{ dataKey, data }]` from
+ * storage.listTraceRecords) as exchanges, oldest first. Each background
+ * agent's record joins the exchange that set it off (the latest turn that
+ * started before it).
  */
 export function describeTrace(items) {
   const parts = {};
-  const records = [];
+  const turns = [];
+  const followups = [];
   for (const { dataKey, data } of items || []) {
     const kind = String(dataKey).split(':')[2];
     if (kind === 'p' && data?.hash) parts[data.hash] = data.text;
-    else if ((kind === 't' || kind === 'b') && Array.isArray(data?.steps)) records.push(data);
+    else if (kind === 't' && Array.isArray(data?.steps)) turns.push(data);
+    else if (kind === 'b' && Array.isArray(data?.steps)) followups.push(data);
   }
-  records.sort((a, b) => a.at - b.at);
-  const turns = records.map((r) => describeRecord(r, { parts }));
+  turns.sort((a, b) => a.at - b.at);
+  followups.sort((a, b) => a.at - b.at);
+  const startLesson = turns.find((t) => t.kind === 'start')?.steps.find((x) => x.type === 'lesson') || null;
+  const owner = (f) => [...turns].reverse().find((t) => t.at <= f.at) || turns[0];
+  const exchanges = turns.map((t, i) => ({
+    ...describeExchange(t, followups.filter((f) => owner(f) === t), { parts, startLesson }),
+    n: i + 1,
+  }));
+  // Background records with no turn to join (a trace that began mid-way).
+  const orphans = turns.length ? [] : followups;
   return {
-    turns,
-    flags: turns.flatMap((t) => t.flags.map((f) => ({ ...f, turn: t.id, turnTitle: t.title }))),
-    partial: turns.some((t) => t.partial),
+    exchanges,
+    orphans: orphans.map((f) => describeExchange({ ...f, kind: 'followup' }, [], { parts, startLesson })),
+    flagged: exchanges.filter((e) => e.flags.length).length,
+    partial: exchanges.some((e) => e.partial),
   };
 }
 
 /**
  * The trace as plain text, for downloading and sharing: the same sentences
- * the view shows, with the exact text under each step.
+ * the view shows, in the same order, with the exact text under each step.
  */
 export function traceToText(view, { title = 'Trace' } = {}) {
   const out = [title, '='.repeat(title.length), ''];
-  if (view.flags.length) {
-    out.push('Things worth a look', '-------------------');
-    for (const f of view.flags) out.push(`- ${f.text} (${f.turnTitle})`);
+  const step = (x, pad) => {
+    out.push(`${pad}- ${x.title} [${x.sourceLabel}]`, `${pad}  ${x.summary}`);
+    for (const r of x.rules) out.push(`${pad}  Rule: ${r.text}`);
+    if (x.change) out.push(`${pad}  Before:`, indent(x.change.before, pad), `${pad}  After:`, indent(x.change.after, pad));
+    for (const d of x.details) out.push(`${pad}  ${d.label}:`, indent(d.text, pad));
+  };
+  for (const e of view.exchanges) {
+    const head = `${e.n}. ${e.title} · ${new Date(e.at).toISOString()}`;
+    out.push(head, '-'.repeat(Math.min(head.length, 80)));
+    if (e.you) out.push('You sent:', indent(e.you, ''));
+    if (e.saw) out.push('You saw:', indent(e.saw, ''));
+    out.push(`${e.verdict.sourceLabel}: ${e.verdict.text}`);
+    for (const f of e.flags) out.push(`Worth a look: ${f.text}`);
     out.push('');
-  }
-  for (const t of view.turns) {
-    const head = `${t.title} · ${new Date(t.at).toISOString()}`;
-    out.push(head, '-'.repeat(Math.min(head.length, 80)), `${t.verdict.sourceLabel}: ${t.verdict.text}`, '');
-    for (const s of t.steps) {
-      out.push(`${s.n}. ${s.title} [${s.sourceLabel}]`, `   ${s.summary}`);
-      for (const r of s.rules) out.push(`   Rule: ${r.text}`);
-      if (s.change) out.push('   Before:', indent(s.change.before), '   After:', indent(s.change.after));
-      for (const d of s.details) out.push(`   ${d.label}:`, indent(d.text));
-      out.push('');
-    }
+    e.stages.forEach((st, i) => {
+      out.push(`  ${i + 1}) ${st.title}`);
+      for (const x of st.steps) step(x, '    ');
+      for (const f of st.followups || []) {
+        out.push(`    ${f.title}${f.why ? `, because ${f.why}` : ''}`);
+        for (const x of f.steps) step(x, '      ');
+      }
+    });
+    out.push('');
   }
   return out.join('\n');
 }
-const indent = (text) => String(text).split('\n').map((l) => `      ${l}`).join('\n');
+const indent = (text, pad = '') => String(text).split('\n').map((l) => `${pad}      ${l}`).join('\n');
 
 /**
  * "Technology and services": every outside service, what it is sent, and

@@ -172,54 +172,62 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 
 ## What a Trace records
 
-With Trace mode on, each turn of a conversation is recorded as these steps.
+With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
 
-| Step | Decided by | Meaning |
-|---|---|---|
-| The lesson (`lesson`) | A person | The lesson as its author wrote it, and when it was last edited. |
-| The lesson planner’s setup (`planned`) | The AI model | The planner restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording. |
-| Checked the planner’s setup (`validation`) | plato’s code | plato’s code checked the setup had the right shape. If not, it asked once more and used the second answer. |
-| Extra context from plugins (`plugins`) | plato’s code | Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes. |
-| What you sent (`input`) | A person | Your message, with any images and attached web pages. |
-| Where the lesson stood (`state`) | plato’s code | The progress and objectives on record before this message. |
-| The conversation so far (`tail`) | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
-| What plato told the coach about you and the lesson (`context`) | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
-| The messages sent to the model (`history`) | plato’s code | The exact list of messages every coach call on this turn starts from. |
-| A call to the AI model (`call`) | The AI model | One request to the model and its raw reply. |
-| What plato read from the reply (`parsed`) | plato’s code | The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them. |
-| The reply’s tags were missing (`tagRepair`) | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
-| The coach wrote your answer for you (`draftGuard`) | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
-| Whether to check the grading (`gradingPlan`) | plato’s code | The assessment check runs only when the coach checks off an objective or scores 10. |
-| The assessment check’s answer couldn’t be read (`gradingRetry`) | plato’s code | Its reply wasn’t in the expected format, so plato asked once more. |
-| The assessment check’s verdict (`verdict`) | The AI model | For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach. |
-| Asked the assessment check again (`recheck`) | plato’s code | A quote wasn’t the learner’s own words, so plato asked once more about just that objective. |
-| The assessment check couldn’t run (`gradingFailed`) | plato’s code | The check failed this turn, so nothing new was checked off. |
-| The coach’s grading stood (`gradingStood`) | plato’s code | The check failed on two completing turns in a row, so plato accepted the coach’s grading rather than leave the learner stuck. |
-| What the check changed (`verdictApplied`) | plato’s code | Objectives the coach claimed without backing were taken off; a completion that wasn’t backed up was held. |
-| The coach was asked to reply again (`heldRewrite`) | plato’s instructions | Completion was held, so plato told the coach what was missing and asked for a new reply. |
-| Does the reply say the lesson is done? (`claimCheck`) | plato’s code | With completion held, the reply mustn’t say the lesson is finished. plato checks the wording against known phrases, then asks the model. |
-| plato replaced the coach’s reply (`replyReplaced`) | plato’s code | The reply still said the lesson was done, so plato’s code showed a standard message instead. |
-| plato replaced the “Where you are” note (`positionReplaced`) | plato’s code | The coach’s note said the lesson was done while completion was held. |
-| What was recorded, and the rules plato applied (`applied`) | plato’s code | plato’s code, not the model, decides what is saved: see RULES. |
-| Saved (`save`) | plato’s code | What was written to plato’s database, and whether it worked. |
-| Reported to the logs (`event`) | plato’s code | A short code and the lesson’s id, so the team can count how often this happens. No conversation text. |
-| A follow-up was queued (`followUp`) | plato’s code | Another agent runs in the background after the reply. |
-| A follow-up agent ran (`followUpStart`) | plato’s code | This ran in the background, after the reply it came from. |
-| A note was held back (`noteScreened`) | plato’s code | The note read like an instruction rather than information about the learner, so it wasn’t given to the agent. |
-| The learner profile was updated (`profileSaved`) | plato’s code | plato’s code merged the agent’s result into the profile. Your own notes and your lesson lists are kept as they are. |
-| The learner profile was not changed (`profileUnchanged`) | plato’s code | Nothing usable came back, so the profile stayed as it was. |
-| The unit note was updated (`unitNoteSaved`) | plato’s code | The short note the coach in this unit’s other lessons will see. |
-| The unit note was not changed (`unitNoteUnchanged`) | plato’s code | Nothing usable came back, so the note stayed as it was. |
-| What you did (`noteChange`) | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
-| What you wrote (`authorInput`) | A person | Your message in the editing conversation. |
-| plato started the conversation (`authoringOpened`) | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
-| The conversation so far (`authoringTail`) | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
-| What plato read from the reply (`authoringParsed`) | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
-| What you asked for (`extractAsked`) | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
-| What was written, and whether it could be used (`extracted`) | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
-| Saved (`authoringSaved`) | plato’s code | Whether what was written reached plato’s database. |
-| What you were shown (`shown`) | plato’s code | The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed. |
-| This attempt failed (`error`) | plato’s code | Nothing from this attempt was saved to the conversation. |
+1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the planner’s version of it, and anything plugins added.
+2. **You sent.** What you wrote or did, exactly as plato received it.
+3. **plato prepared what the AI model is given.** Before any AI call, plato’s code gathers the conversation so far and what it knows about you and the lesson.
+4. **The AI model answered.** The request to the model, its raw reply, and what plato read from it.
+5. **plato checked the answer.** Checks plato runs on the model’s answer, and what they changed.
+6. **plato recorded the result.** What was saved, the rules plato’s code applied, and what was reported to the logs.
+7. **In the background.** Other agents that ran after the reply, and what they changed.
+
+| Step | Stage | Decided by | Meaning |
+|---|---|---|---|
+| The lesson (`lesson`) | plato set up the lesson | A person | The lesson as its author wrote it, and when it was last edited. |
+| The lesson planner’s setup (`planned`) | plato set up the lesson | The AI model | The planner restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording. |
+| Checked the planner’s setup (`validation`) | plato set up the lesson | plato’s code | plato’s code checked the setup had the right shape. If not, it asked once more and used the second answer. |
+| Extra context from plugins (`plugins`) | plato set up the lesson | plato’s code | Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes. |
+| What you sent (`input`) | You sent | A person | Your message, with any images and attached web pages. |
+| Where the lesson stood (`state`) | plato prepared what the AI model is given | plato’s code | The progress and objectives on record before this message. |
+| The conversation so far (`tail`) | plato prepared what the AI model is given | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
+| What plato told the coach about you and the lesson (`context`) | plato prepared what the AI model is given | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
+| The messages sent to the model (`history`) | plato prepared what the AI model is given | plato’s code | The exact list of messages every coach call on this turn starts from. |
+| A call to the AI model (`call`) | The AI model answered | The AI model | One request to the model and its raw reply. |
+| What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them. |
+| The reply’s tags were missing (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
+| The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
+| Whether to check the grading (`gradingPlan`) | plato checked the answer | plato’s code | The assessment check runs only when the coach checks off an objective or scores 10. |
+| The assessment check’s answer couldn’t be read (`gradingRetry`) | plato checked the answer | plato’s code | Its reply wasn’t in the expected format, so plato asked once more. |
+| The assessment check’s verdict (`verdict`) | plato checked the answer | The AI model | For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach. |
+| Asked the assessment check again (`recheck`) | plato checked the answer | plato’s code | A quote wasn’t the learner’s own words, so plato asked once more about just that objective. |
+| The assessment check couldn’t run (`gradingFailed`) | plato checked the answer | plato’s code | The check failed this turn, so nothing new was checked off. |
+| The coach’s grading stood (`gradingStood`) | plato checked the answer | plato’s code | The check failed on two completing turns in a row, so plato accepted the coach’s grading rather than leave the learner stuck. |
+| What the check changed (`verdictApplied`) | plato checked the answer | plato’s code | Objectives the coach claimed without backing were taken off; a completion that wasn’t backed up was held. |
+| The coach was asked to reply again (`heldRewrite`) | plato checked the answer | plato’s instructions | Completion was held, so plato told the coach what was missing and asked for a new reply. |
+| Does the reply say the lesson is done? (`claimCheck`) | plato checked the answer | plato’s code | With completion held, the reply mustn’t say the lesson is finished. plato checks the wording against known phrases, then asks the model. |
+| plato replaced the coach’s reply (`replyReplaced`) | plato checked the answer | plato’s code | The reply still said the lesson was done, so plato’s code showed a standard message instead. |
+| plato replaced the “Where you are” note (`positionReplaced`) | plato checked the answer | plato’s code | The coach’s note said the lesson was done while completion was held. |
+| What was recorded, and the rules plato applied (`applied`) | plato recorded the result | plato’s code | plato’s code, not the model, decides what is saved: see RULES. |
+| Saved (`save`) | plato recorded the result | plato’s code | What was written to plato’s database, and whether it worked. |
+| Reported to the logs (`event`) | plato recorded the result | plato’s code | A short code and the lesson’s id, so the team can count how often this happens. No conversation text. |
+| A follow-up was queued (`followUp`) | In the background | plato’s code | Another agent runs in the background after the reply. |
+| A follow-up agent ran (`followUpStart`) | In the background | plato’s code | This ran in the background, after the reply it came from. |
+| A note was held back (`noteScreened`) | plato checked the answer | plato’s code | The note read like an instruction rather than information about the learner, so it wasn’t given to the agent. |
+| The learner profile was updated (`profileSaved`) | plato recorded the result | plato’s code | plato’s code merged the agent’s result into the profile. Your own notes and your lesson lists are kept as they are. |
+| The learner profile was not changed (`profileUnchanged`) | plato recorded the result | plato’s code | Nothing usable came back, so the profile stayed as it was. |
+| The unit note was updated (`unitNoteSaved`) | In the background | plato’s code | The short note the coach in this unit’s other lessons will see. |
+| The unit note was not changed (`unitNoteUnchanged`) | In the background | plato’s code | Nothing usable came back, so the note stayed as it was. |
+| What you did (`noteChange`) | You sent | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
+| What you wrote (`authorInput`) | You sent | A person | Your message in the editing conversation. |
+| plato started the conversation (`authoringOpened`) | You sent | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
+| The conversation so far (`authoringTail`) | plato prepared what the AI model is given | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
+| What plato read from the reply (`authoringParsed`) | The AI model answered | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
+| What you asked for (`extractAsked`) | You sent | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
+| What was written, and whether it could be used (`extracted`) | The AI model answered | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
+| Saved (`authoringSaved`) | plato recorded the result | plato’s code | Whether what was written reached plato’s database. |
+| What you were shown (`shown`) | plato recorded the result | plato’s code | The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed. |
+| This attempt failed (`error`) | plato recorded the result | plato’s code | Nothing from this attempt was saved to the conversation. |
 
 ## What is reported to the server’s logs
 

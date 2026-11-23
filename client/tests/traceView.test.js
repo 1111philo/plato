@@ -9,7 +9,7 @@ import { store, LESSON, reset, signIn, settle } from './helpers/fake-plato.js';
 const { clearCache, savePreferences } = await import('../js/storage.js');
 const { startLesson, sendMessage } = await import('../src/lib/lessonEngine.js');
 const { describeTrace, traceToText, technologyFor } = await import('../src/lib/traceView.js');
-const { STEPS } = await import('../src/lib/transparency.js');
+const { STEPS, STAGES } = await import('../src/lib/transparency.js');
 
 const ID = LESSON.lessonId;
 async function record(messages) {
@@ -25,8 +25,12 @@ describe('describeTrace', () => {
   it('every step of a full lesson reads as a sentence, with who decided and the exact text behind it', async () => {
     const view = await record(['My first answer.', 'MOCK_NOTAGS A second thought.', 'MOCK_COMPLETE MOCK_UNBACKED done?', 'MOCK_COMPLETE I applied it to my garden plan.']);
     const seen = new Set();
-    for (const turn of view.turns) {
-      assert.ok(turn.title && turn.verdict.text && turn.verdict.sourceLabel);
+    for (const turn of view.exchanges) {
+      assert.ok(turn.title && turn.verdict.text && turn.verdict.sourceLabel && turn.verdict.short);
+      // Grouped in the stages a person reads, in their fixed order.
+      const order = turn.stages.map((st) => Object.keys(STAGES).indexOf(st.id));
+      assert.deepEqual(order, [...order].sort((a, b) => a - b));
+      for (const st of turn.stages) assert.ok(st.title && (st.steps.length || st.followups));
       for (const s of turn.steps) {
         seen.add(s.type);
         assert.ok(s.title, `${s.type} has no title`);
@@ -36,23 +40,42 @@ describe('describeTrace', () => {
       }
     }
     // The script reaches most of what a lesson can do.
-    for (const t of ['lesson', 'planned', 'validation', 'plugins', 'input', 'state', 'tail', 'context', 'history', 'call', 'parsed', 'tagRepair', 'gradingPlan', 'verdict', 'verdictApplied', 'heldRewrite', 'claimCheck', 'applied', 'save', 'event', 'followUp', 'followUpStart', 'profileSaved', 'shown']) {
+    for (const t of ['lesson', 'planned', 'validation', 'plugins', 'input', 'state', 'tail', 'context', 'history', 'call', 'parsed', 'tagRepair', 'gradingPlan', 'verdict', 'verdictApplied', 'heldRewrite', 'claimCheck', 'applied', 'save', 'event', 'followUp', 'profileSaved']) {
       assert.ok(seen.has(t), `the script never recorded "${t}"`);
     }
     assert.ok([...seen].every((t) => STEPS[t]));
   });
 
-  it('orders turns, titles them from what the learner wrote, and puts follow-ups after their turn', async () => {
+  it('one exchange per turn, titled from what the learner wrote, with the background agents it set off inside it', async () => {
     const view = await record(['My first answer.']);
-    assert.deepEqual(view.turns.map((t) => t.kind), ['start', 'turn', 'followup']);
-    assert.equal(view.turns[0].title, 'Lesson start');
-    assert.equal(view.turns[1].title, 'Your message: “My first answer.”');
-    assert.match(view.turns[2].title, /^Follow-up: Learner profile/);
+    assert.deepEqual(view.exchanges.map((t) => [t.n, t.kind]), [[1, 'start'], [2, 'turn']]);
+    assert.equal(view.exchanges[0].title, 'Lesson start');
+    assert.equal(view.exchanges[1].title, 'Your message: “My first answer.”');
+    assert.equal(view.exchanges[1].you, 'My first answer.');
+    assert.match(view.exchanges[1].saw, /Good thinking/);
+    assert.match(view.exchanges[1].headline, /^Progress \d+ → \d+ of 10$/);
+    const background = view.exchanges[1].stages.find((st) => st.id === 'background');
+    assert.match(background.followups[0].title, /^Learner profile/);
+    assert.ok(background.followups[0].steps.some((s) => s.type === 'profileSaved'));
+  });
+
+  it('shows the lesson only where it matters: at the start, or when it was edited mid-lesson', async () => {
+    const view = await record(['My first answer.', 'And another.']);
+    assert.ok(view.exchanges[0].steps.some((s) => s.type === 'lesson'));
+    assert.ok(view.exchanges.slice(1).every((e) => !e.steps.some((s) => s.type === 'lesson')));
+    // Edited after the learner started: shown, and flagged.
+    const items = [...store.keys()].filter((k) => k.startsWith(`trace:${ID}:`)).map((dataKey) => ({ dataKey, data: structuredClone(store.get(dataKey)) }));
+    const last = items.filter((i) => i.data.kind === 'turn').at(-1);
+    last.data.steps.find((s) => s.type === 'lesson').updatedAt = '2099-01-01T00:00:00Z';
+    items.find((i) => i.data.kind === 'start').data.steps.find((s) => s.type === 'lesson').updatedAt = '2026-01-01T00:00:00Z';
+    const edited = describeTrace(items).exchanges.at(-1);
+    assert.ok(edited.flags.some((f) => f.id === 'edited'));
+    assert.equal(edited.steps.find((s) => s.type === 'lesson').stage, 'prepared');
   });
 
   it('says who shaped each result: the model, plato’s instructions, or plato’s code', async () => {
     const view = await record(['My first answer.', 'MOCK_NOTAGS A second thought.', 'MOCK_COMPLETE MOCK_UNBACKED done?', 'MOCK_COMPLETE I applied it to my garden plan.']);
-    const turns = view.turns.filter((t) => t.kind === 'turn');
+    const turns = view.exchanges.filter((t) => t.kind === 'turn');
     assert.equal(turns[0].verdict.source, 'model');
     assert.match(turns[0].verdict.text, /plato’s code changed nothing/);
     assert.equal(turns[1].verdict.source, 'instructions');
@@ -63,19 +86,18 @@ describe('describeTrace', () => {
 
   it('gathers the things worth a look', async () => {
     const view = await record(['MOCK_NOTAGS first', 'MOCK_COMPLETE MOCK_UNBACKED done?', 'MOCK_TRUNCATE more']);
-    const ids = view.flags.map((f) => f.id);
+    const ids = view.exchanges.flatMap((e) => e.flags.map((f) => f.id));
     for (const id of ['tags', 'held', 'failed', 'cutOff']) assert.ok(ids.includes(id), `no "${id}" flag in ${ids}`);
-    assert.ok(view.flags.every((f) => f.text && f.turnTitle));
-    const held = view.turns.find((t) => t.flags.some((f) => f.id === 'held'));
-    const shown = held.steps.find((s) => s.type === 'shown');
-    assert.ok(shown.change.before && shown.change.after && shown.change.before !== shown.change.after, 'the replaced reply is shown before and after');
+    assert.equal(view.flagged, view.exchanges.filter((e) => e.flags.length).length);
+    const held = view.exchanges.find((t) => t.flags.some((f) => f.id === 'held'));
+    assert.ok(held.firstSeen && held.saw && held.firstSeen !== held.saw, 'the reply watched first and the one kept are both there');
     const applied = held.steps.find((s) => s.type === 'applied');
     assert.ok(applied.rules.some((r) => r.id === 'heldAt8' && /held/.test(r.text)));
   });
 
   it('shows exactly what the model was given and what it said', async () => {
     const view = await record(['My first answer.']);
-    const call = view.turns[1].steps.find((s) => s.type === 'call');
+    const call = view.exchanges[1].steps.find((s) => s.type === 'call');
     assert.match(call.title, /^Coach: reply$/);
     assert.match(call.summary, /stand-in model used for testing/);
     const labels = call.details.map((d) => d.label);
@@ -84,7 +106,7 @@ describe('describeTrace', () => {
     assert.match(call.details.find((d) => /^Messages sent/.test(d.label)).text, /My first answer\./);
     assert.match(call.details.find((d) => d.label === 'The model’s raw reply').text, /\[PROGRESS: \d+\]/);
     assert.match(call.details.find((d) => d.label === 'The model’s own reasoning').text, /None was returned/);
-    const context = view.turns[1].steps.find((s) => s.type === 'context');
+    const context = view.exchanges[1].steps.find((s) => s.type === 'context');
     assert.ok(context.details.some((d) => d.label === 'Your first name (A person)' && d.text === 'Ada'));
   });
 
@@ -103,37 +125,39 @@ describe('describeTrace', () => {
     const of = (scope) => describeTrace([...store.keys()].filter((k) => k.startsWith(`trace:${scope}:`)).map((dataKey) => ({ dataKey, data: store.get(dataKey) })));
 
     const profile = of('profile');
-    assert.deepEqual(profile.turns.map((t) => t.title), ['You added a note: “I use a Chromebook.”', 'You removed a note: “I use a Chromebook.”']);
-    assert.match(profile.turns[0].steps[0].summary, /^You added a note: “I use a Chromebook\.”\. It was kept with your profile, word for word\.$/);
-    assert.equal(profile.turns[0].steps[0].source, 'person');
-    assert.equal(profile.turns[0].verdict.source, 'model');
-    assert.match(profile.turns[0].verdict.text, /kept your own notes/);
+    assert.deepEqual(profile.exchanges.map((t) => t.title), ['You added a note: “I use a Chromebook.”', 'You removed a note: “I use a Chromebook.”']);
+    assert.match(profile.exchanges[0].steps[0].summary, /^You added a note: “I use a Chromebook\.”\. It was kept with your profile, word for word\.$/);
+    assert.equal(profile.exchanges[0].steps[0].source, 'person');
+    assert.equal(profile.exchanges[0].verdict.source, 'model');
+    assert.match(profile.exchanges[0].verdict.text, /kept your own notes/);
 
     const kb = of('kb');
-    assert.deepEqual(kb.turns.map((t) => t.title), ['Conversation start', 'Your message: “We teach adults.”', 'Save: writing the knowledge base']);
-    const parsed = kb.turns[1].steps.find((s) => s.type === 'authoringParsed');
+    assert.deepEqual(kb.exchanges.map((t) => t.title), ['Conversation start', 'Your message: “We teach adults.”', 'Save: writing the knowledge base']);
+    const parsed = kb.exchanges[1].steps.find((s) => s.type === 'authoringParsed');
     assert.match(parsed.summary, /^Readiness score: 2 of 10 \(it was 1\)\./);
     assert.equal(parsed.source, 'code');
-    assert.match(kb.turns[1].verdict.text, /readiness score are the model’s own/);
-    assert.match(kb.turns[2].verdict.text, /checked it and saved it/);
-    for (const turn of [...profile.turns, ...kb.turns]) {
+    assert.match(kb.exchanges[1].verdict.text, /readiness score are the model’s own/);
+    assert.match(kb.exchanges[2].verdict.text, /checked it and saved it/);
+    for (const turn of [...profile.exchanges, ...kb.exchanges]) {
       for (const s of turn.steps) assert.ok(s.summary && !/undefined|\[object Object\]|NaN/.test(s.title + s.summary), `${s.type}: "${s.summary}"`);
     }
   });
 
   it('tolerates an empty or unknown trace', () => {
-    assert.deepEqual(describeTrace([]), { turns: [], flags: [], partial: false });
-    assert.deepEqual(describeTrace(null).turns, []);
+    assert.deepEqual(describeTrace([]), { exchanges: [], orphans: [], flagged: 0, partial: false });
+    assert.deepEqual(describeTrace(null).exchanges, []);
     const odd = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [{ n: 1, type: 'somethingNew', ms: 0 }] } }]);
-    assert.equal(odd.turns[0].steps[0].title, 'somethingNew');
+    assert.equal(odd.exchanges[0].steps[0].title, 'somethingNew');
   });
 
   it('downloads as plain text: every turn, who decided, rules, before and after, exact text', async () => {
     const view = await record(['My first answer.', 'MOCK_COMPLETE MOCK_UNBACKED done?']);
     const text = traceToText(view, { title: 'plato trace: Trace lesson' });
     assert.match(text, /^plato trace: Trace lesson\n=+/);
-    assert.match(text, /Things worth a look/);
-    assert.match(text, /Lesson start · \d{4}-/);
+    assert.match(text, /Worth a look: /);
+    assert.match(text, /You sent:\n/);
+    assert.match(text, /\d\) plato checked the answer/);
+    assert.match(text, /1\. Lesson start · \d{4}-/);
     assert.match(text, /\[plato’s code\]/);
     assert.match(text, /Rule: .*held/i);
     assert.match(text, /Before:\n {6}/);
@@ -147,7 +171,7 @@ describe('describeTrace', () => {
       { type: 'fetch', purpose: 'search the handbook', url: 'https://developer.wordpress.org/?s=x', status: 200 },
       { type: 'note', text: 'Nothing relevant was found.' },
     ] } }] } }]);
-    const detail = view.turns[0].steps[0].details.find((d) => /wordpress-info: every step/.test(d.label));
+    const detail = view.exchanges[0].steps[0].details.find((d) => /wordpress-info: every step/.test(d.label));
     assert.match(detail.text, /1\. Asked the AI model \(m\): plan the searches/);
     assert.match(detail.text, /2\. Requested https:\/\/developer\.wordpress\.org\/\?s=x: search the handbook \(answered 200\)/);
     assert.match(detail.text, /3\. Nothing relevant was found\./);

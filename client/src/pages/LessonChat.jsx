@@ -96,11 +96,23 @@ export default function LessonChat() {
     if (!traceDocked) return undefined;
     const measure = () => {
       const rect = document.getElementById('main-content')?.getBoundingClientRect();
-      if (rect) setTraceFrame({ top: rect.top, bottom: Math.max(0, window.innerHeight - rect.bottom) });
+      if (!rect) return;
+      // Clamped to the window: the page itself can scroll (an admin's extra bar
+      // makes it taller than the window), taking <main>'s top above the screen.
+      const next = { top: Math.max(0, Math.round(rect.top)), bottom: Math.max(0, Math.round(window.innerHeight - rect.bottom)) };
+      setTraceFrame((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
     };
+    // Re-measure whenever <main> moves or resizes: bars above it (the admin
+    // bar, View as User) can appear after the panel opens, and the page can scroll.
+    const main = document.getElementById('main-content');
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (main) observer?.observe(main);
+    if (main?.parentElement) observer?.observe(main.parentElement);
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    // Capture: any scroll container, including the page itself.
+    window.addEventListener('scroll', measure, true);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); window.removeEventListener('scroll', measure, true); };
   }, [traceDocked]);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);

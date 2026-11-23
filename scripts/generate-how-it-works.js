@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { AGENTS, CONTEXT_FIELDS, PROMPT_PARTS, STEPS, RULES, THRESHOLDS, EVENTS, SERVICES, SOURCES } from '../client/src/lib/transparency.js';
+import { AGENTS, CONTEXT_FIELDS, PROMPT_PARTS, STAGES, STEPS, RULES, THRESHOLDS, EVENTS, SERVICES, SOURCES } from '../client/src/lib/transparency.js';
 
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'HOW_IT_WORKS.md');
 const who = (source) => SOURCES[source].label;
@@ -49,8 +49,10 @@ export function render() {
   for (const [id, text] of Object.entries(RULES)) out.push(`- **\`${id}\`** ${text}`);
   out.push('', '### The numbers behind them', '', '| Name | Meaning | Defined in |', '|---|---|---|');
   for (const [id, t] of Object.entries(THRESHOLDS)) out.push(`| \`${id}\` | ${t.means} | \`${t.where}\` |`);
-  out.push('', '## What a Trace records', '', 'With Trace mode on, each turn of a conversation is recorded as these steps.', '', '| Step | Decided by | Meaning |', '|---|---|---|');
-  for (const [id, s] of Object.entries(STEPS)) out.push(`| ${s.title} (\`${id}\`) | ${who(s.source)} | ${s.means} |`);
+  out.push('', '## What a Trace records', '', 'With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:', '');
+  Object.values(STAGES).forEach((st, i) => out.push(`${i + 1}. **${st.title}.** ${st.means}`));
+  out.push('', '| Step | Stage | Decided by | Meaning |', '|---|---|---|---|');
+  for (const [id, s] of Object.entries(STEPS)) out.push(`| ${s.title} (\`${id}\`) | ${STAGES[s.stage].title} | ${who(s.source)} | ${s.means} |`);
   out.push('', '## What is reported to the server\u2019s logs', '', 'A code and the lesson\u2019s id. Never conversation text.', '');
   for (const [id, text] of Object.entries(EVENTS)) out.push(`- \`${id}\`: ${text}`);
   out.push('', '## Outside services, and what each is sent', '', 'plato has no analytics or tracking.', '', '| Service | Role | Used | What it is sent |', '|---|---|---|---|');
