@@ -137,7 +137,7 @@ test.describe('Trace mode', () => {
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
     await expect(exchange.getByRole('blockquote').filter({ hasText: 'MOCK_COMPLETE MOCK_UNBACKED I think I am done' })).toBeVisible();
-    await expect(exchange.getByText('Worth a look')).toBeVisible();
+    await expect(exchange.getByText('What was unusual')).toBeVisible();
     await expect(exchange.getByText(/completion was held/).first()).toBeVisible();
     await expect(exchange.getByText(/plato’s code changed the result/)).toBeVisible();
     await expect(exchange.getByText('A different reply appeared first, then plato replaced it')).toBeVisible();
@@ -147,13 +147,13 @@ test.describe('Trace mode', () => {
     await expect(exchange.getByText('Before', { exact: true }).first()).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace with a held completion open' });
 
-    // The list can be narrowed to the exchanges worth a look.
+    // The list can be narrowed to the exchanges where something unusual happened.
     await exchange.getByRole('button', { name: 'All exchanges' }).click();
-    const filter = panel.getByRole('checkbox', { name: /^Only the \d+ worth a look$/ });
+    const filter = panel.getByRole('checkbox', { name: /^Only show the \d+ where something unusual happened$/ });
     await filter.check();
     const rows = panel.getByRole('list').last().getByRole('button');
-    await expect(rows.first()).toContainText('worth a look');
-    for (const r of await rows.all()) await expect(r).toContainText('worth a look');
+    await expect(rows.first()).toContainText(/\d+ unusual things?/);
+    for (const r of await rows.all()) await expect(r).toContainText(/\d+ unusual things?/);
   });
 
   test('narrow screens get the trace as a dialog', async ({ page }) => {

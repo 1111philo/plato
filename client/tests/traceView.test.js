@@ -84,7 +84,7 @@ describe('describeTrace', () => {
     assert.equal(turns[3].verdict.source, 'model');
   });
 
-  it('gathers the things worth a look', async () => {
+  it('gathers what was unusual', async () => {
     const view = await record(['MOCK_NOTAGS first', 'MOCK_COMPLETE MOCK_UNBACKED done?', 'MOCK_TRUNCATE more']);
     const ids = view.exchanges.flatMap((e) => e.flags.map((f) => f.id));
     for (const id of ['tags', 'held', 'failed', 'cutOff']) assert.ok(ids.includes(id), `no "${id}" flag in ${ids}`);
@@ -154,7 +154,7 @@ describe('describeTrace', () => {
     const view = await record(['My first answer.', 'MOCK_COMPLETE MOCK_UNBACKED done?']);
     const text = traceToText(view, { title: 'plato trace: Trace lesson' });
     assert.match(text, /^plato trace: Trace lesson\n=+/);
-    assert.match(text, /Worth a look: /);
+    assert.match(text, /Unusual: /);
     assert.match(text, /You sent:\n/);
     assert.match(text, /\d\) plato checked the answer/);
     assert.match(text, /1\. Lesson start · \d{4}-/);
