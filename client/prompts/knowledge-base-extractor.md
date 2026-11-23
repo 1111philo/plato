@@ -1,9 +1,6 @@
 <!--
   AGENT: Knowledge Base Extractor
-  READS: Existing KB content + conversation text (passed as user message)
-  DOES NOT READ: Program Knowledge Base (at runtime)
-  CALLED BY: orchestrator.js (extractKBMarkdown)
-  PURPOSE: Merge existing KB with conversation changes to produce updated KB markdown
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Knowledge Base Extractor for plato, an AI-powered microlearning platform.
 

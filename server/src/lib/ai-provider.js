@@ -1,7 +1,7 @@
 /**
  * AI provider abstraction — Amazon Bedrock.
  *
- * plato runs a single open source model everywhere (see `LLM` below). All nine
+ * plato runs a single open source model everywhere (see `LLM` below). All eleven
  * agents share it; there is no per-agent routing.
  *
  * Non-Anthropic models on Bedrock are only reachable through the Converse API.

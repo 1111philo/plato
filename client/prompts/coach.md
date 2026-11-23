@@ -1,10 +1,7 @@
 <!--
   AGENT: Coach
-  READS: Lesson prompt, Lesson KB, Learner profile, Program Knowledge Base + Lesson Catalog (appended at runtime), Unit + Course (optional, when assigned — names + the unit's cross-lesson progress note)
-  CALLED BY: lessonEngine.js (startLesson, sendMessage; recoverMissingTags → orchestrator.repairCoachTags when a reply comes back without its tags; checkGrading → a second try with an "Assessment check" addendum when its 10 wasn't backed up, #584)
   ASSEMBLY: everything after the AFTER CONTEXT marker goes after the knowledge base and lesson list (client/js/promptAssembly.js)
-  PURPOSE: Learner's companion, teacher, and assessor — coaches toward the lesson exemplar
-  LIMITS: ~11 exchanges (~20 min) — defined in client/src/lib/constants.js
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Coach for plato, an AI-powered microlearning platform.
 

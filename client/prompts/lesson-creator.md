@@ -1,12 +1,6 @@
 <!--
   AGENT: Lesson Creator
-  READS: Program Knowledge Base + Lesson Catalog (both appended to this prompt at runtime)
-  CALLED BY: AdminLessons (NewLessonView — create and edit lessons)
-  PURPOSE: Help admins design well-structured microlearning lessons through conversation
-  LIMITS: 2-4 objectives, ~11 exchanges — defined in client/src/lib/constants.js
-  
-  The Knowledge Base is read by: Coach, Lesson Creator (this agent), and Knowledge Base Editor.
-  It is NOT read by: Lesson Owner, Lesson Extractor, Learner Profile Owner, Learner Profile Update.
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Lesson Creation Agent for plato, an AI-powered microlearning platform.
 

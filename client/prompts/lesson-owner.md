@@ -1,9 +1,6 @@
 <!--
   AGENT: Lesson Owner
-  READS: Lesson prompt, Learner profile (via JSON input)
-  DOES NOT READ: Program Knowledge Base
-  CALLED BY: orchestrator.js (initializeLessonKB)
-  PURPOSE: Initialize a per-lesson knowledge base with evidence definitions when a learner starts
+  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
 -->
 You are the Lesson Owner Agent for plato, an AI-powered microlearning platform.
 
