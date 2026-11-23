@@ -665,6 +665,21 @@ have no lessons). `/v1/me` returns `traceMode` so the learner's app records and
 Settings can say who turned it on. The flag is honoured by the client; it is a
 diagnostic, not a control.
 
+**Admin controls (Admin → Users).** Everything here reads and writes the
+account's `traceMode`, never the person's own Settings choice.
+- **Edit User**: a "Trace mode" checkbox. Save sends `traceMode` only when it
+  changed, so an unrelated edit writes no audit entry. Anyone who can open the
+  view sees it; it's disabled without `users.write`.
+- **Table**: a "Trace" column ("On" or a dash), hidden until chosen in the
+  Columns dialog. It sits last, so layouts saved before it keep their order.
+- **Filters**: "Trace mode": On / Off, signed-up users only (invites and
+  wait-list entries match neither).
+- **Update…** (`BulkUpdateDialog.jsx`): "Trace mode" with On / Off. Only the
+  selected accounts are sent; with only wait-list entries selected the option
+  isn't offered. The wording (sentence, button, result message) is in
+  `client/src/lib/traceAdmin.js`.
+- **CSV**: a "Trace mode" column ("On" or blank) after the custom fields.
+
 ## Chat auto-scroll (#319, #321)
 
 `useStickToBottom` (consumed by `ChatArea`) follows streamed output while the
@@ -1953,7 +1968,8 @@ filter.
   (Password / SSO, only while single sign-on is in play: a provider is on or
   an account is linked; signed-up users only, and someone with both matches
   both; Status then also offers "Wait list: email verified", see
-  [`SSO.md`](SSO.md#for-admins)), and every
+  [`SSO.md`](SSO.md#for-admins)), Trace mode (On / Off, the admin's flag;
+  signed-up users only, see [Trace mode](#trace-mode-595)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
   Each option shows its count.
 - Filters combine as **OR within a facet, AND across facets**. Each facet has
@@ -1975,6 +1991,7 @@ change is announced.
 - The name/open column and the actions column are fixed.
 - Every custom field is a Users column, hidden until chosen. This replaced the
   old filter-driven extra column.
+- Users also has a hidden Trace column (see [Trace mode](#trace-mode-595)).
 - Lessons adds a hidden Lesson ID column.
 - Column resizing isn't built.
 

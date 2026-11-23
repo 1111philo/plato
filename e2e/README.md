@@ -32,6 +32,10 @@ A/AA violations** on any page or dialog, at desktop (1280×800) and mobile
   page has two "Sign in…" buttons: match the password one exactly
   (`{ name: 'Sign in', exact: true }`).
 
+- `tests/trace-admin.spec.js`: Trace mode's admin controls (#595), by
+  keyboard: the Edit User checkbox, the Users filter and column, and the bulk
+  On / Off. Each test turns Trace mode back off for everyone.
+
 Ports and the database can be moved when 3490 is taken:
 `E2E_PORT=3590 E2E_DB=/tmp/other.db npx playwright test` (the identity
 provider uses the next port up, or `E2E_IDP_PORT`).
