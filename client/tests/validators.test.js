@@ -74,3 +74,16 @@ describe('validateLessonKB', () => {
     assert.ok(validateLessonKB(validLessonKB({ exemplar: 'how to hack a database' })));
   });
 });
+
+describe('LESSON_KB_CHECKS', () => {
+  it('names one plain check for each thing validateLessonKB requires', async () => {
+    const { LESSON_KB_CHECKS, validateLessonKB } = await import('../js/validators.js');
+    const good = { exemplar: 'e', objectives: [{ objective: 'o', evidence: 'v' }], learnerPosition: 'p', insights: [], activitiesCompleted: 0, status: 'active' };
+    assert.equal(validateLessonKB(good), null);
+    // Each field the validator reads, removed, is refused: one check per field group.
+    const refusals = ['exemplar', 'objectives', 'learnerPosition', 'insights', 'activitiesCompleted', 'status'].filter((k) => { const kb = { ...good }; delete kb[k]; return validateLessonKB(kb); });
+    assert.equal(refusals.length, 6);
+    assert.equal(validateLessonKB({ ...good, exemplar: 'how to hack a bank' }), 'Response contains unsafe content.');
+    assert.equal(LESSON_KB_CHECKS.length, 6);
+  });
+});

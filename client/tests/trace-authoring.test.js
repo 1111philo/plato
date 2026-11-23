@@ -161,7 +161,7 @@ describe('Trace on, beyond lessons', () => {
     const [shown] = view('profile').exchanges;
     assert.equal(shown.verdict.source, 'code');
     assert.match(shown.verdict.text, /held the note back/);
-    assert.ok(shown.flags.some((f) => f.id === 'noteScreened'));
+    assert.equal(shown.steps.find((s) => s.type === 'noteScreened').note.kind, 'changed');
 
     // Removing it: the agent was never given it, so again nothing is asked.
     await (await removeLearnerNote(0)).done;
@@ -243,8 +243,8 @@ describe('Trace on, beyond lessons', () => {
     assert.equal(step(first, 'authoringSaved'), undefined);
     assert.deepEqual({ ok: step(second, 'authoringSaved').ok, why: step(second, 'authoringSaved').why }, { ok: false, why: 'Server said no' });
     assert.equal(second.failed, true);
-    const flags = view('kb').exchanges.flatMap((e) => e.flags.map((f) => f.id));
-    assert.ok(flags.includes('extractUnusable') && flags.includes('authoringSave'));
+    const flags = view('kb').exchanges.flatMap((e) => e.steps.filter((s) => s.note?.kind === 'problem').map((s) => s.type));
+    assert.ok(flags.includes('extracted') && flags.includes('authoringSaved'));
   });
 
   it('every recorded step and agent is described, and reads as a sentence with who decided', async () => {

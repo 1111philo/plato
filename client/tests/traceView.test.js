@@ -40,7 +40,7 @@ describe('describeTrace', () => {
       }
     }
     // The script reaches most of what a lesson can do.
-    for (const t of ['lesson', 'planned', 'validation', 'plugins', 'input', 'state', 'tail', 'context', 'history', 'call', 'parsed', 'tagRepair', 'gradingPlan', 'verdict', 'verdictApplied', 'heldRewrite', 'claimCheck', 'applied', 'save', 'event', 'followUp', 'profileSaved']) {
+    for (const t of ['lesson', 'planned', 'validation', 'plugins', 'input', 'state', 'tail', 'context', 'call', 'parsed', 'tagRepair', 'gradingPlan', 'verdict', 'verdictApplied', 'heldRewrite', 'claimCheck', 'applied', 'save', 'event', 'followUp', 'profileSaved']) {
       assert.ok(seen.has(t), `the script never recorded "${t}"`);
     }
     assert.ok([...seen].every((t) => STEPS[t]));
@@ -84,31 +84,97 @@ describe('describeTrace', () => {
     assert.equal(turns[3].verdict.source, 'model');
   });
 
-  it('gathers what was unusual', async () => {
+  it('says on the step itself where plato stepped in or something went wrong', async () => {
     const view = await record(['MOCK_NOTAGS first', 'MOCK_COMPLETE MOCK_UNBACKED done?', 'MOCK_TRUNCATE more']);
-    const ids = view.exchanges.flatMap((e) => e.flags.map((f) => f.id));
-    for (const id of ['tags', 'held', 'failed', 'cutOff']) assert.ok(ids.includes(id), `no "${id}" flag in ${ids}`);
-    assert.equal(view.flagged, view.exchanges.filter((e) => e.flags.length).length);
-    const held = view.exchanges.find((t) => t.flags.some((f) => f.id === 'held'));
+    const [, noTags, held, cutOff] = view.exchanges;
+    const noted = (e) => e.steps.filter((s) => s.note);
+    // Missing tags: plato stepped in, on the check that found it.
+    const tags = noted(noTags).find((s) => s.type === 'tagCheck');
+    assert.equal(tags.note.kind, 'changed');
+    assert.match(tags.note.text, /came from a second request, not from the reply itself/);
+    assert.ok(noTags.steppedIn && !noTags.wentWrong, 'the recovered score was recorded: nothing went wrong');
+    assert.ok(!noTags.steps.find((s) => s.type === 'applied').rules.some((r) => r.id === 'noProgressTag'));
+    // A held completion: on what the check changed, and on the score.
+    assert.equal(noted(held).find((s) => s.type === 'verdictApplied').note.kind, 'changed');
+    assert.match(noted(held).find((s) => s.type === 'verdictApplied').note.text, /held the lesson open/);
     assert.ok(held.firstSeen && held.saw && held.firstSeen !== held.saw, 'the reply watched first and the one kept are both there');
-    const applied = held.steps.find((s) => s.type === 'applied');
-    assert.ok(applied.rules.some((r) => r.id === 'heldAt8' && /held/.test(r.text)));
+    assert.ok(held.steps.find((s) => s.type === 'applied').rules.some((r) => r.id === 'heldAt8' && /held/.test(r.text)));
+    // A cut-off reply: something went wrong, on the reply.
+    const reply = noted(cutOff).find((s) => s.type === 'call' && s.part === 'reply');
+    assert.equal(reply.note.kind, 'problem');
+    assert.match(reply.note.text, /cut off/);
+    assert.ok(cutOff.wentWrong);
+    assert.equal(view.flagged, view.exchanges.filter((e) => e.steppedIn || e.wentWrong).length);
+    // An ordinary turn has no notes.
+    const plain = (await record(['My first answer.'])).exchanges[1];
+    assert.deepEqual(noted(plain), []);
+    assert.ok(!plain.steppedIn && !plain.wentWrong);
   });
 
-  it('shows exactly what the model was given and what it said', async () => {
+  it('plato checked the answer is the checks it runs, in order, each with its answer', async () => {
+    const view = await record(['MOCK_NOTAGS first', 'My second answer.']);
+    const checks = (e) => e.stages.find((st) => st.id === 'checked').checks;
+    const [tags, draft, grading] = checks(view.exchanges[1]);
+    assert.deepEqual([tags.id, draft.id, grading.id], ['tags', 'draft', 'grading']);
+    assert.match(tags.title, /^Did the reply include its tags\?$/);
+    assert.match(tags.answer.summary, /^No: the reply was missing the progress score and the notes/);
+    assert.deepEqual(tags.steps.map((s) => [s.type, s.part]), [['call', 'request'], ['call', 'reply'], ['tagRepair', undefined]]);
+    assert.match(draft.answer.summary, /^No: /);
+    assert.match(grading.answer.summary, /^(Not needed|The coach checked off)/);
+    // A turn where every check passed still lists them.
+    const ok = checks(view.exchanges[2]);
+    assert.match(ok[0].answer.summary, /^Yes: /);
+    assert.equal(ok.length, 3);
+  });
+
+  it('an AI call is two steps: what was sent (and how big), then the reply (how big, how long, why it stopped)', async () => {
     const view = await record(['My first answer.']);
-    const call = view.exchanges[1].steps.find((s) => s.type === 'call');
-    assert.match(call.title, /^Coach: reply$/);
-    assert.match(call.summary, /stand-in model used for testing/);
-    const labels = call.details.map((d) => d.label);
+    const ex = view.exchanges[1];
+    const request = ex.steps.find((s) => s.type === 'call' && s.part === 'request');
+    const reply = ex.steps.find((s) => s.type === 'call' && s.part === 'reply');
+    assert.equal(request.title, 'Sent to the AI model, for the coach: reply');
+    assert.equal(request.stage, 'prepared', 'the request is part of preparing and sending');
+    assert.equal(request.sourceLabel, 'plato’s code');
+    assert.match(request.summary, /^plato sent a stand-in model used for testing the coach’s instructions \([\d,]+ characters, in \d+ parts\) and \d+ messages \([\d,]+ characters\)\./);
+    assert.doesNotMatch(request.summary, /0 tokens/, 'a count the model didn’t report isn’t shown as 0');
+    assert.match(request.summary, /a reply of up to 2,048 tokens/);
+    const labels = request.details.map((d) => d.label);
     assert.ok(labels.some((l) => /^Instructions: The agent’s instructions \(plato’s instructions\)$/.test(l)));
     assert.ok(labels.some((l) => /^Instructions: Program knowledge base \(A person\)$/.test(l)));
-    assert.match(call.details.find((d) => /^Messages sent/.test(d.label)).text, /My first answer\./);
-    assert.match(call.details.find((d) => d.label === 'The model’s raw reply').text, /\[PROGRESS: \d+\]/);
-    assert.match(call.details.find((d) => d.label === 'The model’s own reasoning').text, /None was returned/);
-    const context = view.exchanges[1].steps.find((s) => s.type === 'context');
+    assert.match(request.details.find((d) => /^Messages sent/.test(d.label)).text, /My first answer\./);
+
+    assert.equal(reply.title, 'The AI model replied to the coach');
+    assert.equal(reply.stage, 'answered');
+    assert.equal(reply.sourceLabel, 'The AI model');
+    assert.match(reply.summary, /^[\d,]+ characters, after [\d.]+ m?s\. It stopped because it had finished\.$/);
+    assert.ok(reply.at >= request.at && reply.took >= 0, 'the reply is timed from the request');
+    assert.match(reply.details.find((d) => d.label === 'The model’s raw reply').text, /\[PROGRESS: \d+\]/);
+    assert.match(reply.details.find((d) => d.label === 'The model’s own reasoning').text, /None was returned/);
+
+    // The messages are shown inside the request, not as a step of their own.
+    assert.ok(!ex.steps.some((s) => s.type === 'history'));
+    const context = ex.steps.find((s) => s.type === 'context');
     assert.ok(context.details.some((d) => d.label === 'Your first name (A person)' && d.text === 'Ada'));
+    // Every step says when it happened.
+    assert.ok(ex.steps.every((s) => typeof s.at === 'number'));
   });
+
+  it('says who an AI helper is the first time it comes up, and what was checked', async () => {
+    const view = await record(['MOCK_COMPLETE MOCK_UNBACKED done?']);
+    const start = view.exchanges[0];
+    // The first mention is the request sent for it, before its result.
+    const first = start.steps.find((s) => s.agent === 'lesson-owner');
+    assert.equal(first.part, 'request');
+    assert.match(first.explain.text, /^Lesson planner is one of plato’s AI helpers/);
+    assert.equal(start.steps.filter((s) => s.explain?.label === 'Lesson planner').length, 1, 'once per exchange');
+    const validation = start.steps.find((s) => s.type === 'validation');
+    assert.match(validation.summary, /checked the setup for the 6 things the coach and the assessment check need\. All were there\./);
+    assert.match(validation.details[0].text, /^1\. an exemplar/);
+    const held = view.exchanges[1];
+    assert.ok(held.steps.some((s) => s.explain?.label === 'Assessment check'));
+    assert.match(held.steps.find((s) => s.type === 'claimCheck').summary, /mustn’t tell you the lesson is done/);
+  });
+
 
   it('profile notes and authoring chats: titles, verdicts and sentences that fit them', async () => {
     const { addLearnerNote, removeLearnerNote } = await import('../src/lib/profileQueue.js');
@@ -154,7 +220,8 @@ describe('describeTrace', () => {
     const view = await record(['My first answer.', 'MOCK_COMPLETE MOCK_UNBACKED done?']);
     const text = traceToText(view, { title: 'plato trace: Trace lesson' });
     assert.match(text, /^plato trace: Trace lesson\n=+/);
-    assert.match(text, /Unusual: /);
+    assert.match(text, /plato stepped in: |Went wrong: /);
+    assert.match(text, /\n\s+! /, 'notes are on their steps');
     assert.match(text, /You sent:\n/);
     assert.match(text, /\d\) plato checked the answer/);
     assert.match(text, /1\. Lesson start · \d{4}-/);
@@ -195,5 +262,17 @@ describe('technologyFor', () => {
     assert.match(technologyFor(call({ provider: 'mock', model: 'mock' }))[1].detail, /stand-in model/);
     assert.ok(technologyFor([]).length >= 10);
     assert.equal(technologyFor(null).find((t) => t.id === 'model').detail, null);
+  });
+});
+
+describe('token counts from the real model', () => {
+  it('are shown on the request and the reply when the model reports them', () => {
+    const call = { n: 1, type: 'call', ms: 0, agent: 'coach', purpose: 'reply', model: 'm', maxTokens: 2048, stream: true, system: [{ kind: 'prompt', chars: 5, text: 'Hello' }], messages: { base: 0, extra: [{ role: 'user', content: 'Hi' }] }, attempts: [], usage: { input_tokens: 8073, output_tokens: 181 }, stopReason: 'end_turn', reply: 'Hello there', took: 3300, server: { provider: { provider: 'bedrock', model: 'qwen.qwen3-vl-235b-a22b', region: 'us-east-2' } } };
+    const view = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [call] } }]);
+    const [request, reply] = view.exchanges[0].steps;
+    assert.match(request.summary, /^plato sent qwen\.qwen3-vl-235b-a22b on Amazon Bedrock \(us-east-2\) the coach’s instructions \(5 characters, in 1 part\) and 1 message \(2 characters\)\. The model counted it as 8,073 tokens\./);
+    assert.equal(reply.summary, '11 characters (181 tokens), after 3.3 s. It stopped because it had finished.');
+    assert.equal(reply.at, 3300);
+    assert.equal(reply.took, 3300);
   });
 });

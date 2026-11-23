@@ -237,7 +237,8 @@ export function rulesApplied({ before = {}, after = {}, modelProgress = null, re
   const asked = parsed?.progress ?? null;
   const total = after.objectives?.length || 0;
   const met = after.objectivesMet?.length || 0;
-  if (modelProgress == null) rules.push('noProgressTag');
+  // After tag repair: a score recovered by asking again was recorded.
+  if (asked == null) rules.push('noProgressTag');
   if (asked != null && (!Number.isInteger(asked) || asked < 0 || asked > 10)) rules.push('clamped');
   if (assessment?.held) rules.push('heldAt8');
   if (assessment?.failed && !assessment.failedOpen) rules.push('checkFailedNothingCounted');

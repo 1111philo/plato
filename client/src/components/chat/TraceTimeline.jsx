@@ -55,13 +55,41 @@ function ExactText({ details }) {
   );
 }
 
-function Step({ step }) {
+const secs = (ms) => (ms == null ? null : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+const NOTE_STYLE = {
+  changed: { box: 'border-amber-700 bg-amber-50 dark:border-amber-400 dark:bg-amber-950', label: 'plato stepped in' },
+  problem: { box: 'border-red-700 bg-red-50 dark:border-red-400 dark:bg-red-950', label: 'Something went wrong' },
+};
+
+/** Where plato stepped in or something went wrong, said on the step itself. */
+function Note({ note }) {
+  const style = NOTE_STYLE[note.kind] || NOTE_STYLE.changed;
   return (
-    <li className="space-y-1">
+    <p className={`flex items-start gap-1.5 rounded-sm border-l-4 px-2 py-1 ${style.box}`}>
+      <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+      <span><span className="font-medium">{style.label}:</span> {note.text}</span>
+    </p>
+  );
+}
+
+function Step({ step, bare = false }) {
+  const Tag = bare ? 'div' : 'li';
+  return (
+    <Tag className="space-y-1">
+      {!bare && (
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-medium">{step.title}</span>
         <Source source={step.source} label={step.sourceLabel} />
+        {step.at != null && (
+          <span className="text-xs text-muted-foreground">
+            at {secs(step.at)}{step.took != null ? ` · took ${secs(step.took)}` : ''}
+          </span>
+        )}
       </p>
+      )}
+      {step.note && <Note note={step.note} />}
+      {step.explain && <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Who’s this?</span> {step.explain.text}</p>}
       <p>{step.summary}</p>
       {step.rules.length > 0 && (
         <ul className="list-disc space-y-1 pl-5">
@@ -75,18 +103,32 @@ function Step({ step }) {
         </div>
       )}
       <ExactText details={step.details} />
-    </li>
+    </Tag>
   );
 }
 
 const stageId = (e, st) => `trace-x-${e.id}-${st.id}`;
+
+/** One of the checks plato runs on a reply: the question, its answer, and the steps behind it. */
+function Check({ check, n, letter }) {
+  return (
+    <li className="space-y-1.5">
+      <h6 className="font-medium">{n}.{letter} {check.title}</h6>
+      <p className="text-xs text-muted-foreground">{check.means}</p>
+      <Step step={check.answer} bare />
+      {check.steps.length > 0 && <ul className="space-y-3 border-l-2 border-muted pl-3">{check.steps.map((s) => <Step key={s.n} step={s} />)}</ul>}
+    </li>
+  );
+}
 
 function Stage({ stage, n, id }) {
   return (
     <li className="space-y-2">
       <h5 id={id} tabIndex={-1} className={`scroll-mt-14 font-semibold ${focusRing}`}>{n}. {stage.title}</h5>
       <ul className="space-y-3 border-l-2 border-muted pl-3">
-        {stage.steps.map((s) => <Step key={s.n} step={s} />)}
+        {stage.checks
+          ? stage.checks.map((c, i) => <Check key={c.id} check={c} n={n} letter={'abcdefg'[i]} />)
+          : stage.steps.map((s) => <Step key={s.n} step={s} />)}
         {(stage.followups || []).map((f, i) => (
           <li key={`f${i}`} className="space-y-2">
             <p><span className="font-medium">{f.title}</span>{f.why ? ` ran because ${f.why}.` : ''}{f.failed ? ' It failed.' : ''}</p>
@@ -116,7 +158,8 @@ function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
       </nav>
 
       <h3 id={`trace-x-${e.id}`} ref={headingRef} tabIndex={-1} className={`scroll-mt-14 text-base font-semibold ${focusRing}`}>
-        {e.kind === 'start' ? 'Lesson start' : `Exchange ${e.n} of ${total}`} <span className="font-normal text-muted-foreground">· {when(e.at)}</span>
+        {e.kind === 'start' ? 'Lesson start' : `Exchange ${e.n} of ${total}`}{' '}
+        <span className="font-normal text-muted-foreground">· {when(e.at)}{e.took != null ? ` · took ${secs(e.took)} in all` : ''}</span>
       </h3>
       {e.kind !== 'turn' && e.kind !== 'start' && <p className="-mt-3">{e.title}</p>}
 
@@ -141,15 +184,10 @@ function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
         <span>{e.verdict.text}</span>
       </p>
 
-      {e.flags.length > 0 && (
-        <div className="rounded-md border border-amber-700 bg-amber-50 p-2 dark:border-amber-400 dark:bg-amber-950">
-          <p className="flex items-center gap-1 font-medium"><TriangleAlert aria-hidden="true" className="size-4" /> What was unusual</p>
-          <ul className="mt-1 list-disc space-y-1 pl-5">{e.flags.map((f) => <li key={f.id}>{f.text}</li>)}</ul>
-        </div>
-      )}
 
       <section aria-labelledby={`trace-x-${e.id}-steps`} className="space-y-3">
         <h4 id={`trace-x-${e.id}-steps`} className="font-semibold">What happened, in order</h4>
+        <p className="text-xs text-muted-foreground">Times are counted from when {e.kind === 'start' ? 'the lesson started' : e.kind === 'turn' ? 'you sent the message' : 'this began'}.</p>
         <p className="text-xs">
           <span className="text-muted-foreground">Jump to: </span>
           {e.stages.map((st, i) => (
@@ -184,9 +222,9 @@ function Row({ exchange: e, onOpen, buttonRef }) {
         <span className="mt-0.5 block text-xs text-muted-foreground">
           {[e.headline, e.verdict.short].filter(Boolean).join(' · ')}
         </span>
-        {e.flags.length > 0 && (
-          <span className="mt-1 flex items-center gap-1 text-xs font-medium text-amber-900 dark:text-amber-200">
-            <TriangleAlert aria-hidden="true" className="size-3.5" /> {e.flags.length} unusual {e.flags.length === 1 ? 'thing' : 'things'}
+        {e.wentWrong && (
+          <span className="mt-1 flex items-center gap-1 text-xs font-medium text-red-800 dark:text-red-300">
+            <TriangleAlert aria-hidden="true" className="size-3.5" /> Something went wrong
           </span>
         )}
       </button>
@@ -255,7 +293,7 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
     );
   }
 
-  const listed = onlyFlagged ? exchanges.filter((x) => x.flags.length) : exchanges;
+  const listed = onlyFlagged ? exchanges.filter((x) => x.steppedIn || x.wentWrong) : exchanges;
   return (
     <div className="space-y-3 text-sm">
       <p className="text-muted-foreground">
@@ -280,7 +318,7 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
           {view?.flagged > 0 && (
             <label className="flex items-center gap-1.5 text-xs">
               <input type="checkbox" className="accent-primary" checked={onlyFlagged} onChange={(e) => setOnlyFlagged(e.target.checked)} />
-              Only show the {view.flagged} where something unusual happened
+              Only where plato stepped in or something went wrong ({view.flagged})
             </label>
           )}
         </div>

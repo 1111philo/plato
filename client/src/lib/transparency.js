@@ -150,13 +150,24 @@ export const PROMPT_PARTS = Object.freeze({
  * background"). Each step type below names its stage.
  */
 export const STAGES = Object.freeze({
-  setup: { title: 'plato set up the lesson', means: 'Once, when a lesson starts: the lesson as written, the planner’s version of it, and anything plugins added.' },
+  setup: { title: 'plato set up the lesson', means: 'Once, when a lesson starts: the lesson as written, the lesson planner’s version of it, and anything plugins added.' },
   sent: { title: 'You sent', means: 'What you wrote or did, exactly as plato received it.' },
-  prepared: { title: 'plato prepared what the AI model is given', means: 'Before any AI call, plato’s code gathers the conversation so far and what it knows about you and the lesson.' },
+  prepared: { title: 'plato prepared and sent the request', means: 'plato’s code gathers the conversation so far and what it knows about you and the lesson, then sends it to the AI model.' },
   answered: { title: 'The AI model answered', means: 'The request to the model, its raw reply, and what plato read from it.' },
   checked: { title: 'plato checked the answer', means: 'Checks plato runs on the model’s answer, and what they changed.' },
   recorded: { title: 'plato recorded the result', means: 'What was saved, the rules plato’s code applied, and what was reported to the logs.' },
   background: { title: 'In the background', means: 'Other agents that ran after the reply, and what they changed.' },
+});
+
+/**
+ * The checks plato's code runs on every coach reply, in order. The Trace
+ * shows "plato checked the answer" as these questions, each with its answer
+ * and the steps behind it.
+ */
+export const CHECKS = Object.freeze({
+  tags: { title: 'Did the reply include its tags?', means: 'The coach ends each reply with tags only plato reads: a progress score, notes, and sometimes an observation for your profile.' },
+  draft: { title: 'Did the reply write your answer for you?', means: 'A coach that writes the learner’s answer teaches nothing, and the assessment check wouldn’t count it.' },
+  grading: { title: 'Is every objective the coach checked off shown in your own words?', means: 'When the coach checks off an objective or scores 10, a second AI helper, the assessment check, must find each one in what you wrote.' },
 });
 
 /**
@@ -166,17 +177,24 @@ export const STAGES = Object.freeze({
  */
 export const STEPS = Object.freeze({
   lesson: { stage: 'setup', title: 'The lesson', source: 'person', means: 'The lesson as its author wrote it, and when it was last edited.' },
-  planned: { stage: 'setup', title: 'The lesson planner’s setup', source: 'model', means: 'The planner restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording.' },
-  validation: { stage: 'setup', title: 'Checked the planner’s setup', source: 'code', means: 'plato’s code checked the setup had the right shape. If not, it asked once more and used the second answer.' },
+  planned: { stage: 'setup', title: 'The lesson planner’s setup', source: 'model', means: 'The lesson planner, an AI helper, restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording.' },
+  validation: { stage: 'setup', title: 'plato checked the lesson planner’s setup', source: 'code', means: 'plato’s code checked the setup had everything the coach and the assessment check need (the exact list is shown). If not, it asked once more and used the second answer.' },
   plugins: { stage: 'setup', title: 'Extra context from plugins', source: 'code', means: 'Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes.' },
   input: { stage: 'sent', title: 'What you sent', source: 'person', means: 'Your message, with any images and attached web pages.' },
   state: { stage: 'prepared', title: 'Where the lesson stood', source: 'code', means: 'The progress and objectives on record before this message.' },
   tail: { stage: 'prepared', title: 'The conversation so far', source: 'code', means: 'plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again.' },
   context: { stage: 'prepared', title: 'What plato told the coach about you and the lesson', source: 'code', means: 'plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary.' },
   history: { stage: 'prepared', title: 'The messages sent to the model', source: 'code', means: 'The exact list of messages every coach call on this turn starts from.' },
-  call: { stage: 'answered', title: 'A call to the AI model', source: 'model', means: 'One request to the model and its raw reply.' },
+  call: {
+    stage: 'answered', title: 'A call to the AI model', source: 'model', means: 'One request to the model and its raw reply.',
+    // The Trace shows a call as two steps, the request and the reply.
+    request: { title: 'Sent to the AI model', source: 'code', means: 'plato’s code sends the agent’s instructions and the messages. Size is counted in tokens, the pieces of text a model reads (a token is about three quarters of a word).' },
+    reply: { title: 'The AI model replied', source: 'model', means: 'What came back, word for word, how long it took, and why it stopped.' },
+  },
   parsed: { stage: 'answered', title: 'What plato read from the reply', source: 'code', means: 'The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them.' },
-  tagRepair: { stage: 'checked', title: 'The reply’s tags were missing', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
+  tagCheck: { stage: 'checked', title: 'Were the reply’s tags there?', source: 'code', means: 'plato’s code looks for the two tags it needs: the progress score and the notes. Without them, nothing from the reply can be recorded.' },
+  draftCheck: { stage: 'checked', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
+  tagRepair: { stage: 'checked', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
   gradingPlan: { stage: 'checked', title: 'Whether to check the grading', source: 'code', means: 'The assessment check runs only when the coach checks off an objective or scores 10.' },
   gradingRetry: { stage: 'checked', title: 'The assessment check’s answer couldn’t be read', source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },

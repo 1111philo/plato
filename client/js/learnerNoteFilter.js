@@ -27,6 +27,20 @@ const PLATO_TAGS = 'PROGRESS|KB_UPDATE|PROFILE_UPDATE|READINESS|DRAFT|DONE';
 const AUTHORITY = '(?:admin(?:istrator)?|system|plato|staff)s?';
 const ASSESSMENT = '(?:completion|completing|skip\\w*|pass(?:ed|ing)?|progress|scores?|grades?|mastery|exempt\\w*)';
 
+/** Why a note was held back, in plain words, by rule id (the Trace, #595). */
+export const NOTE_RULE_REASONS = Object.freeze({
+  'plato-tag': 'it contains one of plato’s own tags, like [PROGRESS: …], which only the AI model should write',
+  'role-tag': 'it contains a role tag like [SYSTEM] or [INST], used to give an AI model orders',
+  'chat-token': 'it contains a chat-template marker like <|im_start|>, used to give an AI model orders',
+  'role-prefix': 'it is written as a message from the system or an administrator',
+  'ignore-instructions': 'it asks the AI to ignore its instructions',
+  'system-prompt': 'it talks about a system prompt, new instructions, or a jailbreak',
+  'mark-complete': 'it asks for a lesson or objective to be marked complete',
+  'set-progress': 'it asks for a score or progress to be set',
+  'you-must': 'it tells the AI it must override, award or approve something',
+  'authority-approval': 'it claims an administrator or plato approved a completion or a skip',
+});
+
 export const LEARNER_NOTE_RULES = [
   // Language-independent markers.
   { id: 'plato-tag', re: new RegExp(`\\[\\s*(?:${PLATO_TAGS})\\s*[\\]:]`, 'i') },

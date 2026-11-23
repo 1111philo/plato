@@ -10,6 +10,19 @@ export function validateSafety(text) {
 }
 
 /**
+ * What validateLessonKB checks, in plain words, for the Trace (#595). Keep in
+ * step with the function below (client/tests/validators.test.js).
+ */
+export const LESSON_KB_CHECKS = Object.freeze([
+  'an exemplar: what finished work looks like',
+  'at least one objective, each with its wording and what would count as evidence',
+  'a starting note on where the learner is',
+  'a list for the coach’s notes (empty to start)',
+  'a count of exchanges, and the lesson’s status',
+  'nothing in the exemplar or the starting note that matches plato’s unsafe-content patterns (self-harm, attacks, theft)',
+]);
+
+/**
  * Validate a lesson owner response (lesson KB initialization).
  */
 export function validateLessonKB(parsed) {

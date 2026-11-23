@@ -674,14 +674,32 @@ A request the trace can't reproduce means the trace is missing something.
     it to those.
   - **One exchange**: a bar pinned to the top (All exchanges, Previous, Next);
     what you sent and what you saw (and the reply that streamed first, when
-    plato replaced it); the verdict; "What was unusual"; then **What
-    happened, in order**, in the stages of `STAGES` (`transparency.js`): You
-    sent → plato prepared what the AI model is given → The AI model answered →
-    plato checked the answer → plato recorded the result → In the background.
-    Every step type names its stage; a call's stage follows its agent and
-    purpose. "Jump to" links go to each stage. Each step is a sentence, who
-    decided it, the rule applied, before and after where something was
-    changed, and one "Show the exact text" disclosure.
+    plato replaced it); the verdict; then **What happened, in order**, in the
+    stages of `STAGES` (`transparency.js`): You sent → plato prepared and sent
+    the request → The AI model answered → plato checked the answer → plato
+    recorded the result → In the background. "Jump to" links go to each stage.
+  - **Each AI call is two steps**: *Sent to the AI model* (for which agent, the
+    model and region, the instructions' and messages' size in characters, the
+    tokens the model counted, the reply limit; in the stage that prepared it)
+    and *The AI model replied* (its size, how long it took, why it stopped).
+    Every step shows when it happened, counted from the start of the exchange.
+  - **plato checked the answer** is the list of checks in `CHECKS`, each a
+    question with its answer, even when it found nothing: did the reply include
+    its tags (`tagCheck`), did it write the learner's answer (`draftCheck`), is
+    every objective checked off shown in their own words (the grading check).
+    The steps a check led to sit under it.
+  - **Where plato stepped in or something went wrong is said on that step**
+    (`noteFor`), not in a separate list: amber "plato stepped in: …" or red
+    "Something went wrong: …", saying what happened and why it matters
+    (Blake: most readers won't know what a list of flags is asking them to
+    look for). The list of exchanges shows only who shaped each result and
+    "Something went wrong" when it did; its filter is "Only where plato stepped
+    in or something went wrong".
+  - **Who's this?** The first time an agent comes up in an exchange, the Trace
+    says who it is (from `AGENTS`). Checks say what they look for: the lesson
+    planner's setup lists the six things `validateLessonKB` requires
+    (`LESSON_KB_CHECKS`), a held-back note gives its reason
+    (`NOTE_RULE_REASONS`).
   - **Noise left out**: the lesson as written is shown once, at the start,
     unless it was edited after the learner started (then it's shown and
     flagged). Background agents' records join the exchange that set them off.
