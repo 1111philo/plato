@@ -16,7 +16,7 @@ import { store, ai, reset, signIn, traces, settle } from './helpers/fake-plato.j
 const { clearCache, savePreferences, getLearnerProfile, getLearnerProfileSummary } = await import('../js/storage.js');
 const { addLearnerNote, removeLearnerNote } = await import('../src/lib/profileQueue.js');
 const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL } = await import('../src/lib/authoringEngine.js');
-const { resetTraceSession, authorScope, storedTraceBytes, traceBytes, traceFull } = await import('../src/lib/traceSession.js');
+const { resetTraceSession, authorScope, storedTraceBytes, traceBytes, traceFull, openTrace } = await import('../src/lib/traceSession.js');
 const { rebuildRequest, storableBody, MAX_SCOPE_BYTES } = await import('../src/lib/lessonTrace.js');
 const { STEPS, AGENTS } = await import('../src/lib/transparency.js');
 const { describeTrace } = await import('../src/lib/traceView.js');
@@ -106,6 +106,30 @@ describe('Trace on, beyond lessons', () => {
       }
     }
     assert.equal(sent.length, 0, 'every request sent is in a trace');
+  });
+
+  // CI lost a record (2026-11-23): the clock ticked between reserving a start
+  // time and the recorder reading it, so two traces shared an id.
+  it('traces started back to back keep their own records, even when the clock ticks between reads', async () => {
+    await fresh({ trace: true });
+    const realNow = Date.now;
+    const keys = [];
+    try {
+      // The clock moves on after every `every` reads: some reads land on the
+      // same millisecond and some don't, as on a busy machine.
+      for (const every of [1, 2, 3, 4, 5]) {
+        let reads = 0;
+        let t = realNow() + every * 1000;
+        Date.now = () => (++reads % every === 0 ? ++t : t);
+        const opened = [];
+        for (let i = 0; i < 6; i++) opened.push(await openTrace('kb', 'authoring'));
+        for (const tr of opened) keys.push((await tr.flush()).key);
+      }
+    } finally {
+      Date.now = realNow;
+    }
+    assert.equal(new Set(keys).size, keys.length, 'two traces shared a record');
+    assert.equal(traces('kb').t.length, keys.length);
   });
 
   it('Settings: adding and removing a note are each a turn, with what was done and what was saved', async () => {
