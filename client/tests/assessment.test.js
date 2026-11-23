@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, heldReply, heldPosition, objectiveForLearner, COACH_WROTE,
+  claimsCompletion, draftsForLearner, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -552,5 +552,40 @@ describe('held reply copy (playground 2026-11-23)', () => {
     const t = heldReply(k, [2, 3], {});
     assert.match(t, /Still to show in your own words:\n- state one .* confirm your profile\n- explain why a value matters to you/);
     assert.equal(heldPosition(k, [3]), 'Close to the exemplar. Still to show in your own words: explain why a value matters to you in your own words.');
+  });
+});
+
+describe('the coach’s polish of the learner’s own words (Blake, 2026-11-23)', () => {
+  const own = 'I care about the qualty of my work, it has to be impactful and meaningful to comunities. Im iterative and detail driven';
+  const polished = 'I care about the quality of my work. It has to be impactful and meaningful to communities. I’m iterative and detail-driven.';
+  const verdict = (quote) => ({ objectives: [{ n: 1, shown: true, quote }] });
+
+  it('counts a polished version of their own text as theirs, spelling slips included', () => {
+    const transcript = [
+      { by: 'learner', text: own },
+      { by: 'coach', text: `Here’s your polished version: > ${polished} Send this exact version back.` },
+      { by: 'learner', text: polished },
+    ];
+    assert.deepEqual(groundVerdict(verdict(polished), transcript, [1]).shown, [1]);
+  });
+
+  it('still holds a passage the coach wrote from scratch', () => {
+    const drafted = 'My work is driven by a deep commitment to craft, and I bring curiosity and resilience to every team I join.';
+    const transcript = [
+      { by: 'learner', text: 'i like building stuff' },
+      { by: 'coach', text: `Try this: "${drafted}"` },
+      { by: 'learner', text: drafted },
+    ];
+    const g = groundVerdict(verdict(drafted), transcript, [1]);
+    assert.deepEqual(g.shown, []);
+    assert.equal(g.missing[1], COACH_WROTE);
+  });
+
+  it('spelling slips: one edit for shorter words, two for long ones, none under five letters', () => {
+    assert.equal(closeSpelling('qualty', 'quality'), true);
+    assert.equal(closeSpelling('comunities', 'communities'), true);
+    assert.equal(closeSpelling('work', 'word'), false);
+    assert.equal(closeSpelling('values', 'valley'), false);
+    assert.equal(OWN_SHARE, 0.7);
   });
 });

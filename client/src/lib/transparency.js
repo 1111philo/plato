@@ -218,6 +218,7 @@ export const THRESHOLDS = Object.freeze({
   HELD_PROGRESS: { where: 'client/src/lib/assessment.js', means: 'A held completion is recorded as at most 8.' },
   DRAFT_WORDS: { where: 'client/src/lib/assessment.js', means: 'A quoted passage of 20 or more words in a reply counts as the coach drafting the learner’s answer.' },
   COPY_WORDS: { where: 'client/src/lib/assessment.js', means: 'A quote of 8 or more words that the coach wrote first doesn’t count as the learner’s.' },
+  OWN_SHARE: { where: 'client/src/lib/assessment.js', means: 'A passage the coach wrote first still counts as the learner’s when 70% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.' },
   MAX_TRANSCRIPT: { where: 'client/src/lib/assessment.js', means: 'The assessment check reads the last 40 messages.' },
 });
 

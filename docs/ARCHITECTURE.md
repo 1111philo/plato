@@ -1433,7 +1433,18 @@ evidence gets the same verdict.
 learner message (exactly, or 80% of its words in order). It doesn't count if
 the coach wrote that passage first, at 8+ words: a learner pasting back the
 coach's draft. Order matters, since coaches quote learners' words back to
-them, and only the coach's *earlier* text counts as the coach's. A quote
+them, and only the coach's *earlier* text counts as the coach's. The
+coach's polish of the learner's own text still counts as theirs (Blake,
+2026-11-23): a coach-first passage whose words were mostly (`OWN_SHARE`, 70%)
+in the learner's messages before the coach wrote it, a spelling slip apart
+at most (`closeSpelling`), is the learner's. Without this, a coach that fixed
+a learner's grammar and asked for "this exact version" back then had the
+check reject that version, over and over (playground, 2026-11-23). On prod,
+8.7% of completions end with the learner sending back the coach's polish of
+their own text; replaying the check on 167 of them, holds fell from 47% to
+36% (holds for the coach's wording from 58 to 33). Telling the coach to name
+fixes instead didn't work: on 28 prod turns where Qwen rewrote a learner's
+text, the prompt change left it rewriting 44% of replays (38% before). A quote
 joined with an ellipsis is checked piece by piece. When a "shown" fails
 grounding, the assessor is asked once more about just those objectives,
 told why (often it quoted the coach when the learner's own words were also

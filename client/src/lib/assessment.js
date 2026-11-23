@@ -142,6 +142,28 @@ function appearsIn(quote, text) {
   return hits / qw.length >= 0.8;
 }
 
+/** Share of a coach-written passage's words that must be the learner's earlier words for it to count as their polished text. */
+export const OWN_SHARE = 0.7;
+
+/** Two words a spelling slip apart: an edit distance of 1, or 2 for longer words. */
+export function closeSpelling(a, b) {
+  if (a === b) return true;
+  const max = Math.min(a.length, b.length) >= 7 ? 2 : 1;
+  if (Math.abs(a.length - b.length) > max || a.length < 5 || b.length < 5) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, cur[j]);
+    }
+    if (best > max) return false;
+    prev = cur;
+  }
+  return prev[b.length] <= max;
+}
+
 /** groundVerdict's reason when the words that would show an objective were the coach's. */
 export const COACH_WROTE = 'the words that would show it were written by the coach';
 
@@ -212,6 +234,22 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
   }
   return { shown, missing, ungrounded, ...(evidence ? { evidence: found } : {}) };
 
+  /**
+   * The coach's polish of the learner's own words counts as theirs (Blake,
+   * 2026-11-23): when most of the passage's words were already in the
+   * learner's messages before the coach wrote it, the coach only cleaned
+   * them up. A misspelled word still counts as theirs (learners who spell
+   * differently, e.g. with dyslexia, aren't held for the coach's corrections).
+   */
+  function polishOfOwn(q, coachAt) {
+    const mine = transcript.slice(0, coachAt).filter((m) => m.by === 'learner').flatMap((m) => words(m.text));
+    const content = words(q).filter((w) => w.length > 3);
+    if (!content.length || !mine.length) return false;
+    const own = new Set(mine);
+    const theirs = content.filter((w) => own.has(w) || mine.some((m) => closeSpelling(w, m)));
+    return theirs.length / content.length >= OWN_SHARE;
+  }
+
   /** true, or why the quote isn't the learner's. */
   function groundQuote(quote) {
     // A quote with an ellipsis joins passages: each part must be the learner's.
@@ -223,7 +261,7 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     for (const q of pieces) {
       const learnerAt = firstIndex('learner', q);
       const coachAt = words(q).length >= COPY_WORDS ? firstIndex('coach', q) : -1;
-      const coachFirst = coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt);
+      const coachFirst = coachAt !== -1 && (learnerAt === -1 || coachAt < learnerAt) && !polishOfOwn(q, coachAt);
       if (evidence) (found[current] ||= []).push({ quote: q, learnerAt, coachAt, ok: !coachFirst && learnerAt !== -1 });
       if (coachFirst) return COACH_WROTE;
       if (learnerAt === -1) return 'not yet shown in the learner’s own words';
