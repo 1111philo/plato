@@ -21,7 +21,7 @@ const pick = (filters) => items.filter((i) => matchesFilters(i, filters, facets)
 
 describe('user filters', () => {
   it('offers status, role, group, and each field, with counts', () => {
-    assert.deepEqual(facets.map((f) => f.key), ['status', 'role', 'group', 'field:fld_org', 'field:fld_bio']);
+    assert.deepEqual(facets.map((f) => f.key), ['status', 'role', 'group', 'trace', 'field:fld_org', 'field:fld_bio']);
     const count = (key, value) => facets.find((f) => f.key === key).options.find((o) => o.value === value).count;
     assert.equal(count('status', 'active'), 3);
     assert.equal(count('role', 'learner'), 2, 'legacy "user" counts as learner');
@@ -69,6 +69,31 @@ describe('Slack filter', () => {
     assert.deepEqual(pickS(['linked']), ['a']);
     assert.deepEqual(pickS(['unlinked']), ['b']);
     assert.deepEqual(describeFilters({ slack: ['unlinked'] }, f), [{ key: 'slack', label: 'Slack', values: ['Not linked'] }]);
+  });
+});
+
+describe('Trace mode filter (#595)', () => {
+  const list = [
+    { _type: 'user', email: 'a', _user: { traceMode: true } },
+    { _type: 'user', email: 'b', _user: { traceMode: false } },
+    { _type: 'user', email: 'c', _user: {} },
+    { _type: 'invite', email: 'd' },
+    { _type: 'waitlist', email: 'e' },
+  ];
+  it('is always offered, before the custom fields', () => {
+    const keys = buildFacets({ items: list, userFields: [{ id: 'fld_x', label: 'Org', type: 'text' }] }).map((f) => f.key);
+    assert.equal(keys.indexOf('trace'), keys.indexOf('field:fld_x') - 1);
+  });
+  it('splits signed-up users into On and Off; invites and the wait list match neither', () => {
+    const f = buildFacets({ items: list });
+    const trace = f.find((x) => x.key === 'trace');
+    assert.equal(trace.label, 'Trace mode');
+    assert.deepEqual(trace.options.map((o) => [o.label, o.count]), [['On', 1], ['Off', 2]]);
+    const pickT = (v) => list.filter((i) => matchesFilters(i, { trace: v }, f)).map((i) => i.email);
+    assert.deepEqual(pickT(['on']), ['a']);
+    assert.deepEqual(pickT(['off']), ['b', 'c']);
+    assert.deepEqual(pickT(['on', 'off']), ['a', 'b', 'c']);
+    assert.deepEqual(describeFilters({ trace: ['on'] }, f), [{ key: 'trace', label: 'Trace mode', values: ['On'] }]);
   });
 });
 

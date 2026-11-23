@@ -39,6 +39,7 @@ import { countGroupMembers } from '../../lib/groupCounts.js';
 import { visibleColumns, arrangeable, toggleColumn, moveColumn, loadPrefs, savePrefs, defaultPrefs } from '../../lib/tableColumns.js';
 import FiltersMenu from './FiltersMenu.jsx';
 import { providerName, signInMethods, ssoInPlay } from '../../lib/signIn.js';
+import { traceBulkResult } from '../../lib/traceAdmin.js';
 import ColumnsDialog from './ColumnsDialog.jsx';
 import GroupsDialog from './GroupsDialog.jsx';
 import BulkUpdateDialog from './BulkUpdateDialog.jsx';
@@ -172,7 +173,7 @@ export default function AdminUsers() {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [userFields, setUserFields] = useState([]);
   const [editUser, setEditUser] = useState(null);
-  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
+  const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', username: '', userGroup: '', role: '', customFields: {}, traceMode: false });
 
   // Invite modal state
   const [inviteInput, setInviteInput] = useState('');
@@ -662,7 +663,7 @@ export default function AdminUsers() {
       return;
     }
     setEditUser(u);
-    setEditForm({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) } });
+    setEditForm({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', username: u.username || '', userGroup: u.userGroup || '', role: u.role || 'user', customFields: { ...(u.customFields || {}) }, traceMode: !!u.traceMode });
   }, [paramUserId, users, navigate]);
 
   async function removeFromBounceList(email) {
@@ -707,6 +708,8 @@ export default function AdminUsers() {
         userGroup: editForm.userGroup || null,
         // Send every defined field so cleared inputs clear the stored value.
         customFields: Object.fromEntries(userFields.map((f) => [f.id, editForm.customFields[f.id] ?? ''])),
+        // Trace mode (#595) only when it changed: each change is audit-logged.
+        ...(editForm.traceMode !== !!editUser.traceMode ? { traceMode: editForm.traceMode } : {}),
       });
       if (normalizeRole(editForm.role) !== normalizeRole(editUser.role)) {
         await adminApi('PUT', `/v1/admin/users/${editUser.userId}/role`, { role: editForm.role });
@@ -832,7 +835,13 @@ export default function AdminUsers() {
     for (const id of pageUserIds) { if (on) next.add(id); else next.delete(id); }
     changeSelection(next);
   }
-  function onBulkDone(result, { label, cleared, value, slack }) {
+  function onBulkDone(result, { label, cleared, value, slack, trace }) {
+    if (trace) {
+      setMessage(traceBulkResult(result, value));
+      changeSelection(new Set(), 'Selection cleared.');
+      loadData({ quiet: true });
+      return;
+    }
     if (slack) {
       const parts = [`Linked ${result.linked} ${result.linked === 1 ? 'user' : 'users'} to Slack.`];
       if (result.alreadyLinked) parts.push(`${result.alreadyLinked} already linked.`);
@@ -983,6 +992,16 @@ export default function AdminUsers() {
                 <p id="edit-role-help" className="text-xs text-muted-foreground">{ROLE_HELP[normalizeRole(editForm.role)]}</p>
               </div>
             )}
+            {/* Trace mode (#595): the admin's flag. The learner is told in their Settings. */}
+            <div className="flex items-start gap-2 border-t pt-4">
+              <input id="edit-trace" type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-primary"
+                checked={editForm.traceMode} disabled={!canEditUser} aria-describedby="edit-trace-help"
+                onChange={e => setEditForm({ ...editForm, traceMode: e.target.checked })} />
+              <div className="space-y-1">
+                <Label htmlFor="edit-trace">Trace mode</Label>
+                <p id="edit-trace-help" className="text-xs text-muted-foreground">Records what plato does in this person’s lessons. They’re told, and can read the trace too.</p>
+              </div>
+            </div>
             {ssoOn && (
               <section className="space-y-2 border-t pt-4" aria-labelledby="edit-signin">
                 <h2 id="edit-signin" ref={signInHeadingRef} tabIndex={-1} className="text-sm font-medium">Sign-in</h2>
@@ -1090,6 +1109,9 @@ export default function AdminUsers() {
     // The immutable account id, for research and reporting (#386). Staff only
     // (admins, educators, testers: everyone with users.read); never learners.
     { id: 'userId', label: 'User ID', sortKey: 'userId', cell: (item) => (item._type === 'user' ? <code className="text-xs">{item._user.userId}</code> : DASH) },
+    // Trace mode (#595), the admin's flag on the account. Hidden until chosen;
+    // last, so Move up / Move down on the columns before it works as it did.
+    { id: 'trace', label: 'Trace', defaultHidden: true, cell: (item) => (item._type === 'user' && item._user.traceMode ? 'On' : DASH) },
     { id: 'actions', label: 'Actions', fixed: true, cell: (item) => (
       item._type === 'waitlist' ? (
         <div className="flex gap-1">
