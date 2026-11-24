@@ -71,7 +71,7 @@ A case can set `mark: "pending"` (the whole case), `marks: { check: mark }`, or 
 A case is never loosened to make a run pass without a person agreeing: if the agent is wrong, fix the agent.
 
 ## Built so far
-- **Agents:** Coach (single moments), Assessor, Claim Check.
-- **Next:** the other eight agents, whole lessons with simulated learners, the chains, and the screenshot cases (A13, A14), which need image fixtures.
+- **Agents:** all eleven, as single moments: Coach, Assessor, Claim Check, Lesson Owner, Learner Profile Update and Owner, Course Progress Update, Lesson Creator, Lesson Extractor, Knowledge Base Editor and Extractor.
+- **Next:** whole lessons with simulated learners, the chains, and the screenshot cases (A13, A14), which need image fixtures.
 
 `../coach-eval.js` stays for comparing models (`--models`); the Coach module here is what gates changes.

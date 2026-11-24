@@ -65,6 +65,15 @@ describe('an agent run, scored', () => {
     assert.equal(bad.find((c) => c.id === 'Y1').checks.answered.verdict, 'fail', '"must never happen": not yes or no');
     assert.equal(bad.find((c) => c.id === 'Y1').checks.correct.verdict, 'fail');
   });
+  it('every agent has a module that loads with this version, and its cases only use checks it defines', async () => {
+    const app = await loadApp(REPO);
+    for (const id of AGENTS) {
+      const agent = await loadAgent(id);
+      assert.ok(agent.available(app), `${id} runs with this version`);
+      assert.ok(agent.cases.length >= 5, `${id} has its cases`);
+      for (const c of agent.cases) for (const k of Object.keys(c.marks || {})) assert.ok(agent.CHECKS[k], `${id} ${c.id}: unknown check ${k}`);
+    }
+  });
   it('the baseline tally compares like with like', async () => {
     const raw = { a: { x: { trials: [{ checks: { k: true } }, { checks: { k: false } }, { checks: { k: null } }] } } };
     assert.deepEqual(tally(raw), { a: { x: { k: { fails: 1, n: 2 } } } });
