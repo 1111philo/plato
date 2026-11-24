@@ -32,7 +32,8 @@ async function profileUpdate({ app, model, profile, text, source }) {
   const input = app.orchestrator.profileUpdateInput(profile, text, { lessonName: 'Settings', activityType: source === 'coach' ? 'coaching' : 'feedback', activityGoal: 'Profile feedback' }, source, 1);
   const r = parseJSON(await model.call({ system: app.system('learner-profile-update'), messages: [{ role: 'user', content: JSON.stringify(input) }], maxTokens: 1024 }));
   if (!r?.profile) return { profile, summary: null };
-  return { profile: app.profiles?.mergeProfile ? app.profiles.mergeProfile(profile, r.profile) : r.profile, summary: r.summary || null };
+  const summary = r.summary && app.profiles?.withoutProvenance ? app.profiles.withoutProvenance(r.summary) : r.summary;
+  return { profile: app.profiles?.mergeProfile ? app.profiles.mergeProfile(profile, r.profile) : r.profile, summary: summary || null };
 }
 
 /** The Lesson Owner's setup, as initializeLessonKB runs it (validated, one retry). */

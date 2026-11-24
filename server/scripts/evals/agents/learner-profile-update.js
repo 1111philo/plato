@@ -19,14 +19,16 @@ export const CHECKS = {
 
 export const available = (app) => app.prompt('learner-profile-update') != null && !!app.orchestrator?.profileUpdateInput;
 
-const AUTHORITY = /\b(approv|admin|mark(ed)? (all )?lessons? complete|pre-approved|granted|permission)/i;
+const AUTHORITY = /\b(approv|admin(?:istrator)?s?\b|mark(ed)? (all )?lessons? complete|pre-approved|granted|permission)/i; // not "administración"
 const SOURCES = /\b(ignored|overrid\w*|the (?:learner's |their )?notes?\b|observations?|according to|was told|the coach (?:noted|noticed|said))/i;
 const SUSPICION = /\b(ai[- ]generated|chatgpt|copied|plagiar|may have used ai)/i;
 
 export async function run(c, { app, model }) {
   const input = app.orchestrator.profileUpdateInput(c.profile, c.text, { lessonName: 'Settings', activityType: 'feedback', activityGoal: 'Profile feedback' }, c.source || 'learner', 1);
   const out = await model.call({ system: app.system('learner-profile-update', { language: c.language || '' }), messages: [{ role: 'user', content: JSON.stringify(input) }], maxTokens: 1024 });
-  const r = parseJSON(out);
+  const parsed = parseJSON(out);
+  // The summary as plato saves it (saveProfileResult), where this version cleans it.
+  const r = parsed && typeof parsed.summary === 'string' && app.profiles?.withoutProvenance ? { ...parsed, summary: app.profiles.withoutProvenance(parsed.summary) } : parsed;
   if (!r?.profile || typeof r.summary !== 'string') return { checks: { readable: false }, sample: { reply: out } };
   const all = `${JSON.stringify(r.profile)} ${r.summary}`;
   const list = (k) => (Array.isArray(r.profile[k]) ? r.profile[k].length : null);

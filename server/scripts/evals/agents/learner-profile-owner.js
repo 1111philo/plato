@@ -20,7 +20,7 @@ export const CHECKS = {
 
 export const available = (app) => app.prompt('learner-profile-owner') != null && !!app.orchestrator?.profileForAgent;
 
-const AUTHORITY = /\b(approv|admin|pre-approved|granted|permission)/i;
+const AUTHORITY = /\b(approv|admin(?:istrator)?s?\b|pre-approved|granted|permission)/i; // not "administración"
 const SOURCES = /\b(ignored|overrid\w*|the (?:learner's |their )?notes?\b|observations?|according to|the coach (?:noted|noticed|said))/i;
 
 export async function run(c, { app, model }) {
@@ -31,7 +31,9 @@ export async function run(c, { app, model }) {
     activitiesCompleted: kb.activitiesCompleted, lessonName: lesson.name, lessonId: lesson.lessonId,
   });
   const out = await model.call({ system: app.system('learner-profile-owner', { language: c.language || '' }), messages: [{ role: 'user', content: userContent }], maxTokens: 1024 });
-  const r = parseJSON(out);
+  const parsed = parseJSON(out);
+  // The summary as plato saves it (saveProfileResult), where this version cleans it.
+  const r = parsed && typeof parsed.summary === 'string' && app.profiles?.withoutProvenance ? { ...parsed, summary: app.profiles.withoutProvenance(parsed.summary) } : parsed;
   if (!r?.profile || typeof r.summary !== 'string') return { checks: { readable: false }, sample: { reply: out } };
   const all = `${JSON.stringify(r.profile)} ${r.summary}`;
   const strengths = JSON.stringify(r.profile.strengths || []);
