@@ -3,7 +3,7 @@
  * exchange at a time, step by step in plain stages ("You sent" → "plato
  * prepared…" → "The AI model answered" → "plato checked the answer" →
  * "plato recorded the result" → "In the background"). Shown docked beside
- * the chat or in a dialog (LessonTrace.jsx).
+ * the chat or in a dialog (TraceContent.jsx, in LessonPanel.jsx).
  *
  * `view` is lib/traceView.js describeTrace(...). Exact text is always in a
  * <pre>, never rendered as markdown: it includes model output and text from
@@ -261,7 +261,7 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
     const id = requestAnimationFrame(() => requestAnimationFrame(() => {
       if (cancelled) return;
       if (focusTarget.kind === 'heading') {
-        heading.current?.closest('[role=region]')?.scrollTo?.({ top: 0 });
+        heading.current?.closest('[role=tabpanel],[role=region]')?.scrollTo?.({ top: 0 });
         heading.current?.focus({ preventScroll: true });
       } else {
         rows.current.get(focusTarget.id)?.focus();

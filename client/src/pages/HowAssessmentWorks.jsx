@@ -41,7 +41,7 @@ export default function HowAssessmentWorks() {
             <p className="text-muted-foreground">
               Every lesson in {classroomName} has an <em>exemplar</em>, a description of what finished work looks like,
               and 2 to 4 <em>learning objectives</em>, the specific things you show you can do. You can read both any time
-              with the &ldquo;Progress&rdquo; button at the top of a lesson (for example, &ldquo;Progress (1 of 4
+              with the &ldquo;Overview&rdquo; button at the top of a lesson (for example, &ldquo;Overview (1 of 4
               Objectives)&rdquo;), or &ldquo;View outline&rdquo; on the Lessons page.
             </p>
           </section>
@@ -56,10 +56,11 @@ export default function HowAssessmentWorks() {
             </p>
             <p className="text-muted-foreground">
               Under each reply, &ldquo;Behind this response&rdquo; shows what the coach and plato&rsquo;s other AI helpers
-              read and did, including how your progress changed. The lesson overview (that same &ldquo;Progress&rdquo;
-              button) shows the objectives the coach has checked off, its notes on where you are, and
-              everything you&rsquo;ve shared.
-             For the full record, press a lesson&rsquo;s Trace button: from then on its Trace shows every step, the exact instructions the coach was given, and anything plato&rsquo;s code changed.</p>
+              read and did, including how your progress changed. The lesson&rsquo;s &ldquo;Overview&rdquo; button opens a
+              panel that shows the objectives the coach has checked off, its notes on where you are, and
+              everything you&rsquo;ve shared. For the full record, start a trace in that panel&rsquo;s Trace tab: from
+              then on it shows every step, the exact instructions the coach was given, and anything plato&rsquo;s code
+              changed.</p>
           </section>
 
           <section className="space-y-2">

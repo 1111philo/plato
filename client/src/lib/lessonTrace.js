@@ -31,7 +31,7 @@ const LINK_MARKER = '[REFERENCE CONTEXT';
 
 /**
  * Whether Trace records `scope` (a lesson id, or `profile`). A person starts
- * it one conversation at a time, from that conversation's Trace button
+ * it one conversation at a time, from that conversation's Trace
  * (`preferences.traceScopes`), so nothing is recorded that nobody asked to read.
  */
 export function isTraceOn(preferences, scope) {
