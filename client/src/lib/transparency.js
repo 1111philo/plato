@@ -44,6 +44,8 @@ const N = {
 /**
  * Every field plato's code puts in the coach's context (lessonEngine
  * buildContext), with where it comes from. `source` is who wrote the value.
+ * `steers: true`: plato's code writes it to change what the coach does, so
+ * the Trace lists it where plato stepped in.
  */
 export const CONTEXT_FIELDS = Object.freeze({
   learnerName: { label: 'Your first name', source: 'person', from: 'Your account.' },
@@ -62,8 +64,8 @@ export const CONTEXT_FIELDS = Object.freeze({
   unit: { label: 'Unit, and what you’ve shown in its other lessons', source: 'model', from: `The unit’s name, with the note the ${N.course} keeps.` },
   course: { label: 'Course', source: 'person', from: 'The course this lesson’s unit belongs to.' },
   enrichmentContext: { label: 'Background from plugins', source: 'code', from: 'Gathered once when the lesson started, by plugins the classroom turned on.' },
-  pacingDirective: { label: 'A pacing instruction', source: 'code', from: 'Added by plato’s code once the lesson runs past its usual length, telling the coach to move toward wrapping up. The lesson is never cut off.' },
-  postCompletionDirective: { label: 'An instruction for after completion', source: 'code', from: 'Added by plato’s code once the lesson is complete: the conversation is for feedback, and the score no longer changes.' },
+  pacingDirective: { label: 'A pacing instruction', source: 'code', steers: true, from: 'Added by plato’s code once the lesson runs past its usual length, telling the coach to move toward wrapping up. The lesson is never cut off.' },
+  postCompletionDirective: { label: 'An instruction for after completion', source: 'code', steers: true, from: 'Added by plato’s code once the lesson is complete: the conversation is for feedback, and the score no longer changes.' },
 });
 
 /** The parts of an agent's instructions (promptAssembly.systemPromptParts), and who wrote each. */
@@ -105,8 +107,10 @@ export const CHECKS = Object.freeze({
 
 /**
  * Every step type a Trace records (lib/lessonTrace.js, lessonEngine.js).
- * `stage` places it in an exchange (STAGES); `title` names it; `source` says
- * who decided; `means` explains it.
+ * `stage` places it in an exchange (STAGES); `check` places a checked step
+ * in its check (CHECKS); `title` names it; `source` says who decided;
+ * `means` explains it (shown behind "ⓘ"). Numbers and tag names aren't
+ * written here: the view reads them from what was recorded.
  */
 export const STEPS = Object.freeze({
   lesson: { stage: 'setup', title: 'The lesson', source: 'person', means: 'The lesson as its author wrote it, and when it was last edited.' },
@@ -115,8 +119,8 @@ export const STEPS = Object.freeze({
   plugins: { stage: 'setup', title: 'Extra context from plugins', source: 'code', means: 'Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes.' },
   input: { stage: 'sent', title: 'What you sent', source: 'person', means: 'Your message, with any images and attached web pages.' },
   state: { stage: 'prepared', title: 'Where the lesson stood', source: 'code', means: 'The progress and objectives on record before this message.' },
-  tail: { stage: 'prepared', title: 'The conversation so far', source: 'code', means: 'plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again.' },
-  context: { stage: 'prepared', title: 'What plato told the coach about you and the lesson', source: 'code', means: 'plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary.' },
+  tail: { stage: 'prepared', title: 'The conversation so far', source: 'code', means: 'plato sends the latest messages, up to a limit. Images and attached pages from earlier messages are not sent again.' },
+  context: { stage: 'prepared', title: 'What plato told the coach', source: 'code', means: 'Before every reply plato’s code gathers what the coach should know about you and the lesson, and sends it as the first message.' },
   history: { stage: 'prepared', title: 'The messages sent to the model', source: 'code', means: 'The exact list of messages every coach call on this turn starts from.' },
   call: {
     stage: 'answered', title: 'A call to the AI model', source: 'model', means: 'One request to the model and its raw reply.',
@@ -124,22 +128,22 @@ export const STEPS = Object.freeze({
     request: { title: 'Sent to the AI model', source: 'code', means: 'plato’s code sends the agent’s instructions and the messages. Size is counted in tokens, the pieces of text a model reads (a token is about three quarters of a word).' },
     reply: { title: 'The AI model replied', source: 'model', means: 'What came back, word for word, how long it took, and why it stopped.' },
   },
-  parsed: { stage: 'answered', title: 'What plato read from the reply', source: 'code', means: 'The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them.' },
-  tagCheck: { stage: 'checked', title: 'Were the reply’s tags there?', source: 'code', means: 'plato’s code looks for the two tags it needs: the progress score and the notes. Without them, nothing from the reply can be recorded.' },
-  draftCheck: { stage: 'checked', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
-  tagRepair: { stage: 'checked', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
-  draftGuard: { stage: 'checked', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
-  gradingPlan: { stage: 'checked', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
-  gradingRetry: { stage: 'checked', title: `The ${N.assessor}’s answer couldn’t be read`, source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },
-  verdict: { stage: 'checked', title: `The ${N.assessor}’s verdict`, source: 'model', means: 'For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach.' },
-  recheck: { stage: 'checked', title: `Asked the ${N.assessor} again`, source: 'code', means: 'A quote wasn’t the learner’s own words, so plato asked once more about just that objective.' },
-  gradingFailed: { stage: 'checked', title: `The ${N.assessor} couldn’t run`, source: 'code', means: 'The check failed this turn, so nothing new was checked off.' },
-  gradingStood: { stage: 'checked', title: 'The coach’s grading stood', source: 'code', means: 'The check failed on two completing turns in a row, so plato accepted the coach’s grading rather than leave the learner stuck.' },
-  verdictApplied: { stage: 'checked', title: 'What the check changed', source: 'code', means: 'Objectives the coach claimed without backing were taken off; a completion that wasn’t backed up was held.' },
-  heldRewrite: { stage: 'checked', title: 'The coach was asked to reply again', source: 'instructions', means: 'Completion was held, so plato told the coach what was missing and asked for a new reply.' },
-  claimCheck: { stage: 'checked', title: 'Does the reply say the lesson is done?', source: 'code', means: 'With completion held, the reply mustn’t say the lesson is finished. plato checks the wording against known phrases, then asks the model.' },
-  replyReplaced: { stage: 'checked', title: 'plato replaced the coach’s reply', source: 'code', means: 'The reply still said the lesson was done, so plato’s code showed a standard message instead.' },
-  positionReplaced: { stage: 'checked', title: 'plato replaced the “Where you are” note', source: 'code', means: 'The coach’s note said the lesson was done while completion was held.' },
+  parsed: { stage: 'answered', title: 'What plato read from the reply', source: 'code', means: 'The coach ends each reply with tags that only plato’s code reads. You see the text before them.' },
+  tagCheck: { stage: 'checked', check: 'tags', title: 'Were the reply’s tags there?', source: 'code', means: 'plato’s code looks for the tags it needs. Without them, nothing from the reply can be recorded.' },
+  draftCheck: { stage: 'checked', check: 'draft', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
+  tagRepair: { stage: 'checked', check: 'tags', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
+  draftGuard: { stage: 'checked', check: 'draft', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
+  gradingPlan: { stage: 'checked', check: 'grading', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
+  gradingRetry: { stage: 'checked', check: 'grading', title: `The ${N.assessor}’s answer couldn’t be read`, source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },
+  verdict: { stage: 'checked', check: 'grading', title: `The ${N.assessor}’s verdict`, source: 'model', means: 'For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach.' },
+  recheck: { stage: 'checked', check: 'grading', title: `Asked the ${N.assessor} again`, source: 'code', means: 'A quote wasn’t the learner’s own words, so plato asked once more about just that objective.' },
+  gradingFailed: { stage: 'checked', check: 'grading', title: `The ${N.assessor} couldn’t run`, source: 'code', means: 'The check failed this turn, so nothing new was checked off.' },
+  gradingStood: { stage: 'checked', check: 'grading', title: 'The coach’s grading stood', source: 'code', means: 'The check failed on two completing turns in a row, so plato accepted the coach’s grading rather than leave the learner stuck.' },
+  verdictApplied: { stage: 'checked', check: 'grading', title: 'What the check changed', source: 'code', means: 'Objectives the coach claimed without backing were taken off; a completion that wasn’t backed up was held.' },
+  heldRewrite: { stage: 'checked', check: 'grading', title: 'The coach was asked to reply again', source: 'instructions', means: 'Completion was held, so plato told the coach what was missing and asked for a new reply.' },
+  claimCheck: { stage: 'checked', check: 'grading', title: 'Does the reply say the lesson is done?', source: 'code', means: 'With completion held, the reply mustn’t say the lesson is finished. plato checks the wording against known phrases, then asks the model.' },
+  replyReplaced: { stage: 'checked', check: 'grading', title: 'plato replaced the coach’s reply', source: 'code', means: 'The reply still said the lesson was done, so plato’s code showed a standard message instead.' },
+  positionReplaced: { stage: 'checked', check: 'grading', title: 'plato replaced the “Where you are” note', source: 'code', means: 'The coach’s note said the lesson was done while completion was held.' },
   applied: { stage: 'recorded', title: 'What was recorded, and the rules plato applied', source: 'code', means: 'plato’s code, not the model, decides what is saved: see RULES.' },
   save: { stage: 'recorded', title: 'Saved', source: 'code', means: 'What was written to plato’s database, and whether it worked.' },
   event: { stage: 'recorded', title: 'Reported to the logs', source: 'code', means: 'A short code and the lesson’s id, so the team can count how often this happens. No conversation text.' },
@@ -192,6 +196,19 @@ export const THRESHOLDS = Object.freeze({
   OWN_SHARE: { where: 'client/src/lib/assessment.js', means: `A passage the coach wrote first still counts as the learner’s when ${Math.round(OWN_SHARE * 100)}% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.` },
   MAX_TRANSCRIPT: { where: 'client/src/lib/assessment.js', means: `The ${N.assessor} reads the last ${MAX_TRANSCRIPT} messages.` },
 });
+
+/**
+ * The words a Trace uses, for a first-time reader (one "How to read a trace"
+ * note at the top of the Trace, and "ⓘ" beside the terms).
+ */
+export const GLOSSARY = Object.freeze([
+  { term: 'AI model', means: 'The one program that writes every reply. plato sends it requests and reads what comes back.' },
+  { term: 'Agent', means: 'The AI model given a particular set of instructions, for one job: the Coach, the Assessor, and so on. Each agent’s instructions are a file in plato’s source code.' },
+  { term: 'Request', means: 'One message from plato’s code to the AI model, with three parts: the instructions (read first), the messages (the conversation it replies to, some written by plato), and the settings (limits such as the longest reply).' },
+  { term: 'Token', means: 'The pieces of text a model reads and writes; a token is about three quarters of a word.' },
+  { term: 'Who decided', means: Object.values(SOURCES).map((x) => `${x.label}: ${x.means}`).join(' ') },
+  { term: 'Stepped in', means: 'plato’s code or instructions changed what the model produced: asked again, held a completion, replaced a reply, or added an instruction.' },
+]);
 
 /** The codes the app reports to the server's logs (orchestrator.reportEvent), in plain words. */
 export const EVENTS = Object.freeze({

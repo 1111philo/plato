@@ -90,6 +90,6 @@ export function updateCourseProgressOnCompletionInBackground(lessonKB, lesson) {
       updatedAt: Date.now(),
     });
     syncIfUnsaved(saved, `courseProgress:${courseId}`);
-    trace?.step('unitNoteSaved', { before: prior?.summary || '', after: result.summary, completedLessonIds, saved });
+    trace?.step('unitNoteSaved', { call: trace.lastCall(), before: prior?.summary || '', after: result.summary, completedLessonIds, saved });
   }));
 }

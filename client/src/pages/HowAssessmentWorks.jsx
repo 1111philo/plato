@@ -58,7 +58,7 @@ export default function HowAssessmentWorks() {
               Under each reply, &ldquo;Behind this response&rdquo; shows what the coach and plato&rsquo;s other AI helpers
               read and did, including how your progress changed. The lesson&rsquo;s &ldquo;Overview&rdquo; button opens a
               panel that shows the objectives the coach has checked off, its notes on where you are, and
-              everything you&rsquo;ve shared. For the full record, start a trace in that panel&rsquo;s Trace tab: from
+              everything you&rsquo;ve shared. For the full record, start a trace in that panel&rsquo;s Data Trace tab: from
               then on it shows every step, the exact instructions the coach was given, and anything plato&rsquo;s code
               changed.</p>
           </section>

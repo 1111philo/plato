@@ -123,7 +123,7 @@ test.describe('learner pages', () => {
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
     await page.getByRole('button', { name: /: lesson panel$/ }).click();
     const panel = page.locator('#lesson-panel');
-    await panel.getByRole('tab', { name: 'Trace' }).click();
+    await panel.getByRole('tab', { name: 'Data Trace' }).click();
     await panel.getByRole('button', { name: 'Start trace' }).click();
     await expect(panel.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
     await expectAccessible(page, { include: '#lesson-panel', label: 'lesson trace' });

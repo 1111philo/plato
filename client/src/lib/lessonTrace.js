@@ -148,10 +148,12 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     return { kind: partKind, chars: t.length, hash, ...(t.length > MAX_PART_CHARS ? { cut: true } : {}) };
   };
 
+  // The agent's prompt-file header as it was for this call, every field.
   const about = (parts) => {
     const h = parts.find((p) => p.kind === 'prompt')?.header;
-    return h ? { name: h.name, purpose: h.purpose } : null;
+    return h ? { name: h.name, purpose: h.purpose, runs: h.runs, reads: h.reads, returns: h.returns } : null;
   };
+  let lastCall = null;
 
   const messagesRef = (messages) => {
     if (base && messages.length >= base.length && base.every((m, i) => m === messages[i])) {
@@ -167,6 +169,12 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     steps,
     step,
 
+    /**
+     * The step number of the latest AI call, for a result step to name the
+     * call it came from (`{ call: trace.lastCall() }`).
+     */
+    lastCall: () => lastCall,
+
     /** The messages every coach call this turn starts from; stored once. */
     setBase(messages) {
       base = messages;
@@ -176,11 +184,13 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     /**
      * One AI call. Returns a handle: `attempt(err)` for each failed try that
      * was retried, `meta(m)` for stream metadata, `end(reply)` or `fail(err)`.
+     * `stage` and `check` are the caller's: where in the exchange the call
+     * belongs (STAGES) and, for a call made by a check, which one (CHECKS).
      */
-    begin({ agent, purpose, model, maxTokens, temperature, stream = false, parts = [], messages = [] }) {
+    begin({ agent, purpose, stage = null, check = null, model, maxTokens, temperature, stream = false, parts = [], messages = [] }) {
       const callStart = now();
       const call = step('call', {
-        agent, purpose: purpose || null, model, maxTokens,
+        agent, purpose: purpose || null, stage, check, model, maxTokens,
         temperature: temperature ?? null, stream,
         system: parts.map(partRef),
         // The prompt file's header (who the agent is), which isn't sent.
@@ -188,6 +198,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
         messages: messagesRef(messages),
         attempts: [],
       });
+      lastCall = call.n;
       const meta = (m = {}) => {
         if (m.usage) call.usage = m.usage;
         if (m.stopReason) call.stopReason = m.stopReason;

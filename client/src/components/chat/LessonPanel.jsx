@@ -53,7 +53,7 @@ export default function LessonPanel({ open, tab, onTabChange, onClose, docked, f
         <TabsList className={docked ? 'mx-4 mt-3' : undefined} aria-label="Lesson panel">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="trace">
-            Trace{recording && <span className="ml-1.5"><TraceRecordingDot /></span>}
+            Data Trace{recording && <span className="ml-1.5"><TraceRecordingDot /></span>}
             {recording && <span className="sr-only"> (recording)</span>}
           </TabsTrigger>
         </TabsList>

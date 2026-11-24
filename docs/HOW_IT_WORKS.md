@@ -192,13 +192,13 @@ With Trace on for a conversation, each exchange of it is recorded step by step. 
 | Extra context from plugins (`plugins`) | plato set up the lesson | plato’s code | Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes. |
 | What you sent (`input`) | You sent | A person | Your message, with any images and attached web pages. |
 | Where the lesson stood (`state`) | plato prepared and sent the request | plato’s code | The progress and objectives on record before this message. |
-| The conversation so far (`tail`) | plato prepared and sent the request | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
-| What plato told the coach about you and the lesson (`context`) | plato prepared and sent the request | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
+| The conversation so far (`tail`) | plato prepared and sent the request | plato’s code | plato sends the latest messages, up to a limit. Images and attached pages from earlier messages are not sent again. |
+| What plato told the coach (`context`) | plato prepared and sent the request | plato’s code | Before every reply plato’s code gathers what the coach should know about you and the lesson, and sends it as the first message. |
 | The messages sent to the model (`history`) | plato prepared and sent the request | plato’s code | The exact list of messages every coach call on this turn starts from. |
 | A call to the AI model (`call`) | The AI model answered | The AI model | One request to the model and its raw reply. |
-| What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them. |
-| Were the reply’s tags there? (`tagCheck`) | plato checked the answer | plato’s code | plato’s code looks for the two tags it needs: the progress score and the notes. Without them, nothing from the reply can be recorded. |
-| Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
+| What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags that only plato’s code reads. You see the text before them. |
+| Were the reply’s tags there? (`tagCheck`) | plato checked the answer | plato’s code | plato’s code looks for the tags it needs. Without them, nothing from the reply can be recorded. |
+| Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
 | What the second request got back (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
 | The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
 | Whether to check the grading (`gradingPlan`) | plato checked the answer | plato’s code | The Assessor runs only when the coach checks off an objective or scores 10. |

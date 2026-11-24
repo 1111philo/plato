@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM,
+  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -78,8 +78,15 @@ export function assertImageWithinBedrockLimit(imageDataUrl) {
 
 // -- Tag parsing --------------------------------------------------------------
 
+/**
+ * The tags plato's code reads from a coach reply, by what each carries. The
+ * Trace names them from here (and records the list on each parse), so a tag
+ * added here shows up there by itself.
+ */
+export const COACH_TAGS = Object.freeze({ progress: 'PROGRESS', notes: 'KB_UPDATE', profile: 'PROFILE_UPDATE' });
+
 // Detects where the coach tag section begins (tags always come at the end)
-const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
+const TAG_SECTION_REGEX = new RegExp(`\\n?\\[(?:${Object.values(COACH_TAGS).join('|')})[:\\s]`);
 
 /**
  * Extract a JSON object from text starting after startPos, using bracket
@@ -298,25 +305,31 @@ export function shouldUpdateProfile(parsed) {
   return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
 }
 
+/** How many of the latest stored messages the coach is sent as the conversation so far. */
+// Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32
+// msgs). 40 covers outliers up to 22 exchanges without being unlimited.
+export const COACH_TAIL = 40;
+
+// checkGrading's steps that read the reply of the call just made.
+const CALL_RESULTS = new Set(['gradingRetry', 'verdict', 'recheck', 'claimCheck', 'heldRewrite']);
+
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
   let profileUpdate = null;
 
-  const progressMatch = raw.match(/\[PROGRESS:\s*(\d+)\]/);
+  const progressMatch = raw.match(new RegExp(`\\[${COACH_TAGS.progress}:\\s*(\\d+)\\]`));
   if (progressMatch) progress = parseInt(progressMatch[1], 10);
 
-  const kbIdx = raw.indexOf('[KB_UPDATE:');
-  if (kbIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, kbIdx + '[KB_UPDATE:'.length);
-    if (jsonStr) { try { kbUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
-
-  const profIdx = raw.indexOf('[PROFILE_UPDATE:');
-  if (profIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, profIdx + '[PROFILE_UPDATE:'.length);
-    if (jsonStr) { try { profileUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
+  const json = (tag) => {
+    const idx = raw.indexOf(`[${tag}:`);
+    if (idx === -1) return null;
+    const jsonStr = extractBracketedJSON(raw, idx + tag.length + 2);
+    if (!jsonStr) return null;
+    try { return JSON.parse(jsonStr); } catch { return null; }
+  };
+  kbUpdate = json(COACH_TAGS.notes);
+  profileUpdate = json(COACH_TAGS.profile);
 
   return { text: stripTags(raw), progress, kbUpdate, profileUpdate };
 }
@@ -364,7 +377,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   if (onProgress) onProgress('initializing');
   const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary, { trace });
   // What the planner wrote, before plato's code sets the fields it owns.
-  trace?.step('planned', { fromModel: { ...lessonKB }, authorObjectives: lesson.learningObjectives || [], authorExemplar: lesson.exemplar || '' });
+  trace?.step('planned', { call: trace.lastCall(), fromModel: { ...lessonKB }, authorObjectives: lesson.learningObjectives || [], authorExemplar: lesson.exemplar || '' });
   lessonKB.lessonId = lessonId;
   lessonKB.name = lesson.name;
   lessonKB.progress = 0;
@@ -436,7 +449,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   );
 
   const { text, progress } = parseCoachResponse(coachMsg);
-  trace?.step('parsed', { raw: coachMsg, text, progress, opener: true });
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
   // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
@@ -538,7 +551,8 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // What the learner watched arrive, when a later reply replaced it.
   let streamed = 0;
   const stream = trace ? (...a) => { streamed++; return cleanStream(onStream)(...a); } : cleanStream(onStream);
-  const opts = (purpose) => (trace ? { trace, purpose } : undefined);
+  // `stage` and `check`: where the call belongs in the Trace (orchestrator.converseStream).
+  const opts = (purpose, where = {}) => (trace ? { trace, purpose, ...where } : undefined);
 
   const imageDataUrls = normalizeImageDataUrls(imageDataUrl);
   const linkList = Array.isArray(links) ? links.filter((l) => l && l.url) : [];
@@ -572,14 +586,12 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   });
 
   // Build conversation tail — filter out messages with empty content (e.g. image-only)
-  // Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32 msgs).
-  // Set to 40 to cover outliers up to 22 exchanges without being unlimited.
   const allMsgs = await getLessonMessages(lessonId);
-  const tail = allMsgs.slice(-40)
+  const tail = allMsgs.slice(-COACH_TAIL)
     .map(m => ({ role: m.role, content: m.content }))
     .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : m.content.length));
   trace?.step('tail', {
-    stored: allMsgs.length, sent: tail.length, olderLeftOut: Math.max(0, allMsgs.length - 40),
+    stored: allMsgs.length, sent: tail.length, limit: COACH_TAIL, olderLeftOut: Math.max(0, allMsgs.length - COACH_TAIL),
     // Earlier images and attached pages aren't sent again: only this turn's are.
     earlierImages: allMsgs.filter((m) => m.metadata?.imageKeys?.length).length,
     earlierLinks: allMsgs.filter((m) => m.metadata?.links?.length).length,
@@ -609,7 +621,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   );
 
   const firstParse = parseCoachResponse(coachMsg);
-  trace?.step('parsed', { raw: coachMsg, ...firstParse });
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, ...firstParse });
   // Each check is recorded whether or not it finds anything, so the Trace
   // says it ran.
   trace?.step('tagCheck', tagsFound(firstParse));
@@ -619,7 +631,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   );
   // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
   if (repaired.tagsRepairTried) {
-    trace?.step('tagRepair', { missing: repaired.tagsMissing || null, recovered: !!repaired.tagsRecovered, progress: repaired.progress, kbUpdate: repaired.kbUpdate || null, profileUpdate: repaired.profileUpdate || null });
+    trace?.step('tagRepair', { call: trace.lastCall(), missing: repaired.tagsMissing || null, recovered: !!repaired.tagsRecovered, progress: repaired.progress, kbUpdate: repaired.kbUpdate || null, profileUpdate: repaired.profileUpdate || null });
     report(repaired.progress != null && repaired.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered');
   }
 
@@ -632,15 +644,15 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // of 26 times). A failed rewrite keeps the first reply.
   let coachReply = repaired;
   const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
-  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts });
+  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them'));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
-      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite')));
+      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
       if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
-      trace?.step('draftGuard', { before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
+      trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
   }
@@ -656,9 +668,11 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     // the same with Trace on or off.
     // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
-    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held')),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
-    ...(trace ? { onStep: (type, data) => trace.step(type, data) } : {}),
+    // A result says which call it came from: the latest one (a claim decided
+    // by wording alone made no call).
+    ...(trace ? { onStep: (type, data) => trace.step(type, CALL_RESULTS.has(type) && !(type === 'claimCheck' && data.byPattern) ? { call: trace.lastCall(), ...data } : data) } : {}),
   });
   const parsed = graded.parsed;
   const assessment = graded.assessment;

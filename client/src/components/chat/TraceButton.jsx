@@ -29,16 +29,16 @@ export default function TraceButton({ scope, what, size = 'sm', className }) {
   return (
     <>
       <Button ref={buttonRef} variant="outline" size={size} className={className}
-        aria-label={`Trace for ${what}${on ? ' (recording)' : ''}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        aria-label={`Data Trace for ${what}${on ? ' (recording)' : ''}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         <Footprints aria-hidden="true" className="size-4" />
-        Trace
+        Data Trace
         {on && <TraceRecordingDot withText />}
       </Button>
       {open && (
         <Dialog open onOpenChange={(o) => { if (!o) close(); }}>
           <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col bg-stone-50 dark:bg-stone-950">
             <DialogHeader>
-              <DialogTitle ref={titleRef} tabIndex={-1}>Trace</DialogTitle>
+              <DialogTitle ref={titleRef} tabIndex={-1}>Data Trace</DialogTitle>
               <DialogDescription>What plato does behind {what}.</DialogDescription>
             </DialogHeader>
             <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">

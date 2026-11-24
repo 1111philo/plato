@@ -91,10 +91,10 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">Trace</h2>
             <p className="text-muted-foreground">
-              If you start a trace in a lesson (the Trace tab of its Overview), plato records what it does
+              If you start a trace in a lesson (the Data Trace tab beside its Overview), plato records what it does
               behind that lesson until you stop it: the instructions given to the AI model, what was sent and what came back, and what
               plato’s code did with it. The record is saved with the rest of your lesson data, and you can read
-              and download it from the same Trace tab. It includes the first part of any web page you attach.
+              and download it from the same Data Trace tab. It includes the first part of any web page you attach.
               Resetting a lesson deletes its trace.
             </p>
           </section>
