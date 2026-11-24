@@ -164,6 +164,24 @@ Node 24 to match the Lambda runtime.
   WCAG 2.1 A/AA violation on any page or dialog, or a broken keyboard flow.
   On failure the Playwright report is uploaded as an artifact.
 
+## Agent evaluations (`agent-evals.yml`, `.githooks/pre-push`)
+
+The tests in `docs/AGENT_EVALS.md` run against the real model (Bedrock, us-east-2). Built in `server/scripts/evals/`; see its README.
+
+**They run automatically, on the developer's machine.** `npm install` in `server/` sets `core.hooksPath` to `.githooks/`. The pre-push hook:
+- works out whether the push changes anything the evaluations cover (the coverage map, `server/scripts/evals/lib/watch.js`: prompts, prompt assembly, the orchestrator, the lesson engine and assessment, authoring and profile code, constants, `converse.js`, `ai-provider.js`, the harness);
+- if it does and there are no passing results for the commit, runs the affected agents (every agent, at full level, when pushing `playground`), commits the results to `evals/`, and asks for a second push;
+- stops the push on a failure.
+
+It uses the developer's AWS login. `EVAL_SKIP=1 git push` skips it once.
+
+**The check, `agent-evals.yml`, on every PR, never calls the model.**
+- It recomputes the version fingerprint (git blob ids of the covered files at the PR's head).
+- It fails unless `evals/results/<fingerprint>-<level>.json` exists, passed, and covers the affected agents.
+- A PR into `main` needs the full level, every agent.
+
+GitHub Actions can't call the model (`plato-gha-bedrock-agents` allows only two Claude models), so nothing here needed an IAM change. Making `agent-evals` a required check is a branch-protection change (below), not yet made. A release PR into `main` is merged only when it passes.
+
 ## Deploy dispatch & environments
 
 Deploy workflows live only in the private fork (UIC-OSF/plato-deploy),

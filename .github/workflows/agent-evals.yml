@@ -1,0 +1,35 @@
+name: Agent evaluations
+
+# Checks that a pull request which changes what the agent evaluations cover
+# (prompts, prompt assembly, the lesson engine, the model; the coverage map is
+# server/scripts/evals/lib/watch.js) carries passing results for exactly its
+# version (docs/AGENT_EVALS.md section 16). It never calls the model: the
+# evaluations run on the developer's machine, started by the pre-push hook
+# (.githooks/pre-push), and commit their results to evals/results/. A PR into
+# main (a release) needs the full run, every agent; a PR into playground
+# needs the affected agents.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  agent-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base with the PR's base branch, to see what changed.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check the evaluation results for this version
+        env:
+          BASE: origin/${{ github.base_ref }}
+          LEVEL: ${{ github.base_ref == 'main' && 'full' || 'moments' }}
+        run: node server/scripts/evals/check.js --base "$BASE" --level "$LEVEL" --summary "$GITHUB_STEP_SUMMARY"
