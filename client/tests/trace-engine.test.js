@@ -23,11 +23,11 @@ const { STEPS, RULES, AGENTS } = await import('../src/lib/transparency.js');
 const ID = LESSON.lessonId;
 const noop = () => {};
 
-async function lesson(messages, { trace = false, admin = false } = {}) {
+async function lesson(messages, { trace = false } = {}) {
   reset();
   clearCache();
-  signIn({ traceMode: admin });
-  if (trace && !admin) await savePreferences({ name: '', traceScopes: [ID] });
+  signIn();
+  if (trace) await savePreferences({ name: '', traceScopes: [ID] });
   ai.length = 0;
   await startLesson(ID, LESSON, noop);
   const results = [];
@@ -92,7 +92,6 @@ describe('Trace on', () => {
   it('stamps the lesson, stores each prompt part once, and keeps traces out of the bulk load', async () => {
     await lesson(SCRIPT, { trace: true });
     const kb = await getLessonKB(ID);
-    assert.equal(kb.trace.by, 'self');
     assert.equal(kb.trace.partial, undefined);
     const all = traces(ID);
     assert.equal(all.t.length, 1 + SCRIPT.length, 'the start and each turn');
@@ -103,7 +102,7 @@ describe('Trace on', () => {
     assert.equal(Object.keys(all.p).length, 8, 'parts are stored once, not per call');
     const bulk = await (await fetch('/v1/sync')).json();
     assert.ok(bulk.every((i) => !i.dataKey.startsWith('trace:')));
-    assert.ok(all.t.every((r) => r.app.build && r.app.by === 'self'));
+    assert.ok(all.t.every((r) => r.app.build && !('by' in r.app)));
   });
 
   it('plugins: what each one did at the start is in the trace, and nowhere else', async () => {
@@ -182,12 +181,6 @@ describe('Trace on', () => {
     assert.equal(call.error.type, 'rate_limit');
     assert.equal(call.attempts.length, 1, 'the one retry is on record');
     assert.equal(call.error.server.error.name, 'ThrottlingException', 'with the provider’s own error');
-  });
-
-  it('turned on by an admin: recorded the same way, marked as the team’s', async () => {
-    await lesson(['My first answer.'], { admin: true });
-    assert.equal((await getLessonKB(ID)).trace.by, 'team');
-    assert.ok(traces(ID).t.every((r) => r.app.by === 'team'));
   });
 
   it('turned on mid-lesson: recorded from the next message and marked partial', async () => {

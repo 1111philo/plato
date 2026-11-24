@@ -12,7 +12,6 @@ import { buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { authoringExtract, kbProblem } from '../../lib/authoringEngine.js';
 import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import TraceButton from '../../components/chat/TraceButton.jsx';
 import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -285,7 +284,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     chatMessages, setChatMessages, readiness, busy, setBusy, error, setError,
     streamingText, srAnnouncement, start, handleSend,
   } = useAuthoringChat({
-    agent: 'knowledge-base-editor', scope: 'kb', title: 'Customizer — Admin',
+    agent: 'knowledge-base-editor', title: 'Customizer — Admin',
     initialMessages: initialConversation, initialReadiness,
   });
 
@@ -328,7 +327,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     setBusy('creating');
     try {
       const { problem } = await authoringExtract({
-        scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent, messages: chatMessages.length,
+        what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent,
         check: kbProblem,
         save: async (md) => {
           // Keep the preview in sync with what we're about to save.
@@ -361,7 +360,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const { markdown: md } = await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent, messages: chatMessages.length });
+      const { markdown: md } = await authoringExtract({ what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), existingKB: initialContent });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -386,7 +385,6 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to knowledge base">&larr; Back</Button>
         <h2 className="text-lg font-semibold">{isEditing ? 'Edit Knowledge Base' : 'Create Knowledge Base'}</h2>
-        <TraceButton scope="kb" className="ml-auto" label="Trace: what plato did behind this conversation" switchLabel="Record knowledge base editing" />
       </div>
 
       {error && (

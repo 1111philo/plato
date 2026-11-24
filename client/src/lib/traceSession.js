@@ -11,7 +11,7 @@
  * switches.
  */
 import { getPreferences, getAuthUser, putTraceRecord, listTraceRecords } from '../../js/storage.js';
-import { createTrace, isTraceOn, traceTurnedOnBy, MAX_SCOPE_BYTES } from './lessonTrace.js';
+import { createTrace, isTraceOn, MAX_SCOPE_BYTES } from './lessonTrace.js';
 
 /* global __PLATO_BUILD__ */
 const BUILD = typeof __PLATO_BUILD__ === 'string' ? __PLATO_BUILD__ : 'dev';
@@ -22,10 +22,10 @@ const listeners = new Map(); // scope -> Set<fn>
 // How much each scope's trace holds (characters written), and which are full.
 const scopeBytes = new Map();
 const full = new Set();
-// Scopes with no record of their own to carry the size (`profile`, `kb`,
-// `author-<lessonId>`): what is already stored, read once a session.
+// Scopes with no record of their own to carry the size (`profile`):
+// what is already stored, read once a session.
 const stored = new Map(); // scope -> Promise<number>
-const SELF_SIZED = new Set(['profile', 'authoring']);
+const SELF_SIZED = new Set(['profile']);
 // Whose trace this session has been counting. A different person signing in
 // in the same tab starts from nothing.
 let owner = null;
@@ -34,14 +34,6 @@ const lastStart = new Map(); // `${scope}:${record}` -> ms
 /** Forget everything this session knows about traces (a new person; tests). */
 export function resetTraceSession() {
   knownParts.clear(); scopeBytes.clear(); full.clear(); stored.clear();
-}
-
-/**
- * The scope for a lesson's authoring chat: `author-<lessonId>`, in the
- * characters a sync key allows.
- */
-export function authorScope(lessonId) {
-  return `author-${String(lessonId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 110)}`;
 }
 
 /**
@@ -76,17 +68,16 @@ function emit(scope, event) {
   }
 }
 
-/** Whether Trace is on for `scope` for the signed-in person, and who turned it on: `{ on, by }`. */
+/** Whether Trace is on for `scope` for the signed-in person: `{ on, userId }`. */
 export async function traceStatus(scope) {
   const [preferences, user] = await Promise.all([getPreferences().catch(() => null), getAuthUser().catch(() => null)]);
-  return { on: isTraceOn({ preferences, user }, scope), by: traceTurnedOnBy({ user }), userId: user?.userId || null };
+  return { on: isTraceOn(preferences, scope), userId: user?.userId || null };
 }
 
 /**
  * A recorder for one turn in `scope`, or undefined when Trace is off for it.
  * `record` is 't' (a turn) or 'b' (a follow-up agent). `kind` is 'start' |
- * 'turn' | 'followup' (a lesson), 'profile' (Settings → Learner Profile) or
- * 'authoring' (the lesson editor and knowledge base chats).
+ * 'turn' | 'followup' (a lesson), or 'profile' (Settings → Learner Profile).
  */
 export async function openTrace(scope, kind, { partial = false, record = 't', used = 0 } = {}) {
   const status = await traceStatus(scope).catch(() => ({ on: false }));
@@ -117,7 +108,6 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
     knownParts: knownParts.get(scope),
     app: {
       build: BUILD,
-      by: status.by,
       language: typeof navigator !== 'undefined' ? navigator.languages?.[0] || navigator.language || null : null,
     },
     onStep: (step) => emit(scope, { kind, step }),

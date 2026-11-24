@@ -4,7 +4,7 @@
  * first-time knowledge base setup. They shared this logic by copy; it lives
  * here once.
  *
- * The AI call itself, and its Trace (#595), are lib/authoringEngine.js. This
+ * The AI call itself is lib/authoringEngine.js. This
  * hook owns the React state around it: the message list, the reply while it
  * streams, the readiness score, the busy flag, and the announcement for
  * screen readers.
@@ -27,12 +27,11 @@ const reply = (agent, text, before, after) => ({
 /**
  * @param {object} o
  * @param {string} o.agent  'lesson-creator' | 'knowledge-base-editor'
- * @param {string} o.scope  Trace scope: 'kb' or `author-<lessonId>`
  * @param {string} o.title  the page's document title (flashed on a new reply)
  * @param {object[]} [o.initialMessages] a saved conversation to resume
  * @param {number} [o.initialReadiness]
  */
-export function useAuthoringChat({ agent, scope, title, initialMessages, initialReadiness }) {
+export function useAuthoringChat({ agent, title, initialMessages, initialReadiness }) {
   const [chatMessages, setChatMessages] = useState(initialMessages || []);
   const [readiness, setReadiness] = useState(initialReadiness ?? 0);
   const [busy, setBusy] = useState('');
@@ -78,7 +77,7 @@ export function useAuthoringChat({ agent, scope, title, initialMessages, initial
     (async () => {
       try {
         const { text, readiness: r } = await authoringTurn({
-          scope, agent, messages: openingMessages,
+          agent, messages: openingMessages,
           onStream: (partial) => { if (!cancelled) setStreamingText(partial); },
         });
         if (cancelled) return;
@@ -89,7 +88,7 @@ export function useAuthoringChat({ agent, scope, title, initialMessages, initial
       }
     })();
     return () => { cancelled = true; };
-  }, [agent, scope]);
+  }, [agent]);
 
   const handleSend = useCallback(async ({ text }) => {
     if (!text?.trim()) return;
@@ -103,8 +102,7 @@ export function useAuthoringChat({ agent, scope, title, initialMessages, initial
     try {
       const all = [...chatMessagesRef.current, userMsg];
       const { text: respText, readiness: r } = await authoringTurn({
-        scope, agent, text, messages: authoringTail(all), total: all.length,
-        readinessBefore: readinessRef.current,
+        agent, messages: authoringTail(all),
         onStream: (partial) => setStreamingText(partial),
       });
       pendingRef.current = { msgs: [reply(agent, respText, readinessRef.current, r)], r };
@@ -114,7 +112,7 @@ export function useAuthoringChat({ agent, scope, title, initialMessages, initial
       setStreamingText(null);
       setBusy('');
     }
-  }, [agent, scope]);
+  }, [agent]);
 
   return {
     chatMessages, setChatMessages, readiness, setReadiness, busy, setBusy, error, setError,

@@ -415,7 +415,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   // The lesson is being recorded from its start (set only when Trace is on,
   // and after the plugins have seen the KB: it's about the recording, not
   // the lesson).
-  if (trace) lessonKB.trace = { since: lessonKB.startedAt, by: trace.app?.by || 'self' };
+  if (trace) lessonKB.trace = { since: lessonKB.startedAt };
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
   trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
 
@@ -512,7 +512,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // Trace mode (#595): a recorder when it's on, else undefined. A lesson that
   // started before it was turned on is recorded from here and marked partial.
   const trace = await openTrace(lessonId, 'turn', { partial: !lessonKB?.trace || !!lessonKB.trace.partial, used: lessonKB?.trace?.bytes });
-  if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), by: trace.app?.by || 'self', partial: true } };
+  if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), partial: true } };
   // The stamp carries the trace's size so far, so the limit holds across
   // sessions and devices; past it, recording stops and the stamp says so.
   if (lessonKB?.trace && (trace || traceFull(lessonId))) {

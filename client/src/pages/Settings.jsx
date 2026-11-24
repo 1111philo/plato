@@ -288,7 +288,7 @@ export default function Settings() {
             <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
               Add Feedback
             </Button>
-            <TraceButton scope="profile" size="default" label="Trace: what plato did with your notes" switchLabel="Record changes to my profile" />
+            <TraceButton scope="profile" size="default" what="your notes" />
           </div>
         </CardContent>
       </Card>

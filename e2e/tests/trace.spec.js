@@ -1,6 +1,6 @@
-// Trace (#595): a learner turns it on for one lesson, from that lesson's
-// Trace panel, runs it, and reads what plato did behind it. Wide screens dock
-// the Trace beside the chat.
+// Trace (#595): a learner presses a lesson's Trace button, which starts
+// recording that lesson, runs it, and reads what plato did behind it; "Stop
+// tracing" ends it. Wide screens dock the Trace beside the chat.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
 import { ADMIN, LEARNER, LESSONS } from '../fixtures.js';
@@ -8,29 +8,24 @@ import { ADMIN, LEARNER, LESSONS } from '../fixtures.js';
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const LESSON = `/lessons/${LESSONS[1].id}`;
 
-const LESSON_TRACE = /^Trace: what plato did behind this conversation/;
+const START = 'Start Trace for this lesson';
+const RECORDING = 'Trace for this lesson (recording)';
+const traceButton = (page) => page.getByRole('button', { name: /Trace for this lesson/ }).last();
+const savedPrefs = (page) => page.waitForResponse((r) => r.url().endsWith('/v1/sync/preferences') && r.request().method() === 'PUT');
 
-/** Open a Trace with `button`, set its switch (`label`), and close it again. */
-async function setSwitch(page, button, label, on) {
-  await button.click();
-  const box = page.getByRole('checkbox', { name: label });
-  await expect(box).toBeEnabled();
-  if ((await box.isChecked()) !== on) {
-    const saved = page.waitForResponse((r) => r.url().endsWith('/v1/sync/preferences') && r.request().method() === 'PUT');
-    await box.setChecked(on);
-    await saved;
-  }
-  await expect(box).toBeChecked({ checked: on });
-  await box.focus();
-  await page.keyboard.press('Escape');
-  await expect(box).toHaveCount(0);
-}
-
-/** Trace on or off for the spec's lesson, from the lesson's own Trace. */
+/** Trace on or off for the spec's lesson, from its Trace button; the Trace is closed afterwards. */
 async function setTrace(page, on) {
   await page.goto(LESSON);
   await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-  await setSwitch(page, page.getByRole('button', { name: LESSON_TRACE }), 'Record this lesson', on);
+  const button = traceButton(page);
+  const recording = (await button.getAttribute('aria-label')) === RECORDING;
+  if (recording === on) return;
+  const saved = savedPrefs(page);
+  await button.click();
+  if (!on) await page.getByRole('button', { name: 'Stop tracing' }).click();
+  await saved;
+  if (on) await page.getByRole('button', { name: /^Close( trace)?$/ }).first().click();
+  await expect(button).toHaveAccessibleName(on ? RECORDING : START);
 }
 
 async function say(page, text) {
@@ -44,32 +39,29 @@ async function say(page, text) {
 test.describe('Trace mode', () => {
   test.afterEach(async ({ page }) => { await setTrace(page, false); });
 
-  test('off by default; turned on for this lesson from its Trace: recorded and readable by keyboard', async ({ page }) => {
+  test('off by default; pressing Trace starts it for this lesson: recorded and readable by keyboard', async ({ page }) => {
     await login(page, LEARNER);
     await setTrace(page, false);
-    const button = page.getByRole('button', { name: LESSON_TRACE });
-    await expect(button).toHaveAccessibleName('Trace: what plato did behind this conversation');
+    const button = traceButton(page);
+    await expect(button).toHaveAccessibleName(START);
 
-    // Off: the switch says how to start; nothing about recording.
+    // One press: recording starts and the Trace opens, saying so, with the way to stop.
+    const saved = savedPrefs(page);
     await button.click();
-    const panel = page.getByRole('complementary', { name: 'Trace' });
-    const box = panel.getByRole('checkbox', { name: 'Record this lesson' });
-    await expect(box).not.toBeChecked();
-    await expect(panel.getByText(/^Off\. Turn it on to record what plato does from your next message\./)).toBeVisible();
-    await expectAccessible(page, { include: '#lesson-trace', label: 'trace, off' });
-    // On, after the lesson started: it says the setup wasn't recorded, and the button says it's recording.
-    const saved = page.waitForResponse((r) => r.url().endsWith('/v1/sync/preferences') && r.request().method() === 'PUT');
-    await box.check();
     await saved;
-    await expect(panel.getByText(/To include how the lesson was set up, reset the lesson\./)).toBeVisible();
-    await expect(button).toHaveAccessibleName('Trace: what plato did behind this conversation (recording)');
+    const panel = page.getByRole('complementary', { name: 'Trace' });
+    await expect(panel.getByText('Recording', { exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Stop tracing' })).toBeVisible();
+    await expect(button).toHaveAccessibleName(RECORDING);
     await expectAccessible(page, { include: '#lesson-trace', label: 'trace, recording' });
+    // Closing it keeps recording.
     await page.getByRole('button', { name: 'Close trace' }).click();
+    await expect(button).toHaveAccessibleName(RECORDING);
 
     // Another lesson isn't recorded.
     await page.goto(`/lessons/${LESSONS[0].id}`);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('button', { name: LESSON_TRACE })).toHaveAccessibleName('Trace: what plato did behind this conversation');
+    await expect(traceButton(page)).toHaveAccessibleName(START);
 
     // Start the lesson again so its trace is complete.
     await page.goto(LESSON);
@@ -81,7 +73,7 @@ test.describe('Trace mode', () => {
     await expect(page.getByText(/Welcome! In this lesson/).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-chat-message="assistant"]')).toHaveCount(1);
 
-    const trace = page.getByRole('button', { name: 'Trace: what plato did behind this conversation (recording)' });
+    const trace = page.getByRole('button', { name: RECORDING });
     await expect(trace).toBeVisible();
     await expect(trace).toHaveAttribute('aria-expanded', 'false');
     await trace.focus();
@@ -202,7 +194,7 @@ test.describe('Trace mode', () => {
     await page.setViewportSize({ width: 390, height: 800 });
     await login(page, LEARNER);
     await setTrace(page, true);
-    await page.getByRole('button', { name: LESSON_TRACE }).click();
+    await traceButton(page).click();
     const dialog = page.getByRole('dialog', { name: 'Trace' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
@@ -214,45 +206,26 @@ test.describe('Trace mode', () => {
     await expect(dialog).toHaveCount(0);
   });
 
-  test('View as User: an admin reads the learner’s trace, read-only', async ({ page }) => {
-    await login(page, LEARNER);
-    await setTrace(page, true);
-    const replies = page.locator('[data-chat-message="assistant"]');
-    const before = await replies.count();
-    await say(page, 'A turn for my teacher to read.');
-    await expect(replies).toHaveCount(before + 1, { timeout: 30_000 });
-    await setTrace(page, false);
-    await page.getByRole('button', { name: /account menu/ }).click();
-    await page.getByRole('menuitem', { name: 'Sign Out' }).click();
-    await page.getByRole('alertdialog').getByRole('button', { name: /sign out/i }).click();
-    await page.waitForURL(/\/login/);
-
-    // The admin's own Trace is off; the learner's lesson still offers its trace.
+  test('admins have no Trace: not in View as User, not in the editors', async ({ page }) => {
     await login(page, ADMIN);
+    await page.goto('/plato/lessons/new');
+    await expect(page.getByRole('button', { name: /^Behind this response/ }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: /Trace/ })).toHaveCount(0);
     await page.goto('/lessons');
     await page.getByRole('button', { name: 'View as user' }).click();
     await page.getByRole('textbox', { name: 'Search users' }).fill('Lee');
     await page.getByRole('button', { name: /^View as Lee Learner/ }).click();
     await expect(page.getByText('Viewing as').first()).toBeVisible({ timeout: 20_000 });
-    const writes = [];
-    page.on('request', (r) => { if (r.method() !== 'GET' && /\/v1\/(sync|ai)/.test(r.url())) writes.push(`${r.method()} ${r.url()}`); });
     await page.goto(LESSON);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: LESSON_TRACE }).click();
-    const panel = page.getByRole('complementary', { name: 'Trace' });
-    await expect(panel.getByRole('button', { name: /^\d+\. Your message: “A turn for my teacher/ })).toBeVisible({ timeout: 20_000 });
-    await expect(panel.getByText('Recording is off, so new messages aren’t recorded.')).toBeVisible();
-    // Read-only: no switch.
-    await expect(panel.getByRole('checkbox', { name: 'Record this lesson' })).toHaveCount(0);
-    await expectAccessible(page, { include: '#lesson-trace', label: 'trace in View as User' });
-    expect(writes).toEqual([]);
+    await expect(page.getByRole('button', { name: /Trace for this lesson/ })).toHaveCount(0);
     await page.getByRole('button', { name: /^Exit viewing as/ }).click();
   });
 
   test('Technology and services, and downloading the trace', async ({ page }) => {
     await login(page, LEARNER);
     await setTrace(page, true);
-    await page.getByRole('button', { name: LESSON_TRACE }).click();
+    await traceButton(page).click();
     const panel = page.getByRole('complementary', { name: 'Trace' });
     await expect(panel.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
 
@@ -282,14 +255,19 @@ test.describe('Trace mode', () => {
     await page.goto('/settings');
     // Settings has no account-wide switch: the profile's Trace has its own.
     await expect(page.getByRole('heading', { name: 'Trace mode' })).toHaveCount(0);
-    await setSwitch(page, page.getByRole('button', { name: /^Trace: what plato did with your notes/ }), 'Record changes to my profile', true);
+    // Pressing Trace starts recording the profile; closing the Trace keeps it going.
+    const start = page.getByRole('button', { name: 'Start Trace for your notes' });
+    const saved = savedPrefs(page);
+    await start.click();
+    await saved;
+    await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Close' }).click();
     await page.getByRole('button', { name: 'Add Feedback' }).click();
     const feedback = page.getByRole('dialog', { name: 'Add Profile Feedback' });
     await feedback.getByRole('textbox', { name: 'Profile feedback' }).fill('I use a Chromebook at the library.');
     await feedback.getByRole('button', { name: 'Submit' }).click();
     await expect(feedback).toHaveCount(0, { timeout: 20_000 });
 
-    const button = page.getByRole('button', { name: 'Trace: what plato did with your notes (recording)' });
+    const button = page.getByRole('button', { name: 'Trace for your notes (recording)' });
     await button.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Trace' });
@@ -310,40 +288,11 @@ test.describe('Trace mode', () => {
     // Remove the note again so other specs see the profile as they left it.
     await page.getByRole('button', { name: 'Remove note: I use a Chromebook at the library.' }).click();
     await expect(page.getByRole('list', { name: 'Your notes' })).toHaveCount(0);
-    await setSwitch(page, button, 'Record changes to my profile', false);
-  });
-
-  test('lesson editor: an admin sends one message and reads its trace', async ({ page }) => {
-    await login(page, ADMIN);
-    await page.goto('/plato/lessons/new');
-    await expect(page.getByRole('button', { name: /^Behind this response/ }).first()).toBeVisible({ timeout: 20_000 });
-    // On for this lesson's editing only, from its own Trace.
-    await setSwitch(page, page.getByRole('button', { name: LESSON_TRACE }), 'Record editing this lesson', true);
-    const composer = page.getByRole('textbox', { name: 'Your message' }).last();
-    await expect(composer).toBeEnabled({ timeout: 20_000 });
-    await composer.fill('Learners write a clear bug report.');
-    await composer.press(`${MOD}+Enter`);
-    await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2, { timeout: 20_000 });
-
-    const button = page.getByRole('button', { name: 'Trace: what plato did behind this conversation (recording)' });
-    await button.focus();
-    await page.keyboard.press('Enter');
-    const dialog = page.getByRole('dialog', { name: 'Trace' });
-    // Turned on after the conversation began: recorded from the next message.
-    await expect(dialog.getByRole('button', { name: /^1\. Your message: “Learners write a clear bug report\.”/ })).toBeVisible({ timeout: 20_000 });
-    await dialog.getByRole('button', { name: /^\d+\. Your message: “Learners write a clear bug report\.”/ }).click();
-    const turn = dialog.getByRole('article');
-    await expect(turn.getByText(/readiness score are the model’s own/)).toBeVisible();
-    await expect(turn.getByText('What you wrote', { exact: true })).toBeVisible();
-    await expect(turn.getByText('The AI model replied to the Lesson Creator')).toBeVisible();
-    await expect(turn.getByText(/^Readiness score: \d+ of 10/)).toBeVisible();
-    const parsed = turn.getByRole('listitem').filter({ has: page.getByText('What plato read from the reply', { exact: true }) }).last();
-    await parsed.getByText(/^Show the exact text/).click();
-    await turn.getByText('The reply with its score, as the model wrote it').click();
-    await expect(turn.locator('details[open] > pre').filter({ hasText: /\[READINESS: \d+\]/ })).toBeVisible();
-    await expectAccessible(page, { include: '[role=dialog]', label: 'lesson editor: trace dialog' });
-    await page.keyboard.press('Escape');
-    await expect(dialog).toHaveCount(0);
-    await expect(button).toBeFocused();
+    // Stop tracing ends it and closes the Trace.
+    await button.click();
+    const stopped = savedPrefs(page);
+    await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Stop tracing' }).click();
+    await stopped;
+    await expect(page.getByRole('button', { name: 'Start Trace for your notes' })).toBeFocused();
   });
 });

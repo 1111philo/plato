@@ -1,26 +1,20 @@
 /**
- * The Trace switch for one conversation (#595): `{ on, byTeam, set }`.
- * `scope` is a lesson id, `profile`, `kb`, or `author-<lessonId>`. A person
- * turns Trace on per conversation (lessonTrace.isTraceOn); when an admin has
- * turned it on for them, it is on everywhere and `byTeam` is true. Off while
- * viewing as a learner: an admin reads, never records.
+ * Trace on or off for one conversation (#595): `{ on, set, error }`.
+ * `scope` is a lesson id or `profile`. Pressing a Trace button starts it;
+ * "Stop tracing" in the Trace ends it (lessonTrace.isTraceOn).
  */
 import { useState } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';
-import { useAuth } from '../contexts/AuthContext.jsx';
 import { savePreferences } from '../../js/storage.js';
 import { syncIfUnsaved } from '../lib/syncDebounce.js';
 import { isTraceOn, withTraceScope } from '../lib/lessonTrace.js';
 
-export default function useTraceSwitch(scope, { readOnly = false } = {}) {
+export default function useTraceSwitch(scope) {
   const { state, dispatch } = useApp();
-  const { user } = useAuth();
   const [error, setError] = useState('');
-  const byTeam = !readOnly && !!user?.traceMode;
-  const on = !readOnly && isTraceOn({ preferences: state.preferences, user }, scope);
+  const on = isTraceOn(state.preferences, scope);
 
   async function set(next) {
-    if (readOnly || byTeam) return;
     const preferences = withTraceScope(state.preferences, scope, next);
     dispatch({ type: 'SET_PREFERENCES', preferences });
     setError('');
@@ -31,5 +25,5 @@ export default function useTraceSwitch(scope, { readOnly = false } = {}) {
     }
   }
 
-  return { on, byTeam, set, error, readOnly };
+  return { on, set, error };
 }

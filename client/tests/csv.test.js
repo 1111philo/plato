@@ -47,28 +47,14 @@ describe('usersCsvRows', () => {
 
   it('has one column per custom field, in order', () => {
     const [header] = usersCsvRows(items, fields);
-    assert.deepEqual(header, ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', 'Org, Name', 'Phone', 'Trace mode', 'User ID']);
+    assert.deepEqual(header, ['Email', 'First Name', 'Last Name', 'Username', 'Group', 'Role', 'Status', 'Date Added', 'Org, Name', 'Phone', 'User ID']);
   });
 
   it('maps statuses, ISO dates, and blanks missing values', () => {
     const [, user, wl, inv] = usersCsvRows(items, fields);
-    assert.deepEqual(user, ['a@x.com', 'Ada', 'King', 'a', 'G', 'admin', 'User', '2026-10-01', 'UIC', '', '', 'usr_a1']);
-    assert.deepEqual(wl.slice(6), ['Wait List', '2026-10-02', '', '+1 555 0100', '', '']);
-    assert.deepEqual(inv.slice(6), ['Invited', '2026-10-03', '', '', '', '']);
-  });
-
-  it('has a Trace mode column after the custom fields: On for accounts with it on, else blank', () => {
-    const rows = [
-      { ...items[0], _user: { userId: 'usr_a1', traceMode: true } },
-      { ...items[0], _user: { userId: 'usr_a2', traceMode: false } },
-      { ...items[1], _user: { traceMode: true } }, // not an account: never On
-      items[2],
-    ];
-    const [header, on, off, wl, inv] = usersCsvRows(rows, fields);
-    const at = header.indexOf('Trace mode');
-    assert.equal(at, header.indexOf('Phone') + 1);
-    assert.deepEqual([on[at], off[at], wl[at], inv[at]], ['On', '', '', '']);
-    assert.deepEqual(usersCsvRows(rows, fields, { providers: [] })[0].slice(-3), ['Trace mode', 'Sign-in', 'User ID']);
+    assert.deepEqual(user, ['a@x.com', 'Ada', 'King', 'a', 'G', 'admin', 'User', '2026-10-01', 'UIC', '', 'usr_a1']);
+    assert.deepEqual(wl.slice(6), ['Wait List', '2026-10-02', '', '+1 555 0100', '']);
+    assert.deepEqual(inv.slice(6), ['Invited', '2026-10-03', '', '', '']);
   });
 
   it('adds a Sign-in column before User ID only when single sign-on is in play', () => {
@@ -90,7 +76,7 @@ describe('usersCsvRows', () => {
 
   it('round-trips through toCsv with labels escaped', () => {
     const csv = toCsv(usersCsvRows(items, fields));
-    assert.ok(csv.startsWith('Email,First Name,Last Name,Username,Group,Role,Status,Date Added,"Org, Name",Phone,Trace mode,User ID\r\n'));
+    assert.ok(csv.startsWith('Email,First Name,Last Name,Username,Group,Role,Status,Date Added,"Org, Name",Phone,User ID\r\n'));
     assert.ok(csv.includes(",'+1 555 0100"));
   });
 });

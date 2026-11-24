@@ -118,14 +118,15 @@ test.describe('learner pages', () => {
   // Trace mode (#595): docked beside the chat on a wide screen, a dialog on a
   // narrow one. Both projects run this, so both forms are checked.
   test('the lesson trace', async ({ page }) => {
-    // Opened with recording off: the switch, and nothing recorded. Nothing is turned on.
+    // Pressing Trace starts it and opens it; Stop tracing leaves it as it was.
     await page.goto(`/lessons/${LESSONS[0].id}`);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /^Trace: what plato did behind this conversation/ }).click();
-    await expect(page.getByRole('checkbox', { name: 'Record this lesson' })).toBeVisible();
+    await page.getByRole('button', { name: 'Start Trace for this lesson' }).last().click();
     await expect(page.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
     await expectAccessible(page, { include: '#lesson-trace', label: 'lesson trace' });
     await expectAccessible(page, { label: 'lesson chat with the trace open' });
+    await page.getByRole('button', { name: 'Stop tracing' }).click();
+    await expect(page.getByRole('button', { name: 'Start Trace for this lesson' }).last()).toBeVisible();
   });
 
   test('dialog: sign out', async ({ page }) => {
