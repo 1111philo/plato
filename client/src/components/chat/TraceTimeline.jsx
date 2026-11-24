@@ -89,6 +89,7 @@ function Step({ step, bare = false }) {
       </p>
       )}
       {step.note && <Note note={step.note} />}
+      {step.about && <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">What’s a request?</span> {step.about}</p>}
       {step.explain && <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Who’s this?</span> {step.explain.text}</p>}
       <p>{step.summary}</p>
       {step.rules.length > 0 && (

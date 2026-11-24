@@ -63,9 +63,9 @@ test('learners can see which agents worked on a reply and what they did', async 
   await login(page, LEARNER);
   await page.goto(`/lessons/${LESSONS[2].id}`);
   await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
-  // The opening message: the lesson planner and the coach.
+  // The opening message: the Lesson Owner and the Coach, named as their prompts name them.
   const opening = page.getByRole('button', { name: /^Behind this response/ }).first();
-  await expect(opening).toHaveAccessibleName('Behind this response: Lesson planner, Coach');
+  await expect(opening).toHaveAccessibleName('Behind this response: Lesson Owner, Coach');
 
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await composer.fill('Here is an example');
@@ -81,7 +81,7 @@ test('learners can see which agents worked on a reply and what they did', async 
   const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
   await expect(panel).toContainText('Progress 0 → 3 of 10');
   await expect(panel).toContainText('Mock insight after turn 1');
-  await expect(panel).toContainText('Learner profile');
+  await expect(panel).toContainText('Learner Profile Update');
   await expectAccessible(page, { label: 'agent activity open' });
 });
 

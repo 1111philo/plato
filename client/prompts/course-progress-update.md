@@ -1,6 +1,9 @@
 <!--
   AGENT: Course Progress Updater
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Keeps a short note of what the learner has shown across a unit’s lessons, so the Coach in the next lesson knows.
+  RUNS: Once, when a lesson that belongs to a unit is completed.
+  READS: the unit’s earlier note; this lesson’s notes; the unit’s list of lessons
+  RETURNS: the unit note (about 600 characters)
 -->
 You are the Course Progress Updater for plato, an AI-powered microlearning platform.
 

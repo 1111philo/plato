@@ -1,6 +1,9 @@
 <!--
   AGENT: Lesson Owner
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Sets up this learner’s copy of the lesson: restates each objective with what would count as evidence.
+  RUNS: Once, when the lesson starts.
+  READS: the lesson as the author wrote it; the learner’s profile summary
+  RETURNS: the objectives and evidence the Coach and the Assessor use; a copy of the exemplar; a starting note on where the learner is
 -->
 You are the Lesson Owner Agent for plato, an AI-powered microlearning platform.
 

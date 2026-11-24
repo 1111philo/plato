@@ -1,6 +1,9 @@
 <!--
   AGENT: Claim Check
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Answers one question, yes or no: does this reply tell the learner the lesson is done?
+  RUNS: Only when plato has held a completion and the reply’s wording isn’t one plato recognises.
+  READS: the Coach’s reply
+  RETURNS: yes or no
 -->
 You read one message that a coach sent to a learner in a short online lesson.
 

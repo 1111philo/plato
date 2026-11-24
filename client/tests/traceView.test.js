@@ -55,7 +55,7 @@ describe('describeTrace', () => {
     assert.match(view.exchanges[1].saw, /Good thinking/);
     assert.match(view.exchanges[1].headline, /^Progress \d+ → \d+ of 10$/);
     const background = view.exchanges[1].stages.find((st) => st.id === 'background');
-    assert.match(background.followups[0].title, /^Learner profile/);
+    assert.equal(background.followups[0].title, 'Learner Profile Update');
     assert.ok(background.followups[0].steps.some((s) => s.type === 'profileSaved'));
   });
 
@@ -132,18 +132,18 @@ describe('describeTrace', () => {
     const ex = view.exchanges[1];
     const request = ex.steps.find((s) => s.type === 'call' && s.part === 'request');
     const reply = ex.steps.find((s) => s.type === 'call' && s.part === 'reply');
-    assert.equal(request.title, 'Sent to the AI model, for the coach: reply');
+    assert.equal(request.title, 'Sent to the AI model, for the Coach: reply');
     assert.equal(request.stage, 'prepared', 'the request is part of preparing and sending');
     assert.equal(request.sourceLabel, 'plato’s code');
-    assert.match(request.summary, /^plato sent a stand-in model used for testing the coach’s instructions \([\d,]+ characters, in \d+ parts\) and \d+ messages \([\d,]+ characters\)\./);
+    assert.match(request.summary, /^plato sent a stand-in model used for testing the Coach’s instructions \([\d,]+ characters, in \d+ parts\) and \d+ messages \([\d,]+ characters\)\./);
     assert.doesNotMatch(request.summary, /0 tokens/, 'a count the model didn’t report isn’t shown as 0');
     assert.match(request.summary, /a reply of up to 2,048 tokens/);
     const labels = request.details.map((d) => d.label);
-    assert.ok(labels.some((l) => /^Instructions: The agent’s instructions \(plato’s instructions\)$/.test(l)));
-    assert.ok(labels.some((l) => /^Instructions: Program knowledge base \(A person\)$/.test(l)));
-    assert.match(request.details.find((d) => /^Messages sent/.test(d.label)).text, /My first answer\./);
+    assert.ok(labels.some((l) => /^Instructions, part 1 of \d+: The agent’s instructions \(plato’s instructions\)$/.test(l)));
+    assert.ok(labels.some((l) => /^Instructions, part \d+ of \d+: Program knowledge base \(A person\)$/.test(l)));
+    assert.match(request.details.find((d) => /^Messages \(/.test(d.label)).text, /My first answer\./);
 
-    assert.equal(reply.title, 'The AI model replied to the coach');
+    assert.equal(reply.title, 'The AI model replied to the Coach');
     assert.equal(reply.stage, 'answered');
     assert.equal(reply.sourceLabel, 'The AI model');
     assert.match(reply.summary, /^[\d,]+ characters, after [\d.]+ m?s\. It stopped because it had finished\.$/);
@@ -165,13 +165,13 @@ describe('describeTrace', () => {
     // The first mention is the request sent for it, before its result.
     const first = start.steps.find((s) => s.agent === 'lesson-owner');
     assert.equal(first.part, 'request');
-    assert.match(first.explain.text, /^Lesson planner is one of plato’s AI helpers/);
-    assert.equal(start.steps.filter((s) => s.explain?.label === 'Lesson planner').length, 1, 'once per exchange');
+    assert.match(first.explain.text, /^Lesson Owner is one of plato’s AI helpers: the same AI model, given its own instructions\. Sets up this learner’s copy of the lesson.*\(From the instructions this call sent\.\)$/);
+    assert.equal(start.steps.filter((s) => s.explain?.label === 'Lesson Owner').length, 1, 'once per exchange');
     const validation = start.steps.find((s) => s.type === 'validation');
-    assert.match(validation.summary, /checked the setup for the 6 things the coach and the assessment check need\. All were there\./);
+    assert.match(validation.summary, /checked the setup for the 6 things the coach and the Assessor need\. All were there\./);
     assert.match(validation.details[0].text, /^1\. an exemplar/);
     const held = view.exchanges[1];
-    assert.ok(held.steps.some((s) => s.explain?.label === 'Assessment check'));
+    assert.ok(held.steps.some((s) => s.explain?.label === 'Assessor'));
     assert.match(held.steps.find((s) => s.type === 'claimCheck').summary, /mustn’t tell you the lesson is done/);
   });
 
@@ -270,9 +270,39 @@ describe('token counts from the real model', () => {
     const call = { n: 1, type: 'call', ms: 0, agent: 'coach', purpose: 'reply', model: 'm', maxTokens: 2048, stream: true, system: [{ kind: 'prompt', chars: 5, text: 'Hello' }], messages: { base: 0, extra: [{ role: 'user', content: 'Hi' }] }, attempts: [], usage: { input_tokens: 8073, output_tokens: 181 }, stopReason: 'end_turn', reply: 'Hello there', took: 3300, server: { provider: { provider: 'bedrock', model: 'qwen.qwen3-vl-235b-a22b', region: 'us-east-2' } } };
     const view = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [call] } }]);
     const [request, reply] = view.exchanges[0].steps;
-    assert.match(request.summary, /^plato sent qwen\.qwen3-vl-235b-a22b on Amazon Bedrock \(us-east-2\) the coach’s instructions \(5 characters, in 1 part\) and 1 message \(2 characters\)\. The model counted it as 8,073 tokens\./);
+    assert.match(request.summary, /^plato sent qwen\.qwen3-vl-235b-a22b on Amazon Bedrock \(us-east-2\) the Coach’s instructions \(5 characters, in 1 part\) and 1 message \(2 characters\)\. The model counted it as 8,073 tokens\./);
     assert.equal(reply.summary, '11 characters (181 tokens), after 3.3 s. It stopped because it had finished.');
     assert.equal(reply.at, 3300);
     assert.equal(reply.took, 3300);
+  });
+});
+
+describe('the Trace describes agents from what was sent', () => {
+  const call = (promptText) => ({ n: 1, type: 'call', ms: 0, agent: 'coach', purpose: 'reply', model: 'm', maxTokens: 10, system: [{ kind: 'prompt', chars: promptText.length, text: promptText }], messages: { base: 0, extra: [{ role: 'user', content: 'Hi' }] }, attempts: [], reply: 'ok', took: 1 });
+  it('names a call’s agent from the header of the instructions it sent, not from today’s prompt', () => {
+    const sent = '<!--\n  AGENT: Tutor\n  PURPOSE: Helps the learner, as it was told that day.\n-->\nYou are the Tutor.';
+    const [request, reply] = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [call(sent)] } }]).exchanges[0].steps;
+    assert.equal(request.title, 'Sent to the AI model, for the Tutor: reply');
+    assert.equal(reply.title, 'The AI model replied to the Tutor');
+    assert.match(request.explain.text, /^Tutor is one of plato’s AI helpers.*Helps the learner, as it was told that day\. \(From the instructions this call sent\.\)$/);
+  });
+  it('falls back to the agent’s current prompt when the instructions weren’t stored, and says so by omission', () => {
+    const c = call('x'); c.system = [{ kind: 'prompt', chars: 900, hash: 'gone' }];
+    const [request] = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [c] } }]).exchanges[0].steps;
+    assert.equal(request.title, 'Sent to the AI model, for the Coach: reply');
+    assert.doesNotMatch(request.explain.text, /From the instructions this call sent/);
+  });
+  it('says what a request is, once per exchange, and who wrote each message', async () => {
+    const view = await record(['My first answer.']);
+    const ex = view.exchanges[1];
+    assert.equal(ex.steps.filter((s) => s.about).length, 1);
+    assert.match(ex.steps.find((s) => s.about).about, /three parts: the instructions .* the messages .* and the settings/);
+    const request = ex.steps.find((s) => s.part === 'request');
+    const msgs = request.details.find((d) => /^Messages \(\d+\): the conversation the model replies to$/.test(d.label)).text;
+    assert.match(msgs, /— 1\. plato: what it gathered about you and the lesson —/);
+    assert.match(msgs, /— 2\. plato, written as if the model had said it —\nReady\./);
+    assert.match(msgs, /you: this message —\nMy first answer\./);
+    assert.ok(request.details.some((d) => /^Instructions, part 1 of \d+: The agent’s instructions/.test(d.label)));
+    assert.ok(request.details.some((d) => d.label === 'Settings: limits on the reply, not what it says'));
   });
 });

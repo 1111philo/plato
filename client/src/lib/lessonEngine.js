@@ -19,7 +19,7 @@ import { compressImageDataUrl } from './imageCompression.js';
 import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
-import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
+import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 import { openTrace, traceBytes, traceFull } from './traceSession.js';
@@ -847,8 +847,6 @@ export async function resumeLesson(lessonId) {
 
 // -- Helpers ------------------------------------------------------------------
 
-/** Progress is a 0–10 signal; a lesson completes at MAX_PROGRESS. */
-const MAX_PROGRESS = 10;
 
 /** The lesson opener's score: clamped 0–10 and never 10 (it can't complete a lesson). */
 export function openingProgress(progress) {
@@ -886,9 +884,9 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   if (parsed.kbUpdate) {
     if (parsed.kbUpdate.insights?.length) {
       next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
-      if (next.insights.length > 10) {
-        const older = next.insights.slice(0, next.insights.length - 10);
-        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
+      if (next.insights.length > MAX_INSIGHTS) {
+        const older = next.insights.slice(0, next.insights.length - MAX_INSIGHTS);
+        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-MAX_INSIGHTS)];
       }
     }
     if (parsed.kbUpdate.learnerPosition) {

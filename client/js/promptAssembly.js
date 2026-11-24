@@ -19,6 +19,16 @@
 
 export const AFTER_CONTEXT_MARKER = '<!-- AFTER CONTEXT -->';
 
+/**
+ * The message plato sends, as the learner's turn, when it asks the coach for
+ * the tags of a reply that came without them (orchestrator.repairCoachTags).
+ * Here so the Trace can say who wrote it.
+ */
+export const TAG_REPAIR_CUE = 'Tags for your last reply.';
+
+/** What plato puts in the coach's turn after its first message, as if the model had said it. */
+export const READY = 'Ready.';
+
 /** What the coach is told the knowledge base is (and isn't) for. */
 export const COACH_KB_NOTE = 'Background on the program, for answering questions about it. It does not set this lesson\'s focus: coach toward this lesson\'s exemplar and objectives. Bring up program-wide goals (for example, a portfolio) only when this lesson\'s objectives or coach directive ask for them.';
 

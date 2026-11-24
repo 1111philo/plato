@@ -1,6 +1,9 @@
 <!--
   AGENT: Learner Profile Update
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Keeps the learner’s profile up to date from one new piece of information.
+  RUNS: When the Coach notes something about the learner, or the learner adds or removes a note in Settings.
+  READS: the current profile; the new observation or note
+  RETURNS: an updated profile and a short summary
 -->
 You are the Learner Profile Agent for plato, an AI-powered microlearning platform.
 
