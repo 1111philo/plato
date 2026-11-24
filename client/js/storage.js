@@ -5,6 +5,7 @@
  * as `screenshot:*` sync data, referenced by key from conversation messages.
  */
 
+import { traceScopeKey } from './traceScope.js';
 import { authenticatedFetch } from './auth.js';
 
 const _cache = new Map();
@@ -437,7 +438,7 @@ export async function putTraceRecord(key, data) {
  * the reply is filtered here.
  */
 export async function listTraceRecords(scope, kind = '') {
-  const prefix = `trace:${scope}:${kind ? kind + ':' : ''}`;
+  const prefix = `trace:${traceScopeKey(scope)}:${kind ? kind + ':' : ''}`;
   try {
     const res = await authenticatedFetch(`/v1/sync?prefix=${encodeURIComponent(prefix)}`);
     if (!res.ok) return [];

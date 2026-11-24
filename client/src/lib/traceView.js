@@ -774,20 +774,21 @@ export function describeTrace(items) {
  */
 function lessonSummary(turns, followups) {
   const tally = [];
-  const add = (id, text, list) => { if (list.length) tally.push({ id, text: text(list.length), exchanges: list.map((t) => t.at) }); };
+  // `label`: the same, without counts, for "Showing 8 of 11 exchanges: where plato …".
+  const add = (id, text, list, label) => { if (list.length) tally.push({ id, text: text(list.length), label, exchanges: list.map((t) => t.at) }); };
   const withStep = (pred) => turns.filter((t) => t.steps.some(pred));
   const repairs = withStep((x) => x.type === 'tagRepair');
   const repairTime = turns.flatMap((t) => t.steps.filter((x) => x.type === 'call' && (x.check === 'tags' || /^tag repair/.test(x.purpose || '')))).reduce((n, x) => n + (x.took || 0), 0);
-  add('tags', (n) => `asked the coach again for the tags its reply left out, ${n === 1 ? 'once' : `${n} times`}${repairTime ? ` (${seconds(repairTime)} in all)` : ''}`, repairs);
-  add('grading', (n) => `checked the coach’s grading ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'gradingPlan' && x.ran));
-  add('held', (n) => `held a completion ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.held));
-  add('unverified', (n) => `took back an objective the coach checked off ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.unverified?.length));
-  add('rewrite', (n) => `asked the coach to rewrite a reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => (x.type === 'draftGuard' && x.used) || x.type === 'heldRewrite'));
-  add('replaced', (n) => `replaced the coach’s reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'replyReplaced'));
+  add('tags', (n) => `asked the coach again for the tags its reply left out, ${n === 1 ? 'once' : `${n} times`}${repairTime ? ` (${seconds(repairTime)} in all)` : ''}`, repairs, 'asked the coach again for the tags its reply left out');
+  add('grading', (n) => `checked the coach’s grading ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'gradingPlan' && x.ran), 'checked the coach’s grading');
+  add('held', (n) => `held a completion ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.held), 'held a completion');
+  add('unverified', (n) => `took back an objective the coach checked off ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.unverified?.length), 'took back an objective the coach checked off');
+  add('rewrite', (n) => `asked the coach to rewrite a reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => (x.type === 'draftGuard' && x.used) || x.type === 'heldRewrite'), 'asked the coach to rewrite a reply');
+  add('replaced', (n) => `replaced the coach’s reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'replyReplaced'), 'replaced the coach’s reply');
   for (const k of Object.keys(CONTEXT_FIELDS).filter((key) => CONTEXT_FIELDS[key].steers)) {
-    add(k, (n) => `added ${fieldLabel(k).toLowerCase()} for the coach on ${plural(n, 'exchange')}`, withStep((x) => x.type === 'context' && x.context && k in x.context));
+    add(k, (n) => `added ${fieldLabel(k).toLowerCase()} for the coach on ${plural(n, 'exchange')}`, withStep((x) => x.type === 'context' && x.context && k in x.context), `added ${fieldLabel(k).toLowerCase()} for the coach`);
   }
-  add('wrong', (n) => `ran into a problem on ${plural(n, 'exchange')}`, turns.filter((t) => t.failed || t.steps.some((x) => noteFor(deriveRules(t.steps) && x.type === 'applied' ? { ...x, derivedRules: deriveRules(t.steps) } : x)?.kind === 'problem')));
+  add('wrong', (n) => `ran into a problem on ${plural(n, 'exchange')}`, turns.filter((t) => t.failed || t.steps.some((x) => noteFor(deriveRules(t.steps) && x.type === 'applied' ? { ...x, derivedRules: deriveRules(t.steps) } : x)?.kind === 'problem')), 'ran into a problem');
   return { exchanges: turns.length, followups: followups.length, items: tally };
 }
 
