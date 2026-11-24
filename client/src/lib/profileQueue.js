@@ -83,7 +83,7 @@ async function saveProfileResult(existing, result, trace) {
   let savedSummary = null;
   if (result.summary) { savedSummary = await saveLearnerProfileSummary(result.summary); syncIfUnsaved(savedSummary, 'profileSummary'); }
   // The learner's own notes and the lesson lists are kept by code whatever the agent returned (mergeProfile).
-  trace?.step('profileSaved', { before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
+  trace?.step('profileSaved', { call: trace.lastCall(), before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
 }
 
 // -- The learner's own notes (Settings → Learner Profile) ---------------------

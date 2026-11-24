@@ -82,12 +82,12 @@ function parseJSON(text) {
 async function callWithValidation(agentFn, validator, trace) {
   const parsed = await agentFn('first try');
   const error = validator(parsed);
-  if (!error) { trace?.step('validation', { ok: true }); return parsed; }
+  if (!error) { trace?.step('validation', { ok: true, call: trace.lastCall() }); return parsed; }
   console.error(`[plato] Validation failed (retrying): ${error}`);
   const retry = await agentFn('second try, after the first failed validation');
   const retryError = validator(retry);
   // The second try is used even when it also fails validation, unless it is unsafe.
-  trace?.step('validation', { ok: !retryError, firstError: error, ...(retryError ? { secondError: retryError, accepted: !retryError.includes('unsafe') } : {}) });
+  trace?.step('validation', { ok: !retryError, call: trace.lastCall(), firstError: error, ...(retryError ? { secondError: retryError, accepted: !retryError.includes('unsafe') } : {}) });
   if (retryError) {
     console.error(`[plato] Validation failed after retry: ${retryError}`);
     if (retryError.includes('unsafe')) throw new ApiError('safety', retryError);
@@ -99,9 +99,9 @@ async function callWithValidation(agentFn, validator, trace) {
 // this conversation, else undefined. With it, the request also asks the
 // server for what only it knows (`trace: true`); without it the request is
 // exactly what it always was.
-async function callApi({ agent, purpose, model, parts, messages, maxTokens = 1024, temperature, trace }) {
+async function callApi({ agent, purpose, stage, check, model, parts, messages, maxTokens = 1024, temperature, trace }) {
   const systemPrompt = joinParts(parts);
-  const call = trace?.begin({ agent, purpose, model, maxTokens, temperature, parts, messages });
+  const call = trace?.begin({ agent, purpose, stage, check, model, maxTokens, temperature, parts, messages });
   const attempt = async () => {
     const resp = await authenticatedFetch('/v1/ai/messages', {
       method: 'POST',
@@ -173,10 +173,10 @@ const joinParts = (parts) => parts.map((p) => p.text).join('');
  * appended to the system prompt (the coach's second try after a held
  * completion, #584).
  */
-export async function converseStream(promptName, messages, onChunk, maxTokens = 512, addendum = '', { trace, purpose } = {}) {
+export async function converseStream(promptName, messages, onChunk, maxTokens = 512, addendum = '', { trace, purpose, stage = 'answered', check = null } = {}) {
   const parts = await agentParts(promptName, addendum);
   const systemPrompt = joinParts(parts);
-  const call = trace?.begin({ agent: promptName, purpose, model: LLM, maxTokens, stream: true, parts, messages });
+  const call = trace?.begin({ agent: promptName, purpose, stage, check, model: LLM, maxTokens, stream: true, parts, messages });
   try {
     const reply = await streamOnce({ promptName, systemPrompt, messages, onChunk, maxTokens, trace, call });
     call?.end(reply);
@@ -239,9 +239,9 @@ export function reportEvent(code, meta = {}) {
 /** The coach's system-prompt addendum for a tag repair (also used by server/scripts/coach-eval.js). */
 export const TAG_REPAIR_ADDENDUM = `## Tag repair (from plato, not the learner)\n\nYour last reply in this conversation ended without all of its tags. The final user message ("${TAG_REPAIR_CUE}") comes from plato, not the learner. Reply with ONLY the tag lines for your last reply: [PROGRESS: N], [KB_UPDATE: {...}], and [PROFILE_UPDATE: {...}] if it applies. Score what the learner has actually shown, consistent with what your last reply told them. No other text.`;
 
-export async function repairCoachTags(messages, reply, { trace, purpose = 'tag repair' } = {}) {
+export async function repairCoachTags(messages, reply, { trace, purpose = 'tag repair', check = 'tags' } = {}) {
   const { content } = await callApi({
-    agent: 'coach', purpose, trace,
+    agent: 'coach', purpose, stage: 'checked', check, trace,
     model: LLM, parts: await agentParts('coach', TAG_REPAIR_ADDENDUM),
     messages: [...messages, { role: 'assistant', content: reply }, { role: 'user', content: TAG_REPAIR_CUE }],
     maxTokens: 600,
@@ -259,7 +259,7 @@ export async function repairCoachTags(messages, reply, { trace, purpose = 'tag r
 export async function assessTurn(input, imageParts = [], { temperature = 0, trace, purpose = 'grading check' } = {}) {
   const content = imageParts.length ? [{ type: 'text', text: input }, ...imageParts] : input;
   const { content: reply } = await callApi({
-    agent: 'assessor', purpose, trace,
+    agent: 'assessor', purpose, stage: 'checked', check: 'grading', trace,
     model: LLM, parts: await agentParts('assessor'),
     messages: [{ role: 'user', content }],
     // A part and a short quote per objective; 800 cut long replies off mid-JSON on prod.
@@ -280,9 +280,9 @@ export async function assessTurn(input, imageParts = [], { temperature = 0, trac
  * caught 80% of real completion messages on prod; this caught 71% of the
  * rest, and said yes to 3.7% of ordinary replies). Throws on failure.
  */
-export async function checkCompletionClaim(text, { trace, purpose = 'does the reply say the lesson is done?' } = {}) {
+export async function checkCompletionClaim(text, { trace, purpose = 'does the held reply say the lesson is done?' } = {}) {
   const { content } = await callApi({
-    agent: 'claim-check', purpose, trace,
+    agent: 'claim-check', purpose, stage: 'checked', check: 'grading', trace,
     model: LLM, parts: await agentParts('claim-check'),
     messages: [{ role: 'user', content: String(text || '').slice(0, 8000) || '(empty)' }],
     maxTokens: 5,
@@ -301,7 +301,7 @@ export async function initializeLessonKB(lesson, profileSummary, { trace } = {})
   });
   const callAgent = async (purpose) => {
     const { content } = await callApi({
-      agent: 'lesson-owner', purpose, trace,
+      agent: 'lesson-owner', purpose, stage: 'setup', trace,
       model: LLM, parts,
       messages: [{ role: 'user', content: userContent }], maxTokens: 1536,
     });
@@ -351,7 +351,7 @@ export async function updateProfileOnCompletion(fullProfile, lessonKB, lessonNam
   const { trace: _stamp, ...kbForAgent } = lessonKB || {};
   const userContent = JSON.stringify({ untrustedText: LEARNER_TEXT_FRAMING, currentProfile: profileForAgent(fullProfile), lessonKB: kbForAgent, activitiesCompleted, lessonName, lessonId });
   const { content } = await callApi({
-    agent: 'learner-profile-owner', purpose: 'profile update on completion', trace,
+    agent: 'learner-profile-owner', purpose: 'profile update on completion', stage: 'background', trace,
     model: LLM, parts: await agentParts('learner-profile-owner'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
@@ -374,7 +374,8 @@ export async function updateProfileFromFeedback(fullProfile, feedbackText, activ
   if (flag) { trace?.step('noteScreened', { reason: flag, source }); return null; }
   const userContent = JSON.stringify(profileUpdateInput(fullProfile, feedbackText, activityContext, source));
   const { content } = await callApi({
-    agent: 'learner-profile-update', purpose: `profile update (${source})`, trace,
+    // A coach observation is a follow-up; a learner's own note is the point of the exchange.
+    agent: 'learner-profile-update', purpose: `profile update (${source})`, stage: source === 'coach' ? 'background' : 'answered', trace,
     model: LLM, parts: await agentParts('learner-profile-update'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
@@ -390,7 +391,7 @@ export async function updateCourseProgress(courseName, lessonsInCourse, priorSum
     completedLessonIds: completedLessonIds || [],
   });
   const { content } = await callApi({
-    agent: 'course-progress-update', purpose: 'unit note on completion', trace,
+    agent: 'course-progress-update', purpose: 'unit note on completion', stage: 'background', trace,
     model: LLM, parts: await agentParts('course-progress-update'),
     messages: [{ role: 'user', content: userContent }], maxTokens: 1024,
   });
