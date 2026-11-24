@@ -23,8 +23,16 @@ export async function run(c, { app, model }) {
   const conversationText = app.creation?.buildConversationText
     ? app.creation.buildConversationText(c.convo.map(([by, text]) => ({ role: by === 'U' ? 'user' : 'assistant', content: text })))
     : c.convo.map(([by, t]) => `${by === 'U' ? 'User' : 'Lesson Creator'}: ${t}`).join('\n\n');
-  const md = (await model.call({ system: app.system('lesson-extractor', { language: c.language || '' }), messages: [{ role: 'user', content: conversationText }], maxTokens: 1536 })).trim();
-  const invalid = app.markdown.validateLessonMarkdown(md);
+  // As authoringExtract runs it: an invented directive dropped, where this version does.
+  const ground = app.authoring?.withoutInventedDirective || ((md) => md);
+  const write = async () => ground((await model.call({ system: app.system('lesson-extractor', { language: c.language || '' }), messages: [{ role: 'user', content: conversationText }], maxTokens: 1536 })).trim(), conversationText).trim();
+  // As authoringExtract runs it: asked again when plato's check refuses it.
+  let md = await write();
+  let invalid = app.markdown.validateLessonMarkdown(md);
+  for (let attempt = 1; invalid && attempt < (app.authoring?.EXTRACT_ATTEMPTS || 1); attempt++) {
+    md = await write();
+    invalid = app.markdown.validateLessonMarkdown(md);
+  }
   const objectives = (md.match(/^- Can /gm) || []).length;
   const exemplar = (md.split(/^##\s*Exemplar\s*$/im)[1] || '').split(/^##\s/m)[0];
   return {
@@ -32,7 +40,8 @@ export async function run(c, { app, model }) {
       valid: !invalid,
       objectives: objectives >= 2 && objectives <= 4,
       linkCode: c.contains ? c.contains.every((s) => md.includes(s)) : null,
-      noInvented: c.noDirective ? !/^##\s*Coach Directive/im.test(md) : null,
+      // What the Coach would be given: the directive as plato's parser reads it.
+      noInvented: c.noDirective ? !(app.lessonOwner?.parseLessonPrompt ? app.lessonOwner.parseLessonPrompt('x', md).coachDirective : /^##\s*Coach Directive/im.test(md)) : null,
       clean: md.startsWith('# '),
       finalVersion: c.final ? new RegExp(c.final, 'i').test(md) && !new RegExp(c.dropped, 'i').test(md) : null,
       produced: exemplar ? !/^\s*(the learner |learners )?(understands?|knows?)\b/i.test(exemplar.trim()) : null,

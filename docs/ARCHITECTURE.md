@@ -1318,10 +1318,17 @@ already finished the intro lesson." These flow end-to-end through one optional
 
 1. **Extract** — `lesson-extractor` emits `## Coach Directive` **verbatim**
    (codes, URLs, caveats intact) only when the conversation contained such
-   instructions; otherwise it omits the heading.
-2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`) reads the
-   section into `lesson.coachDirective` (buffered like the exemplar so multi-line
-   directives survive; absent ⇒ no key).
+   instructions; otherwise it omits the heading. It used to write coaching
+   advice of its own there (agent evaluations X1: 6 of 6 on main), so
+   `authoringExtract` drops a directive unless at least half its words are in
+   the author's messages (`withoutInventedDirective`; verbatim means they
+   are), and asks the extractor once more when plato's check refuses the
+   lesson (`EXTRACT_ATTEMPTS`).
+2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`, and its server
+   copy `server/src/lib/lesson-parse.js`) reads the section into
+   `lesson.coachDirective` (buffered like the exemplar so multi-line
+   directives survive; absent ⇒ no key). A directive that only says "None",
+   "N/A" or "—" is no directive.
 3. **Serve** — `buildContext` (`client/src/lib/lessonEngine.js`) surfaces it as
    `context.coachDirective` in **both** active and completed states.
 4. **Obey** — `coach.md` treats it as a high-priority instruction followed every

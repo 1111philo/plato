@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { ai, reset, signIn, settle } from './helpers/fake-plato.js';
 
 const { clearCache } = await import('../js/storage.js');
-const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL } = await import('../src/lib/authoringEngine.js');
+const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL, EXTRACT_ATTEMPTS, withoutInventedDirective } = await import('../src/lib/authoringEngine.js');
 
 const CONVERSATION = 'User: I want to create a new lesson.\n\nAgent: What should learners be able to do?\n\nUser: Write a clear bug report.';
 const fresh = () => { reset(); clearCache(); signIn(); ai.length = 0; };
@@ -34,7 +34,29 @@ describe('authoring chats', () => {
     const r = await authoringExtract({ what: 'knowledgeBase', conversationText: CONVERSATION, check: () => 'It is too short.', save: async () => { saves++; } });
     assert.equal(r.problem, 'It is too short.');
     assert.equal(saves, 0);
+    assert.equal(ai.length, EXTRACT_ATTEMPTS, 'asked again before the problem is shown');
     assert.equal(kbProblem('short'), 'Could not generate a knowledge base from the conversation. Keep adding information.');
+  });
+
+  it('a slip the second try doesn’t repeat is saved, with no problem shown (agent evaluations X3)', async () => {
+    fresh();
+    let checks = 0;
+    let saved = null;
+    const r = await authoringExtract({ what: 'lesson', conversationText: CONVERSATION, check: () => (checks++ === 0 ? 'Lesson must have a "## Learning Objectives" section.' : null), save: async (md) => { saved = md; } });
+    assert.equal(r.problem, null);
+    assert.equal(ai.length, 2);
+    assert.equal(saved, r.markdown);
+  });
+
+  it('a Coach Directive the author didn’t give is dropped; theirs is kept (agent evaluations X1, X3)', () => {
+    const conv = 'User: A lesson on joining our community.\n\nAgent: Any instructions for the coach?\n\nUser: Yes: share https://community.example.org/join and the code PLATO-2026 when they’re ready.';
+    const lesson = (directive) => `# Join\n\nJoin us.\n\n## Exemplar\nA screenshot.\n\n## Learning Objectives\n- Can join\n- Can post\n${directive ? `\n## Coach Directive\n${directive}\n` : ''}`;
+    const theirs = lesson('Share https://community.example.org/join and the code PLATO-2026 when they’re ready.');
+    assert.equal(withoutInventedDirective(theirs, conv), theirs);
+    const invented = withoutInventedDirective(lesson('Reference the learner’s actual volunteer experience to personalize examples.'), conv);
+    assert.doesNotMatch(invented, /Coach Directive/);
+    assert.match(invented, /- Can post\n$/);
+    assert.equal(withoutInventedDirective(lesson(''), conv), lesson(''), 'no directive, nothing to do');
   });
 
   it('saves a text that passes, and a failed save is thrown to the page', async () => {

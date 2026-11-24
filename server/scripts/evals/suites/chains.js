@@ -59,7 +59,8 @@ const CHAINS = {
       ['Agent', 'Any instructions for the coach?'],
       ['User', `Yes: when the learner is ready to join, share this exact link and code: ${LINK} and the code ${CODE}. Call the lesson "Foundations 3 - Join the Community".`],
     ].map(([by, t]) => `${by}: ${t}`).join('\n\n');
-    const md = (await model.call({ system: app.system('lesson-extractor'), messages: [{ role: 'user', content: convo }], maxTokens: 1536 })).trim();
+    const raw = (await model.call({ system: app.system('lesson-extractor'), messages: [{ role: 'user', content: convo }], maxTokens: 1536 })).trim();
+    const md = app.authoring?.withoutInventedDirective ? app.authoring.withoutInventedDirective(raw, convo) : raw;
     const lesson = app.lessonOwner?.parseLessonPrompt ? app.lessonOwner.parseLessonPrompt('eval-chain-design', md) : null;
     if (!lesson) return { checks: { linkCode: false }, sample: { md } };
     const kb = await lessonOwner({ app, model, lesson });
