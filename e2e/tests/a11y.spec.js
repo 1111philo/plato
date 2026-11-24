@@ -86,27 +86,27 @@ test.describe('learner pages', () => {
     await expectAccessible(page, { label: 'lesson chat' });
   });
 
-  test('lesson overview dialog fits the viewport and scrolls once', async ({ page }) => {
+  test('the lesson panel fits the viewport and scrolls once', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 600 });
     await page.goto(`/lessons/${LESSONS[2].id}`);
     await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /^Progress \(\d+ of \d+ Objectives\): lesson overview$/ }).first().click();
-    const dialog = page.getByRole('dialog');
+    await page.getByRole('button', { name: /^Overview \(\d+ of \d+ Objectives\): lesson panel$/ }).first().click();
+    const dialog = page.locator('#lesson-panel');
     await expect(dialog).toBeVisible();
     const box = await dialog.boundingBox();
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(600);
-    // Exactly one scroll area: the global dialog cap must not add a second
-    // scrollbar around LessonChat's own inner scroll region.
+    // Exactly one scroll area: the Overview tab's own (the global dialog cap,
+    // on narrow screens, must not add a second around it).
     const scrollers = await dialog.evaluate((el) => [el, ...el.querySelectorAll('*')]
       .filter((n) => n.scrollHeight > n.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(n).overflowY)).length);
     expect(scrollers).toBe(1);
-    // Keyboard scrolling: focus the overview region and page down to the end.
-    const region = dialog.getByRole('region', { name: 'Lesson overview' });
+    // Keyboard scrolling: focus the Overview tab's panel and page down to the end.
+    const region = dialog.getByRole('tabpanel', { name: 'Overview' });
     await region.focus();
     for (let i = 0; i < 12; i++) await page.keyboard.press('PageDown');
     await expect(page.getByText('Exemplar paragraph 40', { exact: false })).toBeInViewport();
-    await expectAccessible(page, { include: '[role=dialog]', label: 'lesson overview dialog' });
+    await expectAccessible(page, { include: '#lesson-panel', label: 'lesson panel' });
   });
 
   test('/settings', async ({ page }) => {
@@ -118,15 +118,18 @@ test.describe('learner pages', () => {
   // Trace mode (#595): docked beside the chat on a wide screen, a dialog on a
   // narrow one. Both projects run this, so both forms are checked.
   test('the lesson trace', async ({ page }) => {
-    // Pressing Trace starts it and opens it; Stop tracing leaves it as it was.
+    // The lesson panel's Trace tab, recording; Stop trace leaves it as it was.
     await page.goto(`/lessons/${LESSONS[0].id}`);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: 'Start Trace for this lesson' }).last().click();
-    await expect(page.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
-    await expectAccessible(page, { include: '#lesson-trace', label: 'lesson trace' });
+    await page.getByRole('button', { name: /: lesson panel$/ }).click();
+    const panel = page.locator('#lesson-panel');
+    await panel.getByRole('tab', { name: 'Trace' }).click();
+    await panel.getByRole('button', { name: 'Start trace' }).click();
+    await expect(panel.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
+    await expectAccessible(page, { include: '#lesson-panel', label: 'lesson trace' });
     await expectAccessible(page, { label: 'lesson chat with the trace open' });
-    await page.getByRole('button', { name: 'Stop tracing' }).click();
-    await expect(page.getByRole('button', { name: 'Start Trace for this lesson' }).last()).toBeVisible();
+    await panel.getByRole('button', { name: 'Stop trace' }).click();
+    await expect(panel.getByRole('button', { name: 'Start trace' })).toBeVisible();
   });
 
   test('dialog: sign out', async ({ page }) => {

@@ -573,9 +573,9 @@ which it links to when the conversation has a trace.
 
 A readable record of everything behind a conversation: what was sent to the
 model, what came back, and every place plato's instructions or code shaped the
-result. It is for learners, **one conversation at a time**: pressing a
-lesson's Trace button (or the one in Settings → Learner Profile) starts
-recording it and shows the Trace; "Stop tracing" in the Trace ends it. The
+result. It is for learners, **one conversation at a time**: **Start trace**
+in a lesson panel's Trace tab (or in Settings → Learner Profile's Trace)
+starts recording that conversation; **Stop trace** ends it. The
 scopes being recorded are `preferences.traceScopes`; `lessonTrace.isTraceOn
 (preferences, scope)` is the one check. Nothing is recorded that nobody asked
 to read, and it's on only where someone is looking (Blake, 2026-11-24).
@@ -657,18 +657,19 @@ off, and every request can be rebuilt from the stored trace alone (replay).
 A request the trace can't reproduce means the trace is missing something.
 
 ### The Trace view
-- **Starting and stopping** (`hooks/useTraceSwitch.js`). The lesson header's
-  Trace button (footprints) is "Start Trace for this lesson" while off: one
-  press starts recording and opens the Trace. While recording it carries a red
-  dot, is named "Trace for this lesson (recording)", and shows or hides the
-  Trace; closing the Trace keeps recording. The Trace's header says
-  "Recording" with one "Stop tracing" button, which stops and closes it.
-  Started partway through a lesson, the timeline says recording began partway.
-  Not offered in View as User.
-- **Docked or a dialog**: `components/chat/LessonTrace.jsx` shows it **docked
-  beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
-  focus trap; Escape closes it from inside; focus returns to the button), and
-  as a **dialog below that**. Docked, it is `position: fixed` in the space
+- **Where it is**: the **Trace** tab of the lesson panel (see [The lesson
+  panel](#the-lesson-panel-overview-438-and-trace)), opened from the
+  "Overview (N of M Objectives)" button. Trace is rarely used, so it has no
+  control of its own in the header.
+- **Starting and stopping** (`hooks/useTraceSwitch.js`, `TraceContent.jsx`):
+  the top of the tab says "Not recording" with **Start trace** (and one line
+  on what it records), or "● Recording" with **Stop trace**. Closing the panel
+  keeps recording. While it records, the tab is named "Trace (recording)" and
+  the lesson header shows a "● Recording" marker, the only sign of Trace in
+  the header, which opens the Trace tab. Started partway through a lesson, the
+  timeline says recording began partway.
+- **Docked or a dialog**: as the lesson panel, **docked beside the chat at
+  1024 px and up**, a **dialog below that**. Docked, it is `position: fixed` in the space
   `<main>` occupies, clamped to the window, and re-measured when `<main>`
   resizes or anything scrolls: an admin's extra bar makes the page itself
   scroll, and a panel measured once ended up over the app header (Blake's
@@ -777,9 +778,9 @@ learner's own records:
 - The flow lives outside the page so it can be tested from node:
   `profileQueue.addLearnerNote` / `removeLearnerNote` (reusing
   `saveProfileResult`, so the merge is the one the coach's observations use).
-- The button (`components/chat/TraceButton.jsx`) works like the lesson's:
-  "Start Trace for your notes" starts it and opens the Trace as a dialog;
-  while recording it shows a red dot and "Recording"; "Stop tracing" ends it.
+- The button (`components/chat/TraceButton.jsx`, "Trace" beside Add
+  Feedback) opens the same Trace content as a dialog, with Start trace and
+  Stop trace at the top; while recording it shows a red dot and "Recording".
 - The admin authoring chats (lesson editor, knowledge base editor) aren't
   traced. They share `hooks/useAuthoringChat.js` and `lib/authoringEngine.js`,
   which replaced three copies of the same streaming code.
@@ -999,8 +1000,8 @@ and objectives), where they can reference it throughout the lesson.
 6. **Coach context** — `buildContext()` injects enrichments into coach system prompt
    as `enrichmentContext: [{ source, context, reasoning }]`
 7. **UI display** — enrichments show in the "Additional context" section of
-   the lesson overview dialog (`LessonOverview.jsx`, opened from the lesson
-   header's "Progress (N of M Objectives)" button)
+   the lesson panel's Overview tab (`LessonOverview.jsx`, opened from the
+   lesson header's "Overview (N of M Objectives)" button)
 8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
 
 ### Enrichment data contract
@@ -1438,15 +1439,23 @@ admin moved out of every course still shows first, under **Start here**.
 lesson that teaches it (see CLAUDE.md). Unedited copies everywhere pick up
 the change on the next deploy.
 
-### The lesson overview (#438)
+### The lesson panel: Overview (#438) and Trace
 
-One read-only dialog per lesson (`client/src/components/chat/LessonOverview.jsx`).
-It used to be two, "Lesson Overview" and "Your work", which repeated the
-exemplar and the objectives; Blake's review on #451 merged them. It opens from
-the lesson header's **"Progress (N of M Objectives)"** button (accessible name
-"Progress (N of M Objectives): lesson overview"; `progressLabel`),
-and from **Your progress** in the lessons page's outline dialog for started
-lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
+One panel per lesson (`client/src/components/chat/LessonPanel.jsx`), with two
+tabs: **Overview** (`LessonOverview.jsx`, read-only) and **Trace**
+(`TraceContent.jsx`, see [Trace mode](#trace-mode-595); not in View as User).
+It opens from the lesson header's **"Overview (N of M Objectives)"** button
+(accessible name "Overview (N of M Objectives): lesson panel";
+`overviewLabel`), and from **Your progress** in the lessons page's outline
+dialog for started lessons (`/lessons/:id?view=overview`; `?view=work` still
+works). At 1024 px and up it is docked beside the chat (an `<aside>`, not a
+modal; Escape closes it from inside; focus returns to what opened it), so
+the checklist stays in view while the learner works; below that it is a
+dialog. It replaced two separate things: the overview dialog, and a docked
+Trace with its own header button; Trace is rarely used, so it lives in a tab
+rather than in the header (Blake, 2026-11-24). The overview used to be two
+dialogs too, "Lesson Overview" and "Your work", which repeated the exemplar and
+the objectives; Blake's review on #451 merged them. The Overview tab, in order:
 - **Objectives:** the checklist (met / not yet, with sr-only state). Before
   the lesson starts nothing is met; a completed lesson shows all met.
 - **What finished work looks like:** the exemplar, once.
@@ -1457,11 +1466,11 @@ lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
   Images are fetched only when the section opens, each key once.
 - **Additional context** (`<details>`): plugin enrichments, when there are any.
 
-The progress score isn't repeated; the header's progress bar shows it. The
-footer has **How assessment works** (left of Close), the one place in the
-classroom that links the assessment page, next to the progress it explains.
-The dialog's body is one focusable scroll region (axe scrollable-region-focusable).
-It works the same on completed lessons and in View as User (it only reads).
+The progress score isn't repeated; the header's progress bar shows it. It
+ends with **How assessment works**, the one place in the classroom that links
+the assessment page, next to the progress it explains. Each tab panel is its
+own focusable scroll area (axe scrollable-region-focusable). It works the same
+on completed lessons and in View as User (it only reads).
 
 **The checklist.** The coach may add `"objectivesMet": [1, 3]` (1-based, as
 the objectives are listed in its context) to `[KB_UPDATE]`.

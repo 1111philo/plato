@@ -1,6 +1,6 @@
-// Trace (#595): a learner presses a lesson's Trace button, which starts
-// recording that lesson, runs it, and reads what plato did behind it; "Stop
-// tracing" ends it. Wide screens dock the Trace beside the chat.
+// Trace (#595): a learner opens the lesson panel (the Overview button), starts
+// a trace in its Trace tab, runs the lesson, and reads what plato did behind
+// it; "Stop trace" ends it. Wide screens dock the panel beside the chat.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
 import { ADMIN, LEARNER, LESSONS } from '../fixtures.js';
@@ -8,24 +8,32 @@ import { ADMIN, LEARNER, LESSONS } from '../fixtures.js';
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const LESSON = `/lessons/${LESSONS[1].id}`;
 
-const START = 'Start Trace for this lesson';
-const RECORDING = 'Trace for this lesson (recording)';
-const traceButton = (page) => page.getByRole('button', { name: /Trace for this lesson/ }).last();
 const savedPrefs = (page) => page.waitForResponse((r) => r.url().endsWith('/v1/sync/preferences') && r.request().method() === 'PUT');
+const panelOf = (page) => page.locator('#lesson-panel');
+const MARKER = 'Trace is recording this lesson: open the Trace';
 
-/** Trace on or off for the spec's lesson, from its Trace button; the Trace is closed afterwards. */
+/** Open the lesson panel on its Trace tab. */
+async function openTraceTab(page) {
+  const panel = panelOf(page);
+  if (!(await panel.isVisible())) await page.getByRole('button', { name: /: lesson panel$/ }).click();
+  await panel.getByRole('tab', { name: /^Trace/ }).click();
+  return panel;
+}
+
+/** Trace on or off for the spec's lesson, from its Trace tab; the panel is closed afterwards. */
 async function setTrace(page, on) {
   await page.goto(LESSON);
   await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-  const button = traceButton(page);
-  const recording = (await button.getAttribute('aria-label')) === RECORDING;
-  if (recording === on) return;
-  const saved = savedPrefs(page);
-  await button.click();
-  if (!on) await page.getByRole('button', { name: 'Stop tracing' }).click();
-  await saved;
-  if (on) await page.getByRole('button', { name: /^Close( trace)?$/ }).first().click();
-  await expect(button).toHaveAccessibleName(on ? RECORDING : START);
+  const panel = await openTraceTab(page);
+  const toggle = panel.getByRole('button', { name: /^(Start|Stop) trace$/ });
+  if ((await toggle.textContent()) === (on ? 'Start trace' : 'Stop trace')) {
+    const saved = savedPrefs(page);
+    await toggle.click();
+    await saved;
+  }
+  await expect(toggle).toHaveText(on ? 'Stop trace' : 'Start trace');
+  await panel.getByRole('button', { name: /^Close( lesson panel)?$/ }).first().click();
+  await expect(page.getByRole('button', { name: MARKER })).toHaveCount(on ? 1 : 0);
 }
 
 async function say(page, text) {
@@ -39,29 +47,36 @@ async function say(page, text) {
 test.describe('Trace mode', () => {
   test.afterEach(async ({ page }) => { await setTrace(page, false); });
 
-  test('off by default; pressing Trace starts it for this lesson: recorded and readable by keyboard', async ({ page }) => {
+  test('off by default; started from the Trace tab: recorded and readable by keyboard', async ({ page }) => {
     await login(page, LEARNER);
     await setTrace(page, false);
-    const button = traceButton(page);
-    await expect(button).toHaveAccessibleName(START);
+    // No Trace control in the header while it's off.
+    await expect(page.getByRole('button', { name: /Trace/ })).toHaveCount(0);
 
-    // One press: recording starts and the Trace opens, saying so, with the way to stop.
+    // The Overview button opens the panel; its Trace tab has the way to start.
+    const progress = page.getByRole('button', { name: /: lesson panel$/ });
+    await progress.focus();
+    await page.keyboard.press('Enter');
+    const panel = panelOf(page);
+    await expect(panel.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+    await panel.getByRole('tab', { name: 'Trace' }).click();
+    await expect(panel.getByText('Not recording')).toBeVisible();
+    await expectAccessible(page, { include: '#lesson-panel', label: 'trace tab, not recording' });
     const saved = savedPrefs(page);
-    await button.click();
+    await panel.getByRole('button', { name: 'Start trace' }).click();
     await saved;
-    const panel = page.getByRole('complementary', { name: 'Trace' });
-    await expect(panel.getByText('Recording', { exact: true })).toBeVisible();
-    await expect(panel.getByRole('button', { name: 'Stop tracing' })).toBeVisible();
-    await expect(button).toHaveAccessibleName(RECORDING);
-    await expectAccessible(page, { include: '#lesson-trace', label: 'trace, recording' });
-    // Closing it keeps recording.
-    await page.getByRole('button', { name: 'Close trace' }).click();
-    await expect(button).toHaveAccessibleName(RECORDING);
+    await expect(panel.getByText('Recording', { exact: true }).first()).toBeVisible();
+    await expect(panel.getByRole('tab', { name: 'Trace (recording)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: MARKER })).toBeVisible();
+    await expectAccessible(page, { include: '#lesson-panel', label: 'trace tab, recording' });
+    // Closing the panel keeps recording.
+    await panel.getByRole('button', { name: 'Close lesson panel' }).click();
+    await expect(page.getByRole('button', { name: MARKER })).toBeVisible();
 
     // Another lesson isn't recorded.
     await page.goto(`/lessons/${LESSONS[0].id}`);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await expect(traceButton(page)).toHaveAccessibleName(START);
+    await expect(page.getByRole('button', { name: MARKER })).toHaveCount(0);
 
     // Start the lesson again so its trace is complete.
     await page.goto(LESSON);
@@ -73,16 +88,15 @@ test.describe('Trace mode', () => {
     await expect(page.getByText(/Welcome! In this lesson/).first()).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-chat-message="assistant"]')).toHaveCount(1);
 
-    const trace = page.getByRole('button', { name: RECORDING });
-    await expect(trace).toBeVisible();
-    await expect(trace).toHaveAttribute('aria-expanded', 'false');
-    await trace.focus();
+    // The header's marker opens the Trace tab.
+    const marker = page.getByRole('button', { name: MARKER });
+    await marker.focus();
     await page.keyboard.press('Enter');
 
     // Docked beside the chat: a landmark, not a dialog, and the chat still works.
-    await expect(panel).toBeVisible();
-    await expect(trace).toHaveAttribute('aria-expanded', 'true');
-    await expect(panel.getByRole('heading', { name: 'Trace', exact: true })).toBeFocused();
+    await expect(page.getByRole('complementary', { name: LESSONS[1].name })).toBeVisible();
+    await expect(panel.getByRole('tab', { name: /^Trace/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(panel.getByRole('heading', { name: LESSONS[1].name })).toBeFocused();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     // The list of exchanges: one per message, with what changed.
     await expect(panel.getByRole('button', { name: /^1\. Lesson start/ })).toBeVisible();
@@ -127,7 +141,7 @@ test.describe('Trace mode', () => {
     await expectAccessible(page, { label: 'lesson chat with the trace docked and an exchange open' });
 
     // Nothing in the panel is wider than the panel.
-    const widths = await panel.getByRole('region', { name: 'Trace steps' }).evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    const widths = await panel.getByRole('tabpanel', { name: /^Trace/ }).evaluate((el) => [el.scrollWidth, el.clientWidth]);
     expect(widths[0]).toBeLessThanOrEqual(widths[1]);
 
     // Previous, and back to the list, by keyboard.
@@ -143,10 +157,10 @@ test.describe('Trace mode', () => {
     expect(composerBox.x + composerBox.width).toBeLessThanOrEqual(panelBox.x + 1);
 
     // Escape closes it from inside and focus returns to the button.
-    await panel.getByRole('region', { name: 'Trace steps' }).focus();
+    await panel.getByRole('tabpanel', { name: /^Trace/ }).focus();
     await page.keyboard.press('Escape');
     await expect(panel).toHaveCount(0);
-    await expect(trace).toBeFocused();
+    await expect(marker).toBeFocused();
   });
 
   test('a held completion is explained: flagged, who decided, before and after', async ({ page }) => {
@@ -161,7 +175,7 @@ test.describe('Trace mode', () => {
     const behind = page.getByRole('button', { name: /^Behind this response/ }).last();
     await behind.click();
     await page.getByRole('button', { name: 'Open the trace for this reply' }).last().click();
-    const panel = page.getByRole('complementary', { name: 'Trace' });
+    const panel = panelOf(page);
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
     await expect(exchange.getByRole('blockquote').filter({ hasText: 'MOCK_COMPLETE MOCK_UNBACKED I think I am done' })).toBeVisible();
@@ -179,7 +193,7 @@ test.describe('Trace mode', () => {
     await expect(exchange.getByText('The Assessor’s verdict')).toBeVisible();
     await expect(exchange.getByText(/^Rule:/).first()).toBeVisible();
     await expect(exchange.getByText('Before', { exact: true }).first()).toBeVisible();
-    await expectAccessible(page, { include: '#lesson-trace', label: 'trace with a held completion open' });
+    await expectAccessible(page, { include: '#lesson-panel', label: 'trace with a held completion open' });
 
     // The list can be narrowed to where plato stepped in or something went wrong.
     await exchange.getByRole('button', { name: 'All exchanges' }).click();
@@ -194,8 +208,8 @@ test.describe('Trace mode', () => {
     await page.setViewportSize({ width: 390, height: 800 });
     await login(page, LEARNER);
     await setTrace(page, true);
-    await traceButton(page).click();
-    const dialog = page.getByRole('dialog', { name: 'Trace' });
+    await page.getByRole('button', { name: MARKER }).click();
+    const dialog = page.getByRole('dialog', { name: LESSONS[1].name });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
     const box = await dialog.boundingBox();
@@ -218,15 +232,16 @@ test.describe('Trace mode', () => {
     await expect(page.getByText('Viewing as').first()).toBeVisible({ timeout: 20_000 });
     await page.goto(LESSON);
     await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole('button', { name: /Trace for this lesson/ })).toHaveCount(0);
+    await page.getByRole('button', { name: /: lesson panel$/ }).click();
+    await expect(panelOf(page).getByRole('tab', { name: /^Trace/ })).toHaveCount(0);
+    await expect(panelOf(page).getByRole('list', { name: 'Objectives' })).toBeVisible();
     await page.getByRole('button', { name: /^Exit viewing as/ }).click();
   });
 
   test('Technology and services, and downloading the trace', async ({ page }) => {
     await login(page, LEARNER);
     await setTrace(page, true);
-    await traceButton(page).click();
-    const panel = page.getByRole('complementary', { name: 'Trace' });
+    const panel = await openTraceTab(page);
     await expect(panel.getByRole('heading', { name: /^Exchanges/ })).toBeVisible();
 
     // Download, by keyboard (enabled once the trace has loaded).
@@ -236,18 +251,15 @@ test.describe('Trace mode', () => {
     const [json] = await Promise.all([page.waitForEvent('download'), panel.getByRole('button', { name: 'Download the data (JSON)' }).click()]);
     expect(json.suggestedFilename()).toBe(`plato-trace-${LESSONS[1].id}.json`);
 
-    // The Technology tab: arrow keys move between tabs, Enter opens one.
-    await panel.getByRole('tab', { name: 'What happened' }).focus();
-    await page.keyboard.press('ArrowRight');
-    const tech = panel.getByRole('tab', { name: 'Technology and services' });
-    await expect(tech).toBeFocused();
+    // Technology and services, a section that opens by keyboard.
+    const tech = panel.locator('summary', { hasText: 'Technology and services' });
+    await tech.focus();
     await page.keyboard.press('Enter');
-    await expect(tech).toHaveAttribute('aria-selected', 'true');
     await expect(panel.getByRole('heading', { name: 'Used by this classroom' })).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'Amazon Bedrock' })).toBeVisible();
     await expect(panel.getByText('This install is using a stand-in model for testing, not a real AI model.')).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'Not turned on here' })).toBeVisible();
-    await expectAccessible(page, { include: '#lesson-trace', label: 'trace technology tab' });
+    await expectAccessible(page, { include: '#lesson-panel', label: 'trace technology section' });
   });
 
   test('Settings: a learner adds profile feedback and reads its trace in a dialog, by keyboard', async ({ page }) => {
@@ -255,19 +267,20 @@ test.describe('Trace mode', () => {
     await page.goto('/settings');
     // Settings has no account-wide switch: the profile's Trace has its own.
     await expect(page.getByRole('heading', { name: 'Trace mode' })).toHaveCount(0);
-    // Pressing Trace starts recording the profile; closing the Trace keeps it going.
-    const start = page.getByRole('button', { name: 'Start Trace for your notes' });
+    // The profile's Trace: start it there; closing the dialog keeps it going.
+    const button = page.getByRole('button', { name: /^Trace for your notes/ });
+    await button.click();
     const saved = savedPrefs(page);
-    await start.click();
+    await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Start trace' }).click();
     await saved;
     await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Close' }).click();
+    await expect(button).toHaveAccessibleName('Trace for your notes (recording)');
     await page.getByRole('button', { name: 'Add Feedback' }).click();
     const feedback = page.getByRole('dialog', { name: 'Add Profile Feedback' });
     await feedback.getByRole('textbox', { name: 'Profile feedback' }).fill('I use a Chromebook at the library.');
     await feedback.getByRole('button', { name: 'Submit' }).click();
     await expect(feedback).toHaveCount(0, { timeout: 20_000 });
 
-    const button = page.getByRole('button', { name: 'Trace for your notes (recording)' });
     await button.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Trace' });
@@ -288,11 +301,12 @@ test.describe('Trace mode', () => {
     // Remove the note again so other specs see the profile as they left it.
     await page.getByRole('button', { name: 'Remove note: I use a Chromebook at the library.' }).click();
     await expect(page.getByRole('list', { name: 'Your notes' })).toHaveCount(0);
-    // Stop tracing ends it and closes the Trace.
+    // Stop trace ends it.
     await button.click();
     const stopped = savedPrefs(page);
-    await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Stop tracing' }).click();
+    await page.getByRole('dialog', { name: 'Trace' }).getByRole('button', { name: 'Stop trace' }).click();
     await stopped;
-    await expect(page.getByRole('button', { name: 'Start Trace for your notes' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(button).toHaveAccessibleName('Trace for your notes');
   });
 });

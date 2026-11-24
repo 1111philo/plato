@@ -1,7 +1,7 @@
 /**
  * Trace on or off for one conversation (#595): `{ on, set, error }`.
- * `scope` is a lesson id or `profile`. Pressing a Trace button starts it;
- * "Stop tracing" in the Trace ends it (lessonTrace.isTraceOn).
+ * `scope` is a lesson id or `profile`. Start trace and Stop trace in the
+ * Trace (TraceContent.jsx) set it (lessonTrace.isTraceOn).
  */
 import { useState } from 'react';
 import { useApp } from '../contexts/AppContext.jsx';

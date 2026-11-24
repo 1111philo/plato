@@ -100,7 +100,7 @@ test('a coach reply that comes back without its tags still records progress', as
   const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
   await expect(panel).toContainText('Recorded what this reply left out in a second step');
   await expect(panel).toContainText(/Progress 0 → [1-9] of 10/);
-  await expect(page.getByRole('button', { name: /^Progress \([1-9] of 3 Objectives\): lesson overview$/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Overview \([1-9] of 3 Objectives\): lesson panel$/ }).first()).toBeVisible();
 });
 
 test('the lesson editor shows the lesson creator behind each reply', async ({ page }) => {
@@ -112,21 +112,23 @@ test('the lesson editor shows the lesson creator behind each reply', async ({ pa
   await expect(page.getByText('Readiness 3 of 10')).toBeVisible();
 });
 
-// #438: the lesson overview (merged with "Your work"), by keyboard, with the
-// checklist the coach fills in. The header button says how many are met.
-test('the lesson overview shows the objectives met so far, where you are, and shared work', async ({ page }) => {
+// #438: the lesson panel's Overview tab (merged with "Your work"), by keyboard,
+// with the checklist the coach fills in. The header button says how many are met.
+test('the lesson panel shows the objectives met so far, where you are, and shared work', async ({ page }) => {
   await login(page, LEARNER);
   await page.goto(`/lessons/${LESSONS[2].id}`); // continues the conversation from the test above
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
 
-  const open = page.getByRole('button', { name: 'Progress (1 of 4 Objectives): lesson overview' }).first();
-  await expect(open).toHaveText('Progress (1 of 4 Objectives)');
+  const open = page.getByRole('button', { name: 'Overview (1 of 4 Objectives): lesson panel' }).first();
+  await expect(open).toHaveText('Overview (1 of 4 Objectives)');
   await expect(page.getByRole('button', { name: 'Your work' })).toHaveCount(0);
   await open.focus();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: LESSONS[2].name });
+  const dialog = page.locator('#lesson-panel');
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: LESSONS[2].name })).toBeFocused();
+  await expect(open).toHaveAttribute('aria-expanded', 'true');
   const objectives = dialog.getByRole('list', { name: 'Objectives' }).getByRole('listitem');
   await expect(objectives).toHaveCount(4);
   await expect(objectives.first()).toContainText(', met');
@@ -135,13 +137,15 @@ test('the lesson overview shows the objectives met so far, where you are, and sh
   await expect(dialog.getByRole('heading', { name: 'Where you are' })).toBeVisible();
   await dialog.locator('summary', { hasText: 'Shared work' }).click();
   await expect(dialog.getByText(/Nothing shared yet/)).toBeVisible();
-  await expectAccessible(page, { include: '[role=dialog]', label: 'lesson overview dialog (started)' });
+  await expectAccessible(page, { include: '#lesson-panel', label: 'lesson panel (started)' });
+  await dialog.locator('summary', { hasText: 'Shared work' }).focus();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
+  await expect(open).toBeFocused();
 
   // "Your progress" on the lessons page links here with ?view=overview.
   await page.goto(`/lessons/${LESSONS[2].id}?view=overview`);
-  await expect(page.getByRole('dialog', { name: LESSONS[2].name })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('#lesson-panel').getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
 });
 
 // #451 review H1/M10: a reply cut off at max_tokens isn't saved; the draft comes back.
