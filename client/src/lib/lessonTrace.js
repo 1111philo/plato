@@ -144,6 +144,11 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     return { kind: partKind, chars: t.length, hash, ...(t.length > MAX_PART_CHARS ? { cut: true } : {}) };
   };
 
+  const about = (parts) => {
+    const h = parts.find((p) => p.kind === 'prompt')?.header;
+    return h ? { name: h.name, purpose: h.purpose } : null;
+  };
+
   const messagesRef = (messages) => {
     if (base && messages.length >= base.length && base.every((m, i) => m === messages[i])) {
       return { base: base.length, extra: storableMessages(messages.slice(base.length)) };
@@ -174,6 +179,8 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
         agent, purpose: purpose || null, model, maxTokens,
         temperature: temperature ?? null, stream,
         system: parts.map(partRef),
+        // The prompt file's header (who the agent is), which isn't sent.
+        ...(about(parts) ? { about: about(parts) } : {}),
         messages: messagesRef(messages),
         attempts: [],
       });

@@ -70,15 +70,18 @@ function callSteps(s, { history, parts }) {
   const req = rebuildRequest(s, { history, parts });
   const p = s.server?.provider;
   const where = p ? (p.provider === 'mock' ? 'a stand-in model used for testing' : `${p.model} on Amazon Bedrock${p.region ? ` (${p.region})` : ''}`) : 'the AI model';
-  // Which agent this was, read from the instructions this call sent: the
-  // header of its prompt file. The registry is the fallback when that part
-  // of the trace isn't stored.
+  // Which agent this was, from its prompt file's header as it was at the
+  // time: recorded beside the call (`about`; the header isn't sent to the
+  // model), or, in a trace from before that, read from the instructions sent.
+  // Today's registry is the fallback when neither is stored.
   const promptPart = s.system.find((part) => part.kind === 'prompt');
   const sentText = promptPart ? (promptPart.hash ? parts[promptPart.hash] : promptPart.text) : null;
   const sent = sentText ? parseAgentHeader(sentText) : null;
-  const agentInfo = sent
-    ? { name: sent.name, purpose: sent.purpose, fromSent: true }
-    : { name: agentLabel(s.agent), purpose: AGENTS[s.agent]?.purpose || '', fromSent: false };
+  const agentInfo = s.about
+    ? { name: s.about.name, purpose: s.about.purpose, from: 'file' }
+    : sent
+      ? { name: sent.name, purpose: sent.purpose, from: 'sent' }
+      : { name: agentLabel(s.agent), purpose: AGENTS[s.agent]?.purpose || '', from: null };
   const who = agentInfo.name;
   const instructionChars = s.system.reduce((n, part) => n + (part.chars || 0), 0);
   const messageChars = req.messages.reduce((n, m) => n + textLength(m.content), 0);
@@ -542,16 +545,22 @@ function explainAgents(steps) {
   for (const st of steps) {
     if (st.part === 'request' && !explainedRequest) { st.about = REQUEST_ABOUT; explainedRequest = true; }
     if (!st.agent || seen.has(st.agent)) continue;
-    const info = st.agentInfo || (AGENTS[st.agent] ? { name: AGENTS[st.agent].label, purpose: AGENTS[st.agent].purpose, fromSent: false } : null);
+    const info = st.agentInfo || (AGENTS[st.agent] ? { name: AGENTS[st.agent].label, purpose: AGENTS[st.agent].purpose, from: null } : null);
     if (!info) continue;
     seen.add(st.agent);
     st.explain = {
       label: info.name,
-      text: `${info.name} is one of plato’s AI helpers: the same AI model, given its own instructions. ${info.purpose}${info.fromSent ? ' (From the instructions this call sent.)' : ''}`,
+      text: `${info.name} is one of plato’s AI helpers: the same AI model, given its own instructions. ${info.purpose}${FROM[info.from] || ''}`,
     };
   }
   return steps;
 }
+
+// Where a "Who's this?" came from, when it wasn't today's registry.
+const FROM = {
+  file: ' (From this agent’s prompt file at the time. plato doesn’t send this description to the model.)',
+  sent: ' (From the instructions this call sent.)',
+};
 
 // What a request is, said once per exchange, on its first request.
 const REQUEST_ABOUT = 'There is one AI model; an agent is that model given its own instructions. plato’s code sends each request and gets one reply back. A request has three parts: the instructions (who the agent is and its rules, read first), the messages (the conversation the model replies to, some of it written by plato), and the settings (limits on the reply, such as its length).';

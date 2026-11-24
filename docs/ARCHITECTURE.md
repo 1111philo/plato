@@ -697,10 +697,15 @@ A request the trace can't reproduce means the trace is missing something.
     in or something went wrong".
   - **Agents are described by their own prompts.** Each prompt file's header
     (`AGENT`, `PURPOSE`, `RUNS`, `READS`, `RETURNS`) is the one description
-    of its agent. The header is part of the instructions sent, so for each
-    call the Trace reads the agent's name and purpose back from what that
-    call sent (`js/agentHeader.js`), and an old turn keeps the description
-    true then. Everything else (the registry, "Behind this response", How
+    of its agent. **The header is not sent to the model**: prompt assembly
+    (`js/promptAssembly.js`) strips it, so rewording a description can't
+    change how an agent behaves. (#612 had made it part of the instructions;
+    a header-only change then shifted the coach's grading in an eval, so
+    documentation and behaviour were split, 2026-11-24.) Each call's trace
+    records the header's name and purpose beside the call (`about`), so an
+    old turn keeps the description true then, and the Trace says it came
+    from the prompt file and wasn't sent. A trace from before the split
+    reads it from the instructions sent (`js/agentHeader.js`). Everything else (the registry, "Behind this response", How
     assessment works, `HOW_IT_WORKS.md`) uses `lib/agents.generated.js`,
     built from the headers; a test fails when it's stale. Names are the
     prompts' own ("Lesson Owner", "Assessor"): rename one in its prompt and

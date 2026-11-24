@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { assembleSystemPrompt, splitAtMarker, AFTER_CONTEXT_MARKER, COACH_KB_NOTE } from '../js/promptAssembly.js';
+import { readFileSync, readdirSync } from 'node:fs';
+import { assembleSystemPrompt, systemPromptParts, splitAtMarker, splitHeader, AFTER_CONTEXT_MARKER, COACH_KB_NOTE } from '../js/promptAssembly.js';
 
 describe('assembleSystemPrompt (#584)', () => {
   it('puts the part after the marker after the knowledge base and catalog, then the addendum, then the language', () => {
@@ -29,4 +29,32 @@ describe('assembleSystemPrompt (#584)', () => {
     assert.match(after, /portfolio/);
     assert.match(COACH_KB_NOTE, /does not set this lesson's focus/);
   });
+});
+
+describe('the prompt header is never sent', () => {
+  const PROMPTS = new URL('../prompts/', import.meta.url);
+  const files = readdirSync(PROMPTS).filter((f) => f.endsWith('.md'));
+
+  it('takes the header off and carries it beside the text', () => {
+    const [part] = systemPromptParts({ prompt: '<!--\n  AGENT: Tutor\n  PURPOSE: Helps.\n-->\n\nYou are the Tutor.' });
+    assert.equal(part.text, 'You are the Tutor.');
+    assert.equal(part.header.name, 'Tutor');
+    assert.equal(part.header.purpose, 'Helps.');
+  });
+
+  it('leaves a prompt without a header, or with an ordinary comment, as it was', () => {
+    assert.deepEqual(splitHeader('You are the Tutor.'), { header: null, body: 'You are the Tutor.' });
+    assert.equal(splitHeader('<!-- a note -->\nYou are.').body, '<!-- a note -->\nYou are.');
+    assert.equal(systemPromptParts({ prompt: 'P' })[0].header, undefined);
+  });
+
+  for (const f of files) {
+    it(`${f}: no part of what's sent has the header`, () => {
+      const text = readFileSync(new URL(f, PROMPTS), 'utf8');
+      const sent = assembleSystemPrompt({ prompt: text, kb: 'KB', catalog: '- A', addendum: 'ADD', languageDirective: '\n\nLANG' });
+      assert.doesNotMatch(sent, /^\s*<!--/);
+      assert.doesNotMatch(sent, /^\s*(AGENT|PURPOSE|RUNS|READS|RETURNS):/m);
+      assert.ok(sent.startsWith(splitHeader(text).body.slice(0, 40)), 'starts with the instructions');
+    });
+  }
 });
