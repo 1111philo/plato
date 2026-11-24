@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -535,6 +535,28 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       'Think of something like “a deadline you hit” or “a process you fixed.”',
       'Your phrase **impact through iteration** is strong.',
     ]) assert.equal(draftsForLearner(t), false, t);
+  });
+});
+
+describe('a quote that only agrees (agent evaluations A17)', () => {
+  it('knows agreement from evidence', () => {
+    for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that']) assert.equal(onlyAgrees(q), true, q);
+    for (const q of ['I came from retail.', 'Yes, I stayed late to fix the budget error', 'I value calm']) assert.equal(onlyAgrees(q), false, q);
+  });
+  it('doesn’t count it, unless the lesson says confirming counts', () => {
+    const transcript = [{ by: 'coach', text: 'Here’s your intro: Hi, I’m Sam. Is that accurate?' }, { by: 'learner', text: 'Yes, that’s accurate, that’s me.' }];
+    const verdict = { objectives: [{ n: 3, parts: [{ part: 'shape their story', quote: 'Yes, that’s accurate, that’s me.' }], shown: true }] };
+    const plain = groundVerdict(verdict, transcript, [3]);
+    assert.deepEqual(plain.shown, []);
+    assert.equal(plain.missing[3], ONLY_AGREES);
+    assert.deepEqual(plain.ungrounded, [3], 'asked again');
+    const confirming = groundVerdict(verdict, transcript, [3], { confirms: new Set([3]) });
+    assert.deepEqual(confirming.shown, [3]);
+  });
+  it('confirming counts where the objective or exemplar says the learner confirms', () => {
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A message.', objectives: [{ objective: 'Can describe goals' }, { objective: 'Can confirm a profile that is true to them' }] })], [2]);
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A profile the learner has confirmed.', objectives: [{ objective: 'a' }, { objective: 'b' }] })], [1, 2]);
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A message.', objectives: [{ objective: 'Can write it' }] })], []);
   });
 });
 

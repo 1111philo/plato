@@ -44,7 +44,9 @@ export async function run(c, { app, model }) {
     try { verdict = parseVerdict(raw); } catch { /* unreadable twice */ }
   }
   if (!verdict) return { checks: { readable: false, falseShown: null, missed: null, correct: false }, sample: { raw } };
-  const { shown } = groundVerdict(verdict, transcript, c.check, { imageThisTurn });
+  // As checkGrading grounds it: a quote that only agrees counts only where the lesson says confirming does.
+  const confirms = app.assessment.confirmingCounts ? app.assessment.confirmingCounts(kb) : undefined;
+  const { shown } = groundVerdict(verdict, transcript, c.check, { imageThisTurn, ...(confirms ? { confirms } : {}) });
   const want = new Set(c.shown);
   const got = new Set(shown);
   const falseShown = c.check.filter((n) => got.has(n) && !want.has(n));

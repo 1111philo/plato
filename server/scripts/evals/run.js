@@ -211,7 +211,7 @@ async function main() {
         writeFileSync(file, JSON.stringify(cached, null, 1));
       }
       baseline = cached.tally;
-      baselineInfo = { main: cached.main || b.sha, fingerprint: baseFp };
+      baselineInfo = { main: cached.main || b.sha, fingerprint: baseFp, mainFingerprint: fingerprint(b.dir) };
       // Normal variation: today's version run twice (on purpose, --calibrate).
       if (opt.calibrate) {
         say('Calibrating: running today’s version again\n');
@@ -224,12 +224,14 @@ async function main() {
           const first = baseline[a]?.[id]?.[k];
           if (first?.n && v.n) gaps[`${a}/${id}/${k}`] = Math.abs(first.fails / first.n - v.fails / v.n);
         }
-        cal[baseFp] = { main: b.sha, at: startedAt, gaps };
+        // Keyed by main's version alone: normal variation is main's, and stays
+        // valid while the harness changes around it.
+        cal[fingerprint(b.dir)] = { main: b.sha, at: startedAt, gaps: { ...(cal[fingerprint(b.dir)]?.gaps || {}), ...gaps } };
         writeFileSync(join(here, 'calibration.json'), JSON.stringify(cal, null, 1));
       }
     } finally { b.cleanup(); }
   }
-  const gaps = baselineInfo ? readJson(join(here, 'calibration.json'), {})[baselineInfo.fingerprint]?.gaps || {} : {};
+  const gaps = baselineInfo ? readJson(join(here, 'calibration.json'), {})[baselineInfo.mainFingerprint]?.gaps || {} : {};
 
   say('Candidate (this checkout)\n');
   const app = await loadApp(REPO);

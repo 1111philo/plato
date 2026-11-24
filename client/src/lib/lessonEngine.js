@@ -28,7 +28,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -171,7 +171,8 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
   // `onStep(type, data)` (Trace mode) hears each decision as it is made. It
   // changes nothing: the result is the same with or without it.
   const note = (type, data) => { try { onStep?.(type, data); } catch { /* never breaks grading */ } };
-  const ground = (verdict, tr, check) => groundVerdict(verdict, tr, check, { imageThisTurn, ...(onStep ? { evidence: true } : {}) });
+  const confirms = confirmingCounts(kb);
+  const ground = (verdict, tr, check) => groundVerdict(verdict, tr, check, { imageThisTurn, confirms, ...(onStep ? { evidence: true } : {}) });
   const plan = assessmentPlan(kb, parsed);
   note('gradingPlan', { ...plan, ran: plan.check.length > 0 });
   if (!plan.check.length) return { parsed, assessment: null };

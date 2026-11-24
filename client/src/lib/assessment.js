@@ -167,6 +167,34 @@ export function closeSpelling(a, b) {
 /** groundVerdict's reason when the words that would show an objective were the coach's. */
 export const COACH_WROTE = 'the words that would show it were written by the coach';
 
+/** groundVerdict's reason when the only quote agrees with the coach ("yes, that's me"). */
+export const ONLY_AGREES = 'the learner only agreed with words the coach wrote';
+
+// The words of a reply that only agrees or confirms ("Yes, that's accurate,
+// that's me."). The assessor counted these as showing an objective even
+// though assessor.md says agreeing isn't showing (agent evaluations A17:
+// 6 of 6), so plato's code doesn't let a quote made only of them count.
+const AGREEING = new Set(('yes yeah yep yup sure ok okay fine that thats this it its is was me i im am you '
+  + 'accurate correct right true exactly perfect great good nice sounds looks love like works agree agreed '
+  + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do').split(' '));
+
+/** True when a quote only agrees or confirms: every word is an agreeing word. Pure. */
+export function onlyAgrees(quote) {
+  const ws = String(quote || '').toLowerCase().replace(/[’']/g, '').match(/[a-z]+/g) || [];
+  return ws.length > 0 && ws.length <= 12 && ws.every((w) => AGREEING.has(w));
+}
+
+/**
+ * The objectives a confirmation can show: where the objective or the exemplar
+ * says the learner confirms something the coach built (assessor.md "Unless the
+ * lesson says otherwise", e.g. "Can confirm a profile that is true to them").
+ * A Set of 1-based numbers.
+ */
+export function confirmingCounts(kb) {
+  const exemplar = /\bconfirm/i.test(kb?.exemplar || '');
+  return new Set((kb?.objectives || []).map((o, i) => (exemplar || /\bconfirm/i.test(typeof o === 'string' ? o : o?.objective || '') ? i + 1 : 0)).filter(Boolean));
+}
+
 /**
  * An objective as a step addressed to the learner. Objectives are written
  * about the learner ("Can ... confirm their profile"); held replies speak to
@@ -190,11 +218,15 @@ export function objectiveForLearner(o) {
  * `check`, and the numbers the assessor called shown with a quote that failed
  * (checkGrading asks it once more about those).
  *
+ * A quote that only agrees with the coach (`onlyAgrees`) doesn't count, except
+ * for the objectives in `confirms` (confirmingCounts: the lesson says the
+ * learner's confirmation shows them).
+ *
  * With `evidence` (Trace mode), also `evidence: { n: [{ quote, learnerAt,
  * coachAt, ok }] }`: for each quote piece, which transcript message it was
  * found in (−1: nowhere), so a person can see why a quote did or didn't count.
  */
-export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false } = {}) {
+export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false, confirms = new Set() } = {}) {
   const found = {};
   let current = null;
   const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text));
@@ -225,7 +257,10 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     }
     let failed = null;
     current = n;
-    for (const quote of textQuotes) {
+    // A quote that only agrees ("yes, that's me") shows nothing, unless the
+    // lesson says confirming counts (`confirms`, from confirmingCounts).
+    if (textQuotes.length && textQuotes.every(onlyAgrees) && !confirms.has(n)) failed = ONLY_AGREES;
+    for (const quote of failed ? [] : textQuotes) {
       const result = groundQuote(quote);
       if (result !== true) { failed = result; break; }
     }
@@ -431,7 +466,8 @@ export function heldReply(kb, outstanding, missing) {
   // words"), so they stay out of this learner-facing reply. The one worth
   // telling the learner is that their message repeated the coach's wording.
   const copied = outstanding.some((n) => missing?.[n] === COACH_WROTE)
-    ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.' : '';
+    ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.'
+    : outstanding.some((n) => missing?.[n] === ONLY_AGREES) ? ' Saying yes to my wording doesn’t show it in your own words.' : '';
   const list = names.length > 1 ? `\n\nStill to show in your own words:\n${names.map((x) => `- ${x}`).join('\n')}` : '';
   return `You're close, but this lesson isn't complete yet.${copied} The next step is yours: **${names[0] || 'the remaining objective'}**. A few plain sentences in your own words is enough. Send it when you're ready.${list}`;
 }
