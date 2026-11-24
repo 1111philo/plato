@@ -13,20 +13,21 @@ import { listTraceRecords } from '../../../js/storage.js';
 import { describeTrace, technologyFor, traceToText } from '../../lib/traceView.js';
 import { authenticatedFetch } from '../../../js/auth.js';
 import { subscribeTrace } from '../../lib/traceSession.js';
-import { STEPS, AGENTS } from '../../lib/transparency.js';
+import { STEPS, AGENTS, GLOSSARY } from '../../lib/transparency.js';
 import TraceTimeline from './TraceTimeline.jsx';
 import TraceTechnology from './TraceTechnology.jsx';
 import TraceRecordingDot from './TraceRecordingDot.jsx';
+import Explain from './Explain.jsx';
 import { Button } from '@/components/ui/button';
 
 const liveTitle = (step) => (step.type === 'call' ? `${AGENTS[step.agent]?.label || step.agent}${step.purpose ? `: ${step.purpose}` : ''}` : STEPS[step.type]?.title || step.type);
 const linkButton = 'rounded-sm text-xs text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring disabled:text-muted-foreground disabled:no-underline';
 const summaryClass = 'cursor-pointer select-none text-sm font-medium rounded-sm focus-visible:outline-2 focus-visible:outline-ring';
 
-/** Start or stop recording, with what it does. */
-function Recorder({ recording, onStart, onStop, error, what }) {
+/** Start or stop recording. What it does is said until there's a trace to read; then it's one line. */
+function Recorder({ recording, onStart, onStop, error, what, compact }) {
   return (
-    <div className="space-y-1 rounded-md border border-border bg-background p-3 text-sm">
+    <div className={`space-y-1 rounded-md border border-border bg-background text-sm ${compact ? 'px-3 py-1.5' : 'p-3'}`}>
       <div className="flex flex-wrap items-center gap-2">
         {recording
           ? <span className="text-xs"><TraceRecordingDot withText /><span className="sr-only">Recording</span></span>
@@ -35,7 +36,7 @@ function Recorder({ recording, onStart, onStop, error, what }) {
           {recording ? 'Stop trace' : 'Start trace'}
         </Button>
       </div>
-      {!recording && (
+      {!recording && !compact && (
         <p className="text-xs text-muted-foreground">
           Records every step behind {what} from your next message: what was sent to the AI model, what came back, and what plato’s code did with it.
         </p>
@@ -125,9 +126,19 @@ export default function TraceContent({ scope, active, recording, onStart, onStop
   const hasAny = !!view?.exchanges.length;
   return (
     <div className="space-y-4">
-      <Recorder recording={recording} onStart={onStart} onStop={onStop} error={error} what={what} />
+      <Recorder recording={recording} onStart={onStart} onStop={onStop} error={error} what={what} compact={hasAny} />
       {(recording || hasAny || loading) && (
-        <TraceTimeline view={view} loading={loading} live={live} focusAt={focusAt} stamp={stamp} recording={recording} />
+        <>
+          <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+            How to read a trace
+            <Explain label="How to read a trace">
+              <dl className="space-y-1">
+                {GLOSSARY.map((g) => <div key={g.term}><dt className="inline font-medium text-foreground">{g.term}: </dt><dd className="inline">{g.means}</dd></div>)}
+              </dl>
+            </Explain>
+          </p>
+          <TraceTimeline view={view} loading={loading} live={live} focusAt={focusAt} stamp={stamp} recording={recording} scope={scope} />
+        </>
       )}
       <details className="rounded-md border border-border bg-background px-3 py-2">
         <summary className={summaryClass}>Technology and services</summary>

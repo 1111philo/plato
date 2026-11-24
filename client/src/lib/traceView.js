@@ -1,13 +1,18 @@
 /**
  * Turns stored Trace records (lib/lessonTrace.js) into what the Trace view
- * shows (#595): for each turn, a one-line verdict on who shaped the result,
- * what was unusual, and every step as a plain sentence with the exact
- * text behind it. The wording for agents, steps, rules and sources comes from
- * lib/transparency.js.
+ * shows (#595): for each turn, who shaped the result, where plato stepped in,
+ * and every step as a plain sentence with the exact text behind it.
+ *
+ * Built from what was recorded, not from today's code: an agent is described
+ * by the header its call recorded, a rule is worked out from the values the
+ * turn recorded (so a corrected rule also corrects old traces), and numbers
+ * and tag names come from the step that used them. lib/transparency.js has
+ * the wording.
  *
  * Pure. Unit tests: client/tests/traceView.test.js.
  */
 import { AGENTS, STEPS, STAGES, CHECKS, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS, SERVICES } from './transparency.js';
+import { MAX_PROGRESS, MAX_EXCHANGES } from './constants.js';
 import { rebuildRequest } from './lessonTrace.js';
 import { parseAgentHeader } from '../../js/agentHeader.js';
 import { TAG_REPAIR_CUE, READY } from '../../js/promptAssembly.js';
@@ -25,6 +30,10 @@ const N = {
 };
 const seconds = (ms) => (ms == null ? null : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 const list = (arr) => arr.filter(Boolean).join(', ');
+// A field's label: the registry's, or its name made readable ("learnerNotes" →
+// "Learner notes"), so a field added to the code shows up without a change here.
+const humanize = (k) => String(k).replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])(?=[a-z])/g, (m, c) => ` ${c.toLowerCase()}`);
+const fieldLabel = (k) => CONTEXT_FIELDS[k]?.label || humanize(k);
 
 /** Message content as readable text (a stored message can hold text, an attached page, or an image). */
 function contentText(content) {
@@ -54,8 +63,14 @@ function speaker(m, i, all, agent) {
   if (m.role === 'assistant') return i === all.length - 2 && all[all.length - 1]?.content === TAG_REPAIR_CUE ? 'the coach: the reply that had no tags' : 'the coach: an earlier reply';
   return 'you: an earlier message';
 }
-function messagesText(messages, agent) {
-  return messages.map((m, i, all) => `— ${i + 1}. ${speaker(m, i, all, agent)} —\n${contentText(m.content)}`).join('\n\n');
+// `seen(text)`: the exchange a long message was first shown in, so a repeat
+// points there instead of being written out again.
+function messagesText(messages, agent, seen) {
+  return messages.map((m, i, all) => {
+    const text = contentText(m.content);
+    const first = text.length >= 200 ? seen?.(text) : null;
+    return `— ${i + 1}. ${speaker(m, i, all, agent)} —\n${first ? `(the same as in exchange ${first})` : text}`;
+  }).join('\n\n');
 }
 
 const chars = (n) => `${Number(n || 0).toLocaleString()} ${n === 1 ? 'character' : 'characters'}`;
@@ -66,7 +81,7 @@ const textLength = (content) => (typeof content === 'string' ? content.length : 
  * how big it was) and the reply (what came back, how long it took, why it
  * stopped).
  */
-function callSteps(s, { history, parts }) {
+function callSteps(s, { history, parts, sameAs, seenMessage }) {
   const req = rebuildRequest(s, { history, parts });
   const p = s.server?.provider;
   const where = p ? (p.provider === 'mock' ? 'a stand-in model used for testing' : `${p.model} on Amazon Bedrock${p.region ? ` (${p.region})` : ''}`) : 'the AI model';
@@ -77,11 +92,24 @@ function callSteps(s, { history, parts }) {
   const promptPart = s.system.find((part) => part.kind === 'prompt');
   const sentText = promptPart ? (promptPart.hash ? parts[promptPart.hash] : promptPart.text) : null;
   const sent = sentText ? parseAgentHeader(sentText) : null;
-  const agentInfo = s.about
-    ? { name: s.about.name, purpose: s.about.purpose, from: 'file' }
-    : sent
-      ? { name: sent.name, purpose: sent.purpose, from: 'sent' }
-      : { name: agentLabel(s.agent), purpose: AGENTS[s.agent]?.purpose || '', from: null };
+  const header = s.about || sent;
+  const today = AGENTS[s.agent];
+  // A field the recorded header didn't have comes from today's description,
+  // and the card says which fields those are.
+  const recorded = header || {};
+  const pick = (k, todayKey, empty) => {
+    const v = recorded[k];
+    if (v && (!Array.isArray(v) || v.length)) return { v, today: false };
+    const t = today?.[todayKey];
+    return { v: t && (!Array.isArray(t) || t.length) ? t : empty, today: !!t };
+  };
+  const fields = { purpose: pick('purpose', 'purpose', ''), runs: pick('runs', 'when', ''), reads: pick('reads', 'reads', []), returns: pick('returns', 'writes', []) };
+  const agentInfo = {
+    name: recorded.name || agentLabel(s.agent),
+    purpose: fields.purpose.v, runs: fields.runs.v, reads: fields.reads.v, returns: fields.returns.v,
+    from: header ? (s.about ? 'file' : 'sent') : null,
+    fromToday: header ? Object.keys(fields).filter((k) => fields[k].today) : [],
+  };
   const who = agentInfo.name;
   const instructionChars = s.system.reduce((n, part) => n + (part.chars || 0), 0);
   const messageChars = req.messages.reduce((n, m) => n + textLength(m.content), 0);
@@ -90,9 +118,9 @@ function callSteps(s, { history, parts }) {
   const tokensIn = s.usage?.input_tokens || null;
   const tokensOut = s.usage?.output_tokens || null;
   const request = {
-    title: `Sent to the AI model, for the ${who}${s.purpose ? `: ${s.purpose}` : ''}`,
+    title: `Sent to the ${who}${s.purpose ? `: ${s.purpose}` : ''}`,
     summary: [
-      `plato sent ${where} the ${who}’s instructions (${chars(instructionChars)}, in ${plural(s.system.length, 'part')}) and ${plural(req.messages.length, 'message')} (${chars(messageChars)}${images ? `, ${plural(images, 'image')}` : ''}).`,
+      `plato sent ${where} the ${who}’s instructions (${chars(instructionChars)}, in ${plural(s.system.length, 'part')}${sameAs ? `, the same as in exchange ${sameAs}` : ''}) and ${plural(req.messages.length, 'message')} (${chars(messageChars)}${images ? `, ${plural(images, 'image')}` : ''}).`,
       tokensIn ? `The model counted it as ${tokensIn.toLocaleString()} tokens.` : null,
       `It allowed a reply of up to ${s.maxTokens.toLocaleString()} tokens${s.temperature != null ? ` at temperature ${s.temperature}` : ''}.`,
       s.attempts?.length ? `The first ${plural(s.attempts.length, 'try', 'tries')} failed and ${s.attempts.length === 1 ? 'was' : 'were'} sent again.` : null,
@@ -103,7 +131,7 @@ function callSteps(s, { history, parts }) {
         note: PROMPT_PARTS[part.kind]?.means,
         text: part.hash ? parts[part.hash] ?? `(${part.chars.toLocaleString()} characters; this part’s text isn’t stored any more)` : part.text,
       })),
-      { label: `Messages (${req.messages.length}): the conversation the model replies to`, text: messagesText(req.messages, s.agent) },
+      { label: `Messages (${req.messages.length}): the conversation the model replies to`, text: messagesText(req.messages, s.agent, seenMessage) },
       { label: 'Settings: limits on the reply, not what it says', text: list([
         `Longest reply allowed: ${s.maxTokens} tokens`,
         s.temperature != null ? `temperature ${s.temperature} (0 means the same input gives the same answer)` : 'temperature: the model’s default',
@@ -114,12 +142,12 @@ function callSteps(s, { history, parts }) {
   };
   const reply = s.error
     ? {
-      title: `The AI model didn’t reply to the ${who}`,
+      title: `The ${who} didn’t reply`,
       summary: `It failed after ${seconds(s.took) || 'a moment'}: ${s.error.message}`,
       details: [{ label: 'The error', text: pretty(s.error) }],
     }
     : {
-      title: `The AI model replied to the ${who}`,
+      title: `The ${who} replied`,
       summary: [
         `${chars((s.reply || '').length)}${tokensOut ? ` (${tokensOut.toLocaleString()} tokens)` : ''}, after ${seconds(s.took) || 'a moment'}.`,
         s.stopReason ? `It stopped because ${STOP[s.stopReason] || s.stopReason}.` : null,
@@ -127,7 +155,7 @@ function callSteps(s, { history, parts }) {
       ].filter(Boolean).join(' '),
       details: [
         ...(s.reply != null ? [{ label: 'The model’s raw reply', text: s.reply }] : []),
-        { label: 'The model’s own reasoning', text: s.reasoning || 'None was returned. plato’s model replies without a separate reasoning trace.' },
+        ...(s.reasoning ? [{ label: 'The model’s own reasoning', text: s.reasoning }] : []),
       ],
     };
   return { request, reply, took: s.took, agentInfo };
@@ -139,7 +167,7 @@ const STOP = {
   content_filtered: 'a content filter stopped it',
   stop_sequence: 'it reached a stop marker',
 };
-const LIMIT = { rate: 'more than 30 AI calls in a minute', in_flight: 'more than 4 AI calls at once' };
+const LIMIT = { rate: 'too many AI calls in a minute for one person', in_flight: 'too many AI calls at once for one person' };
 
 function saveSentence(s) {
   const what = { lessonKB: 'this lesson’s progress and notes', messages: 'the conversation' }[s.record] || s.record;
@@ -148,6 +176,37 @@ function saveSentence(s) {
   return `Saving ${what} failed (${why}). plato tries once more in the background.`;
 }
 
+
+/**
+ * The rules plato's code applied in a turn, worked out from what the turn
+ * recorded (the scores and states before and after, and the grading check's
+ * steps), not read from a list stored at the time. A rule fixed later then
+ * reads correctly in an old trace too. Returns null when the record lacks the
+ * values (a stored list is used then).
+ */
+export function deriveRules(steps) {
+  const applied = steps.find((x) => x.type === 'applied');
+  if (!applied || applied.opener || !('replyProgress' in applied) || !applied.status) return null;
+  const has = (t) => steps.some((x) => x.type === t);
+  const verdict = steps.find((x) => x.type === 'verdictApplied');
+  const asked = applied.replyProgress;
+  const wasCompleted = applied.status.before === 'completed';
+  const nowCompleted = applied.status.after === 'completed';
+  const rules = [];
+  if (asked == null) rules.push('noProgressTag');
+  if (asked != null && (!Number.isInteger(asked) || asked < 0 || asked > MAX_PROGRESS)) rules.push('clamped');
+  if (verdict?.held) rules.push('heldAt8');
+  if (has('gradingStood')) rules.push('checkFailedTwiceGradingStood');
+  else if (has('gradingFailed')) rules.push('checkFailedNothingCounted');
+  if (verdict?.unverified?.length) rules.push('objectivesNotBackedUp');
+  if (has('replyReplaced')) rules.push('replyReplaced');
+  if (wasCompleted) rules.push('frozenAfterCompletion');
+  else if (asked != null && asked >= MAX_PROGRESS && !nowCompleted && !verdict?.held) rules.push('cappedAt9');
+  if (!wasCompleted && nowCompleted) rules.push('completed');
+  return rules;
+}
+
+const rulesOf = (steps) => deriveRules(steps) ?? steps.find((x) => x.type === 'applied')?.rules ?? [];
 
 /** The plain sentence and exact text for every step type but `call`. */
 const DESCRIBE = {
@@ -198,7 +257,7 @@ const DESCRIBE = {
       ]) + '.' + (notSent.length ? ` ${plural(notSent.length, 'image')} couldn’t be given to the model (type ${notSent.map((i) => i.type).join(', ')}).` : ''),
       details: [
         ...(s.text ? [{ label: 'Your message', text: s.text }] : []),
-        ...(s.images || []).map((i, n) => ({ label: `Image ${n + 1}`, text: `${i.type || 'unknown type'}, about ${Math.round((i.chars * 0.75) / 1024)} KB as sent. ${i.sent ? 'Given to the model.' : 'Not given to the model: plato only sends PNG, JPEG, GIF and WebP.'}` })),
+        ...(s.images || []).map((i, n) => ({ label: `Image ${n + 1}`, text: `${i.type || 'unknown type'}, about ${Math.round((i.chars * 0.75) / 1024)} KB as sent. ${i.sent ? 'Given to the model.' : `Not given to the model: plato doesn’t send images of type ${i.type || 'unknown'}.`}` })),
         ...(s.links || []).map((l) => ({ label: `Attached page: ${l.title || l.url}`, text: `${l.url}${l.finalUrl ? `\n(redirected to ${l.finalUrl})` : ''}\n${l.chars.toLocaleString()} characters of page text were given to the model${l.truncated ? ' (the page was longer and was cut)' : ''}.` })),
       ],
     };
@@ -207,21 +266,33 @@ const DESCRIBE = {
     summary: `Before this message: progress ${s.progress} of 10, ${plural(s.objectivesMet.length, 'objective')} checked off, ${plural(s.activitiesCompleted, 'exchange')} so far${s.status === 'completed' ? ', lesson already complete' : ''}.`,
   }),
   tail: (s) => ({
-    summary: `${plural(s.sent, 'earlier message')} sent as the conversation so far.${s.olderLeftOut ? ` ${plural(s.olderLeftOut, 'older message')} left out (only the last 40 are sent).` : ''}${s.earlierImages || s.earlierLinks ? ` Images and attached pages from earlier messages aren’t sent again, so the coach can’t see them now.` : ''}`,
+    summary: `${plural(s.sent, 'earlier message')} sent as the conversation so far.${s.olderLeftOut ? ` ${plural(s.olderLeftOut, 'older message')} left out (only the latest ${s.limit ?? s.sent} are sent).` : ''}${s.earlierImages || s.earlierLinks ? ` Images and attached pages from earlier messages aren’t sent again, so the coach can’t see them now.` : ''}`,
   }),
-  context: (s) => ({
-    summary: `plato’s code gathered ${plural(Object.keys(s.context).length, 'thing')} about you and the lesson for the coach.`,
-    details: Object.entries(s.context).map(([k, v]) => ({
-      label: `${CONTEXT_FIELDS[k]?.label || k} (${SOURCES[CONTEXT_FIELDS[k]?.source]?.label || 'plato'})`,
-      note: CONTEXT_FIELDS[k]?.from,
-      text: pretty(v),
-    })),
-  }),
+  context: (s, { prevContext } = {}) => {
+    const keys = Object.keys(s.context);
+    const field = (k) => ({ label: `${fieldLabel(k)} (${SOURCES[CONTEXT_FIELDS[k]?.source]?.label || 'plato'})`, note: CONTEXT_FIELDS[k]?.from, text: pretty(s.context[k]) });
+    if (!prevContext) {
+      return { summary: `plato’s code sent the coach ${plural(keys.length, 'detail')} about you and the lesson.`, details: keys.map(field) };
+    }
+    const changed = keys.filter((k) => JSON.stringify(s.context[k]) !== JSON.stringify(prevContext[k]));
+    const removed = Object.keys(prevContext).filter((k) => !(k in s.context));
+    const same = keys.filter((k) => !changed.includes(k));
+    return {
+      summary: changed.length || removed.length
+        ? `Changed since the last exchange: ${list([...changed.map((k) => fieldLabel(k).toLowerCase()), ...removed.map((k) => `${fieldLabel(k).toLowerCase()} (no longer sent)`)])}. ${plural(same.length, 'other detail')} the same.`
+        : `The same ${plural(keys.length, 'detail')} as the last exchange.`,
+      details: [
+        ...changed.map(field),
+        ...(same.length ? [{ label: `Unchanged since the last exchange (${same.length})`, text: same.map((k) => fieldLabel(k)).join('\n') }] : []),
+      ],
+    };
+  },
   history: (s) => ({
     summary: `${plural(s.messages.length, 'message')}: what plato gathered, a fixed “Ready.”, the conversation so far, and this message.`,
     details: [{ label: 'The messages', text: messagesText(s.messages) }],
   }),
-  parsed: (s) => ({
+  parsed: (s, ctx) => ({
+    note: s.tags ? `plato’s code looks for these tags: ${Object.values(s.tags).map((t) => `[${t}]`).join(', ')}.` : undefined,
     summary: list([
       s.progress != null ? `Progress score: ${s.progress} of 10` : 'No progress score in the reply',
       s.kbUpdate?.objectivesMet?.length ? `objectives it says are met: ${s.kbUpdate.objectivesMet.join(', ')}` : null,
@@ -230,7 +301,8 @@ const DESCRIBE = {
     ]) + '.',
     details: [
       { label: 'The reply with its tags, as the model wrote it', text: s.raw },
-      { label: 'The text shown to you', text: s.text },
+      // The text shown is "You saw" at the top of the exchange, unless something replaced it.
+      ...(s.text !== ctx?.saw ? [{ label: 'The text before its tags', text: s.text }] : []),
       ...(s.kbUpdate ? [{ label: 'Notes for this lesson', text: pretty(s.kbUpdate) }] : []),
       ...(s.profileUpdate ? [{ label: 'Observation for your profile', text: pretty(s.profileUpdate) }] : []),
     ],
@@ -244,6 +316,7 @@ const DESCRIBE = {
   },
   draftCheck: (s) => ({
     summary: s.skipped ? 'Not checked: the lesson is already complete, so the conversation is for feedback.' : s.drafts ? 'Yes: the reply wrote out an answer for you to use. plato asked the coach to rewrite it as feedback and a question.' : 'No: the reply gave feedback without writing your answer for you.',
+    note: s.minWords ? `A quoted passage of ${s.minWords} or more words counts as writing your answer.` : undefined,
   }),
   tagRepair: (s) => ({
     summary: s.recovered ? 'plato asked the coach for the tags of the reply it had given, and got them.' : 'plato asked the coach for the missing tags and still didn’t get them all, so nothing was recorded for what was missing.',
@@ -303,7 +376,7 @@ const DESCRIBE = {
     summary: s.opener
       ? `Opening score: ${s.progress ?? 0} of 10.`
       : `Progress ${s.progress.before} → ${s.progress.after} of 10. Objectives checked off: ${s.objectivesMet.after.length} of ${s.objectivesMet.total}.${s.status.before !== s.status.after ? ' The lesson was marked complete.' : ''}`,
-    rules: (s.rules || []).map((id) => ({ id, text: RULES[id] || id })),
+    rules: (s.derivedRules || s.rules || []).map((id) => ({ id, text: RULES[id] || id })),
     details: s.opener ? [] : [
       { label: 'Score', text: `The model reported: ${s.modelProgress ?? 'nothing'}\nAfter plato’s checks: ${s.gradedProgress ?? 'nothing'}\nRecorded: ${s.progress.after}` },
       ...(s.newlyMet?.length ? [{ label: 'Newly checked off', text: s.newlyMet.join('\n') }] : []),
@@ -394,8 +467,8 @@ function noteFor(s) {
     case 'input': return s.images?.some((i) => !i.sent) ? problem('An image you attached wasn’t given to the model, so the coach couldn’t see it.') : null;
     case 'validation': return s.firstError ? problem(s.ok ? `The ${N.owner}’s first setup was incomplete, so plato asked again.` : `The ${N.owner}’s setup was incomplete, and was used anyway so the lesson could start.`) : null;
     case 'plugins': return s.failed ? problem('Plugins couldn’t be asked for background, so the lesson started without it.') : null;
-    case 'tagCheck': return s.progress && s.notes ? null : changed('the score and notes recorded for this reply came from a second request, not from the reply itself.');
-    case 'tagRepair': return s.recovered ? null : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
+    case 'tagCheck': return null;
+    case 'tagRepair': return s.recovered ? changed('the reply left out its tags, so plato asked the coach again for just those.') : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
     case 'gradingFailed': return problem(`The ${N.assessor} couldn’t run, so nothing new was checked off this time.`);
     case 'gradingStood': return changed('plato accepted the coach’s grading without the check, so you weren’t stuck.');
@@ -405,10 +478,16 @@ function noteFor(s) {
       return null;
     case 'replyReplaced': return changed('plato replaced the coach’s reply with a standard message: what you saw isn’t what the model wrote.');
     case 'positionReplaced': return changed('plato replaced the coach’s “Where you are” note.');
-    case 'applied':
-      if (s.rules?.includes('cappedAt9')) return changed('plato’s code changed your score: the coach gave 10, but it was recorded as 9 because not every objective was checked off.');
-      if (s.rules?.includes('noProgressTag')) return problem('The reply had no progress score, so your score didn’t change.');
+    case 'applied': {
+      const rules = s.derivedRules || s.rules || [];
+      if (rules.includes('cappedAt9')) return changed(`plato’s code changed your score: the coach gave ${MAX_PROGRESS}, but it was recorded as ${MAX_PROGRESS - 1} because not every objective was checked off.`);
+      if (rules.includes('noProgressTag')) return problem('The reply had no progress score, so your score didn’t change.');
       return null;
+    }
+    case 'context': {
+      const steering = Object.keys(s.context || {}).filter((k) => CONTEXT_FIELDS[k]?.steers);
+      return steering.length ? changed(`plato’s code added ${steering.length === 1 ? 'an instruction' : 'instructions'} for the coach: ${steering.map((k) => `${fieldLabel(k).toLowerCase()}${directiveWhy(k, s.context)}`).join('; ')}.`) : null;
+    }
     case 'save':
       if (!s.ok) return problem(saveSentence(s));
       if (s.conflict) return problem('Another device had saved a newer copy of this lesson; this one replaced it.');
@@ -417,6 +496,13 @@ function noteFor(s) {
     case 'noteScreened': return changed('plato held this note back from the AI model.');
     default: return null;
   }
+}
+
+/** Why plato's code added a steering field, from the values it was added beside. */
+function directiveWhy(k, context) {
+  if (k === 'pacingDirective' && context.activitiesCompleted != null) return ` (after ${plural(context.activitiesCompleted, 'exchange')}; lessons are designed for about ${MAX_EXCHANGES})`;
+  if (k === 'postCompletionDirective') return ' (the lesson is complete)';
+  return '';
 }
 
 /** Every note in a record, for the list's filter and the download. */
@@ -433,12 +519,21 @@ const CODE_RULES = new Set(['cappedAt9', 'heldAt8', 'clamped', 'objectivesNotBac
 function verdictFor(record) {
   if (record.failed) return { source: 'code', text: record.kind === 'profile' ? 'Updating your profile failed. The change to your notes had already been saved.' : 'This attempt failed, so nothing was saved from it.' };
   const types = new Set(record.steps.map((s) => s.type));
-  const rules = record.steps.filter((s) => s.type === 'applied').flatMap((s) => s.rules || []).filter((r) => CODE_RULES.has(r));
+  const rules = rulesOf(record.steps).filter((r) => CODE_RULES.has(r));
   if (types.has('replyReplaced') || rules.length) {
     return { source: 'code', text: `plato’s code changed the result: ${rules.length ? rules.map((r) => RULES[r]).join(' ') : RULES.replyReplaced}` };
   }
-  if (types.has('heldRewrite') || [...record.steps].some((s) => (s.type === 'draftGuard' && s.used) || s.type === 'tagRepair')) {
-    return { source: 'instructions', text: 'plato asked the model to answer again with an added instruction. The reply and score are the model’s second answer.' };
+  if (types.has('heldRewrite') || record.steps.some((s) => s.type === 'draftGuard' && s.used)) {
+    return { source: 'instructions', text: 'plato asked the coach to answer again with an added instruction. What you saw is its second answer.' };
+  }
+  const repair = record.steps.find((s) => s.type === 'tagRepair' && s.recovered);
+  const steering = Object.keys(record.steps.find((s) => s.type === 'context')?.context || {}).filter((k) => CONTEXT_FIELDS[k]?.steers);
+  if (repair || steering.length) {
+    return { source: 'instructions', text: [
+      'The reply you saw is the coach’s own.',
+      repair ? 'It left out its tags, so plato asked again for just those.' : null,
+      steering.length ? `It followed ${steering.length === 1 ? 'an instruction' : 'instructions'} plato’s code added: ${steering.map((k) => fieldLabel(k).toLowerCase()).join(', ')}.` : null,
+    ].filter(Boolean).join(' ') };
   }
   if (record.kind === 'profile') {
     if (types.has('noteScreened')) return { source: 'code', text: 'plato’s code held the note back, so the AI model wasn’t asked and your profile stayed as it was.' };
@@ -460,92 +555,69 @@ function titleFor(record) {
   return input?.text ? `Your message: “${clip(input.text, 60)}”` : input?.images?.length ? 'Your message: an image' : 'Your message';
 }
 
-// Which agent a step is about, so the view can say who that is the first
-// time it comes up.
-const STEP_AGENT = {
-  planned: 'lesson-owner', validation: 'lesson-owner',
-  gradingPlan: 'assessor', gradingRetry: 'assessor', verdict: 'assessor', recheck: 'assessor', gradingFailed: 'assessor', gradingStood: 'assessor', verdictApplied: 'assessor',
-  claimCheck: 'claim-check', tagCheck: 'coach', tagRepair: 'coach', draftCheck: 'coach', draftGuard: 'coach', heldRewrite: 'coach', parsed: 'coach',
-};
-
 /** One recorded step as the view shows it: one step, or two for an AI call. */
-function describeSteps(s, { history, parts }) {
-  const meta = STEPS[s.type] || { title: s.type, source: 'code', means: '', stage: 'recorded' };
+function describeSteps(s, ctx) {
+  const { history, parts, calls } = ctx;
+  const meta = STEPS[s.type] || { title: humanize(s.type), source: 'code', means: '', stage: 'recorded' };
+  // A result's agent and check are its call's: the call it names, or in an
+  // older trace the latest one before it.
+  const call = s.type === 'call' ? s : (s.call != null ? calls.get(s.call) : null);
   const base = (o) => ({
     n: s.n, type: s.type, at: s.ms ?? null,
     stage: meta.stage, source: meta.source, sourceLabel: SOURCES[meta.source].label, means: meta.means,
-    rules: [], change: null, note: null, agent: STEP_AGENT[s.type] || s.agent || null,
+    rules: [], change: null, note: null, agent: call?.agent || null,
+    check: (s.type === 'call' ? s.check || legacyCheck(s) : meta.check) || null,
     raw: { purpose: s.purpose, for: s.for },
     ...o,
     details: (o.details || []).filter((x) => x.text != null && x.text !== ''),
   });
   if (s.type === 'call') {
-    const { request, reply, took, agentInfo } = callSteps(s, { history, parts });
-    const stage = callStage(s);
+    const { request, reply, took, agentInfo } = callSteps(s, { history, parts, sameAs: ctx.sameInstructions?.(s), seenMessage: ctx.seenMessage });
+    const stage = s.stage || legacyStage(s);
     const note = noteFor(s);
     return [
       base({ ...request, agentInfo, n: `${s.n}a`, part: 'request', stage: stage === 'answered' ? 'prepared' : stage, source: 'code', sourceLabel: SOURCES.code.label, means: STEPS.call.request.means }),
       base({ ...reply, agentInfo, n: `${s.n}b`, part: 'reply', stage, at: s.ms != null && took != null ? s.ms + took : null, took: took ?? null, means: STEPS.call.reply.means, note }),
     ];
   }
-  const d = DESCRIBE[s.type]?.(s) || { summary: '' };
-  return [base({ title: d.title || meta.title, summary: d.summary, rules: d.rules || [], change: d.change || null, details: d.details || [], note: noteFor(s) })];
+  const d = DESCRIBE[s.type]?.(s, ctx) || genericDescription(s);
+  return [base({ title: d.title || meta.title, summary: d.summary, hint: d.note || null, rules: d.rules || [], change: d.change || null, details: d.details || [], note: noteFor(s) })];
 }
 
-/**
- * The first time each agent comes up in an exchange, say who it is, from the
- * instructions its call sent when there is one; and the first time a request
- * comes up, what a request is.
- */
-function explainAgents(steps) {
-  const seen = new Set();
-  let explainedRequest = false;
-  for (const st of steps) {
-    if (st.part === 'request' && !explainedRequest) { st.about = REQUEST_ABOUT; explainedRequest = true; }
-    if (!st.agent || seen.has(st.agent)) continue;
-    const info = st.agentInfo || (AGENTS[st.agent] ? { name: AGENTS[st.agent].label, purpose: AGENTS[st.agent].purpose, from: null } : null);
-    if (!info) continue;
-    seen.add(st.agent);
-    st.explain = {
-      label: info.name,
-      text: `${info.name} is one of plato’s AI helpers: the same AI model, given its own instructions. ${info.purpose}${FROM[info.from] || ''}`,
-    };
-  }
-  return steps;
+/** A step type this view has no wording for: its recorded fields, labelled. Never a blank. */
+function genericDescription(s) {
+  const fields = Object.entries(s).filter(([k]) => !['n', 'type', 'ms', 'call'].includes(k));
+  return {
+    summary: fields.length ? list(fields.slice(0, 4).map(([k, v]) => `${humanize(k).toLowerCase()}: ${clip(typeof v === 'string' ? v : JSON.stringify(v), 40)}`)) + '.' : 'Recorded with no details.',
+    details: fields.map(([k, v]) => ({ label: humanize(k), text: pretty(v) })),
+  };
 }
 
-// Where a "Who's this?" came from, when it wasn't today's registry.
-const FROM = {
-  file: ' (From this agent’s prompt file at the time. plato doesn’t send this description to the model.)',
-  sent: ' (From the instructions this call sent.)',
-};
-
-// What a request is, said once per exchange, on its first request.
-const REQUEST_ABOUT = 'There is one AI model; an agent is that model given its own instructions. plato’s code sends each request and gets one reply back. A request has three parts: the instructions (who the agent is and its rules, read first), the messages (the conversation the model replies to, some of it written by plato), and the settings (limits on the reply, such as its length).';
-
-// The model call that produces the answer belongs to "answered"; every other
-// call is plato checking, setting up, or working in the background.
-function callStage(s) {
+// Traces recorded before calls named their own stage and check (2026-11-24)
+// are placed by agent and purpose.
+function legacyStage(s) {
   if (s.agent === 'lesson-owner') return 'setup';
   if (['course-progress-update', 'learner-profile-owner'].includes(s.agent)) return 'background';
   if (s.agent === 'learner-profile-update') return /coach/.test(s.purpose || '') ? 'background' : 'answered';
-  if (['lesson-creator', 'knowledge-base-editor', 'lesson-extractor', 'knowledge-base-extractor'].includes(s.agent)) return 'answered';
   if (s.agent === 'coach' && /^(reply|opening message)$/.test(s.purpose || '')) return 'answered';
   return 'checked';
+}
+function legacyCheck(s) {
+  const purpose = s.purpose || '';
+  if (s.agent === 'coach' && /for the rewrite|^rewrite: the first reply wrote/.test(purpose)) return 'draft';
+  if (s.agent === 'coach' && /^tag repair/.test(purpose)) return 'tags';
+  if (['assessor', 'claim-check'].includes(s.agent) || /^rewrite: completion/.test(purpose)) return 'grading';
+  return null;
 }
 
 const STAGE_ORDER = Object.keys(STAGES);
 
-// Which check a step belongs to (CHECKS). Tag repair for a rewritten reply
-// belongs to the draft check that asked for the rewrite.
+// Which check a step belongs to (CHECKS): a call names its own, a step type
+// names its in STEPS. The tag check of a rewritten reply belongs to the draft
+// check that asked for the rewrite.
 function checkOf(st) {
-  const purpose = st.raw?.purpose || '';
-  if (st.type === 'tagCheck' || st.type === 'tagRepair') return st.raw?.for === 'rewrite' ? 'draft' : 'tags';
-  if (st.type === 'call' && /^tag repair, for the rewrite/.test(purpose)) return 'draft';
-  if (st.type === 'call' && /^tag repair/.test(purpose)) return 'tags';
-  if (st.type === 'draftCheck' || st.type === 'draftGuard') return 'draft';
-  if (st.type === 'call' && /^rewrite: the first reply wrote/.test(purpose)) return 'draft';
-  return 'grading';
+  if (st.type === 'tagCheck' && st.raw?.for === 'rewrite') return 'draft';
+  return st.check || 'grading';
 }
 
 /**
@@ -579,7 +651,11 @@ const SHORT_VERDICT = { model: 'The model’s own answer', instructions: 'Shaped
  * `{ id, n, kind, at, title, headline, you, saw, firstSeen, verdict, flags,
  *    stages: [{ id, title, means, steps, followups? }] }`.
  */
-function describeExchange(record, followups, { parts, startLesson }) {
+function describeExchange(rec, followups, { parts, startLesson, prevContext, sameInstructions, seenMessage }) {
+  // Rules are worked out from what the turn recorded (deriveRules).
+  const derived = deriveRules(rec.steps);
+  const record = derived ? { ...rec, steps: rec.steps.map((x) => (x.type === 'applied' ? { ...x, derivedRules: derived } : x)) } : rec;
+  const calls = new Map(record.steps.filter((x) => x.type === 'call').map((x) => [x.n, x]));
   const history = record.steps.find((x) => x.type === 'history');
   const input = record.steps.find((x) => ['input', 'noteChange'].includes(x.type));
   const shown = record.steps.find((x) => x.type === 'shown');
@@ -590,7 +666,8 @@ function describeExchange(record, followups, { parts, startLesson }) {
   const edited = record.kind === 'turn' && lessonNow && startLesson && lessonNow.updatedAt && startLesson.updatedAt && lessonNow.updatedAt !== startLesson.updatedAt;
   // `history` is shown inside each request; `shown` at the top of the exchange.
   const kept = record.steps.filter((x) => x.type !== 'shown' && x.type !== 'history' && (x.type !== 'lesson' || record.kind === 'start' || edited));
-  const steps = kept.flatMap((x) => describeSteps(x, { history, parts }));
+  const saw = shown?.text ?? (record.kind === 'start' ? record.steps.find((x) => x.type === 'parsed')?.text : null);
+  const steps = kept.flatMap((x) => describeSteps(x, { history, parts, calls, prevContext, sameInstructions, seenMessage, saw }));
   if (edited) {
     const lesson = steps.find((x) => x.type === 'lesson');
     lesson.stage = 'prepared';
@@ -605,10 +682,9 @@ function describeExchange(record, followups, { parts, startLesson }) {
       title: agentLabel(startStep?.agent || ''),
       why: startStep?.why || '',
       failed: !!f.failed,
-      steps: f.steps.filter((x) => x.type !== 'followUpStart' && x.type !== 'history').flatMap((x) => describeSteps(x, { history: fHistory, parts })),
+      steps: f.steps.filter((x) => x.type !== 'followUpStart' && x.type !== 'history').flatMap((x) => describeSteps(x, { history: fHistory, parts, calls: new Map(f.steps.filter((y) => y.type === 'call').map((y) => [y.n, y])), sameInstructions, seenMessage })),
     };
   });
-  explainAgents([...steps, ...background.flatMap((f) => f.steps)]);
   const checks = record.kind === 'turn' ? groupChecks(steps.filter((x) => x.stage === 'checked')) : null;
   const stages = STAGE_ORDER.map((id) => ({
     id, title: STAGES[id].title, means: STAGES[id].means,
@@ -624,8 +700,10 @@ function describeExchange(record, followups, { parts, startLesson }) {
     you: input ? (input.text ?? null) : null,
     saw: shown?.text ?? opener?.text ?? null,
     firstSeen: shown?.replaced ? shown.firstStreamed : null,
-    verdict: { ...verdict, sourceLabel: SOURCES[verdict.source].label, short: record.failed ? 'Failed' : SHORT_VERDICT[verdict.source] },
+    verdict: { ...verdict, lead: verdict.text.match(/^.*?[.!?](?=\s|$)/)?.[0] || verdict.text, sourceLabel: SOURCES[verdict.source].label, short: record.failed ? 'Failed' : SHORT_VERDICT[verdict.source] },
     flags: flags.filter((f, i) => flags.findIndex((g) => g.id === f.id) === i),
+    // Where plato stepped in or something went wrong, each with the step it was on.
+    interventions: [...steps, ...background.flatMap((f) => f.steps)].filter((x) => x.note).map((x) => ({ n: x.n, kind: x.note.kind, text: x.note.text, stage: x.stage })),
     steppedIn: flags.some((f) => f.kind === 'changed'),
     wentWrong: flags.some((f) => f.kind === 'problem'),
     stages,
@@ -654,14 +732,34 @@ export function describeTrace(items) {
   followups.sort((a, b) => a.at - b.at);
   const startLesson = turns.find((t) => t.kind === 'start')?.steps.find((x) => x.type === 'lesson') || null;
   const owner = (f) => [...turns].reverse().find((t) => t.at <= f.at) || turns[0];
-  const exchanges = turns.map((t, i) => ({
-    ...describeExchange(t, followups.filter((f) => owner(f) === t), { parts, startLesson }),
-    n: i + 1,
-  }));
+  // A call's instructions, by part: the same text in an earlier exchange is
+  // said once ("the same as in exchange 2").
+  const firstSeen = new Map();
+  let current = 0;
+  const sameInstructions = (call) => {
+    const sig = `${call.agent}|${call.system.map((p) => p.hash || p.text).join('|')}`;
+    if (!firstSeen.has(sig)) { firstSeen.set(sig, current); return null; }
+    const at = firstSeen.get(sig);
+    return at === current ? null : at;
+  };
+  const messageFirst = new Map();
+  const seenMessage = (text) => {
+    if (!messageFirst.has(text)) { messageFirst.set(text, current); return null; }
+    const at = messageFirst.get(text);
+    return at === current ? null : at;
+  };
+  let prevContext = null;
+  const exchanges = turns.map((t, i) => {
+    current = i + 1;
+    const e = { ...describeExchange(t, followups.filter((f) => owner(f) === t), { parts, startLesson, prevContext, sameInstructions, seenMessage }), n: i + 1 };
+    prevContext = t.steps.find((x) => x.type === 'context')?.context || prevContext;
+    return e;
+  });
   // Background records with no turn to join (a trace that began mid-way).
   const orphans = turns.length ? [] : followups;
   return {
     exchanges,
+    summary: lessonSummary(turns, followups),
     orphans: orphans.map((f) => describeExchange({ ...f, kind: 'followup' }, [], { parts, startLesson })),
     // Where plato stepped in or something went wrong: what the list can narrow to.
     flagged: exchanges.filter((e) => e.steppedIn || e.wentWrong).length,
@@ -670,24 +768,62 @@ export function describeTrace(items) {
 }
 
 /**
+ * What plato did across the whole conversation, counted from the records:
+ * `[{ id, text, exchanges: [at] }]`, for reading a trace again later. Each
+ * entry can narrow the list to the exchanges it counts.
+ */
+function lessonSummary(turns, followups) {
+  const tally = [];
+  const add = (id, text, list) => { if (list.length) tally.push({ id, text: text(list.length), exchanges: list.map((t) => t.at) }); };
+  const withStep = (pred) => turns.filter((t) => t.steps.some(pred));
+  const repairs = withStep((x) => x.type === 'tagRepair');
+  const repairTime = turns.flatMap((t) => t.steps.filter((x) => x.type === 'call' && (x.check === 'tags' || /^tag repair/.test(x.purpose || '')))).reduce((n, x) => n + (x.took || 0), 0);
+  add('tags', (n) => `asked the coach again for the tags its reply left out, ${n === 1 ? 'once' : `${n} times`}${repairTime ? ` (${seconds(repairTime)} in all)` : ''}`, repairs);
+  add('grading', (n) => `checked the coach’s grading ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'gradingPlan' && x.ran));
+  add('held', (n) => `held a completion ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.held));
+  add('unverified', (n) => `took back an objective the coach checked off ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.unverified?.length));
+  add('rewrite', (n) => `asked the coach to rewrite a reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => (x.type === 'draftGuard' && x.used) || x.type === 'heldRewrite'));
+  add('replaced', (n) => `replaced the coach’s reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'replyReplaced'));
+  for (const k of Object.keys(CONTEXT_FIELDS).filter((key) => CONTEXT_FIELDS[key].steers)) {
+    add(k, (n) => `added ${fieldLabel(k).toLowerCase()} for the coach on ${plural(n, 'exchange')}`, withStep((x) => x.type === 'context' && x.context && k in x.context));
+  }
+  add('wrong', (n) => `ran into a problem on ${plural(n, 'exchange')}`, turns.filter((t) => t.failed || t.steps.some((x) => noteFor(deriveRules(t.steps) && x.type === 'applied' ? { ...x, derivedRules: deriveRules(t.steps) } : x)?.kind === 'problem')));
+  return { exchanges: turns.length, followups: followups.length, items: tally };
+}
+
+/**
  * The trace as plain text, for downloading and sharing: the same sentences
  * the view shows, in the same order, with the exact text under each step.
  */
 export function traceToText(view, { title = 'Trace' } = {}) {
   const out = [title, '='.repeat(title.length), ''];
+  if (view.summary?.items?.length) {
+    out.push(`Across ${plural(view.summary.exchanges, 'exchange')}, plato:`, ...view.summary.items.map((it) => `- ${it.text}`), '');
+  }
+  // Long exact text is written once; a repeat says where it first appeared.
+  const seen = new Map();
+  let at = 0;
+  const exact = (text, pad) => {
+    const t = String(text);
+    if (t.length < 200) return indent(t, pad);
+    if (seen.has(t)) return `${pad}      (the same text as in exchange ${seen.get(t)})`;
+    seen.set(t, at);
+    return indent(t, pad);
+  };
   const step = (x, pad) => {
     out.push(`${pad}- ${x.title} [${x.sourceLabel}]`, ...(x.note ? [`${pad}  ! ${x.note.text}`] : []), `${pad}  ${x.summary}`);
     for (const r of x.rules) out.push(`${pad}  Rule: ${r.text}`);
-    if (x.change) out.push(`${pad}  Before:`, indent(x.change.before, pad), `${pad}  After:`, indent(x.change.after, pad));
-    for (const d of x.details) out.push(`${pad}  ${d.label}:`, indent(d.text, pad));
+    if (x.change) out.push(`${pad}  Before:`, exact(x.change.before, pad), `${pad}  After:`, exact(x.change.after, pad));
+    for (const d of x.details) out.push(`${pad}  ${d.label}:`, exact(d.text, pad));
   };
   for (const e of view.exchanges) {
+    at = e.n;
     const head = `${e.n}. ${e.title} · ${new Date(e.at).toISOString()}`;
     out.push(head, '-'.repeat(Math.min(head.length, 80)));
     if (e.you) out.push('You sent:', indent(e.you, ''));
     if (e.saw) out.push('You saw:', indent(e.saw, ''));
-    out.push(`${e.verdict.sourceLabel}: ${e.verdict.text}`);
-    for (const f of e.flags) out.push(`${f.kind === 'problem' ? 'Went wrong' : f.kind === 'changed' ? 'plato stepped in' : 'Note'}: ${f.text}`);
+    out.push(`${e.verdict.sourceLabel}: ${e.headline ? `${e.headline}. ` : ''}${e.verdict.text}`);
+    for (const f of e.interventions || []) out.push(`${f.kind === 'problem' ? 'Went wrong' : 'plato stepped in'}: ${f.text}`);
     out.push('');
     e.stages.forEach((st, i) => {
       out.push(`  ${i + 1}) ${st.title}`);
