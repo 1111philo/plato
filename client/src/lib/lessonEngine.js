@@ -28,7 +28,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, localizeAddendum, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -666,6 +666,26 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
+  }
+
+  // The script guard: the model sometimes slips characters from another
+  // script into a reply (Chinese in an English one: agent evaluations C59,
+  // about 1 in 6 on some turns). Rewritten once; the rewrite is shown only
+  // when it's clean, otherwise the reply stays as it was.
+  const language = learnerLanguageName();
+  const mixed = mixesScripts(coachReply.text, language);
+  trace?.step('scriptCheck', { mixed });
+  if (mixed) {
+    const before = coachReply.text;
+    let fixed = false;
+    try {
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
+      fixed = !!again.text && !mixesScripts(again.text, language);
+      if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
+      trace?.step('scriptGuard', { call: trace.lastCall(), before, after: again.text || null, used: fixed });
+    } catch (e) { trace?.step('scriptGuard', { before, failed: String(e?.message || e), used: false }); /* keep the reply */ }
+    report(fixed ? 'coach_script_rewritten' : 'coach_script_kept');
   }
 
   // The grading check (#584): objectives stay checked off only when the

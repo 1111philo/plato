@@ -396,6 +396,22 @@ export function draftsForLearner(text) {
   return false;
 }
 
+// Han, kana and Hangul: what Qwen3-VL slips into replies in other languages
+// ("one moment —哪怕很小— where you felt proud", agent evaluations C59).
+const CJK_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+const CJK_LANGUAGES = new Set(['Chinese', 'Japanese', 'Korean']);
+
+/** True when a reply has characters from a script the learner's language doesn't use. Pure. */
+export function mixesScripts(text, languageName = null) {
+  if (CJK_LANGUAGES.has(languageName)) return false;
+  return CJK_SCRIPT.test(String(text || ''));
+}
+
+/** The coach's addendum when its reply mixed in another language. */
+export const SCRIPT_ADDENDUM = `## One language (from plato, not the learner)
+
+Your reply mixed in words or characters from another language. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
+
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
 

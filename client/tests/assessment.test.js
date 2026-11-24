@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
+  claimsCompletion, draftsForLearner, mixesScripts, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -535,6 +535,20 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       'Think of something like “a deadline you hit” or “a process you fixed.”',
       'Your phrase **impact through iteration** is strong.',
     ]) assert.equal(draftsForLearner(t), false, t);
+  });
+});
+
+describe('mixesScripts (agent evaluations C59)', () => {
+  it('finds Chinese, Japanese or Korean characters in a reply in another language', () => {
+    assert.equal(mixesScripts('tell me about one moment —哪怕很小— where you felt proud'), true);
+    assert.equal(mixesScripts('Cuéntame un momento — aunque sea pequeño.', 'Spanish'), false);
+    assert.equal(mixesScripts('একটি মুহূর্তের কথা বলুন', 'Bengali'), false);
+    assert.equal(mixesScripts('Tell me about one moment.'), false);
+  });
+  it('leaves those scripts alone for learners who read them', () => {
+    assert.equal(mixesScripts('一个小时刻', 'Chinese'), false);
+    assert.equal(mixesScripts('小さな瞬間', 'Japanese'), false);
+    assert.equal(mixesScripts('작은 순간', 'Korean'), false);
   });
 });
 

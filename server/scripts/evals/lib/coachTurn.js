@@ -2,7 +2,8 @@
  * One Coach turn, as lessonEngine.sendMessage runs it, with the version's own
  * code: the context from `buildContext` (rebuilt every turn from the lesson
  * record), the last COACH_TAIL messages, one tag repair when tags are missing,
- * the draft guard and the grading check where the version has them, and
+ * the draft guard, the script guard and the grading check where the version
+ * has them, and
  * completion decided by `applyCoachResponseToKB`, the single owner. Shared by
  * the Coach's single moments, the whole lessons and the chains, so all three
  * measure the same pipeline.
@@ -38,6 +39,13 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
   if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && assessment.draftsForLearner(parsed.text || '')) {
     const again = await parseAndRepair(await coach(assessment.DRAFT_ADDENDUM));
     if (again.text) parsed = again;
+  }
+  // The script guard, where this version has it: a reply that mixes in another
+  // script is rewritten once, and the rewrite used only when it's clean.
+  const lang = app.languageFor(language) || null;
+  if (assessment?.mixesScripts && assessment.SCRIPT_ADDENDUM && assessment.mixesScripts(parsed.text, lang)) {
+    const again = await parseAndRepair(await coach(assessment.SCRIPT_ADDENDUM));
+    if (again.text && !assessment.mixesScripts(again.text, lang)) parsed = again;
   }
   // The grading check, where this version has it.
   let graded = null;
