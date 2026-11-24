@@ -989,7 +989,7 @@ export default function AdminUsers() {
                 onChange={e => setEditForm({ ...editForm, traceMode: e.target.checked })} />
               <div className="space-y-1">
                 <Label htmlFor="edit-trace">Trace mode</Label>
-                <p id="edit-trace-help" className="text-xs text-muted-foreground">Records what plato does in this person’s lessons. They’re told, and can read the trace too.</p>
+                <p id="edit-trace-help" className="text-xs text-muted-foreground">Records every lesson and conversation of this person’s, not only the ones they turn on. They see it’s on, can’t turn it off, and can read the trace too.</p>
               </div>
             </div>
             {ssoOn && (

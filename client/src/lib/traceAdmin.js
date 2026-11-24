@@ -8,8 +8,8 @@ const people = (n) => `${n} ${n === 1 ? 'person' : 'people'}`;
 /** What Apply will do, shown under the On / Off radios. */
 export function traceBulkSentence({ on, users: count, waitlist = 0 }) {
   const what = on
-    ? `Records what plato does in the lessons of ${users(count)}. They’re told, and can read the trace too.`
-    : `Turns Trace mode off for ${users(count)}. Anyone who turned it on themselves keeps it.`;
+    ? `Records every lesson and conversation of ${users(count)}, not only the ones they turn on. They see it’s on, can’t turn it off, and can read the trace too.`
+    : `Turns Trace mode off for ${users(count)}. Lessons they turned on themselves keep recording.`;
   return `${what}${waitlist ? ' Wait-list entries are skipped.' : ''}`;
 }
 

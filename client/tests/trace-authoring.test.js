@@ -32,7 +32,7 @@ const CONVERSATION = 'User: I want to create a new lesson.\n\nAgent: What should
 
 async function fresh({ trace = false } = {}) {
   reset(); clearCache(); resetTraceSession(); signIn();
-  if (trace) await savePreferences({ name: '', traceMode: true });
+  if (trace) await savePreferences({ name: '', traceScopes: SCOPES });
   ai.length = 0;
 }
 

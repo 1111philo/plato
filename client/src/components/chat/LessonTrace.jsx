@@ -1,6 +1,9 @@
 /**
  * The Trace for one conversation (#595), opened from the lesson header.
  *
+ * Its switch, at the top, turns recording on or off for this conversation
+ * only (hooks/useTraceSwitch.js); absent while viewing as a learner.
+ *
  * Wide screens: docked beside the chat (`docked`), so a person can watch the
  * steps of a reply appear while they keep chatting. It is a complementary
  * landmark, not a modal: no focus trap; Escape closes it when focus is
@@ -26,7 +29,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 const liveTitle = (step) => (step.type === 'call' ? `${AGENTS[step.agent]?.label || step.agent}${step.purpose ? `: ${step.purpose}` : ''}` : STEPS[step.type]?.title || step.type);
 
-export default function LessonTrace({ scope, open, onClose, docked, focusAt, stamp, recording, frame, title }) {
+/** Record this conversation, or not. Shown at the top of the Trace. */
+function TraceSwitch({ control, label, hint }) {
+  if (!control || control.readOnly) return null;
+  const id = 'trace-switch-help';
+  return (
+    <div className="space-y-1 rounded-md border border-border bg-background p-2 text-sm">
+      <label className="flex items-start gap-2 font-medium">
+        <input type="checkbox" className="mt-0.5 accent-primary" checked={control.on} disabled={control.byTeam}
+          aria-describedby={id} onChange={(e) => control.set(e.target.checked)} />
+        <span>{label}</span>
+      </label>
+      <p id={id} className="text-xs text-muted-foreground">
+        {control.byTeam
+          ? 'Turned on by your classroom team, for everything you do.'
+          : control.on
+            ? (hint || 'Recording from your next message.')
+            : 'Off. Turn it on to record what plato does from your next message.'}
+        {' '}Your classroom team can read it too.
+      </p>
+      {control.error && <p className="text-xs text-red-800 dark:text-red-300" role="alert">{control.error}</p>}
+    </div>
+  );
+}
+
+export default function LessonTrace({ scope, open, onClose, docked, focusAt, stamp, recording, frame, title, control, switchLabel = 'Record this conversation', hint }) {
   const [view, setView] = useState(null);
   const [items, setItems] = useState([]);
   const [plugins, setPlugins] = useState([]);
@@ -111,7 +138,8 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
     <>
       {/* Docked, the top padding is inside the scrolled content, so the exchange
           bar can stick flush to the top. */}
-      <Tabs value={tab} onValueChange={setTab} className={docked ? 'pt-4' : undefined}>
+      <div className={docked ? 'pt-4' : undefined}><TraceSwitch control={control} label={switchLabel} hint={hint} /></div>
+      <Tabs value={tab} onValueChange={setTab} className="pt-3">
         <TabsList className="mb-3" aria-label="Trace sections">
           <TabsTrigger value="timeline">What happened</TabsTrigger>
           <TabsTrigger value="technology">Technology and services</TabsTrigger>

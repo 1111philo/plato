@@ -573,9 +573,17 @@ which it links to when the conversation has a trace.
 
 A readable record of everything behind a conversation: what was sent to the
 model, what came back, and every place plato's instructions or code shaped the
-result. Any user can turn it on in Settings (`preferences.traceMode`); an admin
-can turn it on for a person (`user.traceMode`, Admin → Users). Either one
-records. "Audit" keeps its older meaning here (the audit log, View as User).
+result. **It is switched on one conversation at a time**, from that
+conversation's own Trace panel: a lesson, Settings → Learner Profile, one
+lesson's editor, or the knowledge base editor. The scopes switched on are
+`preferences.traceScopes`; `lessonTrace.isTraceOn(…, scope)` is the one
+check. An admin can turn it on for a person (`user.traceMode`, Admin → Users),
+which records everything they do and can't be turned off by them. There is no
+account-wide switch for a person: people turn it on where they'll read it, so
+it's visible where it's on and nothing is stored that nobody asked for (Blake,
+2026-11-24; an account-wide Settings switch shipped first, on playground only,
+and `preferences.traceMode` from it is ignored). "Audit" keeps its older
+meaning here (the audit log, View as User).
 
 **It is off by default and a strict no-op when off.** A request without
 `trace: true` gets byte-identical responses, and no record is written.
@@ -649,11 +657,15 @@ off, and every request can be rebuilt from the stored trace alone (replay).
 A request the trace can't reproduce means the trace is missing something.
 
 ### The Trace view
-- **Settings → Trace mode** sets `preferences.traceMode`. If an admin set
-  `user.traceMode`, the box is checked and disabled, with "Turned on by your
-  classroom team".
-- **Lesson header**: a Trace button (footprints) when the lesson has a stamp
-  or is being recorded. `components/chat/LessonTrace.jsx` shows it **docked
+- **The switch** is a checkbox at the top of every Trace panel ("Record this
+  lesson", "Record changes to my profile", …; `hooks/useTraceSwitch.js`).
+  Off, it says recording starts from the next message. Turned on after a
+  lesson started, it says the setup wasn't recorded and a reset includes it.
+  If an admin set `user.traceMode`, it is checked and disabled, "Turned on by
+  your classroom team, for everything you do". Absent in View as User.
+- **Lesson header**: a Trace button (footprints), always; in View as User only
+  when the learner's lesson has a stamp. While recording, it carries a red dot
+  and its name ends "(recording)". `components/chat/LessonTrace.jsx` shows it **docked
   beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
   focus trap; Escape closes it from inside; focus returns to the button), and
   as a **dialog below that**. Docked, it is `position: fixed` in the space
@@ -781,9 +793,8 @@ in the person's own records:
   lesson from the first message (`traceSession.authorScope`).
 - These conversations are session-only React state; the trace is the part
   that is kept, in the admin's own sync records.
-- The buttons (`components/chat/TraceButton.jsx`) show while Trace mode is on
-  for the signed-in person; the profile one also when `profile` already has a
-  trace. Each opens `LessonTrace` as a dialog (`docked={false}`) and returns
+- The buttons (`components/chat/TraceButton.jsx`) are always shown, with a
+  red dot and "Recording" while their scope records. Each opens `LessonTrace` as a dialog (`docked={false}`) and returns
   focus to the button on close.
 - **Size.** These scopes have no record to carry `bytes`, so the first trace
   opened for one in a session sums the JSON size of its stored `t` and `b`
@@ -853,11 +864,11 @@ the real route with a fake model and fake searches.
 `trace_mode_changed { on }` audit entry when it changes. Bulk update takes
 `{ field: 'traceMode', value: true|false }` for accounts (wait-list entries
 have no lessons). `/v1/me` returns `traceMode` so the learner's app records and
-Settings can say who turned it on. The flag is honoured by the client; it is a
+each Trace switch can say who turned it on. The flag is honoured by the client; it is a
 diagnostic, not a control.
 
 **Admin controls (Admin → Users).** Everything here reads and writes the
-account's `traceMode`, never the person's own Settings choice.
+account's `traceMode`, never the conversations a person switched on themselves.
 - **Edit User**: a "Trace mode" checkbox. Save sends `traceMode` only when it
   changed, so an unrelated edit writes no audit entry. Anyone who can open the
   view sees it; it's disabled without `users.write`.

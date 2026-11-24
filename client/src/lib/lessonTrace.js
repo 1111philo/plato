@@ -29,9 +29,22 @@ export const LINK_EXCERPT_CHARS = 2000;
 const INLINE_PART_CHARS = 600;
 const LINK_MARKER = '[REFERENCE CONTEXT';
 
-/** Whether Trace mode is on for this person: their own switch, or an admin's. */
-export function isTraceOn({ preferences, user } = {}) {
-  return !!(preferences?.traceMode || user?.traceMode);
+/**
+ * Whether Trace records `scope` (a lesson id, `profile`, `kb`, or
+ * `author-<lessonId>`) for this person. They switch it on one conversation at
+ * a time, from its Trace panel (`preferences.traceScopes`), so nothing is
+ * recorded that nobody asked to read; an admin can turn it on for everything
+ * they do (`user.traceMode`), and then they can't turn it off.
+ */
+export function isTraceOn({ preferences, user } = {}, scope) {
+  if (user?.traceMode) return true;
+  return !!scope && Array.isArray(preferences?.traceScopes) && preferences.traceScopes.includes(scope);
+}
+
+/** `preferences` with `scope` switched on or off. */
+export function withTraceScope(preferences, scope, on) {
+  const scopes = (Array.isArray(preferences?.traceScopes) ? preferences.traceScopes : []).filter((x) => x !== scope);
+  return { ...(preferences || {}), traceScopes: on ? [...scopes, scope] : scopes };
 }
 
 /** Who turned it on: `'team'` (an admin, for this person) or `'self'`. */

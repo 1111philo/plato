@@ -14,7 +14,7 @@ const { STEPS, STAGES } = await import('../src/lib/transparency.js');
 const ID = LESSON.lessonId;
 async function record(messages) {
   reset(); clearCache(); signIn();
-  await savePreferences({ name: '', traceMode: true });
+  await savePreferences({ name: '', traceScopes: [ID] });
   await startLesson(ID, LESSON, () => {});
   for (const text of messages) { try { await sendMessage(ID, LESSON, text, null, [], () => {}); } catch { /* a failed turn is part of the script */ } }
   await settle();
@@ -181,7 +181,7 @@ describe('describeTrace', () => {
     const { authoringTurn, authoringExtract } = await import('../src/lib/authoringEngine.js');
     const { resetTraceSession } = await import('../src/lib/traceSession.js');
     reset(); clearCache(); resetTraceSession(); signIn();
-    await savePreferences({ name: '', traceMode: true });
+    await savePreferences({ name: '', traceScopes: ['profile', 'kb'] });
     await addLearnerNote('I use a Chromebook.');
     await (await removeLearnerNote(0)).done;
     await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', messages: [{ role: 'user', content: 'I want to create a knowledge base for my program.' }] });

@@ -386,7 +386,7 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to knowledge base">&larr; Back</Button>
         <h2 className="text-lg font-semibold">{isEditing ? 'Edit Knowledge Base' : 'Create Knowledge Base'}</h2>
-        <TraceButton scope="kb" className="ml-auto" label="Trace: what plato did behind this conversation" />
+        <TraceButton scope="kb" className="ml-auto" label="Trace: what plato did behind this conversation" switchLabel="Record knowledge base editing" />
       </div>
 
       {error && (

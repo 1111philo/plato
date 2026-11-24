@@ -174,7 +174,7 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 
 ## What a Trace records
 
-With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
+With Trace on for a conversation, each exchange of it is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
 
 1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the Lesson Owner’s version of it, and anything plugins added.
 2. **You sent.** What you wrote or did, exactly as plato received it.

@@ -2,7 +2,7 @@
 // and column, and the bulk On / Off, by keyboard.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
-import { ADMIN, EDUCATOR, TESTER, LEARNER } from '../fixtures.js';
+import { ADMIN, EDUCATOR, TESTER, LEARNER, LESSONS } from '../fixtures.js';
 
 const apiFor = (page) => async (method, path, token, body) => {
   const res = await page.request.fetch(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, data: body });
@@ -30,7 +30,7 @@ test('an admin turns Trace mode on for a person; the filter and the column find 
 
     const box = page.getByRole('checkbox', { name: 'Trace mode' });
     await expect(box).not.toBeChecked();
-    await expect(box).toHaveAccessibleDescription('Records what plato does in this person’s lessons. They’re told, and can read the trace too.');
+    await expect(box).toHaveAccessibleDescription('Records every lesson and conversation of this person’s, not only the ones they turn on. They see it’s on, can’t turn it off, and can read the trace too.');
     await box.focus();
     await page.keyboard.press('Space');
     await expect(box).toBeChecked();
@@ -78,6 +78,27 @@ test('an admin turns Trace mode on for a person; the filter and the column find 
   }
 });
 
+test('turned on by an admin: every lesson records, and the learner can’t turn it off', async ({ page }) => {
+  const api = apiFor(page);
+  const admin = await tokenOf(api, ADMIN);
+  try {
+    const learner = (await api('GET', '/v1/admin/users', admin)).find((u) => u.email === LEARNER.email);
+    await api('POST', '/v1/admin/users/bulk-update', admin, { userIds: [learner.userId], set: { field: 'traceMode', value: true } });
+    await login(page, LEARNER);
+    await page.goto(`/lessons/${LESSONS[0].id}`);
+    await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
+    const button = page.getByRole('button', { name: 'Trace: what plato did behind this conversation (recording)' });
+    await button.click();
+    const box = page.getByRole('checkbox', { name: 'Record this lesson' });
+    await expect(box).toBeChecked();
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveAccessibleDescription(/^Turned on by your classroom team, for everything you do\./);
+    await expectAccessible(page, { include: '#lesson-trace', label: 'trace turned on by the team' });
+  } finally {
+    await allOff(api, admin);
+  }
+});
+
 test('an educator sees Trace mode on Edit User but can’t change it', async ({ page }) => {
   await login(page, EDUCATOR);
   await page.goto('/plato/users');
@@ -109,7 +130,7 @@ test('admins turn Trace mode on and off for the users they select', async ({ pag
     await dialog.getByLabel('What to change').selectOption({ label: 'Trace mode' });
     const group = dialog.getByRole('group', { name: 'Trace mode' });
     await expect(group.getByRole('radio', { name: 'On' })).toBeChecked();
-    await expect(dialog).toContainText('Records what plato does in the lessons of 2 users. They’re told, and can read the trace too.');
+    await expect(dialog).toContainText('Records every lesson and conversation of 2 users, not only the ones they turn on. They see it’s on, can’t turn it off, and can read the trace too.');
     await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     await expectAccessible(page, { include: '[role=dialog]', label: 'bulk update dialog, trace mode' });
     await dialog.getByRole('button', { name: 'Turn on for 2 users' }).click();
@@ -131,7 +152,7 @@ test('admins turn Trace mode on and off for the users they select', async ({ pag
     await three.getByRole('radio', { name: 'On' }).focus();
     await page.keyboard.press('ArrowDown');
     await expect(three.getByRole('radio', { name: 'Off' })).toBeChecked();
-    await expect(three).toContainText('Turns Trace mode off for 3 users. Anyone who turned it on themselves keeps it.');
+    await expect(three).toContainText('Turns Trace mode off for 3 users. Lessons they turned on themselves keep recording.');
     await three.getByRole('button', { name: 'Turn off for 3 users' }).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Trace mode turned off for 3 people.' })).toBeVisible();
     trace = await traceByEmail(api, admin);

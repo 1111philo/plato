@@ -7,8 +7,8 @@ import { traceBulkSentence, traceBulkButton, traceBulkResult } from '../src/lib/
 
 describe('Trace mode bulk update wording', () => {
   it('says what turning it on or off does, with the right plural', () => {
-    assert.equal(traceBulkSentence({ on: true, users: 2 }), 'Records what plato does in the lessons of 2 users. They’re told, and can read the trace too.');
-    assert.equal(traceBulkSentence({ on: false, users: 1 }), 'Turns Trace mode off for 1 user. Anyone who turned it on themselves keeps it.');
+    assert.equal(traceBulkSentence({ on: true, users: 2 }), 'Records every lesson and conversation of 2 users, not only the ones they turn on. They see it’s on, can’t turn it off, and can read the trace too.');
+    assert.equal(traceBulkSentence({ on: false, users: 1 }), 'Turns Trace mode off for 1 user. Lessons they turned on themselves keep recording.');
   });
   it('says wait-list entries are skipped when some are selected', () => {
     assert.match(traceBulkSentence({ on: true, users: 1, waitlist: 2 }), / Wait-list entries are skipped\.$/);

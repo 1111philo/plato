@@ -17,7 +17,7 @@ async function run(trace) {
   reset();
   clearCache();
   signIn();
-  if (trace) await savePreferences({ name: '', traceMode: true });
+  if (trace) await savePreferences({ name: '', traceScopes: [LESSON.lessonId] });
   await startLesson(LESSON.lessonId, LESSON, () => {});
   ai.length = 0;
   const result = await sendMessage(LESSON.lessonId, LESSON, 'MOCK_COMPLETE MOCK_GARBLED I applied it to my garden plan.', null, [], () => {});

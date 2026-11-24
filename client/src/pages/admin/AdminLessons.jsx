@@ -684,7 +684,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to lessons">&larr; Back</Button>
         <h1 className="text-2xl font-bold">{isCreate ? 'New Lesson' : 'Edit Lesson'}</h1>
-        <TraceButton scope={traceScope} className="ml-auto" label="Trace: what plato did behind this conversation" />
+        <TraceButton scope={traceScope} className="ml-auto" label="Trace: what plato did behind this conversation" switchLabel="Record editing this lesson" />
       </div>
 
       {error && (

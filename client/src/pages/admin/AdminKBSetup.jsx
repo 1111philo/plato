@@ -104,7 +104,7 @@ export default function AdminKBSetup() {
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold">Set Up Your Knowledge Base</h1>
         <div className="flex items-center gap-2">
-          <TraceButton scope="kb" label="Trace: what plato did behind this conversation" />
+          <TraceButton scope="kb" label="Trace: what plato did behind this conversation" switchLabel="Record knowledge base editing" />
           <Button variant="ghost" size="sm" onClick={() => navigate('/plato')}>Skip for now</Button>
         </div>
       </div>

@@ -1,11 +1,12 @@
 /**
- * Opens a Trace recorder for the signed-in person when Trace mode is on
- * (#595). The impure half of lib/lessonTrace.js: it reads the two switches
- * (the person's own preference and the admin-set flag), writes records
+ * Opens a Trace recorder for the signed-in person when Trace is on for a
+ * conversation (#595). The impure half of lib/lessonTrace.js: it reads the
+ * two switches (the person's own, per conversation, and the admin-set flag
+ * for everything), writes records
  * through storage, and lets the Trace panel listen to a conversation as it
  * happens.
  *
- * `openTrace` resolves to `undefined` when Trace mode is off, which is what
+ * `openTrace` resolves to `undefined` when Trace is off for the scope, which is what
  * every caller passes on as `trace`; nothing else in the app checks the
  * switches.
  */
@@ -75,20 +76,20 @@ function emit(scope, event) {
   }
 }
 
-/** Who has Trace mode on for the signed-in person: `{ on, by }`. */
-export async function traceStatus() {
+/** Whether Trace is on for `scope` for the signed-in person, and who turned it on: `{ on, by }`. */
+export async function traceStatus(scope) {
   const [preferences, user] = await Promise.all([getPreferences().catch(() => null), getAuthUser().catch(() => null)]);
-  return { on: isTraceOn({ preferences, user }), by: traceTurnedOnBy({ user }), userId: user?.userId || null };
+  return { on: isTraceOn({ preferences, user }, scope), by: traceTurnedOnBy({ user }), userId: user?.userId || null };
 }
 
 /**
- * A recorder for one turn in `scope`, or undefined when Trace mode is off.
+ * A recorder for one turn in `scope`, or undefined when Trace is off for it.
  * `record` is 't' (a turn) or 'b' (a follow-up agent). `kind` is 'start' |
  * 'turn' | 'followup' (a lesson), 'profile' (Settings → Learner Profile) or
  * 'authoring' (the lesson editor and knowledge base chats).
  */
 export async function openTrace(scope, kind, { partial = false, record = 't', used = 0 } = {}) {
-  const status = await traceStatus().catch(() => ({ on: false }));
+  const status = await traceStatus(scope).catch(() => ({ on: false }));
   if (!status.on) return undefined;
   if (status.userId !== owner) { resetTraceSession(); owner = status.userId; }
   // Lessons carry their size on lessonKB.trace.bytes (`used`); the other
@@ -134,7 +135,7 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
 
 /**
  * Run a follow-up agent (profile, unit note) with its own trace record, or
- * with `undefined` when Trace mode is off. A failure is recorded, then thrown
+ * with `undefined` when Trace is off for the lesson. A failure is recorded, then thrown
  * on to the queue, which logs it as before.
  */
 export async function tracedFollowUp(scope, agent, why, fn) {

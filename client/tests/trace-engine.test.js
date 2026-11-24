@@ -27,7 +27,7 @@ async function lesson(messages, { trace = false, admin = false } = {}) {
   reset();
   clearCache();
   signIn({ traceMode: admin });
-  if (trace && !admin) await savePreferences({ name: '', traceMode: true });
+  if (trace && !admin) await savePreferences({ name: '', traceScopes: [ID] });
   ai.length = 0;
   await startLesson(ID, LESSON, noop);
   const results = [];
@@ -195,7 +195,7 @@ describe('Trace on', () => {
     await startLesson(ID, LESSON, noop);
     await sendMessage(ID, LESSON, 'Before trace.', null, [], noop);
     assert.equal(traces(ID).t.length, 0);
-    await savePreferences({ name: '', traceMode: true });
+    await savePreferences({ name: '', traceScopes: [ID] });
     await sendMessage(ID, LESSON, 'After trace.', null, [], noop);
     await settle();
     const all = traces(ID);
@@ -203,10 +203,21 @@ describe('Trace on', () => {
     assert.equal(all.t[0].partial, true);
     assert.equal((await getLessonKB(ID)).trace.partial, true);
     // Turned off again: recording stops, what was recorded stays.
-    await savePreferences({ name: '', traceMode: false });
+    await savePreferences({ name: '', traceScopes: [] });
     await sendMessage(ID, LESSON, 'Off again.', null, [], noop);
     await settle();
     assert.equal(traces(ID).t.length, 1);
+  });
+
+  it('is on for the lesson it was turned on for, and no other', async () => {
+    reset(); clearCache(); signIn();
+    const OTHER = { ...LESSON, lessonId: 'other-lesson', name: 'Other lesson' };
+    await savePreferences({ name: '', traceScopes: [ID] });
+    await startLesson(OTHER.lessonId, OTHER, noop);
+    await sendMessage(OTHER.lessonId, OTHER, 'Not traced.', null, [], noop);
+    await settle();
+    assert.equal([...store.keys()].filter((k) => k.startsWith('trace:other-lesson:')).length, 0);
+    assert.equal((await getLessonKB(OTHER.lessonId)).trace, undefined);
   });
 
   it('stops recording at the size limit, and the lesson’s stamp says so', async () => {
