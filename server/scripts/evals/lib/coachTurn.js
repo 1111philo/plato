@@ -1,0 +1,93 @@
+/**
+ * One Coach turn, as lessonEngine.sendMessage runs it, with the version's own
+ * code: the context from `buildContext` (rebuilt every turn from the lesson
+ * record), the last COACH_TAIL messages, one tag repair when tags are missing,
+ * the draft guard and the grading check where the version has them, and
+ * completion decided by `applyCoachResponseToKB`, the single owner. Shared by
+ * the Coach's single moments, the whole lessons and the chains, so all three
+ * measure the same pipeline.
+ */
+import { CATALOG } from '../fixtures/lessons.js';
+
+/**
+ * `history` is the stored conversation so far ([{ role, content }], the
+ * learner as 'user'); `message` the learner's new message, with `images`
+ * (data URLs) when they sent a screenshot. Returns the parsed reply, the
+ * lesson record before and after, and what changed.
+ */
+export async function coachTurn({ app, model, lesson, kb, profile = 'No profile yet', name = 'Sam', courseProgress = null, programKb = '', language = '', history = [], message, images = [] }) {
+  const { engine, assessment, orchestrator, work } = app;
+  const tail = history.slice(-(engine.COACH_TAIL || 40)).filter((m) => m.content && String(m.content).trim());
+  const parts = images.length && engine.buildUserParts ? engine.buildUserParts(message || '', images) : null;
+  const messages = [
+    { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress) },
+    { role: 'assistant', content: 'Ready.' },
+    ...tail,
+    ...(message != null || parts ? [{ role: 'user', content: parts && !(parts.length === 1 && parts[0].type === 'text') ? parts : message }] : []),
+  ];
+  const system = (addendum = '') => app.system('coach', { kb: programKb, catalog: CATALOG, addendum, language });
+  const coach = (addendum, msgs = messages, maxTokens = 2048) => model.call({ system: system(addendum), messages: msgs, maxTokens });
+  const repair = (reply) => coach(orchestrator.TAG_REPAIR_ADDENDUM, [...messages, { role: 'assistant', content: reply || '…' }, { role: 'user', content: orchestrator.TAG_REPAIR_CUE }], 600);
+  const parseAndRepair = async (raw) => {
+    const first = engine.parseCoachResponse(raw);
+    return engine.recoverMissingTags ? engine.recoverMissingTags(first, () => repair(first.text)) : first;
+  };
+
+  let parsed = await parseAndRepair(await coach());
+  // The draft guard (#584), where this version has it.
+  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && assessment.draftsForLearner(parsed.text || '')) {
+    const again = await parseAndRepair(await coach(assessment.DRAFT_ADDENDUM));
+    if (again.text) parsed = again;
+  }
+  // The grading check, where this version has it.
+  let graded = null;
+  if (engine.checkGrading) {
+    graded = await engine.checkGrading({
+      lesson, kb, parsed, messages,
+      imageParts: (parts || []).filter((p) => p.type === 'image'),
+      assess: (input, imgs, o) => model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: imgs?.length ? [{ type: 'text', text: input }, ...imgs] : input }], maxTokens: 2048, temperature: o?.temperature ?? 0 }),
+      regenerate: (addendum) => coach(addendum),
+      judgeClaim: async (t) => /^\s*yes/i.test(await model.call({ system: app.system('claim-check'), messages: [{ role: 'user', content: String(t).slice(0, 8000) }], maxTokens: 5, temperature: 0 })),
+    });
+    parsed = graded.parsed;
+  }
+  const merged = work?.mergeObjectivesMet ? work.mergeObjectivesMet(kb, parsed.kbUpdate) : kb;
+  let { lessonKB: after, achieved } = engine.applyCoachResponseToKB(merged, parsed);
+  if (graded?.assessment && engine.nextGradingFailures) {
+    const failures = engine.nextGradingFailures(after.gradingCheckFailures, graded.assessment);
+    if (failures || after.gradingCheckFailures) after = { ...after, gradingCheckFailures: failures };
+  }
+  const before = new Set(kb.objectivesMet || []);
+  return {
+    parsed,
+    text: parsed.text || '',
+    before: kb,
+    after,
+    achieved: !!achieved,
+    completed: kb.status !== 'completed' && !!achieved,
+    newlyMet: (after.objectivesMet || []).filter((i) => !before.has(i)).map((i) => i + 1),
+    assessment: graded?.assessment || null,
+  };
+}
+
+/**
+ * The lesson's first message, as lessonEngine.startLesson sends it: "Start
+ * the lesson." (not stored), 1024 tokens, no grading check, the score capped
+ * by `openingProgress` (an opener can't finish a lesson). Returns the reply
+ * and the lesson record after it.
+ */
+export async function coachOpening({ app, model, lesson, kb, profile = 'No profile yet', name = 'Sam', courseProgress = null, programKb = '', language = '' }) {
+  const { engine } = app;
+  const raw = await model.call({
+    system: app.system('coach', { kb: programKb, catalog: CATALOG, language }),
+    messages: [
+      { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress) },
+      { role: 'assistant', content: 'Ready.' },
+      { role: 'user', content: 'Start the lesson.' },
+    ],
+    maxTokens: 1024,
+  });
+  const { text, progress } = engine.parseCoachResponse(raw);
+  const score = engine.openingProgress ? engine.openingProgress(progress) : null;
+  return { text: text || '', progress, after: score != null ? { ...kb, progress: score } : kb };
+}

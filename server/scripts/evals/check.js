@@ -14,7 +14,7 @@
 import { readFileSync, existsSync, writeFileSync, appendFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { AGENTS, affectedAgents, changedSince, fingerprint } from './lib/watch.js';
+import { AGENTS, SUITES, affectedAgents, changedSince, fingerprint } from './lib/watch.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const REPO = join(here, '..', '..', '..');
@@ -24,7 +24,8 @@ export function decide({ root = REPO, base, level = 'moments' }) {
   const affected = affectedAgents(changedSince(root, base));
   const fp = fingerprint(root);
   if (!affected.length) return { ok: true, reason: 'Nothing the evaluations cover changed.', affected, fingerprint: fp, level };
-  const need = level === 'full' ? AGENTS : affected;
+  // A release also needs the whole lessons and the chains.
+  const need = level === 'full' ? [...AGENTS, ...SUITES] : affected;
   const files = (level === 'full' ? ['full'] : ['full', 'moments']).map((l) => join(root, 'evals', 'results', `${fp}-${l}.json`));
   const file = files.find((f) => existsSync(f));
   if (!file) return { ok: false, reason: `No evaluation results for this version (${fp}, ${level}). Run: cd server && npm run eval -- ${level === 'full' ? '--level full' : '--affected'}`, affected, fingerprint: fp, level, missing: true };

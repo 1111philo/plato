@@ -51,6 +51,9 @@ level into `main`.
 | `agents/<id>.js` | One module per agent: builds its real input, calls the model, checks the reply with the app's own parsers |
 | `cases/<id>.json` | That agent's cases, from the spec |
 | `fixtures/lessons.js` | The test lessons L1–L14 |
+| `fixtures/learners.js`, `lib/learner.js` | The character cards and life stages; the simulated learner |
+| `lib/coachTurn.js` | One Coach turn (and the opener) as the app runs it, shared by the single moments, whole lessons and chains |
+| `suites/` | Whole lessons and chains: run only at the full level |
 
 ### Pass marks
 - `never`: one failing trial fails.
@@ -72,6 +75,8 @@ A case is never loosened to make a run pass without a person agreeing: if the ag
 
 ## Built so far
 - **Agents:** all eleven, as single moments: Coach, Assessor, Claim Check, Lesson Owner, Learner Profile Update and Owner, Course Progress Update, Lesson Creator, Lesson Extractor, Knowledge Base Editor and Extractor.
-- **Next:** whole lessons with simulated learners, the chains, and the screenshot cases (A13, A14), which need image fixtures.
+- **Whole lessons** (`suites/lessons.js`, full level): 36 lessons, one per trial. A simulated learner (`lib/learner.js`) plays a character card at a life stage (`fixtures/learners.js`), and every Coach turn goes through `lib/coachTurn.js`, the same pipeline as the single moments.
+- **Chains** (`suites/chains.js`, full level): the spec's six handovers, 5 runs each.
+- **Screenshots:** `fixtures/images/` holds small synthetic PNGs, used by A13 and by the simulated learners when a lesson asks for a screenshot.
 
 `../coach-eval.js` stays for comparing models (`--models`); the Coach module here is what gates changes.

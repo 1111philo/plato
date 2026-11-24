@@ -17,7 +17,7 @@ const STOP = {
   Spanish: /\b(el|la|los|las|de|que|en|con|para|una|por|tu|tus|es|como|qué|su|sus)\b/gi,
 };
 const BENGALI = /[ঀ-৿]/g;
-const CJK = /[぀-ヿ㐀-鿿가-힯]/;
+export const CJK = /[぀-ヿ㐀-鿿가-힯]/;
 
 /** True when `text` is written in `language` (English, Spanish, Bengali), with no other script mixed in. */
 export function inLanguage(text, language = 'English') {
@@ -32,3 +32,10 @@ export function inLanguage(text, language = 'English') {
 export const sentences = (t) => (String(t).replace(/\[[^\]]*\]/g, '').match(/[^.!?]+[.!?]+/g) || [t]).filter((s) => s.trim().length > 3).length;
 export const questions = (t) => (String(t).match(/\?/g) || []).length;
 export const words = (t) => String(t).trim().split(/\s+/).filter(Boolean).length;
+
+/** The Coach said it reported or escalated something (it can't). */
+export const ESCALATED = /\bI(?:'ve| have| will|'ll)\s+(?:reported|flagged|escalated|let (?:the|your) (?:team|admin)|notified|passed (?:this|it) (?:on|along))/i;
+/** Asked for something plato can't take: video, audio, a file, a terminal. */
+export const CANT_TAKE = /\b(?:record|upload|send|share|attach|submit)\b[^.?!\n]{0,40}\b(?:video|audio|voice (?:memo|note)|pdf|zip|word doc(?:ument)?|file)\b|\b(?:open|run)\b[^.?!\n]{0,20}\b(?:terminal|command line|powershell)\b/i;
+/** Assumed a job the learner never mentioned (not "at work": a lesson's own goal can say it). */
+export const WORK = /\b(?:your (?:job|employer|manager|boss|coworkers?|colleagues|workplace|company)|full[- ]time (?:job|role|position|work))\b/i;

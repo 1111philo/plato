@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { judge, runVerdict } from '../../scripts/evals/lib/score.js';
-import { affectedAgents, fingerprint, AGENTS } from '../../scripts/evals/lib/watch.js';
+import { affectedAgents, fingerprint, AGENTS, SUITES } from '../../scripts/evals/lib/watch.js';
 import { loadApp } from '../../scripts/evals/lib/app.js';
 import { stubModel } from '../../scripts/evals/lib/model.js';
 import { loadAgent, runCases, score, tally, REPO } from '../../scripts/evals/run.js';
@@ -67,10 +67,11 @@ describe('an agent run, scored', () => {
   });
   it('every agent has a module that loads with this version, and its cases only use checks it defines', async () => {
     const app = await loadApp(REPO);
-    for (const id of AGENTS) {
+    for (const id of [...AGENTS, ...SUITES]) {
       const agent = await loadAgent(id);
       assert.ok(agent.available(app), `${id} runs with this version`);
       assert.ok(agent.cases.length >= 5, `${id} has its cases`);
+      if (id === 'lessons') for (const c of agent.cases) assert.equal(c.trials, c.lessons.length, `${c.id}: one trial per lesson`);
       for (const c of agent.cases) for (const k of Object.keys(c.marks || {})) assert.ok(agent.CHECKS[k], `${id} ${c.id}: unknown check ${k}`);
     }
   });

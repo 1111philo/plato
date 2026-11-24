@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadApp } from './lib/app.js';
 import { bedrockModel } from './lib/model.js';
-import { AGENTS, affectedAgents, changedSince, fingerprint, harnessFingerprint, uncommittedWatched } from './lib/watch.js';
+import { AGENTS, SUITES, affectedAgents, changedSince, fingerprint, harnessFingerprint, uncommittedWatched } from './lib/watch.js';
 import { judge, runVerdict } from './lib/score.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -39,9 +39,9 @@ function args(argv) {
   return out;
 }
 
-/** An agent's module and cases. */
+/** An agent's module and cases (or a suite's: the whole lessons and the chains, `suites/`). */
 export async function loadAgent(id) {
-  const mod = await import(join(here, 'agents', `${id}.js`));
+  const mod = await import(join(here, SUITES.includes(id) ? 'suites' : 'agents', `${id}.js`));
   const cases = JSON.parse(readFileSync(join(here, 'cases', `${id}.json`), 'utf8')).cases;
   return { id, ...mod, cases };
 }
@@ -78,7 +78,7 @@ export async function runCases({ app, model, agents, trials, concurrency, progre
     if (!agent.available(app)) continue;
     for (const c of agent.cases) {
       for (let t = 0; t < (c.trials || trials); t++) {
-        jobs.push(() => agent.run(c, { app, model }));
+        jobs.push(() => agent.run(c, { app, model, trial: t }));
         slots.push([agent.id, c.id]);
       }
     }
@@ -125,7 +125,9 @@ export function score({ agents, raw, baseline = {}, gaps = {} }) {
       const errors = r.trials.filter((t) => t.error).length;
       // What a person needs to judge a failure: the samples of failing trials.
       const failing = Object.entries(checks).filter(([, v]) => v.verdict === 'fail').map(([k]) => k);
-      const samples = r.trials.filter((t) => !t.error && failing.some((k) => t.checks?.[k] === false)).slice(0, 3).map((t) => t.sample);
+      // A case "for reading" keeps every trial's sample (a whole lesson is read in full).
+      const forReading = Object.values(checks).some((v) => v.verdict === 'reading');
+      const samples = r.trials.filter((t) => !t.error && (forReading || failing.some((k) => t.checks?.[k] === false))).slice(0, forReading ? 12 : 3).map((t) => t.sample);
       cases.push({ agent: agent.id, id: c.id, title: c.title || c.reply || c.id, from: c.from || null, errors, checks, samples });
     }
   }
@@ -159,10 +161,11 @@ async function main() {
   const opt = args(process.argv.slice(2));
   const level = opt.level === 'full' ? 'full' : 'moments';
   let ids;
-  if (opt.agents) ids = String(opt.agents).split(',').filter((a) => AGENTS.includes(a));
+  if (opt.agents) ids = String(opt.agents).split(',').filter((a) => AGENTS.includes(a) || SUITES.includes(a));
+  // A release: every agent, then the whole lessons and the chains.
+  else if (level === 'full') ids = [...AGENTS, ...SUITES];
   else if (opt.affected) ids = affectedAgents(changedSince(REPO, opt.base));
   else ids = AGENTS;
-  if (level === 'full' && !opt.agents) ids = AGENTS;
   const fp = fingerprint(REPO);
   // Results belong to a commit. Uncommitted changes to what's evaluated make
   // a run that can't be matched to one: it is kept apart and the check ignores it.
@@ -172,7 +175,7 @@ async function main() {
   if (dirty.length) process.stderr.write(`Note: uncommitted changes to ${dirty.join(', ')}. These results go to evals/scratch/ and won't count until you commit and run again.\n`);
 
   const agents = [];
-  for (const id of ids) if (existsSync(join(here, 'agents', `${id}.js`))) agents.push(await loadAgent(id));
+  for (const id of ids) if (existsSync(join(here, SUITES.includes(id) ? 'suites' : 'agents', `${id}.js`))) agents.push(await loadAgent(id));
   const missing = ids.filter((id) => !agents.some((a) => a.id === id));
   const trials = Number(opt.trials);
   const concurrency = Number(opt.concurrency);

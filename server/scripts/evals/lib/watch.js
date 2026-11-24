@@ -15,6 +15,8 @@ export const AGENTS = [
   'coach', 'assessor', 'claim-check', 'lesson-owner', 'learner-profile-update', 'learner-profile-owner',
   'course-progress-update', 'lesson-creator', 'lesson-extractor', 'knowledge-base-editor', 'knowledge-base-extractor',
 ];
+/** Run only at the full level (a release): the whole lessons and the chains (suites/). */
+export const SUITES = ['lessons', 'chains'];
 const AUTHORING = ['lesson-creator', 'lesson-extractor', 'knowledge-base-editor', 'knowledge-base-extractor'];
 const PROFILE = ['learner-profile-update', 'learner-profile-owner'];
 
@@ -41,7 +43,8 @@ export const COVERAGE = [
   [/^server\/src\/lib\/lesson-markdown\.js$/, ['lesson-extractor']],
   // The harness: an agent's module and cases are that agent; the rest is everyone.
   [/^server\/scripts\/evals\/(agents|cases)\/([a-z-]+)\.(js|json)$/, (m) => (AGENTS.includes(m[2]) ? [m[2]] : [])],
-  [/^server\/scripts\/evals\/(lib|fixtures|learners|run\.js|chains\.js)/, 'all'],
+  [/^server\/scripts\/evals\/(lib|fixtures|suites|run\.js)/, 'all'],
+  [/^server\/scripts\/evals\/cases\/(lessons|chains)\.json$/, 'all'],
 ];
 
 /** The agents a set of changed files affects. */

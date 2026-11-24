@@ -519,6 +519,52 @@
     2
    ],
    "from": "review (AmandaG-LaTech)"
+  },
+  {
+   "id": "A13",
+   "lesson": "L6",
+   "title": "The evidence is in the screenshot sent with this message.",
+   "image": "checklist.png",
+   "check": [
+    1,
+    2
+   ],
+   "shown": [
+    1,
+    2
+   ],
+   "convo": [
+    [
+     "C",
+     "Build your checklist, then share a screenshot and tell me which two items matter most to you."
+    ],
+    [
+     "L",
+     "Here it is. The two that matter most: checking every number against the source, because one wrong number in a grant report loses a funder's trust, and never pasting a client's name in, because families trust us with that."
+    ]
+   ]
+  },
+  {
+   "id": "A14",
+   "lesson": "L6",
+   "title": "The learner describes a screenshot but didn't send one.",
+   "check": [
+    1,
+    2
+   ],
+   "shown": [
+    2
+   ],
+   "convo": [
+    [
+     "C",
+     "Build your checklist, then share a screenshot and tell me which two items matter most to you."
+    ],
+    [
+     "L",
+     "I made a checklist with five items, the screenshot is on my other laptop. The two that matter most: checking every number against the source, because one wrong number in a grant report loses a funder's trust, and never pasting a client's name in, because families trust us with that."
+    ]
+   ]
   }
  ]
 }
