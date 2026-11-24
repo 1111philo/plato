@@ -2,10 +2,12 @@
  * Deterministic stand-in for Bedrock, for end-to-end and accessibility tests
  * (e2e/). Enabled with AI_PROVIDER=mock; ai-provider.js refuses it on Lambda.
  *
- * Each agent's prompt starts with an `AGENT: <name>` header (client/prompts),
- * which arrives here inside the system prompt, so the mock answers in the
- * exact shape that agent's parser expects: coach tags, lesson-owner KB JSON,
- * the readiness tag, extractor markdown, and so on.
+ * The mock tells which agent it is answering from the start of the system
+ * prompt: each prompt file's instructions (client/prompts, read here once),
+ * named by the file's `AGENT:` header. The header itself isn't sent
+ * (promptAssembly.js strips it), so it can't be matched directly. It then
+ * answers in the exact shape that agent's parser expects: coach tags,
+ * lesson-owner KB JSON, the readiness tag, extractor markdown, and so on.
  *
  * Coach pacing: each learner turn adds 3 progress points; a message containing
  * MOCK_COMPLETE awards 10, so tests can drive a lesson to completion;
@@ -20,14 +22,40 @@
  * with its format note (#604).
  */
 
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 const MOCK_USAGE = { input_tokens: 0, output_tokens: 0 };
 
 function systemText(system) {
   return Array.isArray(system) ? system.map((b) => b.text || '').join('\n') : String(system || '');
 }
 
+const HEADER = /^\s*<!--([\s\S]*?)-->\s*/;
+const PROMPT_DIRS = [
+  join(dirname(fileURLToPath(import.meta.url)), '../../client-content/prompts'),
+  join(dirname(fileURLToPath(import.meta.url)), '../../../client/prompts'),
+];
+let openings;
+/** `[[opening of the instructions, agent name]]`, longest first. */
+function promptOpenings() {
+  if (openings) return openings;
+  const dir = PROMPT_DIRS.find((d) => existsSync(d));
+  openings = (dir ? readdirSync(dir).filter((f) => f.endsWith('.md')) : []).flatMap((f) => {
+    const text = readFileSync(join(dir, f), 'utf8');
+    const name = ((text.match(HEADER)?.[1] || '').match(/AGENT:\s*([A-Za-z ]+?)\s*\n/) || [])[1];
+    const opening = text.replace(HEADER, '').trimStart().slice(0, 200);
+    return name && opening ? [[opening, name]] : [];
+  }).sort((a, b) => b[0].length - a[0].length);
+  return openings;
+}
+
 function agentOf(system) {
   const text = systemText(system);
+  const hit = promptOpenings().find(([opening]) => text.startsWith(opening));
+  if (hit) return hit[1];
+  // A client from before the header was stripped still sends it.
   return (text.match(/AGENT:\s*([A-Za-z ]+?)\s*\n/) || [])[1] || 'unknown';
 }
 

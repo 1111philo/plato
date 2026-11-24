@@ -165,7 +165,7 @@ describe('describeTrace', () => {
     // The first mention is the request sent for it, before its result.
     const first = start.steps.find((s) => s.agent === 'lesson-owner');
     assert.equal(first.part, 'request');
-    assert.match(first.explain.text, /^Lesson Owner is one of plato’s AI helpers: the same AI model, given its own instructions\. Sets up this learner’s copy of the lesson.*\(From the instructions this call sent\.\)$/);
+    assert.match(first.explain.text, /^Lesson Owner is one of plato’s AI helpers: the same AI model, given its own instructions\. Sets up this learner’s copy of the lesson.*\(From this agent’s prompt file at the time\. plato doesn’t send this description to the model\.\)$/);
     assert.equal(start.steps.filter((s) => s.explain?.label === 'Lesson Owner').length, 1, 'once per exchange');
     const validation = start.steps.find((s) => s.type === 'validation');
     assert.match(validation.summary, /checked the setup for the 6 things the coach and the Assessor need\. All were there\./);
@@ -279,12 +279,18 @@ describe('token counts from the real model', () => {
 
 describe('the Trace describes agents from what was sent', () => {
   const call = (promptText) => ({ n: 1, type: 'call', ms: 0, agent: 'coach', purpose: 'reply', model: 'm', maxTokens: 10, system: [{ kind: 'prompt', chars: promptText.length, text: promptText }], messages: { base: 0, extra: [{ role: 'user', content: 'Hi' }] }, attempts: [], reply: 'ok', took: 1 });
-  it('names a call’s agent from the header of the instructions it sent, not from today’s prompt', () => {
+  it('names a call’s agent from the header of the instructions it sent (a trace from before the header was stripped)', () => {
     const sent = '<!--\n  AGENT: Tutor\n  PURPOSE: Helps the learner, as it was told that day.\n-->\nYou are the Tutor.';
     const [request, reply] = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [call(sent)] } }]).exchanges[0].steps;
     assert.equal(request.title, 'Sent to the AI model, for the Tutor: reply');
     assert.equal(reply.title, 'The AI model replied to the Tutor');
     assert.match(request.explain.text, /^Tutor is one of plato’s AI helpers.*Helps the learner, as it was told that day\. \(From the instructions this call sent\.\)$/);
+  });
+  it('names a call’s agent from the header recorded beside it, which wasn’t sent', () => {
+    const c = call('You are the Tutor.'); c.about = { name: 'Tutor', purpose: 'Helps the learner, as it was told that day.' };
+    const [request] = describeTrace([{ dataKey: 'trace:x:t:1', data: { at: 1, kind: 'turn', steps: [c] } }]).exchanges[0].steps;
+    assert.equal(request.title, 'Sent to the AI model, for the Tutor: reply');
+    assert.match(request.explain.text, /Helps the learner, as it was told that day\. \(From this agent’s prompt file at the time\. plato doesn’t send this description to the model\.\)$/);
   });
   it('falls back to the agent’s current prompt when the instructions weren’t stored, and says so by omission', () => {
     const c = call('x'); c.system = [{ kind: 'prompt', chars: 900, hash: 'gone' }];

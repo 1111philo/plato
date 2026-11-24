@@ -99,7 +99,10 @@ test.describe('Trace mode', () => {
     const request = exchange.getByRole('listitem').filter({ has: page.getByText('Sent to the AI model, for the Coach: reply', { exact: true }) }).last();
     await request.getByText(/^Show the exact text/).click();
     await request.getByText(/^Instructions, part 1 of \d+: The agent’s instructions/).first().click();
-    await expect(request.locator('details[open] > pre').filter({ hasText: 'AGENT: Coach' }).first()).toBeVisible();
+    await expect(request.locator('details[open] > pre').filter({ hasText: /^You are the Coach for plato/ }).first()).toBeVisible();
+    // The prompt file's header is documentation, never sent; Who's this? says where it came from.
+    await expect(request.locator('details[open] > pre').filter({ hasText: 'AGENT:' })).toHaveCount(0);
+    await expect(exchange.getByText(/plato doesn’t send this description to the model/).first()).toBeVisible();
     await expectAccessible(page, { label: 'lesson chat with the trace docked and an exchange open' });
 
     // Nothing in the panel is wider than the panel.

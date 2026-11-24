@@ -97,9 +97,10 @@ describe('Trace on', () => {
     const all = traces(ID);
     assert.equal(all.t.length, 1 + SCRIPT.length, 'the start and each turn');
     assert.equal(all.t[0].kind, 'start');
-    // 17 calls share 9 distinct long parts (each agent's instructions, the
-    // knowledge base, one held-completion addition).
-    assert.equal(Object.keys(all.p).length, 9, 'parts are stored once, not per call');
+    // 17 calls share 8 distinct long parts (each agent's instructions, the
+    // knowledge base, one held-completion addition). The Claim Check's
+    // instructions are short enough to be stored inline.
+    assert.equal(Object.keys(all.p).length, 8, 'parts are stored once, not per call');
     const bulk = await (await fetch('/v1/sync')).json();
     assert.ok(bulk.every((i) => !i.dataKey.startsWith('trace:')));
     assert.ok(all.t.every((r) => r.app.build && r.app.by === 'self'));

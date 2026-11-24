@@ -6,7 +6,10 @@
  *
  * Order: the prompt file, the program knowledge base, the lesson catalog, the
  * part of the prompt file after AFTER_CONTEXT_MARKER, the addendum, then the
- * language directive.
+ * language directive. The prompt file's header comment (js/agentHeader.js) is
+ * taken off first: it documents the agent and is never sent. Sent, it changed
+ * the coach's grading: in an eval, with the header the coach completed a
+ * lesson on thin answers 7 times in 20; without it, 0 (2026-11-24).
  *
  * Why the marker and the note (#584): the knowledge base and lesson list were
  * the last thing the coach read, after ~21 KB of rules. A classroom's
@@ -17,7 +20,18 @@
  * last thing the model reads.
  */
 
+import { parseAgentHeader } from './agentHeader.js';
+
 export const AFTER_CONTEXT_MARKER = '<!-- AFTER CONTEXT -->';
+
+const HEADER = /^\s*<!--[\s\S]*?-->\s*/;
+
+/** A prompt file as `{ header, body }`: its parsed header (or null) and the text without it. */
+export function splitHeader(prompt) {
+  const text = String(prompt ?? '');
+  const header = parseAgentHeader(text);
+  return header ? { header, body: text.replace(HEADER, '') } : { header: null, body: text };
+}
 
 /**
  * The message plato sends, as the learner's turn, when it asks the coach for
@@ -55,15 +69,17 @@ export function assembleSystemPrompt(p) {
 }
 
 /**
- * The same prompt as its parts, in order: `[{ kind, text }]`, where the texts
- * joined are exactly the prompt sent (each part carries its own separator and
+ * The same prompt as its parts, in order: `[{ kind, text, header? }]`, where
+ * the texts joined are exactly the prompt sent (each part carries its own separator and
  * heading). Trace mode stores and shows the parts, so a person can see which
  * instructions came from the prompt file, the classroom's knowledge base, the
  * lesson list, a one-turn addition from plato, or the language directive.
  */
 export function systemPromptParts({ prompt, kb = '', kbNote = '', catalog = '', catalogHeading = 'Lessons in This Classroom', addendum = '', languageDirective = '' }) {
-  const { before, after } = splitAtMarker(prompt);
-  const parts = [{ kind: 'prompt', text: before }];
+  const { header, body } = splitHeader(prompt);
+  const { before, after } = splitAtMarker(body);
+  // `header` is carried beside the text for the Trace; only `text` is sent.
+  const parts = [{ kind: 'prompt', text: before, ...(header ? { header } : {}) }];
   if (kb) parts.push({ kind: 'knowledgeBase', text: `\n\n---\n\n## Program Knowledge Base${kbNote ? '\n\n' + kbNote : ''}\n\n${kb}` });
   if (catalog) parts.push({ kind: 'catalog', text: `\n\n---\n\n## ${catalogHeading}\n\n${catalog}` });
   if (after) parts.push({ kind: 'promptAfter', text: `\n\n---\n\n${after}` });

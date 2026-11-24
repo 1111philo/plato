@@ -11,7 +11,7 @@ const { clearCache, savePreferences } = await import('../js/storage.js');
 const { startLesson, sendMessage } = await import('../src/lib/lessonEngine.js');
 
 const system = (b) => (Array.isArray(b.system) ? b.system.map((x) => x.text || '').join('\n') : String(b.system || ''));
-const assessorCalls = () => ai.filter((b) => /AGENT:\s*Assessor/.test(system(b)));
+const assessorCalls = () => ai.filter((b) => system(b).startsWith('You check a learner\'s work for plato'));
 
 async function run(trace) {
   reset();
