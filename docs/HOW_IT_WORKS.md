@@ -174,7 +174,7 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 
 ## What a Trace records
 
-With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
+With Trace on for a conversation, each exchange of it is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
 
 1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the Lesson Owner’s version of it, and anything plugins added.
 2. **You sent.** What you wrote or did, exactly as plato received it.
@@ -223,13 +223,6 @@ With Trace mode on, each exchange of a conversation is recorded step by step. Th
 | The unit note was updated (`unitNoteSaved`) | In the background | plato’s code | The short note the coach in this unit’s other lessons will see. |
 | The unit note was not changed (`unitNoteUnchanged`) | In the background | plato’s code | Nothing usable came back, so the note stayed as it was. |
 | What you did (`noteChange`) | You sent | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
-| What you wrote (`authorInput`) | You sent | A person | Your message in the editing conversation. |
-| plato started the conversation (`authoringOpened`) | You sent | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
-| The conversation so far (`authoringTail`) | plato prepared and sent the request | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
-| What plato read from the reply (`authoringParsed`) | The AI model answered | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
-| What you asked for (`extractAsked`) | You sent | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
-| What was written, and whether it could be used (`extracted`) | The AI model answered | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
-| Saved (`authoringSaved`) | plato recorded the result | plato’s code | Whether what was written reached plato’s database. |
 | What you were shown (`shown`) | plato recorded the result | plato’s code | The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed. |
 | This attempt failed (`error`) | plato recorded the result | plato’s code | Nothing from this attempt was saved to the conversation. |
 

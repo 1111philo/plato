@@ -15,10 +15,8 @@ import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
 import { buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { authoringExtract } from '../../lib/authoringEngine.js';
-import { authorScope } from '../../lib/traceSession.js';
 import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import TraceButton from '../../components/chat/TraceButton.jsx';
 import AgentActivity from '../../components/chat/AgentActivity.jsx';
 import BundledLessonNotices from './BundledLessonNotices.jsx';
 
@@ -487,13 +485,10 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
   const isCreate = !!isDraft;
   const pageTitle = isCreate ? 'New Lesson — Admin' : 'Edit Lesson — Admin';
   useEffect(() => { document.title = pageTitle; }, [pageTitle]);
-  // Trace mode (#595) records this chat under the lesson's own scope. A new
-  // lesson already has its draft id here (minted by /plato/lessons/new).
-  const traceScope = authorScope(lessonId);
   const {
     chatMessages, setChatMessages, readiness, setReadiness, busy, setBusy, error, setError,
     streamingText, srAnnouncement, start, handleSend,
-  } = useAuthoringChat({ agent: 'lesson-creator', scope: traceScope, title: pageTitle, initialMessages, initialReadiness });
+  } = useAuthoringChat({ agent: 'lesson-creator', title: pageTitle, initialMessages, initialReadiness });
   const [key, setKey] = useState(0); // increment to restart conversation
   const [courses, setCourses] = useState([]); // units (stored course:*)
   const [unitGroups, setUnitGroups] = useState([]); // courses (programs), each with ordered unitIds
@@ -622,7 +617,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     try {
       let lesson;
       const { problem } = await authoringExtract({
-        scope: traceScope, what: 'lesson', conversationText: buildConversationText(chatMessages), messages: chatMessages.length,
+        what: 'lesson', conversationText: buildConversationText(chatMessages),
         check: (md) => {
           lesson = parseLessonPrompt(lessonId, md);
           return lesson.name && lesson.exemplar && lesson.learningObjectives.length ? null : 'Could not build a complete lesson. Keep refining with the agent.';
@@ -659,7 +654,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const { markdown: md } = await authoringExtract({ scope: traceScope, what: 'lesson', conversationText: buildConversationText(chatMessages), messages: chatMessages.length });
+      const { markdown: md } = await authoringExtract({ what: 'lesson', conversationText: buildConversationText(chatMessages) });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -684,7 +679,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={onCancel} aria-label="Back to lessons">&larr; Back</Button>
         <h1 className="text-2xl font-bold">{isCreate ? 'New Lesson' : 'Edit Lesson'}</h1>
-        <TraceButton scope={traceScope} className="ml-auto" label="Trace: what plato did behind this conversation" />
       </div>
 
       {error && (

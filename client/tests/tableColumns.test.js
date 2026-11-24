@@ -37,7 +37,7 @@ describe('table columns', () => {
     assert.deepEqual(p.hidden, ['fld_x']);
     assert.deepEqual(reconcile(COLS, { nonsense: true }), defaultPrefs(COLS));
   });
-  it('a hidden-by-default column added later (Trace, #595) stays hidden for a layout saved before it, in its default place', () => {
+  it('a hidden-by-default column added later stays hidden for a layout saved before it, in its default place', () => {
     const before = COLS.filter((c) => c.id !== 'fld_x');
     const saved = toggleColumn(before, moveColumn(before, null, 'userId', -1), 'email', false);
     const cols = [...COLS.slice(0, 3), { id: 'trace', label: 'Trace', defaultHidden: true }, ...COLS.slice(3)];

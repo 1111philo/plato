@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createTrace, hashText, storableMessages, storableBody, rebuildRequest, rulesApplied, isTraceOn, traceTurnedOnBy, traceKey,
+  createTrace, hashText, storableMessages, storableBody, rebuildRequest, rulesApplied, isTraceOn, withTraceScope, traceKey,
   LINK_EXCERPT_CHARS, MAX_PART_CHARS,
 } from '../src/lib/lessonTrace.js';
 
@@ -13,13 +13,16 @@ function recorder(extra = {}) {
 }
 
 describe('switches', () => {
-  it('either the person’s own switch or the admin’s turns it on', () => {
-    assert.equal(isTraceOn({}), false);
-    assert.equal(isTraceOn({ preferences: { traceMode: false }, user: {} }), false);
-    assert.equal(isTraceOn({ preferences: { traceMode: true } }), true);
-    assert.equal(isTraceOn({ user: { traceMode: true } }), true);
-    assert.equal(traceTurnedOnBy({ user: { traceMode: true } }), 'team');
-    assert.equal(traceTurnedOnBy({ user: {} }), 'self');
+  it('is on one conversation at a time', () => {
+    assert.equal(isTraceOn({}, 'lesson-a'), false);
+    assert.equal(isTraceOn(null, 'lesson-a'), false);
+    assert.equal(isTraceOn({ traceScopes: ['lesson-a'] }, 'lesson-a'), true);
+    assert.equal(isTraceOn({ traceScopes: ['lesson-a'] }, 'lesson-b'), false, 'only the lesson it was turned on for');
+    assert.equal(isTraceOn({ traceScopes: ['lesson-a'] }), false, 'no scope, nothing recorded');
+    assert.equal(isTraceOn({ traceMode: true }, 'lesson-a'), false, 'the old account-wide switch no longer records');
+    assert.deepEqual(withTraceScope({ name: 'Ada', traceScopes: ['a'] }, 'b', true), { name: 'Ada', traceScopes: ['a', 'b'] });
+    assert.deepEqual(withTraceScope({ traceScopes: ['a', 'b'] }, 'a', false), { traceScopes: ['b'] });
+    assert.deepEqual(withTraceScope({ traceScopes: ['a'] }, 'a', true), { traceScopes: ['a'] }, 'never twice');
     assert.equal(traceKey('wp-1', 't', '123'), 'trace:wp-1:t:123');
   });
 });

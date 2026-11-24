@@ -23,7 +23,8 @@ import LessonOverview from '../components/chat/LessonOverview.jsx';
 import LessonTrace from '../components/chat/LessonTrace.jsx';
 import Footprints from 'lucide-react/dist/esm/icons/footprints';
 import { useMediaQuery } from '../hooks/useMediaQuery.js';
-import { isTraceOn } from '../lib/lessonTrace.js';
+import useTraceSwitch from '../hooks/useTraceSwitch.js';
+import TraceRecordingDot from '../components/chat/TraceRecordingDot.jsx';
 import { progressLabel } from '../lib/lessonWork.js';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
@@ -36,7 +37,7 @@ export default function LessonChat() {
   const { state, dispatch } = useApp();
   const { lessons } = state;
   const lesson = lessons.find(c => c.lessonId === lessonGroupId);
-  const { impersonatedUser, user } = useAuth();
+  const { impersonatedUser } = useAuth();
   const impersonating = !!impersonatedUser;
 
   // The resume/start effect below must run once per lesson — NOT every time
@@ -76,20 +77,24 @@ export default function LessonChat() {
   // The lesson overview (#438); `?view=overview` opens it (from the lessons
   // page; `?view=work` is the old name).
   const [showOverview, setShowOverview] = useState(() => ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')));
-  // The Trace (#595): offered when this lesson has one or is being recorded.
-  // Wide screens dock it beside the chat; narrow ones open a dialog. While
-  // viewing as a learner, only what they recorded counts (the switches read
-  // here would be the admin's).
+  // The Trace (#595): pressing its button starts recording this lesson and
+  // shows it; "Stop tracing" in it ends that. Wide screens dock it beside the
+  // chat; narrow ones open a dialog. Not offered while viewing as a learner.
   const [showTrace, setShowTrace] = useState(false);
   const [traceFocusAt, setTraceFocusAt] = useState(null);
   const [traceFrame, setTraceFrame] = useState({ top: 0, bottom: 0 });
   const traceButtonRef = useRef(null);
   const wide = useMediaQuery('(min-width: 1024px)');
-  const recording = !impersonating && isTraceOn({ preferences: state.preferences, user });
-  const hasTrace = !!lessonKB?.trace || recording;
+  const traceSwitch = useTraceSwitch(lessonGroupId);
+  const recording = traceSwitch.on;
+  const hasTrace = !impersonating;
   const traceDocked = showTrace && wide;
   const openTrace = (focusAt = null) => { setTraceFocusAt(focusAt); setShowTrace(true); };
   const closeTrace = () => { setShowTrace(false); setTraceFocusAt(null); traceButtonRef.current?.focus(); };
+  const pressTrace = () => {
+    if (!recording) { traceSwitch.set(true); openTrace(); } else if (showTrace) closeTrace(); else openTrace();
+  };
+  const stopTrace = () => { traceSwitch.set(false); closeTrace(); };
   // The docked panel fills the space the page's <main> has (below the app
   // header, above the footer).
   useEffect(() => {
@@ -368,7 +373,7 @@ export default function LessonChat() {
       case MSG_TYPES.GUIDE:
         return (
           <div key={idx}>
-            <AgentActivity agents={msg.metadata?.agents} onOpenTrace={lessonKB?.trace ? () => openTrace(msg.timestamp || Date.now()) : undefined} />
+            <AgentActivity agents={msg.metadata?.agents} onOpenTrace={lessonKB?.trace && !impersonating ? () => openTrace(msg.timestamp || Date.now()) : undefined} />
             <AssistantMessage content={msg.content} />
           </div>
         );
@@ -453,8 +458,9 @@ export default function LessonChat() {
               <ProgressBar lessonKB={lessonKB} />
             </div>
             {hasTrace && (
-              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={() => (showTrace ? closeTrace() : openTrace())} title="Trace">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} className="relative" onClick={pressTrace} title={recording ? 'Trace (recording)' : 'Start Trace for this lesson'}>
                 <Footprints className="size-4" />
+                {recording && <span className="absolute -top-0.5 -right-0.5"><TraceRecordingDot /></span>}
               </Button>
             )}
             {isCustomLesson && (
@@ -498,9 +504,10 @@ export default function LessonChat() {
             <ProgressBar lessonKB={lessonKB} />
           </div>
           {hasTrace && (
-            <Button ref={traceButtonRef} variant="ghost" size="icon-sm" onClick={() => (showTrace ? closeTrace() : openTrace())}
-              aria-label="Trace: what plato did behind this conversation" aria-expanded={showTrace} aria-controls="lesson-trace" title="Trace">
+            <Button ref={traceButtonRef} variant="ghost" size="icon-sm" className="relative" onClick={pressTrace}
+              aria-label={recording ? 'Trace for this lesson (recording)' : 'Start Trace for this lesson'} aria-expanded={showTrace} aria-controls="lesson-trace" title={recording ? 'Trace (recording)' : 'Start Trace for this lesson'}>
               <Footprints aria-hidden="true" className="size-4" />
+              {recording && <span className="absolute -top-0.5 -right-0.5"><TraceRecordingDot /></span>}
             </Button>
           )}
           {isCustomLesson && (
@@ -612,7 +619,8 @@ export default function LessonChat() {
 
       <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
       <LessonTrace scope={lessonGroupId} open={showTrace} onClose={closeTrace} docked={traceDocked} focusAt={traceFocusAt}
-        stamp={lessonKB?.trace} recording={recording} frame={traceFrame} title={lesson.name} />
+        stamp={lessonKB?.trace} recording={recording} frame={traceFrame} title={lesson.name}
+        onStop={stopTrace} error={traceSwitch.error} />
 
 
       {confirmModal && (

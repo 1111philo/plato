@@ -1,13 +1,14 @@
 /**
- * The Trace for one conversation (#595), opened from the lesson header.
+ * The Trace for one conversation (#595), opened from its Trace button.
+ * Pressing that button starts recording the conversation; "Stop tracing"
+ * here ends it and closes the Trace (hooks/useTraceSwitch.js).
  *
  * Wide screens: docked beside the chat (`docked`), so a person can watch the
  * steps of a reply appear while they keep chatting. It is a complementary
  * landmark, not a modal: no focus trap; Escape closes it when focus is
  * inside. Narrow screens: a dialog, like the lesson overview.
  *
- * Reads the stored trace (storage.listTraceRecords, which in View as User
- * reads the learner's), and listens to the turn in progress
+ * Reads the stored trace (storage.listTraceRecords), and listens to the turn in progress
  * (traceSession.subscribeTrace). Screen readers hear one polite "Trace
  * updated" when a turn's trace is saved, not every step.
  */
@@ -22,11 +23,23 @@ import { STEPS, AGENTS } from '../../lib/transparency.js';
 import TraceTimeline from './TraceTimeline.jsx';
 import TraceTechnology from './TraceTechnology.jsx';
 import { Button } from '@/components/ui/button';
+import TraceRecordingDot from './TraceRecordingDot.jsx';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 const liveTitle = (step) => (step.type === 'call' ? `${AGENTS[step.agent]?.label || step.agent}${step.purpose ? `: ${step.purpose}` : ''}` : STEPS[step.type]?.title || step.type);
 
-export default function LessonTrace({ scope, open, onClose, docked, focusAt, stamp, recording, frame, title }) {
+/** "Recording", and the way to stop. */
+function Recording({ onStop, error }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs"><TraceRecordingDot withText /></span>
+      <Button variant="outline" size="sm" onClick={onStop}>Stop tracing</Button>
+      {error && <p className="w-full text-xs text-red-800 dark:text-red-300" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+export default function LessonTrace({ scope, open, onClose, onStop, error, docked, focusAt, stamp, recording, frame, title }) {
   const [view, setView] = useState(null);
   const [items, setItems] = useState([]);
   const [plugins, setPlugins] = useState([]);
@@ -141,8 +154,9 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
         style={frame}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+        <div className="flex items-center border-b border-border px-4 py-2">
           <h2 id="lesson-trace-title" ref={titleRef} tabIndex={-1} className="text-sm font-semibold rounded-sm focus-visible:outline-2 focus-visible:outline-ring">Trace</h2>
+          {recording && <span className="ml-auto mr-2"><Recording onStop={onStop} error={error} /></span>}
           <Button variant="ghost" size="icon-sm" aria-label="Close trace" onClick={onClose}>
             <X aria-hidden="true" className="size-4" />
           </Button>
@@ -160,6 +174,7 @@ export default function LessonTrace({ scope, open, onClose, docked, focusAt, sta
         <DialogHeader>
           <DialogTitle ref={titleRef} tabIndex={-1}>Trace</DialogTitle>
           <DialogDescription>What plato did behind this conversation.</DialogDescription>
+          {recording && <Recording onStop={onStop} error={error} />}
         </DialogHeader>
         <div className="min-w-0 overflow-y-auto overflow-x-hidden flex-1 pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
           {body}

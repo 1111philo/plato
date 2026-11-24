@@ -1,46 +1,33 @@
 /**
- * A "Trace" button for the places outside a lesson that Trace mode records
- * (#595): Settings → Learner Profile (scope `profile`), the lesson editor
- * (`author-<lessonId>`) and the knowledge base editors (`kb`). It opens that
- * scope's Trace as a dialog.
- *
- * Shown while Trace mode is on for the signed-in person. With `whenRecorded`
- * it is also shown when the scope already has a trace, so what was recorded
- * stays readable after the switch is turned off.
+ * The Trace button for Settings → Learner Profile (#595, scope `profile`).
+ * Pressing it starts recording changes to the profile, if it wasn't already,
+ * and opens the Trace as a dialog; "Stop tracing" there ends it. While it
+ * records, the button says so.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import Footprints from 'lucide-react/dist/esm/icons/footprints';
-import { useApp } from '../../contexts/AppContext.jsx';
-import { useAuth } from '../../contexts/AuthContext.jsx';
-import { listTraceRecords } from '../../../js/storage.js';
-import { isTraceOn } from '../../lib/lessonTrace.js';
+import useTraceSwitch from '../../hooks/useTraceSwitch.js';
 import LessonTrace from './LessonTrace.jsx';
 import { Button } from '@/components/ui/button';
+import TraceRecordingDot from './TraceRecordingDot.jsx';
 
-export default function TraceButton({ scope, label, whenRecorded = false, size = 'sm', className }) {
-  const { state } = useApp();
-  const { user } = useAuth();
-  const on = isTraceOn({ preferences: state.preferences, user });
-  const [recorded, setRecorded] = useState(false);
+export default function TraceButton({ scope, what, size = 'sm', className }) {
+  const { on, set, error } = useTraceSwitch(scope);
   const [open, setOpen] = useState(false);
   const buttonRef = useRef(null);
+  const close = () => { setOpen(false); requestAnimationFrame(() => buttonRef.current?.focus()); };
 
-  useEffect(() => {
-    if (!whenRecorded || on) return undefined;
-    let cancelled = false;
-    listTraceRecords(scope, 't').then((items) => { if (!cancelled) setRecorded(items.length > 0); });
-    return () => { cancelled = true; };
-  }, [whenRecorded, on, scope]);
-
-  if (!on && !recorded) return null;
   return (
     <>
-      <Button ref={buttonRef} variant="outline" size={size} className={className} aria-label={label} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <Button ref={buttonRef} variant="outline" size={size} className={className}
+        aria-label={on ? `Trace for ${what} (recording)` : `Start Trace for ${what}`} aria-haspopup="dialog"
+        onClick={() => { if (!on) set(true); setOpen(true); }}>
         <Footprints aria-hidden="true" className="size-4" />
         Trace
+        {on && <TraceRecordingDot withText />}
       </Button>
-      <LessonTrace scope={scope} open={open} docked={false} recording={on}
-        onClose={() => { setOpen(false); requestAnimationFrame(() => buttonRef.current?.focus()); }} />
+      <LessonTrace scope={scope} open={open} docked={false} recording={on} error={error}
+        onStop={() => { set(false); close(); }} onClose={close} />
     </>
   );
 }

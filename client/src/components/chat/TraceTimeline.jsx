@@ -240,7 +240,7 @@ function Row({ exchange: e, onOpen, buttonRef }) {
  * @param {string[]} p.live    titles of steps of an exchange happening now
  * @param {number} [p.focusAt] a message's timestamp: open the exchange that produced it
  * @param {object} [p.stamp]   lessonKB.trace
- * @param {boolean} [p.recording] Trace mode is on for this person now
+ * @param {boolean} [p.recording] Trace is recording this conversation now
  */
 export default function TraceTimeline({ view, loading, live = [], focusAt, stamp, recording }) {
   const [openId, setOpenId] = useState(null);
@@ -302,7 +302,7 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
       </p>
       {stamp?.partial && <p>Recording began partway through this lesson. Earlier messages weren’t recorded.</p>}
       {stamp?.full && <p>This trace is full. Later messages weren’t recorded.</p>}
-      {stamp && !recording && !stamp.full && <p>Trace mode is off now, so new messages aren’t recorded.</p>}
+      {stamp && !recording && !stamp.full && <p>Recording is off, so new messages aren’t recorded.</p>}
 
       {live.length > 0 && (
         <section aria-labelledby="trace-live" className="rounded-md border border-border p-2">

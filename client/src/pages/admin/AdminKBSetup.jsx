@@ -7,7 +7,6 @@ import { buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { authoringExtract, kbProblem } from '../../lib/authoringEngine.js';
 import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import TraceButton from '../../components/chat/TraceButton.jsx';
 import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -22,7 +21,7 @@ export default function AdminKBSetup() {
   const {
     chatMessages, readiness, busy, setBusy, error, setError,
     streamingText, srAnnouncement, start, handleSend,
-  } = useAuthoringChat({ agent: 'knowledge-base-editor', scope: 'kb', title: 'Set Up Knowledge Base — plato' });
+  } = useAuthoringChat({ agent: 'knowledge-base-editor', title: 'Set Up Knowledge Base — plato' });
 
   // Markdown preview pane — manual refresh via the knowledge-base-extractor,
   // mirroring the lesson editor. Never persisted until the admin saves.
@@ -45,7 +44,7 @@ export default function AdminKBSetup() {
     setBusy('creating');
     try {
       const { problem } = await authoringExtract({
-        scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), messages: chatMessages.length,
+        what: 'knowledgeBase', conversationText: buildConversationText(chatMessages),
         check: kbProblem,
         save: async (md) => {
           setPreviewMarkdown(md);
@@ -79,7 +78,7 @@ export default function AdminKBSetup() {
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const { markdown: md } = await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: buildConversationText(chatMessages), messages: chatMessages.length });
+      const { markdown: md } = await authoringExtract({ what: 'knowledgeBase', conversationText: buildConversationText(chatMessages) });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -103,10 +102,7 @@ export default function AdminKBSetup() {
     <main className="max-w-5xl mx-auto p-6" aria-label="Knowledge base setup">
       <div className="flex items-center justify-between mb-2">
         <h1 className="text-2xl font-bold">Set Up Your Knowledge Base</h1>
-        <div className="flex items-center gap-2">
-          <TraceButton scope="kb" label="Trace: what plato did behind this conversation" />
-          <Button variant="ghost" size="sm" onClick={() => navigate('/plato')}>Skip for now</Button>
-        </div>
+        <Button variant="ghost" size="sm" onClick={() => navigate('/plato')}>Skip for now</Button>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
         The knowledge base tells plato&apos;s AI about your program — who you are, what you do, and how things work.

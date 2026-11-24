@@ -259,8 +259,6 @@ export default function Settings() {
 
       <ChatPreferences />
 
-      <TracePreference />
-
       <EmailPreferences />
 
       <Card>
@@ -290,7 +288,7 @@ export default function Settings() {
             <Button variant="outline" onClick={() => setFeedbackOpen(true)}>
               Add Feedback
             </Button>
-            <TraceButton scope="profile" whenRecorded size="default" label="Trace: what plato did with your notes" />
+            <TraceButton scope="profile" size="default" what="your notes" />
           </div>
         </CardContent>
       </Card>
@@ -562,52 +560,6 @@ function ChatPreferences() {
             <span>Enter <span className="text-muted-foreground">(Shift+Enter adds a new line)</span></span>
           </label>
         </fieldset>
-        <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Trace mode (#595): record what plato does behind this person's
-// conversations, so they can read it (a Trace button appears in lessons).
-// Their own switch is `preferences.traceMode`; an admin can also turn it on
-// for them (`user.traceMode`), and then only an admin can turn it off.
-function TracePreference() {
-  const { state, dispatch } = useApp();
-  const { user } = useAuth();
-  const [feedback, setFeedback] = useState('');
-  const prefs = state.preferences || {};
-  const byTeam = !!user?.traceMode;
-
-  async function update(traceMode) {
-    const next = { ...prefs, traceMode };
-    dispatch({ type: 'SET_PREFERENCES', preferences: next });
-    try {
-      syncIfUnsaved(await savePreferences(next), 'preferences');
-      setFeedback('Saved.');
-    } catch {
-      setFeedback('Couldn’t save. Try again.');
-    }
-    setTimeout(() => setFeedback(''), 2000);
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Trace mode</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-0.5 accent-primary" checked={byTeam || !!prefs.traceMode} disabled={byTeam}
-            aria-describedby="trace-mode-help" onChange={(e) => update(e.target.checked)} />
-          <span>Record what plato does behind my conversations</span>
-        </label>
-        <p id="trace-mode-help" className="text-sm text-muted-foreground">
-          {byTeam
-            ? 'Turned on by your classroom team. '
-            : ''}
-          Each lesson gets a Trace button showing every step: what was sent to the AI model, what came back, and what plato’s code did with it. Your classroom team can read it too.
-        </p>
         <p className="text-sm text-muted-foreground min-h-5" role="status" aria-live="polite">{feedback}</p>
       </CardContent>
     </Card>

@@ -1,16 +1,17 @@
 /**
- * Opens a Trace recorder for the signed-in person when Trace mode is on
- * (#595). The impure half of lib/lessonTrace.js: it reads the two switches
- * (the person's own preference and the admin-set flag), writes records
+ * Opens a Trace recorder for the signed-in person when Trace is on for a
+ * conversation (#595). The impure half of lib/lessonTrace.js: it reads the
+ * two switches (the person's own, per conversation, and the admin-set flag
+ * for everything), writes records
  * through storage, and lets the Trace panel listen to a conversation as it
  * happens.
  *
- * `openTrace` resolves to `undefined` when Trace mode is off, which is what
+ * `openTrace` resolves to `undefined` when Trace is off for the scope, which is what
  * every caller passes on as `trace`; nothing else in the app checks the
  * switches.
  */
 import { getPreferences, getAuthUser, putTraceRecord, listTraceRecords } from '../../js/storage.js';
-import { createTrace, isTraceOn, traceTurnedOnBy, MAX_SCOPE_BYTES } from './lessonTrace.js';
+import { createTrace, isTraceOn, MAX_SCOPE_BYTES } from './lessonTrace.js';
 
 /* global __PLATO_BUILD__ */
 const BUILD = typeof __PLATO_BUILD__ === 'string' ? __PLATO_BUILD__ : 'dev';
@@ -21,10 +22,10 @@ const listeners = new Map(); // scope -> Set<fn>
 // How much each scope's trace holds (characters written), and which are full.
 const scopeBytes = new Map();
 const full = new Set();
-// Scopes with no record of their own to carry the size (`profile`, `kb`,
-// `author-<lessonId>`): what is already stored, read once a session.
+// Scopes with no record of their own to carry the size (`profile`):
+// what is already stored, read once a session.
 const stored = new Map(); // scope -> Promise<number>
-const SELF_SIZED = new Set(['profile', 'authoring']);
+const SELF_SIZED = new Set(['profile']);
 // Whose trace this session has been counting. A different person signing in
 // in the same tab starts from nothing.
 let owner = null;
@@ -33,14 +34,6 @@ const lastStart = new Map(); // `${scope}:${record}` -> ms
 /** Forget everything this session knows about traces (a new person; tests). */
 export function resetTraceSession() {
   knownParts.clear(); scopeBytes.clear(); full.clear(); stored.clear();
-}
-
-/**
- * The scope for a lesson's authoring chat: `author-<lessonId>`, in the
- * characters a sync key allows.
- */
-export function authorScope(lessonId) {
-  return `author-${String(lessonId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 110)}`;
 }
 
 /**
@@ -75,20 +68,19 @@ function emit(scope, event) {
   }
 }
 
-/** Who has Trace mode on for the signed-in person: `{ on, by }`. */
-export async function traceStatus() {
+/** Whether Trace is on for `scope` for the signed-in person: `{ on, userId }`. */
+export async function traceStatus(scope) {
   const [preferences, user] = await Promise.all([getPreferences().catch(() => null), getAuthUser().catch(() => null)]);
-  return { on: isTraceOn({ preferences, user }), by: traceTurnedOnBy({ user }), userId: user?.userId || null };
+  return { on: isTraceOn(preferences, scope), userId: user?.userId || null };
 }
 
 /**
- * A recorder for one turn in `scope`, or undefined when Trace mode is off.
+ * A recorder for one turn in `scope`, or undefined when Trace is off for it.
  * `record` is 't' (a turn) or 'b' (a follow-up agent). `kind` is 'start' |
- * 'turn' | 'followup' (a lesson), 'profile' (Settings → Learner Profile) or
- * 'authoring' (the lesson editor and knowledge base chats).
+ * 'turn' | 'followup' (a lesson), or 'profile' (Settings → Learner Profile).
  */
 export async function openTrace(scope, kind, { partial = false, record = 't', used = 0 } = {}) {
-  const status = await traceStatus().catch(() => ({ on: false }));
+  const status = await traceStatus(scope).catch(() => ({ on: false }));
   if (!status.on) return undefined;
   if (status.userId !== owner) { resetTraceSession(); owner = status.userId; }
   // Lessons carry their size on lessonKB.trace.bytes (`used`); the other
@@ -116,7 +108,6 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
     knownParts: knownParts.get(scope),
     app: {
       build: BUILD,
-      by: status.by,
       language: typeof navigator !== 'undefined' ? navigator.languages?.[0] || navigator.language || null : null,
     },
     onStep: (step) => emit(scope, { kind, step }),
@@ -134,7 +125,7 @@ export async function openTrace(scope, kind, { partial = false, record = 't', us
 
 /**
  * Run a follow-up agent (profile, unit note) with its own trace record, or
- * with `undefined` when Trace mode is off. A failure is recorded, then thrown
+ * with `undefined` when Trace is off for the lesson. A failure is recorded, then thrown
  * on to the queue, which logs it as before.
  */
 export async function tracedFollowUp(scope, agent, why, fn) {

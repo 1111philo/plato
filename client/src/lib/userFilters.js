@@ -19,7 +19,6 @@ function valuesOf(item, facet) {
   if (facet.key === 'status') return statusesOf(item);
   if (facet.key === 'role') return item._type === 'user' ? [normalizeRole(item.role)] : null;
   if (facet.key === 'slack') return item._type === 'user' ? [item._user?.slackUserId ? 'linked' : 'unlinked'] : null;
-  if (facet.key === 'trace') return item._type === 'user' ? [item._user?.traceMode ? 'on' : 'off'] : null;
   if (facet.key === 'signin') return item._type === 'user' ? signInOf(item._user) : null;
   if (facet.key === 'group') return [item.userGroup || NO_GROUP];
   if (facet.field) {
@@ -37,9 +36,7 @@ function valuesOf(item, facet) {
  * Slack: Linked / Not linked (signed-up users only), shown when the Slack
  * plugin is connected. `sso` adds Sign-in: Password / SSO (signed-up users
  * only; someone with both matches both) and Status → Wait list: email verified,
- * shown when single sign-on is in play (lib/signIn.js `ssoInPlay`). Trace mode:
- * On / Off (#595) is always offered: the admin's flag on the account, signed-up
- * users only.
+ * shown when single sign-on is in play (lib/signIn.js `ssoInPlay`).
  */
 export function buildFacets({ items, groups = [], userFields = [], slack = false, sso = false }) {
   const facets = [
@@ -59,7 +56,6 @@ export function buildFacets({ items, groups = [], userFields = [], slack = false
   if (sso) {
     facets.push({ key: 'signin', label: 'Sign-in', options: [{ value: 'password', label: 'Password' }, { value: 'sso', label: 'SSO' }] });
   }
-  facets.push({ key: 'trace', label: 'Trace mode', options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }] });
   for (const f of userFields) {
     const options = f.type === 'dropdown'
       ? [...(f.options || []).map((o) => ({ value: o, label: o })), { value: '__empty', label: 'Empty' }]

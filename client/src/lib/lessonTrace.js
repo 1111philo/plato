@@ -29,14 +29,19 @@ export const LINK_EXCERPT_CHARS = 2000;
 const INLINE_PART_CHARS = 600;
 const LINK_MARKER = '[REFERENCE CONTEXT';
 
-/** Whether Trace mode is on for this person: their own switch, or an admin's. */
-export function isTraceOn({ preferences, user } = {}) {
-  return !!(preferences?.traceMode || user?.traceMode);
+/**
+ * Whether Trace records `scope` (a lesson id, or `profile`). A person starts
+ * it one conversation at a time, from that conversation's Trace button
+ * (`preferences.traceScopes`), so nothing is recorded that nobody asked to read.
+ */
+export function isTraceOn(preferences, scope) {
+  return !!scope && Array.isArray(preferences?.traceScopes) && preferences.traceScopes.includes(scope);
 }
 
-/** Who turned it on: `'team'` (an admin, for this person) or `'self'`. */
-export function traceTurnedOnBy({ user } = {}) {
-  return user?.traceMode ? 'team' : 'self';
+/** `preferences` with `scope` switched on or off. */
+export function withTraceScope(preferences, scope, on) {
+  const scopes = (Array.isArray(preferences?.traceScopes) ? preferences.traceScopes : []).filter((x) => x !== scope);
+  return { ...(preferences || {}), traceScopes: on ? [...scopes, scope] : scopes };
 }
 
 /** `trace:<scope>:<kind>:<id>`: kind t = a turn, b = a follow-up agent, p = a prompt part. */
@@ -104,14 +109,13 @@ function errorInfo(err) {
 }
 
 /**
- * Start recording one turn (or a lesson start, a follow-up agent, an
- * authoring turn).
+ * Start recording one turn (or a lesson start, or a follow-up agent).
  *
  * @param {object} o
- * @param {string} o.scope    a lesson id, 'profile', 'kb', or 'author-<lessonId>'
- * @param {string} o.kind     'start' | 'turn' | 'followup' | 'profile' | 'authoring'
+ * @param {string} o.scope    a lesson id, or 'profile'
+ * @param {string} o.kind     'start' | 'turn' | 'followup' | 'profile'
  * @param {function} o.save   async (key, data) => ({ ok }) — storage.putTraceRecord
- * @param {object} [o.app]    what was running: `{ build, language, by }`
+ * @param {object} [o.app]    what was running: `{ build, language }`
  * @param {boolean} [o.partial] recording began after the lesson did
  * @param {Set} [o.knownParts] hashes already stored for this scope (shared across turns)
  * @param {function} [o.onStep] called with each step as it is recorded (the live panel)

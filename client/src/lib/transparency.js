@@ -151,13 +151,6 @@ export const STEPS = Object.freeze({
   unitNoteSaved: { stage: 'background', title: 'The unit note was updated', source: 'code', means: 'The short note the coach in this unit’s other lessons will see.' },
   unitNoteUnchanged: { stage: 'background', title: 'The unit note was not changed', source: 'code', means: 'Nothing usable came back, so the note stayed as it was.' },
   noteChange: { stage: 'sent', title: 'What you did', source: 'person', means: 'A note you added to or removed from your profile in Settings. Notes you add are kept word for word.' },
-  authorInput: { stage: 'sent', title: 'What you wrote', source: 'person', means: 'Your message in the editing conversation.' },
-  authoringOpened: { stage: 'sent', title: 'plato started the conversation', source: 'code', means: 'The editor opens with a first message that plato’s code writes, so the agent replies first.' },
-  authoringTail: { stage: 'prepared', title: 'The conversation so far', source: 'code', means: 'plato sends the agent the last 15 messages of the editing conversation.' },
-  authoringParsed: { stage: 'answered', title: 'What plato read from the reply', source: 'code', means: 'The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar.' },
-  extractAsked: { stage: 'sent', title: 'What you asked for', source: 'person', means: 'You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it.' },
-  extracted: { stage: 'answered', title: 'What was written, and whether it could be used', source: 'code', means: 'The model wrote the text. plato’s code checked it had what it needs before showing or saving it.' },
-  authoringSaved: { stage: 'recorded', title: 'Saved', source: 'code', means: 'Whether what was written reached plato’s database.' },
   shown: { stage: 'recorded', title: 'What you were shown', source: 'code', means: 'The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed.' },
   error: { stage: 'recorded', title: 'This attempt failed', source: 'code', means: 'Nothing from this attempt was saved to the conversation.' },
 });

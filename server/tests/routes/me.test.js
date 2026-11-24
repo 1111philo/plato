@@ -290,10 +290,6 @@ describe('custom user fields (#364)', () => {
     assert.deepEqual(data.missing, ['fld_org']);
   });
 
-  it('GET /v1/me says whether an admin turned Trace mode on', async () => {
-    assert.equal((await (await authedReq(makeApp(), 'GET', '/v1/me')).json()).traceMode, false);
-  });
-
   it('GET /v1/me includes customFields', async () => {
     const data = await (await authedReq(makeApp(), 'GET', '/v1/me')).json();
     assert.deepEqual(data.customFields, { fld_role: 'Teacher' });

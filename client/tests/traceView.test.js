@@ -14,7 +14,7 @@ const { STEPS, STAGES } = await import('../src/lib/transparency.js');
 const ID = LESSON.lessonId;
 async function record(messages) {
   reset(); clearCache(); signIn();
-  await savePreferences({ name: '', traceMode: true });
+  await savePreferences({ name: '', traceScopes: [ID] });
   await startLesson(ID, LESSON, () => {});
   for (const text of messages) { try { await sendMessage(ID, LESSON, text, null, [], () => {}); } catch { /* a failed turn is part of the script */ } }
   await settle();
@@ -178,15 +178,11 @@ describe('describeTrace', () => {
 
   it('profile notes and authoring chats: titles, verdicts and sentences that fit them', async () => {
     const { addLearnerNote, removeLearnerNote } = await import('../src/lib/profileQueue.js');
-    const { authoringTurn, authoringExtract } = await import('../src/lib/authoringEngine.js');
     const { resetTraceSession } = await import('../src/lib/traceSession.js');
     reset(); clearCache(); resetTraceSession(); signIn();
-    await savePreferences({ name: '', traceMode: true });
+    await savePreferences({ name: '', traceScopes: ['profile'] });
     await addLearnerNote('I use a Chromebook.');
     await (await removeLearnerNote(0)).done;
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', messages: [{ role: 'user', content: 'I want to create a knowledge base for my program.' }] });
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'We teach adults.', messages: [{ role: 'user', content: 'We teach adults.' }], readinessBefore: 1 });
-    await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: 'User: We teach adults.', save: async () => {} });
     await settle();
     const of = (scope) => describeTrace([...store.keys()].filter((k) => k.startsWith(`trace:${scope}:`)).map((dataKey) => ({ dataKey, data: store.get(dataKey) })));
 
@@ -197,14 +193,7 @@ describe('describeTrace', () => {
     assert.equal(profile.exchanges[0].verdict.source, 'model');
     assert.match(profile.exchanges[0].verdict.text, /kept your own notes/);
 
-    const kb = of('kb');
-    assert.deepEqual(kb.exchanges.map((t) => t.title), ['Conversation start', 'Your message: “We teach adults.”', 'Save: writing the knowledge base']);
-    const parsed = kb.exchanges[1].steps.find((s) => s.type === 'authoringParsed');
-    assert.match(parsed.summary, /^Readiness score: 2 of 10 \(it was 1\)\./);
-    assert.equal(parsed.source, 'code');
-    assert.match(kb.exchanges[1].verdict.text, /readiness score are the model’s own/);
-    assert.match(kb.exchanges[2].verdict.text, /checked it and saved it/);
-    for (const turn of [...profile.exchanges, ...kb.exchanges]) {
+    for (const turn of profile.exchanges) {
       for (const s of turn.steps) assert.ok(s.summary && !/undefined|\[object Object\]|NaN/.test(s.title + s.summary), `${s.type}: "${s.summary}"`);
     }
   });

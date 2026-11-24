@@ -573,9 +573,17 @@ which it links to when the conversation has a trace.
 
 A readable record of everything behind a conversation: what was sent to the
 model, what came back, and every place plato's instructions or code shaped the
-result. Any user can turn it on in Settings (`preferences.traceMode`); an admin
-can turn it on for a person (`user.traceMode`, Admin → Users). Either one
-records. "Audit" keeps its older meaning here (the audit log, View as User).
+result. It is for learners, **one conversation at a time**: pressing a
+lesson's Trace button (or the one in Settings → Learner Profile) starts
+recording it and shows the Trace; "Stop tracing" in the Trace ends it. The
+scopes being recorded are `preferences.traceScopes`; `lessonTrace.isTraceOn
+(preferences, scope)` is the one check. Nothing is recorded that nobody asked
+to read, and it's on only where someone is looking (Blake, 2026-11-24).
+Admins have no Trace: not for the authoring chats, not in View as User, and
+no per-person switch. (An account-wide Settings switch and an admin
+per-person switch shipped first, on playground only; `preferences.traceMode`
+and `user.traceMode` from them are ignored.) "Audit" keeps its older meaning
+here (the audit log, View as User).
 
 **It is off by default and a strict no-op when off.** A request without
 `trace: true` gets byte-identical responses, and no record is written.
@@ -590,7 +598,7 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
 | `trace:<scope>:b:<ms>` | one follow-up agent (profile, unit note) |
 | `trace:<scope>:p:<hash>` | one part of a system prompt, stored once per distinct text |
 
-`<scope>` is a lesson id, `profile`, `kb`, or `author-<lessonId>`.
+`<scope>` is a lesson id or `profile`.
 
 - **Out of the bulk load.** `GET /v1/sync` skips `trace:` at the database, as
   it does `screenshot:` (`getSyncDataExcept` takes a list; the ranges come from
@@ -602,8 +610,8 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
   the bulk payload, so the client filters what comes back.
 - **Deleted key by key.** Never add a prefix to `DELETE /v1/sync`: a rolled-back
   server would ignore it and delete all of the learner's data.
-- **Read-only for staff.** View as User (`?asUserId=`) reads a learner's trace
-  like any other record; writes are refused as everywhere.
+- **Not shown to staff.** The records are ordinary sync-data, so View as User
+  could read them, but the app offers no Trace there.
 - No migration. RC-232 ignores the new keys and fields (covered by
   `upgrade-from-rc232.test.js`).
 
@@ -614,7 +622,7 @@ delete theirs. It explains behaviour; it is not tamper-proof evidence.
 Prompts are assembled in the browser, so that is where a trace is recorded.
 
 - `lib/traceSession.js` `openTrace(scope, kind)` returns a recorder when
-  either switch is on, else `undefined`. Every caller passes it on as `trace`
+  Trace is on for that scope, else `undefined`. Every caller passes it on as `trace`
   and reaches it only through `trace?.…`. That is the whole off switch.
 - `lib/lessonTrace.js` is the recorder (pure): ordered steps, each AI call
   with its request and raw reply, and `flush()`, which writes the new prompt
@@ -629,10 +637,10 @@ Prompts are assembled in the browser, so that is where a trace is recorded.
   (`rulesApplied`), saves with their HTTP status, and events.
 - Follow-up agents (profile, unit note) write their own `b` records
   (`tracedFollowUp`), since they finish after the turn was saved.
-- `lessonKB.trace = { since, by, partial? }` marks a lesson as recorded: set
-  at the start when Trace is on, or on the first recorded turn (`partial`).
-  It is removed from anything given to an agent. Recording follows the
-  switches, not the stamp: turn Trace off and it stops.
+- `lessonKB.trace = { since, partial? }` marks a lesson as recorded: set at
+  the start when Trace is on, or on the first recorded turn (`partial`). It is
+  removed from anything given to an agent. Recording follows
+  `traceScopes`, not the stamp: stop tracing and it stops.
 
 **Who decided.** `lib/transparency.js` is plato's one description of itself:
 every agent, context field, prompt part, recorded step, rule, threshold,
@@ -649,11 +657,15 @@ off, and every request can be rebuilt from the stored trace alone (replay).
 A request the trace can't reproduce means the trace is missing something.
 
 ### The Trace view
-- **Settings → Trace mode** sets `preferences.traceMode`. If an admin set
-  `user.traceMode`, the box is checked and disabled, with "Turned on by your
-  classroom team".
-- **Lesson header**: a Trace button (footprints) when the lesson has a stamp
-  or is being recorded. `components/chat/LessonTrace.jsx` shows it **docked
+- **Starting and stopping** (`hooks/useTraceSwitch.js`). The lesson header's
+  Trace button (footprints) is "Start Trace for this lesson" while off: one
+  press starts recording and opens the Trace. While recording it carries a red
+  dot, is named "Trace for this lesson (recording)", and shows or hides the
+  Trace; closing the Trace keeps recording. The Trace's header says
+  "Recording" with one "Stop tracing" button, which stops and closes it.
+  Started partway through a lesson, the timeline says recording began partway.
+  Not offered in View as User.
+- **Docked or a dialog**: `components/chat/LessonTrace.jsx` shows it **docked
   beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
   focus trap; Escape closes it from inside; focus returns to the button), and
   as a **dialog below that**. Docked, it is `position: fixed` in the space
@@ -734,8 +746,6 @@ A request the trace can't reproduce means the trace is missing something.
 - **"Behind this response"** stays as the always-on summary and gains "Open
   the trace for this reply", which opens the turn recorded just before that
   message and focuses its heading.
-- **View as User** shows the learner's trace read-only: the button depends on
-  the lesson's stamp, never on the viewer's own switches.
 - **Size**: a conversation's trace stops at about 1.5 MB
   (`MAX_SCOPE_BYTES`). The running size rides on `lessonKB.trace.bytes`, so
   the limit holds across sessions; past it the stamp gets `full: true` and
@@ -757,38 +767,26 @@ A request the trace can't reproduce means the trace is missing something.
   change to the registry must regenerate it (`npm run docs:how-it-works`).
 
 ### Beyond lessons
-Two more AI-driven places are recorded the same way, each under its own scope
-in the person's own records:
+One more place is recorded the same way, under its own scope in the
+learner's own records:
 
 | Scope | What | Trace button |
 |---|---|---|
 | `profile` | Settings → Learner Profile: each note added (Add Feedback) or removed is a turn: what the person did (`noteChange`), the profile agent's call (or `noteScreened` when the note filter held it back, with no call), and what was saved (`profileSaved` / `profileUnchanged`) | in the Learner Profile card, beside Add Feedback |
-| `author-<lessonId>` | the lesson editor's chat with the lesson creator, and each time the lesson writer is run (preview, Create/Update Lesson) | beside the editor's heading |
-| `kb` | the knowledge base editor (Customizer and first-time setup), and each run of the knowledge base writer | beside the editor's heading |
 
-- The flows live outside the pages so they can be tested from node:
+- The flow lives outside the page so it can be tested from node:
   `profileQueue.addLearnerNote` / `removeLearnerNote` (reusing
-  `saveProfileResult`, so the merge is the one the coach's observations use),
-  and `lib/authoringEngine.js` `authoringTurn` (one chat message: `authorInput`
-  or `authoringOpened`, `authoringTail`, the call, `authoringParsed` with the
-  `[READINESS: n]` score and the cleaned text) and `authoringExtract` (a writer
-  run: `extractAsked`, the call, `extracted` with the page's own check, and
-  `authoringSaved`). The three authoring pages share one hook,
-  `hooks/useAuthoringChat.js`, which replaced three copies of the same
-  streaming code.
-- A brand-new lesson already has its draft id when the editor opens
-  (`/plato/lessons/new` mints `admin-<ms>`), so its chat is recorded under that
-  lesson from the first message (`traceSession.authorScope`).
-- These conversations are session-only React state; the trace is the part
-  that is kept, in the admin's own sync records.
-- The buttons (`components/chat/TraceButton.jsx`) show while Trace mode is on
-  for the signed-in person; the profile one also when `profile` already has a
-  trace. Each opens `LessonTrace` as a dialog (`docked={false}`) and returns
-  focus to the button on close.
-- **Size.** These scopes have no record to carry `bytes`, so the first trace
+  `saveProfileResult`, so the merge is the one the coach's observations use).
+- The button (`components/chat/TraceButton.jsx`) works like the lesson's:
+  "Start Trace for your notes" starts it and opens the Trace as a dialog;
+  while recording it shows a red dot and "Recording"; "Stop tracing" ends it.
+- The admin authoring chats (lesson editor, knowledge base editor) aren't
+  traced. They share `hooks/useAuthoringChat.js` and `lib/authoringEngine.js`,
+  which replaced three copies of the same streaming code.
+- **Size.** These scopes- **Size.** `profile` has no record to carry `bytes`, so the first trace
   opened for one in a session sums the JSON size of its stored `t` and `b`
   records once (`traceSession.storedTraceBytes`, cached per scope); the session
-  adds each flush to that. Nothing is listed while Trace mode is off. A
+  adds each flush to that. Nothing is listed while Trace is off. A
   different person signing in on the same tab starts the counts afresh.
 - Record ids are the start time in ms; two turns of one scope that start in the
   same millisecond get consecutive ids, so neither overwrites the other.
@@ -847,29 +845,6 @@ Coverage: `transparency.test.js` fails for a plugin whose manifest hooks
 outside `ctx.ai`, or sends a request the recorder doesn't see.
 `server/tests/routes/lesson-started-trace.test.js` runs WordPress Info through
 the real route with a fake model and fake searches.
-
-### The admin flag
-`PATCH /v1/admin/users/:userId { traceMode }` (`users.write`) writes a
-`trace_mode_changed { on }` audit entry when it changes. Bulk update takes
-`{ field: 'traceMode', value: true|false }` for accounts (wait-list entries
-have no lessons). `/v1/me` returns `traceMode` so the learner's app records and
-Settings can say who turned it on. The flag is honoured by the client; it is a
-diagnostic, not a control.
-
-**Admin controls (Admin → Users).** Everything here reads and writes the
-account's `traceMode`, never the person's own Settings choice.
-- **Edit User**: a "Trace mode" checkbox. Save sends `traceMode` only when it
-  changed, so an unrelated edit writes no audit entry. Anyone who can open the
-  view sees it; it's disabled without `users.write`.
-- **Table**: a "Trace" column ("On" or a dash), hidden until chosen in the
-  Columns dialog. It sits last, so layouts saved before it keep their order.
-- **Filters**: "Trace mode": On / Off, signed-up users only (invites and
-  wait-list entries match neither).
-- **Update…** (`BulkUpdateDialog.jsx`): "Trace mode" with On / Off. Only the
-  selected accounts are sent; with only wait-list entries selected the option
-  isn't offered. The wording (sentence, button, result message) is in
-  `client/src/lib/traceAdmin.js`.
-- **CSV**: a "Trace mode" column ("On" or blank) after the custom fields.
 
 ## Chat auto-scroll (#319, #321)
 
@@ -2160,8 +2135,7 @@ filter.
   (Password / SSO, only while single sign-on is in play: a provider is on or
   an account is linked; signed-up users only, and someone with both matches
   both; Status then also offers "Wait list: email verified", see
-  [`SSO.md`](SSO.md#for-admins)), Trace mode (On / Off, the admin's flag;
-  signed-up users only, see [Trace mode](#trace-mode-595)), and every
+  [`SSO.md`](SSO.md#for-admins)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
   Each option shows its count.
 - Filters combine as **OR within a facet, AND across facets**. Each facet has
@@ -2183,7 +2157,6 @@ change is announced.
 - The name/open column and the actions column are fixed.
 - Every custom field is a Users column, hidden until chosen. This replaced the
   old filter-driven extra column.
-- Users also has a hidden Trace column (see [Trace mode](#trace-mode-595)).
 - Lessons adds a hidden Lesson ID column.
 - Column resizing isn't built.
 
