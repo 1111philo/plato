@@ -10,6 +10,11 @@ export const MAX_OBJECTIVES = 4;
 // which inflates from multi-session or abandoned-then-resumed lessons.
 export const MINS_PER_EXCHANGE = 1.8;
 
+/** The progress scale: a lesson completes at MAX_PROGRESS (lessonEngine). */
+export const MAX_PROGRESS = 10;
+/** Coach notes kept in full per lesson; older ones are folded into one line. */
+export const MAX_INSIGHTS = 10;
+
 export const VIEW_DEPTH = {
   '/onboarding': 0,
   '/lessons': 1,

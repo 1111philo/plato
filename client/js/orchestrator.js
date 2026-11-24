@@ -4,7 +4,9 @@ import { validateLessonKB } from './validators.js';
 import { withLanguage } from './language.js';
 import { screenLearnerNotes, learnerNoteFlag, LEARNER_TEXT_FRAMING } from './learnerNoteFilter.js';
 import { loadLessons } from './lessonOwner.js';
-import { systemPromptParts, COACH_KB_NOTE } from './promptAssembly.js';
+import { systemPromptParts, COACH_KB_NOTE, TAG_REPAIR_CUE } from './promptAssembly.js';
+
+export { TAG_REPAIR_CUE };
 
 const promptCache = {};
 let knowledgeBase = null;
@@ -221,7 +223,6 @@ async function streamOnce({ promptName, systemPrompt, messages, onChunk, maxToke
 // the same model, with the same conversation, for only the tags of the reply
 // it just gave. The instruction is in the system prompt, so it can't be
 // confused with (or forged by) the learner's text.
-export const TAG_REPAIR_CUE = 'Tags for your last reply.';
 
 /**
  * Report a client-side event the server should log (it has no other way to

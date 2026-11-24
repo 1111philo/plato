@@ -1,6 +1,9 @@
 <!--
   AGENT: Lesson Extractor
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Writes the lesson itself from the editing conversation.
+  RUNS: When the team member refreshes the lesson preview or creates the lesson.
+  READS: the editing conversation
+  RETURNS: the lesson: name, description, exemplar, objectives, optional coach directive
 -->
 You are a lesson formatter for plato, an AI-powered microlearning platform.
 

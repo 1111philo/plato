@@ -695,11 +695,25 @@ A request the trace can't reproduce means the trace is missing something.
     look for). The list of exchanges shows only who shaped each result and
     "Something went wrong" when it did; its filter is "Only where plato stepped
     in or something went wrong".
-  - **Who's this?** The first time an agent comes up in an exchange, the Trace
-    says who it is (from `AGENTS`). Checks say what they look for: the lesson
-    planner's setup lists the six things `validateLessonKB` requires
-    (`LESSON_KB_CHECKS`), a held-back note gives its reason
-    (`NOTE_RULE_REASONS`).
+  - **Agents are described by their own prompts.** Each prompt file's header
+    (`AGENT`, `PURPOSE`, `RUNS`, `READS`, `RETURNS`) is the one description
+    of its agent. The header is part of the instructions sent, so for each
+    call the Trace reads the agent's name and purpose back from what that
+    call sent (`js/agentHeader.js`), and an old turn keeps the description
+    true then. Everything else (the registry, "Behind this response", How
+    assessment works, `HOW_IT_WORKS.md`) uses `lib/agents.generated.js`,
+    built from the headers; a test fails when it's stale. Names are the
+    prompts' own ("Lesson Owner", "Assessor"): rename one in its prompt and
+    every surface follows (Blake, 2026-11-24).
+  - **Who's this? / What's a request?** The first time an agent comes up in
+    an exchange, the Trace says who it is; the first request says what a
+    request is (one model; instructions, messages, settings). Each message
+    in a request says who wrote it (plato's gathered context, the fixed
+    "Ready.", the learner, the coach's earlier reply). Checks say what they
+    look for: the setup check lists the six things `validateLessonKB`
+    requires (`LESSON_KB_CHECKS`), a held-back note gives its reason
+    (`NOTE_RULE_REASONS`). Rule wording takes its numbers from the code's
+    constants (`MAX_PROGRESS`, `HELD_PROGRESS`, `DRAFT_WORDS`, …).
   - **Noise left out**: the lesson as written is shown once, at the start,
     unless it was edited after the learner started (then it's shown and
     flagged). Background agents' records join the exchange that set them off.
@@ -1584,7 +1598,7 @@ pulled toward closing by the pacing nudges and its own "nearly done" notes.
 **What runs.** On a turn where the coach checks off a new objective or scores
 10, `checkGrading` (`lessonEngine.js`) asks a second agent,
 `client/prompts/assessor.md`, which objectives the learner's **own** messages
-show. It gets the exemplar, the objectives' wording (not the lesson planner's
+show. It gets the exemplar, the objectives' wording (not the Lesson Owner's
 per-learner `evidence` notes, whose examples it treated as requirements), the
 transcript labeled learner/coach, and this turn's images. For each objective
 it names the parts ("name a gap", "explain why it matters") and quotes the
@@ -1621,7 +1635,7 @@ naming what's missing. Its second try streams in place of the first. The
 second try's score stays at 8 or lower and its objectives are the ones the
 check found. `applyCoachResponseToKB` makes it a rule: a lesson completes only
 when every objective is checked off (lessons without objectives keep the old
-behavior). "Behind this response" adds an **Assessment check** entry with
+behavior). "Behind this response" adds an **Assessor** entry with
 counts only ("Checked 2 objectives against your own words: 1 shown"; "Held
 the lesson open until the rest is in your own words"). The reasons go to the
 coach, never to the learner.

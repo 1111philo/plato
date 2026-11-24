@@ -9,6 +9,8 @@
  */
 import { AGENTS, STEPS, STAGES, CHECKS, RULES, SOURCES, PROMPT_PARTS, CONTEXT_FIELDS, EVENTS, SERVICES } from './transparency.js';
 import { rebuildRequest } from './lessonTrace.js';
+import { parseAgentHeader } from '../../js/agentHeader.js';
+import { TAG_REPAIR_CUE, READY } from '../../js/promptAssembly.js';
 import { LESSON_KB_CHECKS } from '../../js/validators.js';
 import { NOTE_RULE_REASONS } from '../../js/learnerNoteFilter.js';
 
@@ -16,6 +18,11 @@ const pretty = (v) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const clip = (s, n = 90) => { const t = String(s ?? '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 const agentLabel = (id) => AGENTS[id]?.label || id;
+// Agents' names, as their prompt files give them.
+const N = {
+  owner: agentLabel('lesson-owner'), assessor: agentLabel('assessor'), claim: agentLabel('claim-check'),
+  profile: agentLabel('learner-profile-update'), course: agentLabel('course-progress-update'),
+};
 const seconds = (ms) => (ms == null ? null : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 const list = (arr) => arr.filter(Boolean).join(', ');
 
@@ -31,9 +38,24 @@ function contentText(content) {
   }).join('\n\n');
 }
 
-const SPEAKER = { user: 'plato / the learner', assistant: 'the model' };
-function messagesText(messages) {
-  return messages.map((m, i) => `— ${i + 1}. ${SPEAKER[m.role] || m.role} —\n${contentText(m.content)}`).join('\n\n');
+/**
+ * Who wrote each message of a request. The model sees only two roles, the
+ * "user" turn and its own, but plato's code writes some of both: what it
+ * gathered, a fixed "Ready.", the request for tags.
+ */
+function speaker(m, i, all, agent) {
+  const text = typeof m.content === 'string' ? m.content : '';
+  const last = i === all.length - 1;
+  if (agent !== 'coach') return last ? 'plato: what this agent is asked to work on' : (m.role === 'assistant' ? 'the model' : 'plato');
+  if (i === 0 && m.role === 'user' && /^\s*\{/.test(text)) return 'plato: what it gathered about you and the lesson';
+  if (i === 1 && m.role === 'assistant' && text === READY) return 'plato, written as if the model had said it';
+  if (last && m.role === 'user' && text === TAG_REPAIR_CUE) return 'plato: asking for the tags of the reply above';
+  if (last && m.role === 'user') return text === 'Start the lesson.' ? 'plato: asking the coach to open the lesson' : 'you: this message';
+  if (m.role === 'assistant') return i === all.length - 2 && all[all.length - 1]?.content === TAG_REPAIR_CUE ? 'the coach: the reply that had no tags' : 'the coach: an earlier reply';
+  return 'you: an earlier message';
+}
+function messagesText(messages, agent) {
+  return messages.map((m, i, all) => `— ${i + 1}. ${speaker(m, i, all, agent)} —\n${contentText(m.content)}`).join('\n\n');
 }
 
 const chars = (n) => `${Number(n || 0).toLocaleString()} ${n === 1 ? 'character' : 'characters'}`;
@@ -48,7 +70,16 @@ function callSteps(s, { history, parts }) {
   const req = rebuildRequest(s, { history, parts });
   const p = s.server?.provider;
   const where = p ? (p.provider === 'mock' ? 'a stand-in model used for testing' : `${p.model} on Amazon Bedrock${p.region ? ` (${p.region})` : ''}`) : 'the AI model';
-  const who = agentLabel(s.agent);
+  // Which agent this was, read from the instructions this call sent: the
+  // header of its prompt file. The registry is the fallback when that part
+  // of the trace isn't stored.
+  const promptPart = s.system.find((part) => part.kind === 'prompt');
+  const sentText = promptPart ? (promptPart.hash ? parts[promptPart.hash] : promptPart.text) : null;
+  const sent = sentText ? parseAgentHeader(sentText) : null;
+  const agentInfo = sent
+    ? { name: sent.name, purpose: sent.purpose, fromSent: true }
+    : { name: agentLabel(s.agent), purpose: AGENTS[s.agent]?.purpose || '', fromSent: false };
+  const who = agentInfo.name;
   const instructionChars = s.system.reduce((n, part) => n + (part.chars || 0), 0);
   const messageChars = req.messages.reduce((n, m) => n + textLength(m.content), 0);
   const images = req.messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter((x) => x.type === 'image').length : 0), 0);
@@ -56,21 +87,21 @@ function callSteps(s, { history, parts }) {
   const tokensIn = s.usage?.input_tokens || null;
   const tokensOut = s.usage?.output_tokens || null;
   const request = {
-    title: `Sent to the AI model, for the ${who.toLowerCase()}${s.purpose ? `: ${s.purpose}` : ''}`,
+    title: `Sent to the AI model, for the ${who}${s.purpose ? `: ${s.purpose}` : ''}`,
     summary: [
-      `plato sent ${where} the ${who.toLowerCase()}’s instructions (${chars(instructionChars)}, in ${plural(s.system.length, 'part')}) and ${plural(req.messages.length, 'message')} (${chars(messageChars)}${images ? `, ${plural(images, 'image')}` : ''}).`,
+      `plato sent ${where} the ${who}’s instructions (${chars(instructionChars)}, in ${plural(s.system.length, 'part')}) and ${plural(req.messages.length, 'message')} (${chars(messageChars)}${images ? `, ${plural(images, 'image')}` : ''}).`,
       tokensIn ? `The model counted it as ${tokensIn.toLocaleString()} tokens.` : null,
       `It allowed a reply of up to ${s.maxTokens.toLocaleString()} tokens${s.temperature != null ? ` at temperature ${s.temperature}` : ''}.`,
       s.attempts?.length ? `The first ${plural(s.attempts.length, 'try', 'tries')} failed and ${s.attempts.length === 1 ? 'was' : 'were'} sent again.` : null,
     ].filter(Boolean).join(' '),
     details: [
       ...s.system.map((part) => ({
-        label: `Instructions: ${PROMPT_PARTS[part.kind]?.label || part.kind} (${SOURCES[PROMPT_PARTS[part.kind]?.source]?.label || 'plato'})`,
+        label: `Instructions, part ${s.system.indexOf(part) + 1} of ${s.system.length}: ${PROMPT_PARTS[part.kind]?.label || part.kind} (${SOURCES[PROMPT_PARTS[part.kind]?.source]?.label || 'plato'})`,
         note: PROMPT_PARTS[part.kind]?.means,
         text: part.hash ? parts[part.hash] ?? `(${part.chars.toLocaleString()} characters; this part’s text isn’t stored any more)` : part.text,
       })),
-      { label: `Messages sent (${req.messages.length})`, text: messagesText(req.messages) },
-      { label: 'Settings', text: list([
+      { label: `Messages (${req.messages.length}): the conversation the model replies to`, text: messagesText(req.messages, s.agent) },
+      { label: 'Settings: limits on the reply, not what it says', text: list([
         `Longest reply allowed: ${s.maxTokens} tokens`,
         s.temperature != null ? `temperature ${s.temperature} (0 means the same input gives the same answer)` : 'temperature: the model’s default',
         s.server?.applied?.dropped?.length ? `fields the server dropped: ${s.server.applied.dropped.join(', ')}` : null,
@@ -80,12 +111,12 @@ function callSteps(s, { history, parts }) {
   };
   const reply = s.error
     ? {
-      title: `The AI model didn’t reply to the ${who.toLowerCase()}`,
+      title: `The AI model didn’t reply to the ${who}`,
       summary: `It failed after ${seconds(s.took) || 'a moment'}: ${s.error.message}`,
       details: [{ label: 'The error', text: pretty(s.error) }],
     }
     : {
-      title: `The AI model replied to the ${who.toLowerCase()}`,
+      title: `The AI model replied to the ${who}`,
       summary: [
         `${chars((s.reply || '').length)}${tokensOut ? ` (${tokensOut.toLocaleString()} tokens)` : ''}, after ${seconds(s.took) || 'a moment'}.`,
         s.stopReason ? `It stopped because ${STOP[s.stopReason] || s.stopReason}.` : null,
@@ -96,7 +127,7 @@ function callSteps(s, { history, parts }) {
         { label: 'The model’s own reasoning', text: s.reasoning || 'None was returned. plato’s model replies without a separate reasoning trace.' },
       ],
     };
-  return { request, reply, took: s.took };
+  return { request, reply, took: s.took, agentInfo };
 }
 
 const STOP = {
@@ -127,19 +158,19 @@ const DESCRIBE = {
     ],
   }),
   planned: (s) => ({
-    summary: `The lesson planner turned the author’s ${plural((s.authorObjectives || []).length, 'objective')} into ${(s.fromModel?.objectives || []).length}, each with what would count as evidence. The coach and the assessment check work from this version.`,
+    summary: `The ${N.owner} turned the author’s ${plural((s.authorObjectives || []).length, 'objective')} into ${(s.fromModel?.objectives || []).length}, each with what would count as evidence. The coach and the ${N.assessor} work from this version.`,
     details: [
-      { label: 'Objectives and evidence (the lesson planner’s version)', text: (s.fromModel?.objectives || []).map((o, i) => `${i + 1}. ${o.objective}\n   Evidence: ${o.evidence || '(none given)'}`).join('\n') },
+      { label: `Objectives and evidence (the ${N.owner}’s version)`, text: (s.fromModel?.objectives || []).map((o, i) => `${i + 1}. ${o.objective}\n   Evidence: ${o.evidence || '(none given)'}`).join('\n') },
       { label: 'Objectives (the author’s wording)', text: (s.authorObjectives || []).map((o, i) => `${i + 1}. ${o}`).join('\n') },
-      ...(s.fromModel?.exemplar && s.fromModel.exemplar !== s.authorExemplar ? [{ label: 'Exemplar (the lesson planner’s copy, which the coach uses)', text: s.fromModel.exemplar }] : []),
-      { label: 'Everything the lesson planner returned', text: pretty(s.fromModel) },
+      ...(s.fromModel?.exemplar && s.fromModel.exemplar !== s.authorExemplar ? [{ label: `Exemplar (the ${N.owner}’s copy, which the coach uses)`, text: s.fromModel.exemplar }] : []),
+      { label: `Everything the ${N.owner} returned`, text: pretty(s.fromModel) },
     ],
   }),
   validation: (s) => ({
     summary: s.ok && !s.firstError
-      ? `plato’s code checked the setup for the ${LESSON_KB_CHECKS.length} things the coach and the assessment check need. All were there.`
+      ? `plato’s code checked the setup for the ${LESSON_KB_CHECKS.length} things the coach and the ${N.assessor} need. All were there.`
       : s.ok
-        ? `The first setup was missing something (${s.firstError}), so plato asked the lesson planner again. The second had all ${LESSON_KB_CHECKS.length}.`
+        ? `The first setup was missing something (${s.firstError}), so plato asked the ${N.owner} again. The second had all ${LESSON_KB_CHECKS.length}.`
         : `The first setup was missing something (${s.firstError}), and so was the second (${s.secondError}). plato used the second anyway, so the lesson could start.`,
     details: [{ label: 'What plato checks for', text: LESSON_KB_CHECKS.map((c, i) => `${i + 1}. ${c}`).join('\n') }],
   }),
@@ -223,7 +254,7 @@ const DESCRIBE = {
   gradingPlan: (s) => ({
     summary: !s.ran ? 'Not needed: the coach didn’t check off a new objective or score 10.' : `The coach ${s.completionClaimed ? 'scored 10' : 'checked off an objective'}, so plato checked ${plural(s.check.length, 'objective')}: ${s.check.join(', ')}.`,
   }),
-  gradingRetry: (s) => ({ summary: `The assessment check’s first answer couldn’t be read (${s.why}); plato asked again.` }),
+  gradingRetry: (s) => ({ summary: `The ${N.assessor}’s first answer couldn’t be read (${s.why}); plato asked again.` }),
   verdict: (s) => ({
     summary: `Shown in your own words: ${s.shown.length ? s.shown.join(', ') : 'none'}. Not shown: ${Object.keys(s.missing).length ? Object.keys(s.missing).join(', ') : 'none'}.`,
     details: [
@@ -232,7 +263,7 @@ const DESCRIBE = {
         text: quotes.map((q) => `“${q.quote}”\n  ${q.ok ? `Found in your message (message ${q.learnerAt + 1} of the conversation it read).` : q.coachAt !== -1 ? `The coach wrote this first (message ${q.coachAt + 1}), so it doesn’t count as yours.` : 'Not found in anything you wrote.'}`).join('\n\n'),
       })),
       ...Object.entries(s.missing).map(([n, why]) => ({ label: `Objective ${n}: why it didn’t count`, text: String(why) })),
-      { label: 'The assessment check’s full answer', text: pretty(s.verdict) },
+      { label: `The ${N.assessor}’s full answer`, text: pretty(s.verdict) },
       { label: 'The conversation it read', text: (s.transcript || []).map((m, i) => `${i + 1}. ${m.by}: ${m.text}`).join('\n\n') },
     ],
   }),
@@ -260,7 +291,7 @@ const DESCRIBE = {
       'Completion was held, so the reply mustn’t tell you the lesson is done.',
       s.byPattern
         ? 'plato’s code found wording it knows means “done” (like “you’ve completed this lesson”).'
-        : `plato’s code found none of the wording it knows means “done”, so it asked the completion wording check, an AI helper, for a yes or no: ${s.byModel === 'failed' ? 'that failed, so the reply was kept' : s.byModel ? 'yes' : 'no'}.`,
+        : `plato’s code found none of the wording it knows means “done”, so it asked the ${N.claim}, an AI helper, for a yes or no: ${s.byModel === 'failed' ? 'that failed, so the reply was kept' : s.byModel ? 'yes' : 'no'}.`,
       s.saysDone ? 'So the reply was replaced.' : 'So the reply was kept.',
     ].join(' '),
   }),
@@ -286,14 +317,14 @@ const DESCRIBE = {
   noteScreened: (s) => {
     const why = NOTE_RULE_REASONS[s.reason] || 'it reads like an instruction to the AI rather than information about you';
     return { summary: s.source === 'learner-removed'
-      ? `The removed note had been held back from the learner profile agent, because ${why}. There was nothing to undo.`
-      : `plato’s code didn’t give this note to the learner profile agent, because ${why}. Notes describe you; they can’t give the AI orders. The note itself is still saved, and you can remove it.` };
+      ? `The removed note had been held back from the ${N.profile}, because ${why}. There was nothing to undo.`
+      : `plato’s code didn’t give this note to the ${N.profile}, because ${why}. Notes describe you; they can’t give the AI orders. The note itself is still saved, and you can remove it.` };
   },
   profileSaved: (s) => ({
     summary: (() => {
       const changed = ['name', 'goal', 'strengths', 'weaknesses', 'preferences'].filter((k) => JSON.stringify(s.before?.[k] ?? null) !== JSON.stringify(s.after?.[k] ?? null));
       return [
-        changed.length ? `The learner profile agent changed: ${changed.join(', ')}.` : 'The learner profile agent changed none of the profile’s fields.',
+        changed.length ? `The ${N.profile} changed: ${changed.join(', ')}.` : `The ${N.profile} changed none of the profile’s fields.`,
         s.summary ? 'It rewrote the profile summary, which is what the coach reads.' : null,
         'plato’s code kept your own notes and your lesson lists as they were.',
       ].filter(Boolean).join(' ');
@@ -386,12 +417,12 @@ function noteFor(s) {
       if (s.attempts?.length) return problem('The AI service was busy, so plato sent the request again.');
       return null;
     case 'input': return s.images?.some((i) => !i.sent) ? problem('An image you attached wasn’t given to the model, so the coach couldn’t see it.') : null;
-    case 'validation': return s.firstError ? problem(s.ok ? 'The lesson planner’s first setup was incomplete, so plato asked again.' : 'The lesson planner’s setup was incomplete, and was used anyway so the lesson could start.') : null;
+    case 'validation': return s.firstError ? problem(s.ok ? `The ${N.owner}’s first setup was incomplete, so plato asked again.` : `The ${N.owner}’s setup was incomplete, and was used anyway so the lesson could start.`) : null;
     case 'plugins': return s.failed ? problem('Plugins couldn’t be asked for background, so the lesson started without it.') : null;
     case 'tagCheck': return s.progress && s.notes ? null : changed('the score and notes recorded for this reply came from a second request, not from the reply itself.');
     case 'tagRepair': return s.recovered ? null : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
-    case 'gradingFailed': return problem('The assessment check couldn’t run, so nothing new was checked off this time.');
+    case 'gradingFailed': return problem(`The ${N.assessor} couldn’t run, so nothing new was checked off this time.`);
     case 'gradingStood': return changed('plato accepted the coach’s grading without the check, so you weren’t stuck.');
     case 'verdictApplied':
       if (s.held) return changed('plato held the lesson open: the coach scored 10, but not every objective was shown in your own words.');
@@ -488,28 +519,42 @@ function describeSteps(s, { history, parts }) {
     details: (o.details || []).filter((x) => x.text != null && x.text !== ''),
   });
   if (s.type === 'call') {
-    const { request, reply, took } = callSteps(s, { history, parts });
+    const { request, reply, took, agentInfo } = callSteps(s, { history, parts });
     const stage = callStage(s);
     const note = noteFor(s);
     return [
-      base({ ...request, n: `${s.n}a`, part: 'request', stage: stage === 'answered' ? 'prepared' : stage, source: 'code', sourceLabel: SOURCES.code.label, means: STEPS.call.request.means }),
-      base({ ...reply, n: `${s.n}b`, part: 'reply', stage, at: s.ms != null && took != null ? s.ms + took : null, took: took ?? null, means: STEPS.call.reply.means, note }),
+      base({ ...request, agentInfo, n: `${s.n}a`, part: 'request', stage: stage === 'answered' ? 'prepared' : stage, source: 'code', sourceLabel: SOURCES.code.label, means: STEPS.call.request.means }),
+      base({ ...reply, agentInfo, n: `${s.n}b`, part: 'reply', stage, at: s.ms != null && took != null ? s.ms + took : null, took: took ?? null, means: STEPS.call.reply.means, note }),
     ];
   }
   const d = DESCRIBE[s.type]?.(s) || { summary: '' };
   return [base({ title: d.title || meta.title, summary: d.summary, rules: d.rules || [], change: d.change || null, details: d.details || [], note: noteFor(s) })];
 }
 
-/** The first time each agent comes up in an exchange, say who it is. */
+/**
+ * The first time each agent comes up in an exchange, say who it is, from the
+ * instructions its call sent when there is one; and the first time a request
+ * comes up, what a request is.
+ */
 function explainAgents(steps) {
   const seen = new Set();
+  let explainedRequest = false;
   for (const st of steps) {
-    if (!st.agent || seen.has(st.agent) || !AGENTS[st.agent]) continue;
+    if (st.part === 'request' && !explainedRequest) { st.about = REQUEST_ABOUT; explainedRequest = true; }
+    if (!st.agent || seen.has(st.agent)) continue;
+    const info = st.agentInfo || (AGENTS[st.agent] ? { name: AGENTS[st.agent].label, purpose: AGENTS[st.agent].purpose, fromSent: false } : null);
+    if (!info) continue;
     seen.add(st.agent);
-    st.explain = { label: AGENTS[st.agent].label, text: `${AGENTS[st.agent].label} is one of plato’s AI helpers (the same AI model, with its own instructions). ${AGENTS[st.agent].purpose}` };
+    st.explain = {
+      label: info.name,
+      text: `${info.name} is one of plato’s AI helpers: the same AI model, given its own instructions. ${info.purpose}${info.fromSent ? ' (From the instructions this call sent.)' : ''}`,
+    };
   }
   return steps;
 }
+
+// What a request is, said once per exchange, on its first request.
+const REQUEST_ABOUT = 'There is one AI model; an agent is that model given its own instructions. plato’s code sends each request and gets one reply back. A request has three parts: the instructions (who the agent is and its rules, read first), the messages (the conversation the model replies to, some of it written by plato), and the settings (limits on the reply, such as its length).';
 
 // The model call that produces the answer belongs to "answered"; every other
 // call is plato checking, setting up, or working in the background.

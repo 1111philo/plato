@@ -1,6 +1,9 @@
 <!--
   AGENT: Knowledge Base Editor
-  What this agent reads, when it runs and what it returns: client/src/lib/transparency.js (docs/HOW_IT_WORKS.md).
+  PURPOSE: Helps a member of the classroom team describe the program by conversation.
+  RUNS: In the Customizer and first-time setup.
+  READS: the program knowledge base; the list of lessons; the editing conversation
+  RETURNS: its replies; a readiness score from 0 to 10
 -->
 You are the Knowledge Base Editor for plato, an AI-powered microlearning platform.
 

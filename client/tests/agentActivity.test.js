@@ -65,7 +65,7 @@ describe('coachTurnActivity', () => {
 describe('lessonStartActivity', () => {
   it('lists the planner, plugins, and coach', () => {
     const agents = lessonStartActivity({ lessonKB: { objectives: [{}, {}], learnerPosition: 'New' }, enrichments: [{ label: 'WP docs' }] });
-    assert.deepEqual(agents.map((a) => a.label), ['Lesson planner', 'Plugins', 'Coach']);
+    assert.deepEqual(agents.map((a) => a.label), ['Lesson Owner', 'Plugins', 'Coach']);
     assert.deepEqual(agents[0].did, ["Planned how you'll show 2 objectives"]);
     assert.deepEqual(agents[1].did, ['Added reference material: WP docs']);
   });
@@ -77,7 +77,7 @@ describe('authoringActivity / summary / entry', () => {
     assert.equal(authoringActivity('lesson-creator', { before: 4, after: null })[0].did, undefined);
   });
   it('summarizes distinct labels in order', () => {
-    assert.equal(activitySummary([entry('coach'), entry('learner-profile-update'), entry('learner-profile-update')]), 'Coach, Learner profile');
+    assert.equal(activitySummary([entry('coach'), entry('learner-profile-update'), entry('learner-profile-update')]), 'Coach, Learner Profile Update');
   });
   it('drops empty lists', () => {
     assert.deepEqual(entry('coach', { did: [null, ''] }), { agent: 'coach', label: 'Coach' });

@@ -17,10 +17,10 @@
 const MAX_PROGRESS = 10;
 /** The highest score a turn can keep when its completion was held back. */
 export const HELD_PROGRESS = 8;
-const MAX_TRANSCRIPT = 40;
+export const MAX_TRANSCRIPT = 40;
 const LINK_CONTEXT_PREFIX = '[REFERENCE CONTEXT';
 /** Words a quote needs before matching a coach message means the learner copied it. */
-const COPY_WORDS = 8;
+export const COPY_WORDS = 8;
 
 /** 1-based numbers of the objectives the coach claimed this turn that weren't already checked off. */
 function claimedNew(kb, parsed) {

@@ -24,89 +24,22 @@ export const SOURCES = Object.freeze({
 });
 
 /**
- * Every AI agent: one per prompt file in client/prompts. `label` is the name
- * shown to people; `reads` and `writes` are what it is given and what its
- * output is used for.
+ * Every AI agent, one per prompt file in client/prompts: its name, purpose,
+ * when it runs, what it reads and returns, taken from the header of its own
+ * prompt file (scripts/generate-how-it-works.js). A Trace reads the same
+ * header from the instructions a call actually sent (js/agentHeader.js).
  */
-export const AGENTS = Object.freeze({
-  coach: {
-    label: 'Coach',
-    purpose: 'Talks with the learner: teaches, asks questions, and reports how far along they are.',
-    when: 'At the start of a lesson and on every message.',
-    reads: ['its instructions', 'the classroom’s program knowledge base', 'the list of lessons', 'the lesson (exemplar, objectives, author’s coach directive)', 'the learner’s profile summary', 'this lesson’s notes and progress', 'the last 40 messages', 'this message’s images and attached pages'],
-    writes: ['the reply the learner reads', 'a progress score from 0 to 10', 'notes about the learner’s work', 'which objectives it believes are met', 'sometimes an observation for the learner’s profile'],
-  },
-  assessor: {
-    label: 'Assessment check',
-    purpose: 'A second opinion on grading. For each objective the coach wants to check off, it must quote the learner’s own words.',
-    when: 'Only on a message where the coach checks off an objective or scores 10.',
-    reads: ['its instructions', 'the exemplar and the objectives’ wording', 'the conversation, labelled by who wrote each message', 'this message’s images'],
-    writes: ['for each objective: shown or not, the quote it relied on, or what is missing'],
-  },
-  'claim-check': {
-    label: 'Completion wording check',
-    purpose: 'Answers one question, yes or no: does this reply tell the learner the lesson is done?',
-    when: 'Only when plato has held a completion and the reply’s wording isn’t one it recognises.',
-    reads: ['its instructions', 'the coach’s reply'],
-    writes: ['yes or no'],
-  },
-  'lesson-owner': {
-    label: 'Lesson planner',
-    purpose: 'Sets up this learner’s copy of the lesson: restates each objective with what would count as evidence.',
-    when: 'Once, when the lesson starts.',
-    reads: ['its instructions', 'the lesson as the author wrote it', 'the learner’s profile summary'],
-    writes: ['the objectives and evidence the coach and the assessment check use', 'a copy of the exemplar', 'a starting note on where the learner is'],
-  },
-  'learner-profile-update': {
-    label: 'Learner profile',
-    purpose: 'Keeps the learner’s profile up to date from one new piece of information.',
-    when: 'When the coach notes something about the learner, or the learner adds or removes a note in Settings.',
-    reads: ['its instructions', 'the current profile', 'the new observation or note'],
-    writes: ['an updated profile and a short summary'],
-  },
-  'learner-profile-owner': {
-    label: 'Learner profile (on completion)',
-    purpose: 'Updates the learner’s profile from a whole finished lesson.',
-    when: 'Once, when a lesson is completed.',
-    reads: ['its instructions', 'the current profile', 'this lesson’s notes and progress'],
-    writes: ['an updated profile and a short summary'],
-  },
-  'course-progress-update': {
-    label: 'Unit progress',
-    purpose: 'Keeps a short note of what the learner has shown across a unit’s lessons, so the coach in the next lesson knows.',
-    when: 'Once, when a lesson that belongs to a unit is completed.',
-    reads: ['its instructions', 'the unit’s earlier note', 'this lesson’s notes', 'the unit’s list of lessons'],
-    writes: ['the unit note (about 600 characters)'],
-  },
-  'lesson-creator': {
-    label: 'Lesson creator',
-    purpose: 'Helps a member of the classroom team design a lesson by conversation.',
-    when: 'In the lesson editor.',
-    reads: ['its instructions', 'the program knowledge base', 'the list of lessons, including private ones', 'the editing conversation'],
-    writes: ['its replies', 'a readiness score from 0 to 10'],
-  },
-  'lesson-extractor': {
-    label: 'Lesson writer',
-    purpose: 'Writes the lesson itself from the editing conversation.',
-    when: 'When the team member refreshes the lesson preview or creates the lesson.',
-    reads: ['its instructions', 'the editing conversation'],
-    writes: ['the lesson: name, description, exemplar, objectives, optional coach directive'],
-  },
-  'knowledge-base-editor': {
-    label: 'Knowledge base editor',
-    purpose: 'Helps a member of the classroom team describe the program by conversation.',
-    when: 'In the Customizer and first-time setup.',
-    reads: ['its instructions', 'the program knowledge base', 'the list of lessons', 'the editing conversation'],
-    writes: ['its replies', 'a readiness score from 0 to 10'],
-  },
-  'knowledge-base-extractor': {
-    label: 'Knowledge base writer',
-    purpose: 'Writes the program knowledge base from the editing conversation.',
-    when: 'When the team member saves the knowledge base.',
-    reads: ['its instructions', 'the existing knowledge base', 'the editing conversation'],
-    writes: ['the program knowledge base'],
-  },
-});
+import { AGENTS } from './agents.generated.js';
+import { HELD_PROGRESS, DRAFT_WORDS, COPY_WORDS, OWN_SHARE, MAX_TRANSCRIPT } from './assessment.js';
+import { MAX_EXCHANGES, MIN_OBJECTIVES, MAX_OBJECTIVES, MINS_PER_EXCHANGE, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
+
+export { AGENTS };
+
+// Agents' names, as their prompt files give them, for the wording below.
+const N = {
+  owner: AGENTS['lesson-owner'].label, assessor: AGENTS.assessor.label, claim: AGENTS['claim-check'].label,
+  profile: AGENTS['learner-profile-update'].label, course: AGENTS['course-progress-update'].label,
+};
 
 /**
  * Every field plato's code puts in the coach's context (lessonEngine
@@ -116,17 +49,17 @@ export const CONTEXT_FIELDS = Object.freeze({
   learnerName: { label: 'Your first name', source: 'person', from: 'Your account.' },
   lessonName: { label: 'Lesson name', source: 'person', from: 'The lesson, as its author wrote it.' },
   lessonDescription: { label: 'Lesson description', source: 'person', from: 'The lesson, as its author wrote it.' },
-  exemplar: { label: 'What finished work looks like', source: 'model', from: 'The lesson planner’s copy of the author’s exemplar, made when the lesson started.' },
+  exemplar: { label: 'What finished work looks like', source: 'model', from: `The ${N.owner}’s copy of the author’s exemplar, made when the lesson started.` },
   lessonStatus: { label: 'Lesson status', source: 'code', from: 'Active, or completed.' },
-  objectives: { label: 'Objectives and what counts as evidence', source: 'model', from: 'The lesson planner’s version of the author’s objectives, made when the lesson started.' },
+  objectives: { label: 'Objectives and what counts as evidence', source: 'model', from: `The ${N.owner}’s version of the author’s objectives, made when the lesson started.` },
   objectivesMet: { label: 'Objectives checked off so far', source: 'code', from: 'Kept by plato’s code; an objective stays checked off once it is.' },
   insights: { label: 'The coach’s notes on your work', source: 'model', from: 'Written by the coach on earlier messages in this lesson.' },
-  learnerProfile: { label: 'Your profile summary', source: 'model', from: 'Written by the learner profile agent from earlier lessons and your own notes.' },
+  learnerProfile: { label: 'Your profile summary', source: 'model', from: `Written by the ${N.profile} from earlier lessons and your own notes.` },
   learnerPosition: { label: 'Where you are', source: 'model', from: 'The coach’s latest one-line note on where you stand in this lesson.' },
   progress: { label: 'Progress so far', source: 'code', from: 'The score on record, 0 to 10.' },
   activitiesCompleted: { label: 'Exchanges so far', source: 'code', from: 'Counted by plato’s code, one per message until the lesson is complete.' },
   coachDirective: { label: 'The author’s instructions to the coach', source: 'person', from: 'The lesson’s optional Coach Directive section.' },
-  unit: { label: 'Unit, and what you’ve shown in its other lessons', source: 'model', from: 'The unit’s name, with the note the unit progress agent keeps.' },
+  unit: { label: 'Unit, and what you’ve shown in its other lessons', source: 'model', from: `The unit’s name, with the note the ${N.course} keeps.` },
   course: { label: 'Course', source: 'person', from: 'The course this lesson’s unit belongs to.' },
   enrichmentContext: { label: 'Background from plugins', source: 'code', from: 'Gathered once when the lesson started, by plugins the classroom turned on.' },
   pacingDirective: { label: 'A pacing instruction', source: 'code', from: 'Added by plato’s code once the lesson runs past its usual length, telling the coach to move toward wrapping up. The lesson is never cut off.' },
@@ -150,7 +83,7 @@ export const PROMPT_PARTS = Object.freeze({
  * background"). Each step type below names its stage.
  */
 export const STAGES = Object.freeze({
-  setup: { title: 'plato set up the lesson', means: 'Once, when a lesson starts: the lesson as written, the lesson planner’s version of it, and anything plugins added.' },
+  setup: { title: 'plato set up the lesson', means: `Once, when a lesson starts: the lesson as written, the ${N.owner}’s version of it, and anything plugins added.` },
   sent: { title: 'You sent', means: 'What you wrote or did, exactly as plato received it.' },
   prepared: { title: 'plato prepared and sent the request', means: 'plato’s code gathers the conversation so far and what it knows about you and the lesson, then sends it to the AI model.' },
   answered: { title: 'The AI model answered', means: 'The request to the model, its raw reply, and what plato read from it.' },
@@ -166,8 +99,8 @@ export const STAGES = Object.freeze({
  */
 export const CHECKS = Object.freeze({
   tags: { title: 'Did the reply include its tags?', means: 'The coach ends each reply with tags only plato reads: a progress score, notes, and sometimes an observation for your profile.' },
-  draft: { title: 'Did the reply write your answer for you?', means: 'A coach that writes the learner’s answer teaches nothing, and the assessment check wouldn’t count it.' },
-  grading: { title: 'Is every objective the coach checked off shown in your own words?', means: 'When the coach checks off an objective or scores 10, a second AI helper, the assessment check, must find each one in what you wrote.' },
+  draft: { title: 'Did the reply write your answer for you?', means: `A coach that writes the learner’s answer teaches nothing, and the ${N.assessor} wouldn’t count it.` },
+  grading: { title: 'Is every objective the coach checked off shown in your own words?', means: `When the coach checks off an objective or scores 10, a second AI helper, the ${N.assessor}, must find each one in what you wrote.` },
 });
 
 /**
@@ -177,8 +110,8 @@ export const CHECKS = Object.freeze({
  */
 export const STEPS = Object.freeze({
   lesson: { stage: 'setup', title: 'The lesson', source: 'person', means: 'The lesson as its author wrote it, and when it was last edited.' },
-  planned: { stage: 'setup', title: 'The lesson planner’s setup', source: 'model', means: 'The lesson planner, an AI helper, restated the author’s objectives with what would count as evidence. The coach and the assessment check use this version, not the author’s wording.' },
-  validation: { stage: 'setup', title: 'plato checked the lesson planner’s setup', source: 'code', means: 'plato’s code checked the setup had everything the coach and the assessment check need (the exact list is shown). If not, it asked once more and used the second answer.' },
+  planned: { stage: 'setup', title: `The ${N.owner}’s setup`, source: 'model', means: `The ${N.owner}, an AI helper, restated the author’s objectives with what would count as evidence. The coach and the ${N.assessor} use this version, not the author’s wording.` },
+  validation: { stage: 'setup', title: `plato checked the ${N.owner}’s setup`, source: 'code', means: `plato’s code checked the setup had everything the coach and the ${N.assessor} need (the exact list is shown). If not, it asked once more and used the second answer.` },
   plugins: { stage: 'setup', title: 'Extra context from plugins', source: 'code', means: 'Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes.' },
   input: { stage: 'sent', title: 'What you sent', source: 'person', means: 'Your message, with any images and attached web pages.' },
   state: { stage: 'prepared', title: 'Where the lesson stood', source: 'code', means: 'The progress and objectives on record before this message.' },
@@ -196,11 +129,11 @@ export const STEPS = Object.freeze({
   draftCheck: { stage: 'checked', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
   tagRepair: { stage: 'checked', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
-  gradingPlan: { stage: 'checked', title: 'Whether to check the grading', source: 'code', means: 'The assessment check runs only when the coach checks off an objective or scores 10.' },
-  gradingRetry: { stage: 'checked', title: 'The assessment check’s answer couldn’t be read', source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },
-  verdict: { stage: 'checked', title: 'The assessment check’s verdict', source: 'model', means: 'For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach.' },
-  recheck: { stage: 'checked', title: 'Asked the assessment check again', source: 'code', means: 'A quote wasn’t the learner’s own words, so plato asked once more about just that objective.' },
-  gradingFailed: { stage: 'checked', title: 'The assessment check couldn’t run', source: 'code', means: 'The check failed this turn, so nothing new was checked off.' },
+  gradingPlan: { stage: 'checked', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
+  gradingRetry: { stage: 'checked', title: `The ${N.assessor}’s answer couldn’t be read`, source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },
+  verdict: { stage: 'checked', title: `The ${N.assessor}’s verdict`, source: 'model', means: 'For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach.' },
+  recheck: { stage: 'checked', title: `Asked the ${N.assessor} again`, source: 'code', means: 'A quote wasn’t the learner’s own words, so plato asked once more about just that objective.' },
+  gradingFailed: { stage: 'checked', title: `The ${N.assessor} couldn’t run`, source: 'code', means: 'The check failed this turn, so nothing new was checked off.' },
   gradingStood: { stage: 'checked', title: 'The coach’s grading stood', source: 'code', means: 'The check failed on two completing turns in a row, so plato accepted the coach’s grading rather than leave the learner stuck.' },
   verdictApplied: { stage: 'checked', title: 'What the check changed', source: 'code', means: 'Objectives the coach claimed without backing were taken off; a completion that wasn’t backed up was held.' },
   heldRewrite: { stage: 'checked', title: 'The coach was asked to reply again', source: 'instructions', means: 'Completion was held, so plato told the coach what was missing and asked for a new reply.' },
@@ -235,17 +168,17 @@ export const STEPS = Object.freeze({
  */
 export const RULES = Object.freeze({
   noProgressTag: 'The reply had no progress score, so the score stayed where it was.',
-  clamped: 'The score is kept between 0 and 10, as a whole number.',
-  openerCap: 'The opening message can’t finish a lesson: its score is capped at 9.',
-  cappedAt9: 'A score of 10 completes the lesson only when every objective is checked off. Until then it is recorded as 9.',
-  heldAt8: 'The coach scored 10, but the assessment check couldn’t find every objective in the learner’s own words. Completion was held and the score recorded as at most 8.',
-  objectivesNotBackedUp: 'The coach checked off an objective the assessment check couldn’t back up with the learner’s own words, so it wasn’t checked off.',
-  checkFailedNothingCounted: 'The assessment check couldn’t run this turn, so nothing new was checked off and a completion waits for the next turn.',
-  checkFailedTwiceGradingStood: 'The assessment check couldn’t run on two completing turns in a row, so the coach’s grading was accepted.',
+  clamped: `The score is kept between 0 and ${MAX_PROGRESS}, as a whole number.`,
+  openerCap: `The opening message can’t finish a lesson: its score is capped at ${MAX_PROGRESS - 1}.`,
+  cappedAt9: `A score of ${MAX_PROGRESS} completes the lesson only when every objective is checked off. Until then it is recorded as ${MAX_PROGRESS - 1}.`,
+  heldAt8: `The coach scored ${MAX_PROGRESS}, but the ${N.assessor} couldn’t find every objective in the learner’s own words. Completion was held and the score recorded as at most ${HELD_PROGRESS}.`,
+  objectivesNotBackedUp: `The coach checked off an objective the ${N.assessor} couldn’t back up with the learner’s own words, so it wasn’t checked off.`,
+  checkFailedNothingCounted: `The ${N.assessor} couldn’t run this turn, so nothing new was checked off and a completion waits for the next turn.`,
+  checkFailedTwiceGradingStood: `The ${N.assessor} couldn’t run on two completing turns in a row, so the coach’s grading was accepted.`,
   replyReplaced: 'The coach’s reply said the lesson was done while completion was held, so a standard message was shown instead.',
   frozenAfterCompletion: 'The lesson is complete: the score and the count of exchanges no longer change. Notes still do.',
-  notesFolded: 'Only the 10 newest notes are kept in full; older ones are folded into one line.',
-  completed: 'Score 10 with every objective checked off: the lesson was marked complete.',
+  notesFolded: `Only the ${MAX_INSIGHTS} newest notes are kept in full; older ones are folded into one line.`,
+  completed: `Score ${MAX_PROGRESS} with every objective checked off: the lesson was marked complete.`,
 });
 
 /**
@@ -254,15 +187,17 @@ export const RULES = Object.freeze({
  * constant appears here.
  */
 export const THRESHOLDS = Object.freeze({
-  MAX_EXCHANGES: { where: 'client/src/lib/constants.js', means: 'A lesson is designed for about 11 exchanges. Past that the coach is told to wrap up; the lesson is never cut off.' },
-  MIN_OBJECTIVES: { where: 'client/src/lib/constants.js', means: 'A lesson has at least 2 objectives.' },
-  MAX_OBJECTIVES: { where: 'client/src/lib/constants.js', means: 'A lesson has at most 4 objectives.' },
-  MINS_PER_EXCHANGE: { where: 'client/src/lib/constants.js', means: 'Time estimates assume 1.8 minutes per exchange.' },
-  HELD_PROGRESS: { where: 'client/src/lib/assessment.js', means: 'A held completion is recorded as at most 8.' },
-  DRAFT_WORDS: { where: 'client/src/lib/assessment.js', means: 'A quoted passage of 20 or more words in a reply counts as the coach drafting the learner’s answer.' },
-  COPY_WORDS: { where: 'client/src/lib/assessment.js', means: 'A quote of 8 or more words that the coach wrote first doesn’t count as the learner’s.' },
-  OWN_SHARE: { where: 'client/src/lib/assessment.js', means: 'A passage the coach wrote first still counts as the learner’s when 70% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.' },
-  MAX_TRANSCRIPT: { where: 'client/src/lib/assessment.js', means: 'The assessment check reads the last 40 messages.' },
+  MAX_PROGRESS: { where: 'client/src/lib/constants.js', means: `Progress runs from 0 to ${MAX_PROGRESS}; ${MAX_PROGRESS} with every objective checked off completes a lesson.` },
+  MAX_INSIGHTS: { where: 'client/src/lib/constants.js', means: `The coach’s ${MAX_INSIGHTS} newest notes are kept in full.` },
+  MAX_EXCHANGES: { where: 'client/src/lib/constants.js', means: `A lesson is designed for about ${MAX_EXCHANGES} exchanges. Past that the coach is told to wrap up; the lesson is never cut off.` },
+  MIN_OBJECTIVES: { where: 'client/src/lib/constants.js', means: `A lesson has at least ${MIN_OBJECTIVES} objectives.` },
+  MAX_OBJECTIVES: { where: 'client/src/lib/constants.js', means: `A lesson has at most ${MAX_OBJECTIVES} objectives.` },
+  MINS_PER_EXCHANGE: { where: 'client/src/lib/constants.js', means: `Time estimates assume ${MINS_PER_EXCHANGE} minutes per exchange.` },
+  HELD_PROGRESS: { where: 'client/src/lib/assessment.js', means: `A held completion is recorded as at most ${HELD_PROGRESS}.` },
+  DRAFT_WORDS: { where: 'client/src/lib/assessment.js', means: `A quoted passage of ${DRAFT_WORDS} or more words in a reply counts as the coach drafting the learner’s answer.` },
+  COPY_WORDS: { where: 'client/src/lib/assessment.js', means: `A quote of ${COPY_WORDS} or more words that the coach wrote first doesn’t count as the learner’s.` },
+  OWN_SHARE: { where: 'client/src/lib/assessment.js', means: `A passage the coach wrote first still counts as the learner’s when ${Math.round(OWN_SHARE * 100)}% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.` },
+  MAX_TRANSCRIPT: { where: 'client/src/lib/assessment.js', means: `The ${N.assessor} reads the last ${MAX_TRANSCRIPT} messages.` },
 });
 
 /** The codes the app reports to the server's logs (orchestrator.reportEvent), in plain words. */
@@ -270,10 +205,10 @@ export const EVENTS = Object.freeze({
   coach_tags_recovered: 'The coach’s reply was missing its tags and plato got them on a second ask.',
   coach_tags_unrecovered: 'The coach’s reply was missing its tags and the second ask didn’t supply them.',
   conversation_too_long: 'The conversation passed the size limit and can no longer be saved.',
-  coach_completion_held: 'A completion was held by the assessment check.',
+  coach_completion_held: `A completion was held by the ${N.assessor}.`,
   coach_objectives_unverified: 'An objective the coach checked off wasn’t backed up.',
-  coach_assessment_failed: 'The assessment check couldn’t run.',
-  coach_assessment_failed_open: 'The assessment check couldn’t run twice in a row and the coach’s grading stood.',
+  coach_assessment_failed: `The ${N.assessor} couldn’t run.`,
+  coach_assessment_failed_open: `The ${N.assessor} couldn’t run twice in a row and the coach’s grading stood.`,
   coach_draft_rewritten: 'A reply that drafted the learner’s answer was rewritten.',
   coach_draft_kept: 'A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.',
 });

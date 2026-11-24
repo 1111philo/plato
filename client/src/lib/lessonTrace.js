@@ -14,6 +14,8 @@
  * Pure except for the injected `save`. Unit tests: client/tests/lessonTrace.test.js.
  */
 
+import { MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
+
 export const TRACE_VERSION = 1;
 
 // One prompt part or record stays under the server's 380 KB item cap.
@@ -239,15 +241,15 @@ export function rulesApplied({ before = {}, after = {}, modelProgress = null, re
   const met = after.objectivesMet?.length || 0;
   // After tag repair: a score recovered by asking again was recorded.
   if (asked == null) rules.push('noProgressTag');
-  if (asked != null && (!Number.isInteger(asked) || asked < 0 || asked > 10)) rules.push('clamped');
+  if (asked != null && (!Number.isInteger(asked) || asked < 0 || asked > MAX_PROGRESS)) rules.push('clamped');
   if (assessment?.held) rules.push('heldAt8');
   if (assessment?.failed && !assessment.failedOpen) rules.push('checkFailedNothingCounted');
   if (assessment?.failedOpen) rules.push('checkFailedTwiceGradingStood');
   if (assessment?.unverified) rules.push('objectivesNotBackedUp');
   if (assessment?.replaced) rules.push('replyReplaced');
   if (wasCompleted) rules.push('frozenAfterCompletion');
-  else if (asked != null && asked >= 10 && !achieved && total > 0 && met < total) rules.push('cappedAt9');
-  if ((before.insights?.length || 0) + (parsed?.kbUpdate?.insights?.length || 0) > 10) rules.push('notesFolded');
+  else if (asked != null && asked >= MAX_PROGRESS && !achieved && total > 0 && met < total) rules.push('cappedAt9');
+  if ((before.insights?.length || 0) + (parsed?.kbUpdate?.insights?.length || 0) > MAX_INSIGHTS) rules.push('notesFolded');
   if (achieved) rules.push('completed');
   return {
     rules,
