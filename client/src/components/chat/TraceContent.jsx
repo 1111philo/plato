@@ -66,6 +66,8 @@ export default function TraceContent({ scope, active, recording, onStart, onStop
   const [loading, setLoading] = useState(false);
   const [live, setLive] = useState([]);
   const [announce, setAnnounce] = useState('');
+  // A recorded exchange the server refused: said, not hidden.
+  const [unsaved, setUnsaved] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,8 +104,9 @@ export default function TraceContent({ scope, active, recording, onStart, onStop
       if (event.step && event.kind !== 'followup') setLive((prev) => [...prev, liveTitle(event.step)]);
       if (event.saved) {
         if (event.kind !== 'followup') setLive([]);
+        if (event.saved.ok === false) setUnsaved(event.saved.status);
         load();
-        setAnnounce('Trace updated');
+        setAnnounce(event.saved.ok === false ? 'This exchange couldn’t be saved to the trace' : 'Trace updated');
         clearTimeout(clear);
         clear = setTimeout(() => setAnnounce(''), 3000);
       }
@@ -127,6 +130,11 @@ export default function TraceContent({ scope, active, recording, onStart, onStop
   return (
     <div className="space-y-4">
       <Recorder recording={recording} onStart={onStart} onStop={onStop} error={error} what={what} compact={hasAny} />
+      {unsaved !== null && (
+        <p role="alert" className="rounded-md border-l-4 border-red-700 bg-red-50 px-2 py-1 text-sm dark:border-red-400 dark:bg-red-950">
+          An exchange couldn’t be saved to the trace{unsaved ? ` (the server answered ${unsaved})` : ''}. The lesson itself wasn’t affected.
+        </p>
+      )}
       {(recording || hasAny || loading) && (
         <>
           <p className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">

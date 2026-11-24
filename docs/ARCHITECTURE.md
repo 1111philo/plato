@@ -598,7 +598,14 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
 | `trace:<scope>:b:<ms>` | one follow-up agent (profile, unit note) |
 | `trace:<scope>:p:<hash>` | one part of a system prompt, stored once per distinct text |
 
-`<scope>` is a lesson id or `profile`.
+`<scope>` is a lesson id or `profile`, made key-safe by `js/traceScope.js`
+(`traceScopeKey`): the server allows only letters, digits, `-` and `_` there,
+and a lesson id can hold anything its author typed. On playground, lessons
+with `&`, `:` or spaces in their ids had every trace write refused, without a
+word (Blake, 2026-11-24). A safe id is used as it is (older traces keep their
+keys); any other becomes its safe characters plus a fingerprint of the whole
+id. A refused write is now said in the Data Trace ("An exchange couldn't be
+saved to the trace").
 
 - **Out of the bulk load.** `GET /v1/sync` skips `trace:` at the database, as
   it does `screenshot:` (`getSyncDataExcept` takes a list; the ranges come from
@@ -689,17 +696,22 @@ A request the trace can't reproduce means the trace is missing something.
   dialog below that.
 - **Written for reading and re-reading** (Blake, 2026-11-24: "a user visiting
   the first time will probably click to helper text … that a repeat user
-  doesn't need"). Explanations sit behind **ⓘ** (`Explain.jsx`, closed by
-  default): what a stage, step, check or label means, and "How to read a
-  trace" (`GLOSSARY`). What's left in view is what happened.
+  doesn't need"). Explanations sit behind **ⓘ** (`Explain.jsx`, a Base UI
+  popover anchored to its button, styled like the app's menus; Escape or a
+  click outside closes it): what a stage, step, check or label means, and
+  "How to read a trace" (`GLOSSARY`). What's left in view is what happened.
 - **The list of exchanges** (`TraceTimeline.jsx`): first, **what plato did
   across the conversation**, counted from the records (`lessonSummary`):
   "asked the coach again for the tags its reply left out, 8 times (19.8 s in
   all)", "held a completion once", "added a pacing instruction … on 1
-  exchange". Each line narrows the list to those exchanges. Then one row per
-  turn with what changed and who shaped it.
+  exchange". Each line is a filter button ("Show these 8", then "Showing"),
+  and a filtered list says so above it ("Showing 8 of 11 exchanges: where
+  plato …", with Show all). Then one row per turn with what changed and who
+  shaped it.
 - **One exchange**, top to bottom: a bar pinned to the top (All exchanges,
-  Previous, Next); what you sent and what you saw; the verdict (with "Where
+  Previous, Next); what you sent and what you saw, as the chat shows them
+  (your message in its bubble, the reply as plain text; a long reply opens
+  with "Show the whole reply"); the verdict (with "Where
   plato stepped in" below, just its first sentence); **Where plato stepped
   in**, only when it did, each with "Show this step"; then **Every step (N)**,
   folded, in the stages of `STAGES`. An exchange shows about 100 words before

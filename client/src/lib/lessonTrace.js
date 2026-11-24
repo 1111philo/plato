@@ -14,6 +14,7 @@
  * Pure except for the injected `save`. Unit tests: client/tests/lessonTrace.test.js.
  */
 
+import { traceScopeKey } from '../../js/traceScope.js';
 import { MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 
 export const TRACE_VERSION = 1;
@@ -44,9 +45,13 @@ export function withTraceScope(preferences, scope, on) {
   return { ...(preferences || {}), traceScopes: on ? [...scopes, scope] : scopes };
 }
 
-/** `trace:<scope>:<kind>:<id>`: kind t = a turn, b = a follow-up agent, p = a prompt part. */
+/**
+ * `trace:<scope>:<kind>:<id>`: kind t = a turn, b = a follow-up agent, p = a
+ * prompt part. The scope is made key-safe (js/traceScope.js): a lesson's id
+ * can hold characters a key can't.
+ */
 export function traceKey(scope, kind, id) {
-  return `trace:${scope}:${kind}:${id}`;
+  return `trace:${traceScopeKey(scope)}:${kind}:${id}`;
 }
 
 /**
@@ -221,7 +226,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
 
     /**
      * Write the trace: new prompt parts first, then the turn's record. Never
-     * throws, and never runs twice. Returns `{ key, ok, bytes }`.
+     * throws, and never runs twice. Returns `{ key, ok, status, bytes }`.
      */
     async flush() {
       if (flushed) return null;
@@ -241,7 +246,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
           steps,
         };
         const res = await put(key, data);
-        return { key, ok: !!res?.ok, bytes };
+        return { key, ok: !!res?.ok, status: res?.status ?? null, bytes };
       } catch {
         return { key, ok: false };
       }

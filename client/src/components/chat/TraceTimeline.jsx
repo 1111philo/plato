@@ -16,6 +16,8 @@ import { useEffect, useRef, useState } from 'react';
 import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left';
 import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right';
 import TriangleAlert from 'lucide-react/dist/esm/icons/triangle-alert';
+import ListFilter from 'lucide-react/dist/esm/icons/list-filter';
+import X from 'lucide-react/dist/esm/icons/x';
 import { Button } from '@/components/ui/button';
 import { SOURCES } from '../../lib/transparency.js';
 import Explain from './Explain.jsx';
@@ -35,7 +37,7 @@ function Source({ source, label }) {
 const focusRing = 'rounded-sm focus-visible:outline-2 focus-visible:outline-ring';
 const summaryClass = `cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground ${focusRing}`;
 const preClass = 'mt-1 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] rounded-sm bg-muted p-2 text-xs leading-relaxed';
-const quoteClass = 'mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap [overflow-wrap:anywhere] rounded-md border-l-4 bg-background p-2 text-sm';
+
 // Sentence case, but "plato" stays lowercase (the brand).
 const capital = (t) => (!t || /^plato/.test(t) ? t : t[0].toUpperCase() + t.slice(1));
 
@@ -43,6 +45,37 @@ function when(at) {
   try { return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; }
 }
 const secs = (ms) => (ms == null ? null : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+/**
+ * What you sent and what you saw, as the chat shows them: your message in its
+ * bubble, the coach's reply as plain text. Plain text, never markdown (it is
+ * model output). A long reply shows its start, with the rest one click away.
+ */
+function ChatQuote({ who, text }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 420;
+  if (who === 'you') {
+    return (
+      <div className="flex justify-end">
+        <p className="max-w-[90%] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
+          <span className="sr-only">You sent: </span>{text}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className={`whitespace-pre-wrap [overflow-wrap:anywhere] font-serif text-sm leading-relaxed ${long && !all ? 'line-clamp-5' : ''}`}>
+        <span className="sr-only">You saw: </span>{text}
+      </p>
+      {long && (
+        <button type="button" aria-expanded={all} onClick={() => setAll((a) => !a)} className={`mt-1 text-xs text-primary hover:underline ${focusRing}`}>
+          {all ? 'Show less' : 'Show the whole reply'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** The exact text behind a step, behind one disclosure. */
 function ExactText({ details }) {
@@ -221,13 +254,11 @@ function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
       </h3>
       {e.kind !== 'turn' && e.kind !== 'start' && <p className="-mt-2">{e.title}</p>}
 
-      {e.you != null && e.you !== '' && (
-        <div><p className="text-xs font-medium">You sent</p><blockquote className={`${quoteClass} border-primary`}>{e.you}</blockquote></div>
-      )}
-      {e.saw != null && e.saw !== '' && (
-        <div>
-          <p className="text-xs font-medium">You saw</p>
-          <blockquote className={`${quoteClass} border-muted-foreground`}>{e.saw}</blockquote>
+      {/* The exchange as it looked in the chat. */}
+      {((e.you != null && e.you !== '') || (e.saw != null && e.saw !== '')) && (
+        <div className="space-y-2 rounded-md border border-border bg-background p-3">
+          {e.you != null && e.you !== '' && <ChatQuote who="you" text={e.you} />}
+          {e.saw != null && e.saw !== '' && <ChatQuote who="coach" text={e.saw} />}
           {e.firstSeen && (
             <details className="mt-1">
               <summary className={summaryClass}>A different reply appeared first, then plato replaced it</summary>
@@ -296,22 +327,32 @@ function Row({ exchange: e, onOpen, buttonRef }) {
   );
 }
 
-/** What plato did across the conversation; each line narrows the list to those exchanges. */
+/**
+ * What plato did across the conversation. Each line is a filter: it shows
+ * only the exchanges it counts, says so on the line ("Showing"), and the list
+ * below says what it's narrowed to.
+ */
 function Summary({ summary, filter, setFilter }) {
   if (!summary?.items?.length) return null;
   return (
-    <section aria-labelledby="trace-summary" className="space-y-1">
+    <section aria-labelledby="trace-summary" className="space-y-1.5">
       <h3 id="trace-summary" className="font-semibold">{summary.exchanges === 1 ? 'In this exchange' : `Across ${summary.exchanges} exchanges`}, plato…</h3>
-      <ul className="space-y-1">
-        {summary.items.map((it) => (
-          <li key={it.id} className="flex items-start gap-2">
-            <span aria-hidden="true" className="leading-5">•</span>
-            <button type="button" aria-pressed={filter === it.id} onClick={() => setFilter(filter === it.id ? null : it.id)}
-              className={`text-left leading-5 hover:underline ${filter === it.id ? 'font-medium text-primary' : ''} ${focusRing}`}>
-              {it.text}
-            </button>
-          </li>
-        ))}
+      <ul className="space-y-1.5">
+        {summary.items.map((it) => {
+          const on = filter === it.id;
+          return (
+            <li key={it.id}>
+              <button type="button" aria-pressed={on} onClick={() => setFilter(on ? null : it.id)}
+                className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left ${on ? 'border-primary bg-primary/10' : 'border-border bg-background hover:bg-muted'} ${focusRing}`}>
+                <span className="min-w-0 flex-1">{it.text}</span>
+                <span className={`flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium ${on ? 'bg-primary text-primary-foreground' : 'text-primary'}`}>
+                  <ListFilter aria-hidden="true" className="size-3.5" />
+                  {on ? 'Showing' : `Show ${it.exchanges.length === 1 ? 'it' : `these ${it.exchanges.length}`}`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -388,7 +429,8 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
     );
   }
 
-  const narrowed = filter ? new Set(view?.summary?.items.find((it) => it.id === filter)?.exchanges || []) : null;
+  const filtering = filter ? view?.summary?.items.find((it) => it.id === filter) || null : null;
+  const narrowed = filtering ? new Set(filtering.exchanges) : null;
   const listed = narrowed ? exchanges.filter((x) => narrowed.has(x.at)) : exchanges;
   return (
     <div className="space-y-4 text-sm">
@@ -408,9 +450,18 @@ export default function TraceTimeline({ view, loading, live = [], focusAt, stamp
       <Summary summary={view?.summary} filter={filter} setFilter={setFilter} />
 
       <section aria-labelledby="trace-exchanges" className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="trace-exchanges" className="font-semibold">Exchanges{exchanges.length ? ` (${narrowed ? `${listed.length} of ${exchanges.length}` : exchanges.length})` : ''}</h3>
-          {filter && <button type="button" className={`text-xs text-primary hover:underline ${focusRing}`} onClick={() => setFilter(null)}>Show all</button>}
+        <h3 id="trace-exchanges" className="font-semibold">Exchanges{exchanges.length ? ` (${narrowed ? `${listed.length} of ${exchanges.length}` : exchanges.length})` : ''}</h3>
+        {/* The list says what it's narrowed to, with the way back. */}
+        <div aria-live="polite">
+          {filtering && (
+            <p className="flex flex-wrap items-center gap-2 rounded-md border border-primary bg-primary/10 px-2 py-1.5">
+              <ListFilter aria-hidden="true" className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">Showing {listed.length} of {exchanges.length} exchanges: where plato {filtering.label || filtering.text}.</span>
+              <Button variant="outline" size="sm" onClick={() => setFilter(null)}>
+                <X aria-hidden="true" className="size-3.5" /> Show all
+              </Button>
+            </p>
+          )}
         </div>
         {loading && !exchanges.length && <p className="text-muted-foreground" role="status">Loading…</p>}
         {!loading && !exchanges.length && <p className="text-muted-foreground">Nothing recorded yet.</p>}

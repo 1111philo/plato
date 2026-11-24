@@ -114,7 +114,7 @@ test.describe('Trace mode', () => {
     await page.keyboard.press('Enter');
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange 2 of 2/ })).toBeFocused();
-    await expect(exchange.getByRole('blockquote').filter({ hasText: 'My first answer about the key idea.' })).toBeVisible();
+    await expect(exchange.getByText(/^You sent: My first answer about the key idea\.$/)).toBeVisible();
     await expect(exchange.getByText(/plato’s code changed nothing/)).toBeVisible();
     await expect(exchange.getByRole('heading', { name: 'Where plato stepped in' })).toHaveCount(0);
     await expect(exchange.getByRole('heading', { name: 'You sent' })).toBeHidden();
@@ -122,9 +122,15 @@ test.describe('Trace mode', () => {
     const labels = exchange.getByRole('button', { name: 'What do these labels mean?' });
     await expect(labels).toHaveAttribute('aria-expanded', 'false');
     await labels.click();
-    await expect(exchange.getByText(/^plato’s code:/).first()).toBeVisible();
-    await expectAccessible(page, { include: '#lesson-panel', label: 'trace exchange, an explanation open' });
-    await labels.click();
+    // A popover anchored to the ⓘ; Escape closes it and focus goes back.
+    const note = page.getByRole('dialog', { name: 'What do these labels mean?' });
+    await expect(note.getByText(/^plato’s code:/)).toBeVisible();
+    await expect(labels).toHaveAttribute('aria-expanded', 'true');
+    await expect(note).toHaveCSS('opacity', '1'); // after its fade-in, or contrast is measured mid-animation
+    await expectAccessible(page, { label: 'trace exchange, an explanation open' });
+    await page.keyboard.press('Escape');
+    await expect(note).toHaveCount(0);
+    await expect(labels).toBeFocused();
     // Every step, by stage; a step opens to what it did.
     await exchange.locator('summary', { hasText: /^Every step \(\d+\)$/ }).click();
     for (const stage of ['You sent', 'plato prepared and sent the request', 'The AI model answered', 'plato checked the answer', 'plato recorded the result']) {
@@ -139,8 +145,10 @@ test.describe('Trace mode', () => {
     await expect(request.getByText(/^plato sent a stand-in model used for testing the Coach’s instructions \([\d,]+ characters/)).toBeVisible();
     // Who the agent is, from the header its call recorded.
     await request.getByRole('button', { name: 'Who is the Coach?' }).click();
-    await expect(request.getByText(/^Talks with the learner/)).toBeVisible();
-    await expect(request.getByText(/plato doesn’t send this description to the model/)).toBeVisible();
+    const card = page.getByRole('dialog', { name: 'Who is the Coach?' });
+    await expect(card.getByText(/^Talks with the learner/)).toBeVisible();
+    await expect(card.getByText(/plato doesn’t send this description to the model/)).toBeVisible();
+    await page.keyboard.press('Escape');
     await request.getByText(/^Show the exact text/).click();
     await request.getByText(/^Instructions, part 1 of \d+: The agent’s instructions/).first().click();
     await expect(request.locator('details[open] > pre').filter({ hasText: /^You are the Coach for plato/ }).first()).toBeVisible();
@@ -192,7 +200,7 @@ test.describe('Trace mode', () => {
     const panel = panelOf(page);
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
-    await expect(exchange.getByRole('blockquote').filter({ hasText: 'MOCK_COMPLETE MOCK_UNBACKED I think I am done' })).toBeVisible();
+    await expect(exchange.getByText(/^You sent: MOCK_COMPLETE MOCK_UNBACKED I think I am done$/)).toBeVisible();
     // Where plato stepped in, listed up front; each points at its step.
     const steppedIn = exchange.getByRole('region', { name: 'Where plato stepped in' }).or(exchange.locator('section', { has: page.getByRole('heading', { name: 'Where plato stepped in' }) }));
     await expect(steppedIn.getByText(/plato held the lesson open/)).toBeVisible();
@@ -210,11 +218,14 @@ test.describe('Trace mode', () => {
 
     // Across the conversation: what plato did, each line narrowing the list.
     await exchange.getByRole('button', { name: 'All exchanges' }).click();
-    const held = panel.getByRole('button', { name: /^held a completion once$/ });
+    const held = panel.getByRole('button', { name: /^held a completion once/ });
     await expect(panel.getByRole('heading', { name: /^Across \d+ exchanges, plato…$/ })).toBeVisible();
     await held.click();
+    // It's plainly a filter: the line says Showing, and the list says what it's narrowed to.
     await expect(held).toHaveAttribute('aria-pressed', 'true');
+    await expect(held).toContainText('Showing');
     await expect(panel.getByRole('heading', { name: /^Exchanges \(1 of \d+\)$/ })).toBeVisible();
+    await expect(panel.getByText(/^Showing 1 of \d+ exchanges: where plato held a completion\.$/)).toBeVisible();
     await expect(panel.getByRole('button', { name: /^1\. Lesson start/ })).toHaveCount(0);
     await expectAccessible(page, { include: '#lesson-panel', label: 'trace list narrowed' });
     await panel.getByRole('button', { name: 'Show all' }).click();
@@ -311,7 +322,8 @@ test.describe('Trace mode', () => {
     const call = turn.locator('li[id*="-step-"]').filter({ has: page.locator('summary', { hasText: /^Sent to the Learner Profile Update: profile update \(learner\)/ }) }).first();
     await call.locator('summary').first().click();
     await call.getByRole('button', { name: 'Who is the Learner Profile Update?' }).click();
-    await expect(call.getByText(/^Keeps the learner’s profile up to date/)).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Who is the Learner Profile Update?' }).getByText(/^Keeps the learner’s profile up to date/)).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(turn.locator('summary', { hasText: /^The learner profile was updated/ })).toBeVisible();
     await expectAccessible(page, { include: '[role=dialog]', label: 'settings: profile trace dialog' });
     await page.keyboard.press('Escape');
