@@ -15,6 +15,9 @@ import { pathToFileURL } from 'node:url';
 globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {}, clear() {} };
 globalThis.fetch ??= async () => ({ ok: false, status: 404, json: async () => ({}) });
 
+/** A browser language for each language the cases use. */
+const BROWSER = { Spanish: 'es-MX', Bengali: 'bn-BD', English: 'en-US' };
+
 const tryImport = async (path) => (existsSync(path) ? import(pathToFileURL(path).href) : {});
 
 /** Everything an agent module needs from one version of plato. */
@@ -39,16 +42,29 @@ export async function loadApp(root) {
     return existsSync(p) ? readFileSync(p, 'utf8') : null;
   };
   /**
+   * The language a learner whose browser is set to `name` gets in this
+   * version (learnerLanguageName), or '' when it gives them none: a version
+   * that doesn't know Bengali gives Bengali learners English instructions,
+   * and the evaluation measures that, not what the case hoped for.
+   */
+  const languageFor = (name) => {
+    if (!name) return '';
+    const code = BROWSER[name];
+    if (!code || !language.learnerLanguageName) return name;
+    return language.learnerLanguageName({ language: code }) || '';
+  };
+  /**
    * An agent's system prompt as that version assembles it. `kb` and
    * `catalog` are the eval's fixtures; `language` a language name or ''.
    */
   const system = (id, { kb = '', catalog = '', addendum = '', language: lang = '' } = {}) => {
     const text = prompt(id);
     if (text == null) return null;
-    const directive = lang && language.languageDirective ? language.languageDirective(lang) : '';
+    const resolved = languageFor(lang);
+    const directive = resolved && language.languageDirective ? language.languageDirective(resolved) : '';
     const kbNote = id === 'coach' ? assembly.COACH_KB_NOTE || '' : '';
     if (assembly.assembleSystemPrompt) return assembly.assembleSystemPrompt({ prompt: text, kb, kbNote, catalog, addendum, languageDirective: directive });
     return [text, kb && `\n\n---\n\n## Program Knowledge Base\n\n${kb}`, catalog && `\n\n---\n\n## Lessons in This Classroom\n\n${catalog}`, addendum && `\n\n---\n\n${addendum}`, directive].filter(Boolean).join('');
   };
-  return { root, engine, assessment, orchestrator, assembly, language, validators, work, creation, markdown, notes, profiles, lessonOwner, prompt, system };
+  return { root, languageFor, engine, assessment, orchestrator, assembly, language, validators, work, creation, markdown, notes, profiles, lessonOwner, prompt, system };
 }

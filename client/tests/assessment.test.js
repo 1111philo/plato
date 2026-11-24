@@ -362,6 +362,27 @@ describe('checkGrading', () => {
     assert.match(parsed.text, /isn't complete yet/);
   });
 
+  it('puts plato’s held message into the learner’s language when one is given, and keeps the English if that fails (AGENT_EVALS W7)', async () => {
+    const run = (localize) => checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'Nailed it', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3] } },
+      assess: async () => notShown,
+      regenerate: async () => 'This one is complete.\n[PROGRESS: 8]',
+      judgeClaim: async () => true,
+      localize,
+    });
+    const asked = [];
+    const es = await run(async (addendum) => { asked.push(addendum); return 'Ya casi, pero esta lección aún no está completa.\n[PROGRESS: 8]'; });
+    assert.match(asked[0], /learner's language/);
+    assert.match(asked[0], /isn't complete yet/, 'translates plato’s own message');
+    assert.equal(es.parsed.text, 'Ya casi, pero esta lección aún no está completa.', 'tags dropped');
+    assert.equal(es.parsed.progress, 8);
+    const failed = await run(async () => { throw new Error('busy'); });
+    assert.match(failed.parsed.text, /isn't complete yet/);
+    const english = await run(undefined);
+    assert.match(english.parsed.text, /isn't complete yet/);
+  });
+
   it('keeps a held reply when the claim check says no or fails', async () => {
     for (const judgeClaim of [async () => false, async () => { throw new Error('busy'); }]) {
       const { parsed, assessment } = await checkGrading({

@@ -198,11 +198,26 @@ system prompt except the two whose output only plato reads (`assessor`,
   the directive too.
 - Admin-side agents (lesson creator/extractor, KB editor/extractor) follow
   the *admin's* browser, so lessons and the KB are authored in that language.
+- **The Coach also gets it in its context** (`learnerLanguage` in
+  `buildContext`, omitted for English). With only the system prompt's
+  Language section, which comes after 22,000 characters of English, it opened
+  lessons in English about half the time, and a rule asking for "the
+  language of this conversation" made it worse, because everything it reads
+  first is English (agent evaluations, 2026-11-24). With the context field, 8
+  of 8 openers in Spanish and in Bengali.
+- **plato's own fixed text** (the held-completion message, `heldReply`) is
+  put into the learner's language by the Coach (`checkGrading`'s `localize`,
+  `localizeAddendum`); a failed translation keeps the English.
+- The map covers the languages learners use. Bengali was missing, so Bengali
+  browsers got no directive at all; it and other South Asian, African and
+  Southeast Asian languages were added after review.
 - Verified against Qwen3-VL on Bedrock (Spanish, 3 runs × 7 agents, outputs
   run through plato's own parsers): all tags, JSON, headings, and `- Can `
-  objectives parsed; prose came back in Spanish. Internal KB fields the coach
-  reads but learners never see (`evidence`, `learnerPosition`) sometimes stay
-  English because their input (the lesson) is English — harmless.
+  objectives parsed; prose came back in Spanish. `evidence`, which only the
+  Coach and Assessor read, sometimes stays English because its input (the
+  lesson) is English: harmless. `learnerPosition` is learner-facing ("Where
+  you are") and must be in their language. The agent evaluations
+  (`server/scripts/evals/`) check these on every change.
 
 ## AI provider & model choice
 

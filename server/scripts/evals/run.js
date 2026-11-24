@@ -4,7 +4,7 @@
  *
  *   npm run eval -- [--agents coach,assessor | --affected [--base origin/playground]]
  *                   [--level moments|full] [--trials 6] [--concurrency 6]
- *                   [--calibrate] [--no-baseline] [--quiet]
+ *                   [--calibrate] [--no-baseline] [--quiet] [--cases C61,W7]
  *
  * Runs each case several times against plato's model (Bedrock, us-east-2,
  * your AWS login), through the app's own code, and scores every check by its
@@ -170,13 +170,16 @@ async function main() {
   // Results belong to a commit. Uncommitted changes to what's evaluated make
   // a run that can't be matched to one: it is kept apart and the check ignores it.
   const dirty = uncommittedWatched(REPO);
-  const outFile = join(EVALS, dirty.length ? 'scratch' : 'results', `${fp}-${level}.json`);
+  // Only some cases (--cases C61,W7): for checking a fix; it never counts.
+  const only = opt.cases ? new Set(String(opt.cases).split(',')) : null;
+  const outFile = join(EVALS, dirty.length || only ? 'scratch' : 'results', `${fp}-${level}.json`);
   if (!ids.length) { console.log('Nothing the evaluations cover has changed.'); return 0; }
   if (dirty.length) process.stderr.write(`Note: uncommitted changes to ${dirty.join(', ')}. These results go to evals/scratch/ and won't count until you commit and run again.\n`);
 
   const agents = [];
   for (const id of ids) if (existsSync(join(here, SUITES.includes(id) ? 'suites' : 'agents', `${id}.js`))) agents.push(await loadAgent(id));
   const missing = ids.filter((id) => !agents.some((a) => a.id === id));
+  if (only) for (const a of agents) a.cases = a.cases.filter((c) => only.has(c.id));
   const trials = Number(opt.trials);
   const concurrency = Number(opt.concurrency);
   const model = bedrockModel();

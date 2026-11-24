@@ -15,7 +15,7 @@ npm run eval -- --level full          # every agent; whole lessons and chains as
 npm run eval -- --calibrate           # measure normal variation: today's version run twice
 ```
 
-Options: `--trials 6`, `--concurrency 6`, `--base origin/playground`, `--no-baseline`.
+Options: `--trials 6`, `--concurrency 6`, `--base origin/playground`, `--no-baseline`, and `--cases C61,W7` to check a fix on some cases (written to `evals/scratch/`; it never counts).
 
 It prints what failed, writes `evals/results/<version>-<level>.json` and a reading
 pack in `evals/reading/`, and exits 1 on any failure. A run with uncommitted

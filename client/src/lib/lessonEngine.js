@@ -15,6 +15,7 @@ import {
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import { learnerLanguageName } from '../../js/language.js';
 import { compressImageDataUrl } from './imageCompression.js';
 import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
@@ -27,7 +28,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, localizeAddendum, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -157,14 +158,16 @@ export async function recoverMissingTags(parsed, repair) {
  * stay checked off. When the reply scored 10 but some objective isn't shown,
  * completion is held and `regenerate(addendum)` streams the coach's second
  * try, told what's missing; its score is held to HELD_PROGRESS and its
- * objectives to the ones the check found.
+ * objectives to the ones the check found. When that try still says the
+ * lesson is done, plato's own held message replaces it, put into the
+ * learner's language by `localize(addendum)` when one is given.
  *
  * Never throws. If the check itself fails, the coach's grading stands, as it
  * did before: a completing turn checks off every objective, so the
  * every-objective rule in applyCoachResponseToKB still lets it complete.
  * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
  */
-export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim, onStep }) {
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim, localize, onStep }) {
   // `onStep(type, data)` (Trace mode) hears each decision as it is made. It
   // changes nothing: the result is the same with or without it.
   const note = (type, data) => { try { onStep?.(type, data); } catch { /* never breaks grading */ } };
@@ -263,7 +266,15 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     }
     note('claimCheck', { byPattern, byModel, saysDone });
     if (saysDone) {
-      const standard = heldReply(kb, applied.outstanding, grounded.missing);
+      let standard = heldReply(kb, applied.outstanding, grounded.missing);
+      // In the learner's language, when it isn't English (`localize`, from
+      // sendMessage). A failed or empty translation keeps the English.
+      if (localize) {
+        try {
+          const translated = parseCoachResponse(await localize(localizeAddendum(standard))).text;
+          if (translated) standard = translated;
+        } catch { /* keep the English */ }
+      }
       note('replyReplaced', { before: out.text, after: standard });
       out = { ...out, text: standard };
       replaced = true;
@@ -435,7 +446,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   if (onProgress) onProgress('starting');
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
   const opening = [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }];
   trace?.step('context', { context: JSON.parse(context) });
   trace?.setBase(opening);
@@ -602,7 +613,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // Always include context as first message so coach has lesson + profile info
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
@@ -670,6 +681,8 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
     regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
+    // plato's own held message, in the learner's language (not streamed: it replaces the reply).
+    ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),
     // A result says which call it came from: the latest one (a claim decided
     // by wording alone made no call).
     ...(trace ? { onStep: (type, data) => trace.step(type, CALL_RESULTS.has(type) && !(type === 'claimCheck' && data.byPattern) ? { call: trace.lastCall(), ...data } : data) } : {}),
@@ -989,7 +1002,7 @@ function lessonForTrace(lesson) {
   };
 }
 
-export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress) {
+export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress, learnerLanguage = null) {
   const completed = lessonKB?.activitiesCompleted || 0;
   const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
@@ -1005,6 +1018,11 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // The learner's language (#240), when it isn't English: the context is the
+  // first thing the coach reads, and with only the system prompt's Language
+  // section it still opened in English about half the time (AGENT_EVALS).
+  // English adds nothing, as everywhere else.
+  if (learnerLanguage) context.learnerLanguage = learnerLanguage;
   // Objectives the coach has already marked as shown (#438), 1-based.
   const met = objectivesMetForContext(lessonKB);
   if (met) context.objectivesMet = met;

@@ -13,6 +13,12 @@ describe('learnerLanguageName', () => {
     assert.equal(learnerLanguageName({ language: 'ZH-tw' }), 'Chinese');
   });
 
+  it('knows the languages learners use (Bengali, from review)', () => {
+    assert.equal(learnerLanguageName({ language: 'bn-BD' }), 'Bengali');
+    assert.equal(learnerLanguageName({ language: 'bn-IN' }), 'Bengali');
+    assert.equal(learnerLanguageName({ language: 'ur' }), 'Urdu');
+  });
+
   it('prefers the first of navigator.languages', () => {
     assert.equal(learnerLanguageName({ languages: ['fr-CA', 'en-US'], language: 'en-US' }), 'French');
   });

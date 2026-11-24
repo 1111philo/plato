@@ -20,7 +20,7 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
   const tail = history.slice(-(engine.COACH_TAIL || 40)).filter((m) => m.content && String(m.content).trim());
   const parts = images.length && engine.buildUserParts ? engine.buildUserParts(message || '', images) : null;
   const messages = [
-    { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress) },
+    { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress, app.languageFor(language) || null) },
     { role: 'assistant', content: 'Ready.' },
     ...tail,
     ...(message != null || parts ? [{ role: 'user', content: parts && !(parts.length === 1 && parts[0].type === 'text') ? parts : message }] : []),
@@ -47,6 +47,7 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
       imageParts: (parts || []).filter((p) => p.type === 'image'),
       assess: (input, imgs, o) => model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: imgs?.length ? [{ type: 'text', text: input }, ...imgs] : input }], maxTokens: 2048, temperature: o?.temperature ?? 0 }),
       regenerate: (addendum) => coach(addendum),
+      ...(app.languageFor(language) ? { localize: (addendum) => coach(addendum, messages, 600) } : {}),
       judgeClaim: async (t) => /^\s*yes/i.test(await model.call({ system: app.system('claim-check'), messages: [{ role: 'user', content: String(t).slice(0, 8000) }], maxTokens: 5, temperature: 0 })),
     });
     parsed = graded.parsed;
@@ -81,7 +82,7 @@ export async function coachOpening({ app, model, lesson, kb, profile = 'No profi
   const raw = await model.call({
     system: app.system('coach', { kb: programKb, catalog: CATALOG, language }),
     messages: [
-      { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress) },
+      { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress, app.languageFor(language) || null) },
       { role: 'assistant', content: 'Ready.' },
       { role: 'user', content: 'Start the lesson.' },
     ],

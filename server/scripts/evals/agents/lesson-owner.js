@@ -47,7 +47,8 @@ export async function run(c, { app, model }) {
       doingWords: evidence.every((e) => !KNOWS.test(e)),
       short: evidence.every((e) => words(e) < 20),
       fits: c.mustMention ? evidence.some((e) => new RegExp(c.mustMention, 'i').test(e)) : null,
-      language: c.language ? inLanguage(`${kb.learnerPosition || ''} ${evidence.join(' ')}`, c.language) : null,
+      // What the learner reads ("Where you are"); `evidence` is for the Coach and Assessor only (ARCHITECTURE.md, learner language).
+      language: c.language ? inLanguage(String(kb.learnerPosition || ''), c.language) : null,
     },
     sample: { evidence, learnerPosition: kb.learnerPosition },
   };

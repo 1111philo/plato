@@ -420,6 +420,19 @@ export function heldReply(kb, outstanding, missing) {
   return `You're close, but this lesson isn't complete yet.${copied} The next step is yours: **${names[0] || 'the remaining objective'}**. A few plain sentences in your own words is enough. Send it when you're ready.${list}`;
 }
 
+/**
+ * The coach's addendum that puts one of plato's fixed messages (heldReply)
+ * into the learner's language, when it isn't English. The message is plato's;
+ * the coach only translates it.
+ */
+export function localizeAddendum(text) {
+  return `## A message from plato (not the learner)
+
+Reply with ONLY the message below, written in the learner's language (\`learnerLanguage\` in the context). Keep its meaning, its bold and its list; add nothing; no tags.
+
+${text}`;
+}
+
 /** The learner-visible "Where you are" note on a held turn, when the coach's says the lesson is done. */
 export function heldPosition(kb, outstanding) {
   const names = outstanding.map((n) => objectiveForLearner(kb.objectives?.[n - 1])).filter(Boolean);
