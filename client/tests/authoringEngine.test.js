@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { ai, reset, signIn, settle } from './helpers/fake-plato.js';
 
 const { clearCache } = await import('../js/storage.js');
-const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL, EXTRACT_ATTEMPTS, withoutInventedDirective } = await import('../src/lib/authoringEngine.js');
+const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL, EXTRACT_ATTEMPTS, withoutInventedDirective, recoverReadiness } = await import('../src/lib/authoringEngine.js');
 
 const CONVERSATION = 'User: I want to create a new lesson.\n\nAgent: What should learners be able to do?\n\nUser: Write a clear bug report.';
 const fresh = () => { reset(); clearCache(); signIn(); ai.length = 0; };
@@ -46,6 +46,19 @@ describe('authoring chats', () => {
     assert.equal(r.problem, null);
     assert.equal(ai.length, 2);
     assert.equal(saved, r.markdown);
+  });
+
+  it('a reply without its readiness line gets it asked for once (agent evaluations D2, K4)', async () => {
+    const asked = [];
+    const turn = { raw: 'What is the start date?', text: 'What is the start date?', readiness: null };
+    const fixed = await recoverReadiness(turn, [{ role: 'user', content: 'hi' }], async (addendum, msgs) => { asked.push({ addendum, msgs }); return '[READINESS: 2]'; });
+    assert.equal(fixed.readiness, 2);
+    assert.equal(fixed.text, turn.text);
+    assert.match(asked[0].addendum, /ONLY the line/);
+    assert.deepEqual(asked[0].msgs.slice(-2).map((m) => m.role), ['assistant', 'user']);
+    assert.equal((await recoverReadiness({ ...turn, readiness: 5 }, [], async () => { throw new Error('not asked'); })).readiness, 5, 'not asked when present');
+    assert.equal((await recoverReadiness(turn, [], async () => 'no idea')).readiness, null, 'unreadable: as before');
+    assert.equal((await recoverReadiness(turn, [], async () => { throw new Error('busy'); })).readiness, null);
   });
 
   it('a Coach Directive the author didn’t give is dropped; theirs is kept (agent evaluations X1, X3)', () => {
