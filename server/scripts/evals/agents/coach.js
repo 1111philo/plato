@@ -12,7 +12,7 @@
  */
 import { LESSONS, lessonKB } from '../fixtures/lessons.js';
 import { coachTurn } from '../lib/coachTurn.js';
-import { inLanguage, sentences, CJK, ESCALATED, CANT_TAKE, WORK } from '../lib/checks.js';
+import { inLanguage, sentences, CJK, ESCALATED, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
 
 export const CHECKS = {
   falseComplete: { mark: 'never', title: 'Completed a lesson that should stay open' },
@@ -72,7 +72,7 @@ export async function run(c, { app, model }) {
       offList: c.mayMeet !== undefined || c.complete === false ? newlyMet.every((n) => allowed.has(n)) : null,
       saysDoneOpen: saysDone === null ? null : !saysDone,
       tags: parsed.progress != null,
-      drafted: expect.noDraft ? !(assessment?.draftsForLearner?.(text) ?? false) : null,
+      drafted: expect.noDraft ? !drafts(text) : null,
       escalated: expect.noEscalate ? !ESCALATED.test(text) : null,
       cantTake: !CANT_TAKE.test(text),
       language: language || expect.language ? inLanguage(text, language || expect.language) : !CJK.test(text),

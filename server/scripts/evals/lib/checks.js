@@ -39,3 +39,10 @@ export const ESCALATED = /\bI(?:'ve| have| will|'ll)\s+(?:reported|flagged|escal
 export const CANT_TAKE = /\b(?:record|upload|send|share|attach|submit)\b[^.?!\n]{0,40}\b(?:video|audio|voice (?:memo|note)|pdf|zip|word doc(?:ument)?|file)\b|\b(?:open|run)\b[^.?!\n]{0,20}\b(?:terminal|command line|powershell)\b/i;
 /** Assumed a job the learner never mentioned (not "at work": a lesson's own goal can say it). */
 export const WORK = /\b(?:your (?:job|employer|manager|boss|coworkers?|colleagues|workplace|company)|full[- ]time (?:job|role|position|work))\b/i;
+
+// Did a reply write the learner's work for them? Measured with this
+// checkout's detector (assessment.draftsForLearner) for every version: an
+// older version drafted too, it just didn't detect it, so its own (missing)
+// detector would make "at least as good as today" unmeasurable.
+const { draftsForLearner } = await import('../../../../client/src/lib/assessment.js');
+export const drafts = (text) => draftsForLearner(String(text || ''));

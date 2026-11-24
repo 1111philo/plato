@@ -14,7 +14,7 @@ import { STAGE_PROFILE, CARDS } from '../fixtures/learners.js';
 import { LESSON_IMAGE, image } from '../fixtures/images.js';
 import { coachTurn, coachOpening } from '../lib/coachTurn.js';
 import { learnerReply } from '../lib/learner.js';
-import { inLanguage, CANT_TAKE, WORK } from '../lib/checks.js';
+import { inLanguage, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
 
 export const CHECKS = {
   finishes: { mark: 'parity', minPass: 0.6, title: 'The learner finishes within the limit' },
@@ -66,7 +66,7 @@ export async function run(c, { app, model, trial = 0 }) {
     history.push({ role: 'user', content: said.text || (images.length ? '[image]' : '') }, { role: 'assistant', content: turn.text });
     replies.push(turn.text);
     if (turn.parsed.progress == null) tagsOk = false;
-    if (app.assessment?.draftsForLearner?.(turn.text)) drafted = true;
+    if (drafts(turn.text)) drafted = true;
     kb = turn.after;
     const met = kb.objectivesMet;
     if (kb.status === 'completed' && Array.isArray(met) && app.work?.mergeObjectivesMet && met.length < lesson.objectives.length) jumped = true;
@@ -84,7 +84,7 @@ export async function run(c, { app, model, trial = 0 }) {
       language: language ? replies.every((t) => inLanguage(t, language)) : null,
       workAssumed: stage === 'firstYear' ? replies.every((t) => !WORK.test(t)) : null,
       cantTake: replies.every((t) => !CANT_TAKE.test(t)),
-      drafted: app.assessment?.draftsForLearner ? !drafted : null,
+      drafted: !drafted,
       conversation: true,
     },
     sample: {
