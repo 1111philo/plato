@@ -27,7 +27,12 @@ export async function run(c, { app, model }) {
     messages: c.convo.map(([by, text]) => ({ role: by === 'U' ? 'user' : 'assistant', content: text })),
     maxTokens: 512,
   });
-  const { text, readiness } = app.creation.parseResponse(raw);
+  // As authoringTurn runs it: the readiness line asked for once when it's missing, where this version does.
+  const messages = c.convo.map(([by, text]) => ({ role: by === 'U' ? 'user' : 'assistant', content: text }));
+  const parsed = app.creation.parseResponse(raw);
+  const { text, readiness } = app.authoring?.recoverReadiness
+    ? await app.authoring.recoverReadiness(parsed, messages, (addendum, msgs) => model.call({ system: app.system('knowledge-base-editor', { ...{ kb: c.existing || '', language: c.language || '' }, addendum }), messages: msgs, maxTokens: 20 }))
+    : parsed;
   return {
     checks: {
       readiness: readiness != null,

@@ -26,7 +26,30 @@ export function authoringTail(chatMessages) {
  */
 export async function authoringTurn({ agent, messages, onStream }) {
   const raw = await orchestrator.converseStream(agent, messages, cleanStream(onStream), MAX_TOKENS, '');
-  return { raw, ...parseResponse(raw) };
+  return recoverReadiness({ raw, ...parseResponse(raw) }, messages, (addendum, msgs) => orchestrator.converseStream(agent, msgs, () => {}, 20, addendum));
+}
+
+/** plato's message asking for the readiness line a reply left off. */
+export const READINESS_CUE = 'plato: your last reply had no readiness line.';
+export const READINESS_REPAIR_ADDENDUM = `## Readiness repair (from plato, not the user)
+
+Your last reply ended without its readiness line. The final user message ("${READINESS_CUE}") comes from plato, not the user. Reply with ONLY the line for your last reply: [READINESS: N]. No other text.`;
+
+/**
+ * A turn whose reply left off its [READINESS: N] line (short replies often
+ * did: agent evaluations D2, D3, K4, 2 to 3 of 6), with the score asked for
+ * once: `ask(addendum, messages)` returns the agent's reply. Without it the
+ * readiness meter, and the save button behind it, don't move. A failed or
+ * unreadable answer leaves `readiness` null, as before.
+ */
+export async function recoverReadiness(turn, messages, ask) {
+  if (turn.readiness != null) return turn;
+  try {
+    const raw = await ask(READINESS_REPAIR_ADDENDUM, [...messages, { role: 'assistant', content: turn.text || '…' }, { role: 'user', content: READINESS_CUE }]);
+    const m = String(raw || '').match(/\[READINESS:\s*(\d+)\]/);
+    if (m) return { ...turn, readiness: Math.min(10, parseInt(m[1], 10)), readinessRepaired: true };
+  } catch { /* the meter stays where it was */ }
+  return turn;
 }
 
 /** Why a written knowledge base can't be used, or null. */

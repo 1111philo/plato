@@ -22,6 +22,9 @@ export const CHECKS = {
   sizePushback: { mark: 'parity', minPass: 0.7, title: 'Pushes back on too many objectives or too big a lesson' },
 };
 
+/** A reply without its list items and "Label: value" lines. */
+const prose = (t) => String(t).split('\n').filter((l) => !/^\s*([-*•]|\d+[.)])\s/.test(l) && !/^\s*\**[A-Z][\w -]{0,30}\**:\s*\S/.test(l)).join('\n');
+
 export const available = (app) => app.prompt('lesson-creator') != null && !!app.creation?.parseResponse;
 
 export async function run(c, { app, model }) {
@@ -30,7 +33,12 @@ export async function run(c, { app, model }) {
     messages: c.convo.map(([by, text]) => ({ role: by === 'U' ? 'user' : 'assistant', content: text })),
     maxTokens: 512,
   });
-  const { text, readiness } = app.creation.parseResponse(raw);
+  // As authoringTurn runs it: the readiness line asked for once when it's missing, where this version does.
+  const messages = c.convo.map(([by, text]) => ({ role: by === 'U' ? 'user' : 'assistant', content: text }));
+  const parsed = app.creation.parseResponse(raw);
+  const { text, readiness } = app.authoring?.recoverReadiness
+    ? await app.authoring.recoverReadiness(parsed, messages, (addendum, msgs) => model.call({ system: app.system('lesson-creator', { ...{ kb: PROGRAM_KB, catalog: CATALOG, language: c.language || '' }, addendum }), messages: msgs, maxTokens: 20 }))
+    : parsed;
   return {
     checks: {
       readiness: readiness != null,
@@ -40,7 +48,9 @@ export async function run(c, { app, model }) {
       falseSave: c.rubric ? !/rubric[^.]{0,40}\b(will be|is|gets?) saved|I(?:['’]ll| will) (?:save|store|keep) (?:the|your) rubric/i.test(text) : null,
       language: c.language ? inLanguage(text, c.language) : null,
       questions: questions(text) <= 1,
-      long: sentences(text) <= 4,
+      // Prose only: D9 is expected to list the objectives (and the spec's
+      // lesson structure is labelled lines), which aren't sentences of reply.
+      long: sentences(prose(text)) <= 4,
       ready: c.complete ? (readiness ?? 0) >= 7 : null,
       overlap: c.overlap ? text.toLowerCase().includes(c.overlap.toLowerCase()) : null,
       noFullLesson: c.noLesson ? !/##\s*(learning objectives|exemplar)/i.test(raw) : null,
