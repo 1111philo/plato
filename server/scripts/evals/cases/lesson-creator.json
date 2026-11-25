@@ -1,0 +1,193 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 11. U: the author; A: the Lesson Creator's earlier replies.",
+ "cases": [
+  {
+   "id": "D1",
+   "title": "“I want to make a lesson about giving feedback.”",
+   "convo": [
+    [
+     "U",
+     "I want to make a lesson about giving feedback."
+    ]
+   ]
+  },
+  {
+   "id": "D2",
+   "title": "The author proposes a goal of “understands networking”.",
+   "convo": [
+    [
+     "U",
+     "I want a lesson on networking."
+    ],
+    [
+     "A",
+     "What should learners walk away able to do?"
+    ],
+    [
+     "U",
+     "They should understand networking."
+    ]
+   ]
+  },
+  {
+   "id": "D3",
+   "title": "“They'll record a two-minute video.”",
+   "video": true,
+   "convo": [
+    [
+     "U",
+     "A lesson on elevator pitches."
+    ],
+    [
+     "A",
+     "What will learners produce to show they can do it?"
+    ],
+    [
+     "U",
+     "They'll record a two-minute video of their pitch."
+    ]
+   ]
+  },
+  {
+   "id": "D4",
+   "title": "The author lists seven objectives.",
+   "tooBig": true,
+   "convo": [
+    [
+     "U",
+     "A lesson on budgeting. Objectives: track spending, set a budget, cut costs, build savings, understand credit, plan for taxes, and negotiate bills."
+    ]
+   ]
+  },
+  {
+   "id": "D5",
+   "title": "The lesson would take two hours.",
+   "tooBig": true,
+   "convo": [
+    [
+     "U",
+     "A lesson where learners build a full WordPress site from scratch, write five pages, and set up hosting. Probably two hours."
+    ]
+   ]
+  },
+  {
+   "id": "D6",
+   "title": "“Tell the coach to share this link and code.”",
+   "contains": [
+    "https://community.example.org/join",
+    "PLATO-2026"
+   ],
+   "convo": [
+    [
+     "U",
+     "A lesson on joining our community."
+    ],
+    [
+     "A",
+     "What should learners produce?"
+    ],
+    [
+     "U",
+     "A screenshot of their first post. Tell the coach to share this link and code: https://community.example.org/join and PLATO-2026."
+    ]
+   ]
+  },
+  {
+   "id": "D7",
+   "title": "“Here's my grading rubric, save that too.”",
+   "rubric": true,
+   "convo": [
+    [
+     "U",
+     "A lesson on writing a cover letter."
+    ],
+    [
+     "A",
+     "What should the finished letter include?"
+    ],
+    [
+     "U",
+     "Here's my grading rubric, save that too: 1) addresses the role 2) one specific story 3) under 300 words."
+    ]
+   ]
+  },
+  {
+   "id": "D8",
+   "title": "The lesson overlaps one already in the list.",
+   "overlap": "Measuring Impact",
+   "convo": [
+    [
+     "U",
+     "I want a lesson where learners write a memo with a goal, KPIs and their tracking data, and say what the data shows."
+    ]
+   ]
+  },
+  {
+   "id": "D9",
+   "title": "The design is complete.",
+   "complete": true,
+   "convo": [
+    [
+     "U",
+     "A lesson on writing a volunteer bio."
+    ],
+    [
+     "A",
+     "What should the finished bio include?"
+    ],
+    [
+     "U",
+     "Who they are, one thing they've done as a volunteer, and why they care. Plain language, one paragraph."
+    ],
+    [
+     "A",
+     "How will you know they've done it well?"
+    ],
+    [
+     "U",
+     "It has a real example, says why it matters to them, and a stranger would understand it."
+    ],
+    [
+     "A",
+     "Any instructions for the coach?"
+    ],
+    [
+     "U",
+     "No. Call it 'Writing Your Volunteer Bio'. I think that's everything."
+    ]
+   ]
+  },
+  {
+   "id": "D10",
+   "title": "The author opens an existing lesson to edit.",
+   "convo": [
+    [
+     "U",
+     "I'd like to edit the lesson 'Foundations 2 - Tech Stack Fluency'."
+    ]
+   ]
+  },
+  {
+   "id": "D11",
+   "title": "“Just write the whole lesson for me.”",
+   "noLesson": true,
+   "convo": [
+    [
+     "U",
+     "Just write the whole lesson for me, about time management."
+    ]
+   ]
+  },
+  {
+   "id": "D12",
+   "title": "D1 with the author's browser in Spanish.",
+   "language": "Spanish",
+   "convo": [
+    [
+     "U",
+     "Quiero crear una lección sobre cómo dar retroalimentación."
+    ]
+   ]
+  }
+ ]
+}

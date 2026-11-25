@@ -30,7 +30,7 @@ export const SOURCES = Object.freeze({
  * header from the instructions a call actually sent (js/agentHeader.js).
  */
 import { AGENTS } from './agents.generated.js';
-import { HELD_PROGRESS, DRAFT_WORDS, COPY_WORDS, OWN_SHARE, MAX_TRANSCRIPT } from './assessment.js';
+import { HELD_PROGRESS, DRAFT_WORDS, COPY_WORDS, COPIED_SHARE, OWN_SHARE, MAX_TRANSCRIPT } from './assessment.js';
 import { MAX_EXCHANGES, MIN_OBJECTIVES, MAX_OBJECTIVES, MINS_PER_EXCHANGE, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 
 export { AGENTS };
@@ -102,6 +102,7 @@ export const STAGES = Object.freeze({
 export const CHECKS = Object.freeze({
   tags: { title: 'Did the reply include its tags?', means: 'The coach ends each reply with tags only plato reads: a progress score, notes, and sometimes an observation for your profile.' },
   draft: { title: 'Did the reply write your answer for you?', means: `A coach that writes the learner’s answer teaches nothing, and the ${N.assessor} wouldn’t count it.` },
+  language: { title: 'Was the reply in one language?', means: 'The AI model sometimes slips characters from another language into a reply. plato’s code looks for them.' },
   grading: { title: 'Is every objective the coach checked off shown in your own words?', means: `When the coach checks off an objective or scores 10, a second AI helper, the ${N.assessor}, must find each one in what you wrote.` },
 });
 
@@ -133,6 +134,8 @@ export const STEPS = Object.freeze({
   draftCheck: { stage: 'checked', check: 'draft', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
   tagRepair: { stage: 'checked', check: 'tags', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', check: 'draft', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
+  scriptCheck: { stage: 'checked', check: 'language', title: 'Was the reply in one language?', source: 'code', means: 'plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others).' },
+  scriptGuard: { stage: 'checked', check: 'language', title: 'The reply mixed in another language', source: 'instructions', means: 'plato asked the coach to write the same reply again in your language, and showed the rewrite if it came back clean.' },
   gradingPlan: { stage: 'checked', check: 'grading', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
   gradingRetry: { stage: 'checked', check: 'grading', title: `The ${N.assessor}’s answer couldn’t be read`, source: 'code', means: 'Its reply wasn’t in the expected format, so plato asked once more.' },
   verdict: { stage: 'checked', check: 'grading', title: `The ${N.assessor}’s verdict`, source: 'model', means: 'For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach.' },
@@ -193,6 +196,7 @@ export const THRESHOLDS = Object.freeze({
   HELD_PROGRESS: { where: 'client/src/lib/assessment.js', means: `A held completion is recorded as at most ${HELD_PROGRESS}.` },
   DRAFT_WORDS: { where: 'client/src/lib/assessment.js', means: `A quoted passage of ${DRAFT_WORDS} or more words in a reply counts as the coach drafting the learner’s answer.` },
   COPY_WORDS: { where: 'client/src/lib/assessment.js', means: `A quote of ${COPY_WORDS} or more words that the coach wrote first doesn’t count as the learner’s.` },
+  COPIED_SHARE: { where: 'client/src/lib/assessment.js', means: `Nor does a quote mostly in the coach’s wording: when more than ${Math.round(COPIED_SHARE * 100)}% of its three-word phrases appeared first in the coach’s messages (its sentences joined up, or sent back with a word swapped). The coach polishing the learner’s own words still counts as theirs.` },
   OWN_SHARE: { where: 'client/src/lib/assessment.js', means: `A passage the coach wrote first still counts as the learner’s when ${Math.round(OWN_SHARE * 100)}% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.` },
   MAX_TRANSCRIPT: { where: 'client/src/lib/assessment.js', means: `The ${N.assessor} reads the last ${MAX_TRANSCRIPT} messages.` },
 });
@@ -221,6 +225,8 @@ export const EVENTS = Object.freeze({
   coach_assessment_failed_open: `The ${N.assessor} couldn’t run twice in a row and the coach’s grading stood.`,
   coach_draft_rewritten: 'A reply that drafted the learner’s answer was rewritten.',
   coach_draft_kept: 'A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.',
+  coach_script_rewritten: 'A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.',
+  coach_script_kept: 'A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.',
 });
 
 /**

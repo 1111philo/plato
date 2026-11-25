@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -362,6 +362,27 @@ describe('checkGrading', () => {
     assert.match(parsed.text, /isn't complete yet/);
   });
 
+  it('puts plato’s held message into the learner’s language when one is given, and keeps the English if that fails (AGENT_EVALS W7)', async () => {
+    const run = (localize) => checkGrading({
+      lesson, kb: kb(), messages: coachDrafted,
+      parsed: { text: 'Nailed it', progress: 10, kbUpdate: { objectivesMet: [1, 2, 3] } },
+      assess: async () => notShown,
+      regenerate: async () => 'This one is complete.\n[PROGRESS: 8]',
+      judgeClaim: async () => true,
+      localize,
+    });
+    const asked = [];
+    const es = await run(async (addendum) => { asked.push(addendum); return 'Ya casi, pero esta lección aún no está completa.\n[PROGRESS: 8]'; });
+    assert.match(asked[0], /learner's language/);
+    assert.match(asked[0], /isn't complete yet/, 'translates plato’s own message');
+    assert.equal(es.parsed.text, 'Ya casi, pero esta lección aún no está completa.', 'tags dropped');
+    assert.equal(es.parsed.progress, 8);
+    const failed = await run(async () => { throw new Error('busy'); });
+    assert.match(failed.parsed.text, /isn't complete yet/);
+    const english = await run(undefined);
+    assert.match(english.parsed.text, /isn't complete yet/);
+  });
+
   it('keeps a held reply when the claim check says no or fails', async () => {
     for (const judgeClaim of [async () => false, async () => { throw new Error('busy'); }]) {
       const { parsed, assessment } = await checkGrading({
@@ -514,6 +535,92 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
       'Think of something like “a deadline you hit” or “a process you fixed.”',
       'Your phrase **impact through iteration** is strong.',
     ]) assert.equal(draftsForLearner(t), false, t);
+  });
+});
+
+describe('a quote put together from the coach’s sentences (agent evaluations W4)', () => {
+  it('doesn’t count, and the coach polishing the learner’s own words still does', () => {
+    const transcript = [
+      { by: 'coach', text: 'Example: “It showed me I’m good at noticing what’s needed before it’s asked” or “I like knowing people can rely on me.” Try: change “helping a professor set up” to “when I organized the classroom early”, and “I’m good at noticing” to “I spot gaps before they become problems”.' },
+      { by: 'learner', text: 'i’m sam, when i organized the classroom early, it showed me i spot gaps before they become problems, and i like knowing people can rely on me. use that' },
+    ];
+    const verdict = (quote) => ({ objectives: [{ n: 3, parts: [{ part: 'shape their story', quote }], shown: true }] });
+    const q = 'i’m sam, when i organized the classroom early, it showed me i spot gaps before they become problems, and i like knowing people can rely on me';
+    assert.equal(groundVerdict(verdict(q), transcript, [3]).missing[3], COACH_WROTE);
+    const own = [
+      { by: 'learner', text: 'i stayed late at the food bank to sort the donations because i hate seeing people wait' },
+      { by: 'coach', text: 'Nice. Polished: “I stayed late at the food bank to sort the donations, because I hate seeing people wait.”' },
+      { by: 'learner', text: 'I stayed late at the food bank to sort the donations, because I hate seeing people wait.' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('I stayed late at the food bank to sort the donations, because I hate seeing people wait.'), own, [3]).shown, [3]);
+    // The coach's example, sent back with the words it suggested swapping.
+    const swapped = [
+      { by: 'coach', text: 'For example: “StudioPress uses Genesis Framework to give people easy-to-use, SEO-ready website templates, so even beginners can build professional sites fast.” Swap “give people” for “provide” or “fast” for “quickly”.' },
+      { by: 'learner', text: 'StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.' },
+    ];
+    assert.equal(groundVerdict(verdict('StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.'), swapped, [3]).missing[3], COACH_WROTE);
+    // The coach quoting the learner back doesn't make the learner's words the coach's.
+    const echoed = [
+      { by: 'learner', text: 'I organised the food drive and it showed me I love bringing people together' },
+      { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
+describe('a web address the learner typed (agent evaluations C16)', () => {
+  it('shows nothing, since plato never opened it; an attached page or a screenshot can', () => {
+    const v = (quote) => ({ objectives: [{ n: 1, parts: [{ part: 'publish a page', quote }], shown: true }] });
+    const typed = [{ by: 'coach', text: 'Can you share your page?' }, { by: 'learner', text: 'https://sam-rivera.example.com' }];
+    const r = groundVerdict(v('https://sam-rivera.example.com'), typed, [1]);
+    assert.deepEqual(r.shown, []);
+    assert.equal(r.missing[1], ONLY_URL);
+    assert.match(heldReply({ objectives: [{ objective: 'Can publish a simple page' }] }, [1], r.missing), /attach the page/);
+    const attached = [{ by: 'coach', text: 'Can you share your page?' }, { by: 'learner', text: 'Here it is\n[attached a web page]' }];
+    assert.deepEqual(groundVerdict(v('Here it is'), attached, [1]).shown, [1], 'a page they attached is judged on what it shows');
+  });
+});
+
+describe('a quote that only agrees (agent evaluations A17)', () => {
+  it('knows agreement from evidence', () => {
+    for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that', 'Sí, eso soy yo', 'Perfecto, úsalo']) assert.equal(onlyAgrees(q), true, q);
+    assert.equal(onlyAgrees('Sí, ayudé en la colecta de comida'), false);
+    for (const q of ['I came from retail.', 'Yes, I stayed late to fix the budget error', 'I value calm']) assert.equal(onlyAgrees(q), false, q);
+  });
+  it('doesn’t count it, unless the lesson says confirming counts', () => {
+    const transcript = [{ by: 'coach', text: 'Here’s your intro: Hi, I’m Sam. Is that accurate?' }, { by: 'learner', text: 'Yes, that’s accurate, that’s me.' }];
+    const verdict = { objectives: [{ n: 3, parts: [{ part: 'shape their story', quote: 'Yes, that’s accurate, that’s me.' }], shown: true }] };
+    const plain = groundVerdict(verdict, transcript, [3]);
+    assert.deepEqual(plain.shown, []);
+    assert.equal(plain.missing[3], ONLY_AGREES);
+    assert.deepEqual(plain.ungrounded, [3], 'asked again');
+    const confirming = groundVerdict(verdict, transcript, [3], { confirms: new Set([3]) });
+    assert.deepEqual(confirming.shown, [3]);
+  });
+  it('confirming counts where the objective or exemplar says the learner confirms', () => {
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A message.', objectives: [{ objective: 'Can describe goals' }, { objective: 'Can confirm a profile that is true to them' }] })], [2]);
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A profile the learner has confirmed.', objectives: [{ objective: 'a' }, { objective: 'b' }] })], [1, 2]);
+    assert.deepEqual([...confirmingCounts({ exemplar: 'A message.', objectives: [{ objective: 'Can write it' }] })], []);
+  });
+});
+
+describe('mixesScripts (agent evaluations C59)', () => {
+  it('finds Chinese, Japanese or Korean characters in a reply in another language', () => {
+    assert.equal(mixesScripts('tell me about one moment —哪怕很小— where you felt proud'), true);
+    assert.equal(mixesScripts('Cuéntame un momento — aunque sea pequeño.', 'Spanish'), false);
+    assert.equal(mixesScripts('একটি মুহূর্তের কথা বলুন', 'Bengali'), false);
+    assert.equal(mixesScripts('Tell me about one moment.'), false);
+  });
+  it('a reply mostly not in the script of a learner’s language that has one (agent evaluations W8)', () => {
+    assert.equal(mixesScripts('You’ve shared a strong, real moment — helping a stressed student find their book.', 'Bengali'), true);
+    assert.equal(mixesScripts('আপনি একটি শক্তিশালী মুহূর্ত শেয়ার করেছেন। Foundations 1 এর পরের ধাপ কী?', 'Bengali'), false, 'a lesson name in English is fine');
+    assert.equal(mixesScripts('Ok.', 'Bengali'), false, 'too short to tell');
+    assert.equal(mixesScripts('You’ve shared a strong moment.', 'Spanish'), false, 'Latin-script languages aren’t judged by script');
+  });
+  it('leaves those scripts alone for learners who read them', () => {
+    assert.equal(mixesScripts('一个小时刻', 'Chinese'), false);
+    assert.equal(mixesScripts('小さな瞬間', 'Japanese'), false);
+    assert.equal(mixesScripts('작은 순간', 'Korean'), false);
   });
 });
 

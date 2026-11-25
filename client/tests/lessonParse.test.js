@@ -23,6 +23,10 @@ const samples = [
   '# A\n## Exemplar\nline1\n\nline2\n## Coach Directive\n\n  keep   spacing  \n## Other\nx',
   '# A\r\n\r\nWindows line endings.\r\n\r\n## Learning Objectives\r\n\r\n- Can one\r\n',
   'no heading\n\n## Learning Objectives\n- Can x',
+  '# A\n## Coach Directive\nNone',
+  '# A\n## Coach Directive\n*None.*',
+  '# A\n## Coach Directive\nN/A',
+  '# A\n## Coach Directive\nNone of the examples should be about cooking.',
 ];
 
 describe('server lesson parsing matches the client', () => {
@@ -32,6 +36,15 @@ describe('server lesson parsing matches the client', () => {
       assert.deepEqual(parseLessonFields(md), client);
     });
   }
+});
+
+describe('a Coach Directive that only says "None" (agent evaluations X1, X4)', () => {
+  it('is no directive, and a real one starting with "None" is kept', () => {
+    for (const md of ['# A\n## Coach Directive\nNone', '# A\n## Coach Directive\n*None.*', '# A\n## Coach Directive\nN/A', '# A\n## Coach Directive\n—']) {
+      assert.equal(parseLessonPrompt('x', md).coachDirective, undefined, md);
+    }
+    assert.equal(parseLessonPrompt('x', '# A\n## Coach Directive\nNone of the examples should be about cooking.').coachDirective, 'None of the examples should be about cooking.');
+  });
 });
 
 describe('loadLessons uses the parsed fields', () => {

@@ -326,6 +326,11 @@ const DESCRIBE = {
     summary: s.failed ? `plato asked for a rewrite, which failed (${s.failed}), so the first reply was kept.` : s.used ? `plato showed the rewrite in place of the first reply.${s.stillDrafts ? ' The rewrite still drafted an answer.' : ''}` : 'The rewrite came back empty, so the first reply was kept.',
     change: s.after ? { before: s.before, after: s.after } : null,
   }),
+  scriptCheck: (s) => ({ summary: s.mixed ? 'No: the reply had characters from another language. plato asked the coach to write it again.' : 'Yes.' }),
+  scriptGuard: (s) => ({
+    summary: s.failed ? `plato asked for a rewrite, which failed (${s.failed}), so the reply was kept.` : s.used ? 'plato showed the rewrite in place of the first reply.' : 'The rewrite still mixed languages, so the reply was kept.',
+    change: s.used && s.after ? { before: s.before, after: s.after } : null,
+  }),
   gradingPlan: (s) => ({
     summary: !s.ran ? 'Not needed: the coach didn’t check off a new objective or score 10.' : `The coach ${s.completionClaimed ? 'scored 10' : 'checked off an objective'}, so plato checked ${plural(s.check.length, 'objective')}: ${s.check.join(', ')}.`,
   }),
@@ -470,6 +475,7 @@ function noteFor(s) {
     case 'tagCheck': return null;
     case 'tagRepair': return s.recovered ? changed('the reply left out its tags, so plato asked the coach again for just those.') : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
+    case 'scriptCheck': return s.mixed ? changed('the reply mixed in another language, so plato asked the coach to rewrite it.') : null;
     case 'gradingFailed': return problem(`The ${N.assessor} couldn’t run, so nothing new was checked off this time.`);
     case 'gradingStood': return changed('plato accepted the coach’s grading without the check, so you weren’t stuck.');
     case 'verdictApplied':
@@ -523,7 +529,7 @@ function verdictFor(record) {
   if (types.has('replyReplaced') || rules.length) {
     return { source: 'code', text: `plato’s code changed the result: ${rules.length ? rules.map((r) => RULES[r]).join(' ') : RULES.replyReplaced}` };
   }
-  if (types.has('heldRewrite') || record.steps.some((s) => s.type === 'draftGuard' && s.used)) {
+  if (types.has('heldRewrite') || record.steps.some((s) => ['draftGuard', 'scriptGuard'].includes(s.type) && s.used)) {
     return { source: 'instructions', text: 'plato asked the coach to answer again with an added instruction. What you saw is its second answer.' };
   }
   const repair = record.steps.find((s) => s.type === 'tagRepair' && s.recovered);
@@ -605,6 +611,7 @@ function legacyStage(s) {
 function legacyCheck(s) {
   const purpose = s.purpose || '';
   if (s.agent === 'coach' && /for the rewrite|^rewrite: the first reply wrote/.test(purpose)) return 'draft';
+  if (s.agent === 'coach' && /^rewrite: the reply mixed/.test(purpose)) return 'language';
   if (s.agent === 'coach' && /^tag repair/.test(purpose)) return 'tags';
   if (['assessor', 'claim-check'].includes(s.agent) || /^rewrite: completion/.test(purpose)) return 'grading';
   return null;
@@ -783,7 +790,7 @@ function lessonSummary(turns, followups) {
   add('grading', (n) => `checked the coach’s grading ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'gradingPlan' && x.ran), 'checked the coach’s grading');
   add('held', (n) => `held a completion ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.held), 'held a completion');
   add('unverified', (n) => `took back an objective the coach checked off ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'verdictApplied' && x.unverified?.length), 'took back an objective the coach checked off');
-  add('rewrite', (n) => `asked the coach to rewrite a reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => (x.type === 'draftGuard' && x.used) || x.type === 'heldRewrite'), 'asked the coach to rewrite a reply');
+  add('rewrite', (n) => `asked the coach to rewrite a reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => (['draftGuard', 'scriptGuard'].includes(x.type) && x.used) || x.type === 'heldRewrite'), 'asked the coach to rewrite a reply');
   add('replaced', (n) => `replaced the coach’s reply ${n === 1 ? 'once' : `${n} times`}`, withStep((x) => x.type === 'replyReplaced'), 'replaced the coach’s reply');
   for (const k of Object.keys(CONTEXT_FIELDS).filter((key) => CONTEXT_FIELDS[key].steers)) {
     add(k, (n) => `added ${fieldLabel(k).toLowerCase()} for the coach on ${plural(n, 'exchange')}`, withStep((x) => x.type === 'context' && x.context && k in x.context), `added ${fieldLabel(k).toLowerCase()} for the coach`);

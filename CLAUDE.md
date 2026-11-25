@@ -73,6 +73,12 @@ Add any new page or dialog to `e2e/tests/a11y.spec.js` in the same PR.
 
 AI route tests mock `ai-provider.js` (not `bedrock.js`), and use the real `converse.js` translation so a translation regression surfaces there too. Run `npm test` before deploying.
 
+**Agent evaluations** (`docs/AGENT_EVALS.md`, built in `server/scripts/evals/`) run against the real model whenever a change touches what they cover (prompts, prompt assembly, the lesson engine, the model; `lib/watch.js`).
+- **Automatic:** the pre-push hook (`.githooks/pre-push`, installed by `npm install` in `server/`) runs them with your AWS login and commits the results to `evals/`.
+- **Enforced:** `.github/workflows/agent-evals.yml` fails a PR without passing results for its exact version. A release PR into `main` needs the full run.
+- **Manual:** `cd server && npm run eval -- --affected`.
+- **Rule:** never loosen a case to make a run pass without a person agreeing.
+
 ## Deploy
 
 Full procedure, SSM parameters, environments (prod / playground), CloudFront, and backups are in **[`docs/DEPLOY.md`](docs/DEPLOY.md)**. Automation (deploy dispatch, the agentic workflows, branch protection, versioning) is in **[`docs/AUTOMATION.md`](docs/AUTOMATION.md)**.
