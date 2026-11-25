@@ -1,7 +1,7 @@
 {
  "v": 1,
- "fingerprint": "e2968ebed51b833e",
- "commit": "1d9cab7aecfe19023d9f59a79b0e313a2a105a12",
+ "fingerprint": "dece95fa4140d28c",
+ "commit": "6f04c6efd267f8a3b652528ecd362c1ce15061ac",
  "dirty": false,
  "level": "moments",
  "agents": [
@@ -21,26 +21,26 @@
  "model": "qwen.qwen3-vl-235b-a22b",
  "judge": {
   "model": "us.anthropic.claude-sonnet-5-5",
-  "calls": 456
+  "calls": 564
  },
  "baseline": {
   "main": "43d55a173ff18147ddfd98abbe4629bb1e9c5e7d",
-  "fingerprint": "0aae325cc7afbffa-1f81bbbba148",
+  "fingerprint": "0aae325cc7afbffa-c1c991166b1d",
   "mainFingerprint": "0aae325cc7afbffa"
  },
- "startedAt": "2026-11-25T13:47:58.699Z",
- "took": 439,
+ "startedAt": "2026-11-25T14:00:45.587Z",
+ "took": 508,
  "stats": {
-  "calls": 1666,
-  "ms": 3840752,
-  "inTokens": 4369939,
-  "outTokens": 238461
+  "calls": 1805,
+  "ms": 4376479,
+  "inTokens": 4919131,
+  "outTokens": 274522
  },
  "errors": 0,
  "verdict": "pass",
- "checks": 1119,
+ "checks": 1118,
  "failed": 0,
- "passed": 1093,
+ "passed": 1092,
  "noBaseline": 0,
  "pending": 26,
  "reading": 0,
@@ -113,8 +113,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.33333333333333337,
      "verdict": "pass",
      "title": "Mentioned the portfolio when the lesson doesn’t"
     },
@@ -123,8 +123,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3333333333333333,
+     "baseRate": 1,
+     "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -133,8 +133,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -259,8 +259,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -277,16 +277,16 @@
     "missedComplete": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.5578895417022447,
+     "fails": 2,
+     "rate": 0.3333333333333333,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Left open a lesson that should complete"
     },
     "saysDoneOpen": {
      "mark": "never",
-     "n": 1,
+     "n": 2,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -327,10 +327,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -453,10 +453,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 5,
-     "rate": 0.8333333333333334,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.42172485325369646,
+     "fails": 4,
+     "rate": 0.6666666666666666,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -473,10 +473,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.5578895417022447,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -493,16 +493,16 @@
     "missedComplete": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.3333333333333333,
      "margin": 0.6666666666666667,
      "verdict": "pass",
      "title": "Left open a lesson that should complete"
     },
     "saysDoneOpen": {
      "mark": "never",
-     "n": 1,
+     "n": 3,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -545,8 +545,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -573,10 +573,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -592,7 +592,7 @@
    "checks": {
     "falseComplete": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -600,47 +600,70 @@
     },
     "offList": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Checked off an objective the learner didn’t show"
     },
     "saysDoneOpen": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Said “done” while the lesson stayed open"
     },
     "tags": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Left off the hidden score, even after plato asked again"
     },
     "cantTake": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Asked for something plato can’t take (video, audio, a file, a terminal)"
     },
     "language": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Replied in the wrong language, or mixed languages"
     },
     "suspicion": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -648,41 +671,41 @@
     },
     "long": {
      "mark": "parity",
-     "n": 6,
-     "fails": 3,
-     "rate": 0.5,
-     "baseRate": 0.5,
-     "margin": 0.5658032638058332,
+     "n": 24,
+     "fails": 10,
+     "rate": 0.4166666666666667,
+     "baseRate": 0.5416666666666666,
+     "margin": 0.28265595089096224,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
-     "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
+     "n": 24,
+     "fails": 4,
+     "rate": 0.16666666666666666,
      "baseRate": 0.16666666666666666,
-     "margin": 0.49,
+     "margin": 0.21086242662684823,
      "verdict": "pass",
      "title": "More than one question"
     },
     "emptyPraise": {
      "mark": "parity",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
      "title": "Opened with empty praise"
     },
     "givesAnswer": {
      "mark": "parity",
-     "n": 6,
-     "fails": 5,
-     "rate": 0.8333333333333334,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.42172485325369646,
+     "n": 24,
+     "fails": 21,
+     "rate": 0.875,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.23780523757587532,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -698,49 +721,67 @@
    "checks": {
     "missedComplete": {
      "mark": "parity",
-     "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.49,
+     "n": 24,
+     "fails": 11,
+     "rate": 0.4583333333333333,
+     "baseRate": 0.5,
+     "margin": 0.33333333333333337,
      "verdict": "pass",
      "title": "Left open a lesson that should complete"
     },
     "saysDoneOpen": {
      "mark": "never",
-     "n": 1,
+     "n": 11,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Said “done” while the lesson stayed open"
     },
     "tags": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Left off the hidden score, even after plato asked again"
     },
     "cantTake": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Asked for something plato can’t take (video, audio, a file, a terminal)"
     },
     "language": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Replied in the wrong language, or mixed languages"
     },
     "suspicion": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -748,41 +789,41 @@
     },
     "long": {
      "mark": "parity",
-     "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "n": 24,
+     "fails": 5,
+     "rate": 0.20833333333333334,
+     "baseRate": 0.08333333333333333,
+     "margin": 0.1996940657791498,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
-     "n": 6,
-     "fails": 0,
-     "rate": 0,
+     "n": 24,
+     "fails": 1,
+     "rate": 0.041666666666666664,
      "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "margin": 0.08081149475900803,
      "verdict": "pass",
      "title": "More than one question"
     },
     "emptyPraise": {
      "mark": "parity",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
      "title": "Opened with empty praise"
     },
     "givesAnswer": {
      "mark": "parity",
-     "n": 6,
-     "fails": 1,
+     "n": 24,
+     "fails": 4,
      "rate": 0.16666666666666666,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.49,
+     "baseRate": 0.08333333333333333,
+     "margin": 0.18712184087736344,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -798,7 +839,7 @@
    "checks": {
     "falseComplete": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -806,47 +847,70 @@
     },
     "offList": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Checked off an objective the learner didn’t show"
     },
     "saysDoneOpen": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Said “done” while the lesson stayed open"
     },
     "tags": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Left off the hidden score, even after plato asked again"
     },
     "cantTake": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Asked for something plato can’t take (video, audio, a file, a terminal)"
     },
     "language": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Replied in the wrong language, or mixed languages"
     },
     "suspicion": {
      "mark": "never",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -854,41 +918,41 @@
     },
     "long": {
      "mark": "parity",
-     "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.5,
-     "margin": 0.533444432872781,
+     "n": 24,
+     "fails": 5,
+     "rate": 0.20833333333333334,
+     "baseRate": 0.4583333333333333,
+     "margin": 0.2667222164363905,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
-     "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "n": 24,
+     "fails": 6,
+     "rate": 0.25,
+     "baseRate": 0.375,
+     "margin": 0.26225683181441306,
      "verdict": "pass",
      "title": "More than one question"
     },
     "emptyPraise": {
      "mark": "parity",
-     "n": 6,
+     "n": 24,
      "fails": 0,
      "rate": 0,
      "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "margin": 0.05774705379690138,
      "verdict": "pass",
      "title": "Opened with empty praise"
     },
     "givesAnswer": {
      "mark": "parity",
-     "n": 6,
-     "fails": 4,
-     "rate": 0.6666666666666666,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "n": 24,
+     "fails": 6,
+     "rate": 0.25,
+     "baseRate": 0.625,
+     "margin": 0.2806827613160452,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -963,7 +1027,7 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
+     "baseRate": 0.16666666666666666,
      "margin": 0.33333333333333337,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -973,8 +1037,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -993,8 +1057,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -1267,8 +1331,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3333333333333333,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -1297,8 +1361,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -1349,8 +1413,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.8333333333333334,
+     "margin": 0.5578895417022447,
      "verdict": "pass",
      "title": "Wrote the learner’s work for them"
     },
@@ -1381,10 +1445,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.5,
-     "margin": 0.533444432872781,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -1393,7 +1457,7 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
+     "baseRate": 0,
      "margin": 0.3333333333333333,
      "verdict": "pass",
      "title": "More than one question"
@@ -1487,9 +1551,9 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.16666666666666666,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0,
      "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -1497,10 +1561,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.5658032638058332,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -1519,8 +1583,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -1699,10 +1763,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
+     "fails": 1,
+     "rate": 0.16666666666666666,
      "baseRate": 0.16666666666666666,
-     "margin": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -1817,18 +1881,18 @@
      "n": 6,
      "fails": 3,
      "rate": 0.5,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.5578895417022448,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -1847,8 +1911,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -1923,18 +1987,18 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.3127595218670704,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -1953,8 +2017,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2039,8 +2103,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.5,
+     "margin": 0.5,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -2133,10 +2197,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.3127595218670704,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -2165,8 +2229,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.8333333333333334,
+     "margin": 0.5578895417022447,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2247,10 +2311,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
-     "baseRate": 0.5,
-     "margin": 0.5658032638058332,
+     "fails": 2,
+     "rate": 0.3333333333333333,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -2279,8 +2343,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2353,20 +2417,20 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
+     "fails": 1,
+     "rate": 0.16666666666666666,
      "baseRate": 0.5,
-     "margin": 0.5578895417022447,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
+     "fails": 1,
+     "rate": 0.16666666666666666,
      "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -2385,8 +2449,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2471,8 +2535,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -2605,8 +2669,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2787,8 +2851,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -2815,10 +2879,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -2885,8 +2949,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -2923,20 +2987,12 @@
     "missedComplete": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
-     "verdict": "pass",
-     "title": "Left open a lesson that should complete"
-    },
-    "saysDoneOpen": {
-     "mark": "never",
-     "n": 1,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
-     "title": "Said “done” while the lesson stayed open"
+     "title": "Left open a lesson that should complete"
     },
     "tags": {
      "mark": "never",
@@ -2975,8 +3031,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -3079,20 +3135,20 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.5658032638058332,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.5,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.5578895417022448,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3119,10 +3175,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.5578895417022447,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.5,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -3195,20 +3251,20 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.5578895417022447,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.5,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.5658032638058332,
+     "fails": 2,
+     "rate": 0.3333333333333333,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3227,8 +3283,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.5,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -3301,10 +3357,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.5658032638058332,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.8333333333333334,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -3313,8 +3369,8 @@
      "n": 6,
      "fails": 1,
      "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.5,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3407,10 +3463,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
+     "fails": 1,
+     "rate": 0.16666666666666666,
      "baseRate": 0.5,
-     "margin": 0.5578895417022447,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -3419,8 +3475,8 @@
      "n": 6,
      "fails": 1,
      "rate": 0.16666666666666666,
-     "baseRate": 0.5,
-     "margin": 0.533444432872781,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3439,8 +3495,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -3513,10 +3569,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.5578895417022447,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.5,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -3525,8 +3581,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3543,10 +3599,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -3627,20 +3683,20 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0.6666666666666666,
-     "margin": 0.5578895417022447,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.3127595218670704,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3659,8 +3715,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 1,
-     "margin": 0.5658032638058332,
+     "baseRate": 0.8333333333333334,
+     "margin": 0.5578895417022447,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -3735,8 +3791,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.5,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -3745,8 +3801,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3763,9 +3819,9 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.3333333333333333,
      "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
@@ -3847,8 +3903,8 @@
     "questions": {
      "mark": "pending",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "verdict": "pending",
      "title": "More than one question"
     },
@@ -3915,8 +3971,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Wrote the learner’s work for them"
     },
@@ -3947,9 +4003,9 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.6666666666666666,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.5,
      "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -3957,10 +4013,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.3127595218670704,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -3977,10 +4033,10 @@
     "givesAnswer": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
+     "fails": 5,
+     "rate": 0.8333333333333334,
      "baseRate": 1,
-     "margin": 0.49,
+     "margin": 0.3127595218670705,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -4065,8 +4121,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -4075,8 +4131,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.5,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -4103,8 +4159,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -4155,8 +4211,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Wrote the learner’s work for them"
     },
@@ -4189,8 +4245,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 1,
+     "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -4199,8 +4255,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.5,
-     "margin": 0.49,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -4227,8 +4283,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.6666666666666666,
-     "margin": 0.533444432872781,
+     "baseRate": 1,
+     "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "Gave the learner text they could send back as their answer (independent judge)"
     }
@@ -5762,31 +5818,46 @@
    "checks": {
     "readable": {
      "mark": "never",
-     "n": 2,
-     "fails": 0,
-     "rate": 0,
+     "n": 20,
+     "fails": 1,
+     "rate": 0.05,
+     "baseRate": 0,
+     "margin": 0.09676724652484435,
      "verdict": "pass",
+     "firstFails": 1,
+     "againFails": 0,
+     "confirmed": true,
      "title": "The setup is incomplete (plato’s own check refuses it)"
     },
     "objectivesKept": {
      "mark": "never",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.07020233914231513,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Changed the author’s objectives (number or order)"
     },
     "exemplarKept": {
      "mark": "never",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.07020233914231513,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Changed the exemplar"
     },
     "startsAtZero": {
      "mark": "never",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
      "verdict": "pass",
@@ -5794,29 +5865,34 @@
     },
     "numbersKept": {
      "mark": "never",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
+     "baseRate": 0,
+     "margin": 0.07020233914231513,
      "verdict": "pass",
+     "firstFails": 0,
+     "againFails": 0,
+     "confirmed": true,
      "title": "Changed the author’s numbers"
     },
     "doingWords": {
      "mark": "parity",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
      "baseRate": 0,
-     "margin": 0.6929646455628166,
+     "margin": 0.07020233914231513,
      "verdict": "pass",
      "title": "Evidence says what the learner produces"
     },
     "short": {
      "mark": "parity",
-     "n": 2,
+     "n": 19,
      "fails": 0,
      "rate": 0,
      "baseRate": 0,
-     "margin": 0.6929646455628166,
+     "margin": 0.07020233914231513,
      "verdict": "pass",
      "title": "Evidence is under 20 words"
     }
@@ -6023,10 +6099,10 @@
     "short": {
      "mark": "parity",
      "n": 2,
-     "fails": 1,
-     "rate": 0.5,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.8487048957087499,
+     "margin": 0.6929646455628166,
      "verdict": "pass",
      "title": "Evidence is under 20 words"
     }
@@ -6583,10 +6659,10 @@
     "short": {
      "mark": "parity",
      "n": 2,
-     "fails": 0,
-     "rate": 0,
+     "fails": 1,
+     "rate": 0.5,
      "baseRate": 0,
-     "margin": 0.6929646455628166,
+     "margin": 0.8487048957087499,
      "verdict": "pass",
      "title": "Evidence is under 20 words"
     }
@@ -9071,10 +9147,10 @@
     "change": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.5,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Made the expected change"
     },
@@ -9477,10 +9553,10 @@
     "change": {
      "mark": "parity",
      "n": 6,
-     "fails": 4,
-     "rate": 0.6666666666666666,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.49,
+     "fails": 6,
+     "rate": 1,
+     "baseRate": 1,
+     "margin": 0.33333333333333337,
      "verdict": "pass",
      "title": "Made the expected change"
     },
@@ -9703,8 +9779,8 @@
     "stage": {
      "mark": "pending",
      "n": 6,
-     "fails": 4,
-     "rate": 0.6666666666666666,
+     "fails": 3,
+     "rate": 0.5,
      "verdict": "pending",
      "title": "Names the learner’s stage and tech comfort"
     }
@@ -10069,10 +10145,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 5,
-     "rate": 0.8333333333333334,
+     "fails": 2,
+     "rate": 0.3333333333333333,
      "baseRate": 1,
-     "margin": 0.3127595218670705,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -10109,18 +10185,18 @@
      "n": 6,
      "fails": 6,
      "rate": 1,
-     "baseRate": 1,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.8333333333333334,
+     "margin": 0.3127595218670705,
      "verdict": "pass",
      "title": "More than one question"
     },
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0.16666666666666666,
-     "margin": 0.42172485325369646,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     }
@@ -10155,8 +10231,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.42172485325369646,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -10191,10 +10267,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 4,
-     "rate": 0.6666666666666666,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.49,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.5578895417022448,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -10203,7 +10279,7 @@
      "n": 6,
      "fails": 2,
      "rate": 0.3333333333333333,
-     "baseRate": 0.6666666666666666,
+     "baseRate": 0.5,
      "margin": 0.6666666666666666,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -10230,41 +10306,36 @@
    "checks": {
     "readiness": {
      "mark": "never",
-     "n": 24,
+     "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.05774705379690138,
      "verdict": "pass",
-     "firstFails": 0,
-     "againFails": 0,
-     "confirmed": true,
      "title": "Readiness score missing or unreadable"
     },
     "questions": {
      "mark": "parity",
-     "n": 24,
-     "fails": 1,
-     "rate": 0.041666666666666664,
-     "baseRate": 0.7083333333333334,
-     "margin": 0.2739183272437242,
+     "n": 6,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 1,
+     "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "More than one question"
     },
     "long": {
      "mark": "parity",
-     "n": 24,
-     "fails": 1,
-     "rate": 0.041666666666666664,
+     "n": 6,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0.6666666666666666,
-     "margin": 0.33333333333333337,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
     "sizePushback": {
      "mark": "parity",
-     "n": 24,
-     "fails": 24,
+     "n": 6,
+     "fails": 6,
      "rate": 1,
      "baseRate": 0.5,
      "margin": 0.5,
@@ -10300,9 +10371,9 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
-     "baseRate": 0.5,
+     "fails": 2,
+     "rate": 0.3333333333333333,
+     "baseRate": 0.6666666666666666,
      "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "More than one question"
@@ -10310,10 +10381,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 0,
-     "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     }
@@ -10346,10 +10417,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0,
-     "margin": 0.42172485325369646,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.49,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -10358,8 +10429,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
-     "margin": 0.2309882151876055,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.3127595218670704,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     }
@@ -10386,8 +10457,8 @@
      "n": 6,
      "fails": 4,
      "rate": 0.6666666666666666,
-     "baseRate": 0.8333333333333334,
-     "margin": 0.49,
+     "baseRate": 0.6666666666666666,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -10396,8 +10467,8 @@
      "n": 6,
      "fails": 1,
      "rate": 0.16666666666666666,
-     "baseRate": 0.3333333333333333,
-     "margin": 0.49,
+     "baseRate": 0.16666666666666666,
+     "margin": 0.42172485325369646,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -10490,9 +10561,9 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0.3333333333333333,
+     "fails": 0,
+     "rate": 0,
+     "baseRate": 0.16666666666666666,
      "margin": 0.5,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -10518,9 +10589,9 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.3333333333333333,
+     "fails": 3,
+     "rate": 0.5,
+     "baseRate": 0.8333333333333334,
      "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
@@ -10528,10 +10599,10 @@
     "long": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
+     "fails": 0,
+     "rate": 0,
      "baseRate": 0,
-     "margin": 0.42172485325369646,
+     "margin": 0.3333333333333333,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
     },
@@ -10574,10 +10645,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 3,
-     "rate": 0.5,
+     "fails": 2,
+     "rate": 0.3333333333333333,
      "baseRate": 0.6666666666666666,
-     "margin": 0.5578895417022448,
+     "margin": 0.5658032638058332,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -11018,8 +11089,8 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0.16666666666666666,
-     "margin": 0.3127595218670704,
+     "baseRate": 0,
+     "margin": 0.2309882151876055,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -11110,10 +11181,10 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 1,
-     "rate": 0.16666666666666666,
-     "baseRate": 0,
-     "margin": 0.3127595218670704,
+     "fails": 2,
+     "rate": 0.3333333333333333,
+     "baseRate": 0.3333333333333333,
+     "margin": 0.533444432872781,
      "verdict": "pass",
      "title": "More than one question"
     },
@@ -11168,7 +11239,7 @@
      "n": 6,
      "fails": 0,
      "rate": 0,
-     "baseRate": 0,
+     "baseRate": 0.16666666666666666,
      "margin": 0.3333333333333333,
      "verdict": "pass",
      "title": "Reply longer than 4 sentences"
@@ -11194,9 +11265,9 @@
     "questions": {
      "mark": "parity",
      "n": 6,
-     "fails": 2,
-     "rate": 0.3333333333333333,
-     "baseRate": 0.8333333333333334,
+     "fails": 1,
+     "rate": 0.16666666666666666,
+     "baseRate": 1,
      "margin": 0.5578895417022448,
      "verdict": "pass",
      "title": "More than one question"
@@ -11250,7 +11321,7 @@
      "n": 6,
      "fails": 4,
      "rate": 0.6666666666666666,
-     "baseRate": 0.6666666666666666,
+     "baseRate": 0.8333333333333334,
      "margin": 0.6666666666666666,
      "verdict": "pass",
      "title": "More than one question"
