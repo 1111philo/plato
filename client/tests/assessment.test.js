@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, withoutVoiceSamples, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -574,6 +574,17 @@ describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised a
   });
   it('a hint that gives the answer is a draft', () => {
     assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
+  });
+});
+
+describe('withoutVoiceSamples (agent evaluations W5)', () => {
+  it('takes out quoted examples in the learner’s voice and keeps the question', () => {
+    assert.equal(withoutVoiceSamples('For Slack, what’s one work goal it helps with? (e.g., “I coordinate with event teams in real time.”) And how well do you know it?', ['Slack, Excel']), 'For Slack, what’s one work goal it helps with? And how well do you know it?');
+    assert.equal(withoutVoiceSamples('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.'), 'Pick one time block and say why.');
+  });
+  it('leaves third-person examples and the learner’s own words alone', () => {
+    assert.equal(withoutVoiceSamples('Name a time, e.g., “a quiet evening slot”.'), 'Name a time, e.g., “a quiet evening slot”.');
+    assert.equal(withoutVoiceSamples('You said “I’m sharpest after dinner”. Why?', ['I’m sharpest after dinner']), 'You said “I’m sharpest after dinner”. Why?');
   });
 });
 

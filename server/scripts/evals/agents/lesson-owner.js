@@ -29,6 +29,8 @@ export async function run(c, { app, model }) {
     messages: [{ role: 'user', content: JSON.stringify({
       lessonId: lesson.lessonId, lessonName: lesson.name, lessonDescription: lesson.description,
       exemplar: lesson.exemplar, learningObjectives: lesson.learningObjectives, learnerProfile: c.profile || 'New learner, no profile yet.',
+      // As initializeLessonKB sends it, where this version does (orchestrator reads learnerLanguageName).
+      ...(app.prompt('lesson-owner')?.includes('learnerLanguage') && app.languageFor(c.language || '') ? { learnerLanguage: app.languageFor(c.language) } : {}),
     }) }],
     maxTokens: 1536,
   });

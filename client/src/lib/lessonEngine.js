@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, repeatsCoach, REPEATED_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, REPEATED_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -693,6 +693,11 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
+    // A sample in the learner's voice that survived the rewrite comes out.
+    if (!coachReply.draftRewritten) {
+      const cleaned = withoutVoiceSamples(coachReply.text, learnerSaid);
+      if (cleaned !== coachReply.text) { trace?.step('samplesRemoved', { before: coachReply.text, after: cleaned }); coachReply = { ...coachReply, text: cleaned }; }
+    }
   }
 
   // The script guard: the model sometimes slips characters from another

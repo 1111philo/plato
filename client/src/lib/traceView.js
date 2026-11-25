@@ -327,6 +327,7 @@ const DESCRIBE = {
     change: s.after ? { before: s.before, after: s.after } : null,
   }),
   repeatCheck: (s) => ({ summary: s.repeated ? 'Yes: most of your message was the coach’s own wording, so plato told the coach not to praise or count it.' : 'No.' }),
+  samplesRemoved: (s) => ({ summary: 'plato took out example sentences written in your voice: they would have been your answer, written for you.', change: { before: s.before, after: s.after } }),
   claimsRemoved: (s) => ({ summary: `plato took out the sentence saying ${s.objectives.length === 1 ? `objective ${s.objectives[0]} was` : `objectives ${s.objectives.join(' and ')} were`} met: the check didn’t find it in your own words.`, change: { before: s.before, after: s.after } }),
   literals: (s) => ({ summary: 'plato put back the lesson author’s exact link or code.', change: { before: s.before, after: s.after } }),
   scriptCheck: (s) => ({ summary: s.mixed ? 'No: the reply had characters from another language. plato asked the coach to write it again.' : 'Yes.' }),
@@ -483,6 +484,7 @@ function noteFor(s) {
     case 'tagRepair': return s.recovered ? changed('the reply left out its tags, so plato asked the coach again for just those.') : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
     case 'repeatCheck': return s.repeated ? changed('your message was mostly the coach’s own wording, so plato told the coach.') : null;
+    case 'samplesRemoved': return changed('the reply still had example answers written in your voice, so plato took them out.');
     case 'claimsRemoved': return changed('the reply said an objective was met that the check didn’t find, so plato took that sentence out.');
     case 'literals': return changed('the reply changed the author’s link or code slightly, so plato put back the exact text.');
     case 'scriptCheck': return s.mixed ? changed('the reply mixed in another language, so plato asked the coach to rewrite it.') : null;

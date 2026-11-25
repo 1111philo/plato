@@ -623,7 +623,30 @@ export function repeatsCoach(text, coachTexts = []) {
 /** The note on a turn whose message repeats the coach's own wording (repeatsCoach). */
 export const REPEATED_ADDENDUM = `## The learner's message repeats your words (from plato, not the learner)
 
-Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them, in one question, to say it in their own words.`;
+Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them to say it in their own words.
+
+Your whole reply is two sentences: one saying it's your wording, then one question. For example: "That's my wording, not your thinking yet. How would you put it in your own words?" Nothing after the question.`;
+
+// "(e.g., “I coordinate with event teams in real time.”)", "For example: “I
+// can make charts but don't use pivot tables.”": an example given as a quote.
+const SAMPLE = /\s*\(\s*(?:e\.g\.|eg|for example|example|like)[,:]?\s*(["“])([^"”\n]{1,400})["”][^)]{0,80}\)|\s*(?:e\.g\.|for example|example)[,:]?\s*(["“])([^"”\n]{1,400})["”]/gi;
+
+/**
+ * The reply without its quoted examples in the learner's own voice that the
+ * learner didn't write (the same test as draftsForLearner's): the draft
+ * guard's rewrite kept them, and a learner who wanted the answer adapted
+ * them and completed the lesson (agent evaluations W5). The question and the
+ * rest of the reply stay. Pure.
+ */
+export function withoutVoiceSamples(text, learnerTexts = []) {
+  const said = normalizeForMatch(learnerTexts.join('\n'));
+  const out = String(text || '').replace(SAMPLE, (m, _q1, a, _q2, b) => {
+    const span = (a ?? b ?? '').trim();
+    const voice = VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span));
+    return voice ? '' : m;
+  });
+  return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
+}
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)

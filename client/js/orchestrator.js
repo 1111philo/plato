@@ -1,7 +1,7 @@
 import { parseSSEStream, parseResponse, LLM, ApiError, backoffMs, isRetryable } from './api.js';
 import { authenticatedFetch } from './auth.js';
 import { validateLessonKB } from './validators.js';
-import { withLanguage } from './language.js';
+import { withLanguage, learnerLanguageName } from './language.js';
 import { screenLearnerNotes, learnerNoteFlag, LEARNER_TEXT_FRAMING } from './learnerNoteFilter.js';
 import { loadLessons } from './lessonOwner.js';
 import { systemPromptParts, COACH_KB_NOTE, TAG_REPAIR_CUE } from './promptAssembly.js';
@@ -298,6 +298,10 @@ export async function initializeLessonKB(lesson, profileSummary, { trace } = {})
     lessonDescription: lesson.description, exemplar: lesson.exemplar,
     learningObjectives: lesson.learningObjectives,
     learnerProfile: profileSummary || 'New learner, no profile yet.',
+    // The learner's language (#240), when it isn't English: in the input, as
+    // for the coach, since the prompt's Language section alone left the
+    // learner-facing note in English for Bengali (agent evaluations L2-bn).
+    ...(learnerLanguageName() ? { learnerLanguage: learnerLanguageName() } : {}),
   });
   const callAgent = async (purpose) => {
     const { content } = await callApi({
