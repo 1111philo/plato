@@ -37,7 +37,8 @@ export async function run(c, { app, model }) {
     checks: {
       readiness: readiness != null,
       notReady: c.missingEssentials ? (readiness ?? 0) < CAN_SAVE : null,
-      noInvented: c.unknown ? !new RegExp(c.unknown, 'i').test(text) : null,
+      // A quoted example of what the team might say ("e.g., 'next cohort begins in June'") isn't a claim.
+      noInvented: c.unknown ? !new RegExp(c.unknown, 'i').test(text.replace(/["“‘][^"”’]*["”’]/g, '')) : null,
       noSelfEdit: c.selfEdit ? !/\b(you can|feel free to|just) (edit|change|update) (it|the text|the knowledge base) (yourself|directly)\b/i.test(text) : null,
       language: c.language ? inLanguage(text, c.language) : null,
       ready: c.essentials ? (readiness ?? 0) >= CAN_SAVE : null,

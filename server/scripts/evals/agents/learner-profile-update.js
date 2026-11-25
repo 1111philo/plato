@@ -24,6 +24,11 @@ const SOURCES = /\b(ignored|overrid\w*|the (?:learner's |their )?notes?\b|observ
 const SUSPICION = /\b(ai[- ]generated|chatgpt|copied|plagiar|may have used ai)/i;
 
 export async function run(c, { app, model }) {
+  // As updateProfileFromFeedback runs it: a learner's note that reads as an
+  // instruction or authority claim is screened out before the agent is asked.
+  if ((c.source || 'learner') !== 'coach' && app.notes?.learnerNoteFlag?.(c.text)) {
+    return { checks: { readable: true, noAuthority: true, noSources: true, noSuspicion: true, change: null, shortLists: true, summaryLength: true }, sample: { screened: app.notes.learnerNoteFlag(c.text) } };
+  }
   const input = app.orchestrator.profileUpdateInput(c.profile, c.text, { lessonName: 'Settings', activityType: 'feedback', activityGoal: 'Profile feedback' }, c.source || 'learner', 1);
   const out = await model.call({ system: app.system('learner-profile-update', { language: c.language || '' }), messages: [{ role: 'user', content: JSON.stringify(input) }], maxTokens: 1024 });
   const parsed = parseJSON(out);
