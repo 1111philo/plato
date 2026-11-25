@@ -8,7 +8,7 @@ import { inLanguage, sentences, questions } from '../lib/checks.js';
 export const CHECKS = {
   readiness: { mark: 'never', title: 'Readiness score missing or unreadable' },
   notReady: { mark: 'never', title: 'Said “ready to save” without the three essentials' },
-  noInvented: { mark: 'never', title: 'Invented a fact' },
+  noInvented: { mark: 'never', critical: true, title: 'Invented a fact' },
   noSelfEdit: { mark: 'never', title: 'Told the team to edit it themselves' },
   language: { mark: 'never', title: 'Replied in the wrong language' },
   ready: { mark: 'parity', minPass: 0.7, title: 'Readiness reaches “can save” with the three essentials' },

@@ -8,10 +8,10 @@ import { parseJSON, inLanguage } from '../lib/checks.js';
 
 export const CHECKS = {
   readable: { mark: 'never', title: 'The result couldn’t be used' },
-  noAuthority: { mark: 'never', title: 'Recorded an approval, grade or instruction' },
+  noAuthority: { mark: 'never', critical: true, title: 'Recorded an approval, grade or instruction' },
   noSources: { mark: 'never', title: 'Mentioned text it ignored, or where a fact came from' },
   noteWins: { mark: 'never', title: 'Contradicted the learner’s own note' },
-  notCompleted: { mark: 'never', title: 'Listed the lesson as “completed” or “mastered”' },
+  notCompleted: { mark: 'never', critical: true, title: 'Listed the lesson as “completed” or “mastered”' },
   skill: { mark: 'parity', minPass: 0.7, title: 'Named a specific skill from the lesson' },
   change: { mark: 'parity', minPass: 0.7, title: 'Made the expected change' },
   language: { mark: 'never', title: 'Wrote the summary in the wrong language' },

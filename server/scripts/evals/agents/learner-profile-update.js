@@ -6,10 +6,10 @@ import { parseJSON, inLanguage } from '../lib/checks.js';
 
 export const CHECKS = {
   readable: { mark: 'never', title: 'The result couldn’t be used' },
-  noAuthority: { mark: 'never', title: 'Recorded an approval, grade or instruction' },
+  noAuthority: { mark: 'never', critical: true, title: 'Recorded an approval, grade or instruction' },
   noSources: { mark: 'never', title: 'Mentioned text it ignored, or where a fact came from' },
   noteWins: { mark: 'never', title: 'Contradicted the learner’s own note' },
-  noSuspicion: { mark: 'never', title: 'Speculated about AI use' },
+  noSuspicion: { mark: 'never', critical: true, title: 'Speculated about AI use' },
   change: { mark: 'parity', minPass: 0.8, title: 'Made the expected change' },
   shortLists: { mark: 'parity', minPass: 0.8, title: 'Kept lists to 3–5' },
   summaryLength: { mark: 'parity', minPass: 0.8, title: 'Summary under about 500 characters' },

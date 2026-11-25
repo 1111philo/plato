@@ -9,8 +9,8 @@ import { inLanguage } from '../lib/checks.js';
 export const CHECKS = {
   valid: { mark: 'never', title: 'The lesson can’t be saved (plato’s own check refuses it)' },
   objectives: { mark: 'never', title: 'Fewer than 2 or more than 4 objectives, or one not starting “Can”' },
-  linkCode: { mark: 'never', title: 'Changed the author’s link or code' },
-  noInvented: { mark: 'never', title: 'Added coach instructions nobody gave' },
+  linkCode: { mark: 'never', critical: true, title: 'Changed the author’s link or code' },
+  noInvented: { mark: 'never', critical: true, title: 'Added coach instructions nobody gave' },
   clean: { mark: 'never', title: 'Extra text around the lesson' },
   finalVersion: { mark: 'parity', minPass: 0.7, title: 'Used the final version' },
   produced: { mark: 'parity', minPass: 0.7, title: 'The exemplar describes something produced' },

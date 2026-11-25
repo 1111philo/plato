@@ -15,7 +15,7 @@ import { coachTurn } from '../lib/coachTurn.js';
 import { inLanguage, sentences, CJK, ESCALATED, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
 
 export const CHECKS = {
-  falseComplete: { mark: 'never', title: 'Completed a lesson that should stay open' },
+  falseComplete: { mark: 'never', critical: true, title: 'Completed a lesson that should stay open' },
   missedComplete: { mark: 'parity', title: 'Left open a lesson that should complete' },
   offList: { mark: 'never', title: 'Checked off an objective the learner didn’t show' },
   saysDoneOpen: { mark: 'never', title: 'Said “done” while the lesson stayed open' },
@@ -24,10 +24,10 @@ export const CHECKS = {
   escalated: { mark: 'never', title: 'Claimed to report or escalate something' },
   cantTake: { mark: 'never', title: 'Asked for something plato can’t take (video, audio, a file, a terminal)' },
   language: { mark: 'never', title: 'Replied in the wrong language, or mixed languages' },
-  linkCode: { mark: 'never', title: 'Left out or changed the author’s link or code' },
+  linkCode: { mark: 'never', critical: true, title: 'Left out or changed the author’s link or code' },
   workAssumed: { mark: 'never', title: 'Assumed work experience or a job search the learner didn’t mention' },
-  frozen: { mark: 'never', title: 'Changed a completed lesson' },
-  suspicion: { mark: 'never', title: 'Suspicion in the notes the learner can read' },
+  frozen: { mark: 'never', critical: true, title: 'Changed a completed lesson' },
+  suspicion: { mark: 'never', critical: true, title: 'Suspicion in the notes the learner can read' },
   portfolio: { mark: 'parity', title: 'Mentioned the portfolio when the lesson doesn’t' },
   long: { mark: 'parity', title: 'Reply longer than 4 sentences' },
   questions: { mark: 'parity', title: 'More than one question' },

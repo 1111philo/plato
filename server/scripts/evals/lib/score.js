@@ -2,7 +2,12 @@
  * Pass marks (docs/AGENT_EVALS.md section 3), applied to the trials of one
  * check in one case:
  *
- * - never    one failing trial fails it.
+ * - never    one failing trial fails it, when the check is `critical` (a
+ *            slip that harms a learner: completing without the work, a
+ *            recorded approval, a changed link or code, AI suspicion, a
+ *            made-up fact). Otherwise a failure is confirmed (run.js): the
+ *            case runs again on both versions, and it fails only if it
+ *            happens again, or more often than today (Blake, 2026-11-24).
  * - parity   it fails when its failure rate is worse than today's (the
  *            baseline) by more than normal variation: the larger of the gap
  *            seen between two runs of today's version (calibration) and a
@@ -25,7 +30,18 @@ export function noiseMargin(p1, n1, p2, n2) {
  * applicable). `baseline` is `{ fails, n }` for the same case and check, or
  * null. `gap` is the calibration gap for it (0 when unknown).
  */
-export function judge({ mark, trials, baseline = null, gap = 0, minPass = null }) {
+export function judge({ mark, trials, extra = null, critical = false, baseline = null, gap = 0, minPass = null }) {
+  // A non-critical "never" that was confirmed: it fails if the confirmation
+  // trials fail too, or if all its trials together are worse than today.
+  if (mark === 'never' && !critical && extra) {
+    const first = judge({ mark, trials });
+    const again = extra.filter((t) => t === false).length;
+    const all = judge({ mark: 'parity', trials: [...trials, ...extra], baseline, gap, minPass: null });
+    if (all.verdict === 'n/a') return { ...all, mark };
+    const worse = baseline?.n ? all.verdict === 'fail' : false;
+    return { ...all, mark, firstFails: first.fails, againFails: again, confirmed: true, verdict: again || worse ? 'fail' : 'pass' };
+  }
+  if (extra) trials = [...trials, ...extra];
   const ran = trials.filter((t) => t !== null);
   const n = ran.length;
   const fails = ran.filter((t) => t === false).length;

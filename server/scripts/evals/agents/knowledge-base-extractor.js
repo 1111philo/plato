@@ -6,7 +6,7 @@
 export const CHECKS = {
   clean: { mark: 'never', title: 'Extra text before the description' },
   kept: { mark: 'never', title: 'Dropped something the team didn’t ask to remove' },
-  noInvented: { mark: 'never', title: 'Invented a fact' },
+  noInvented: { mark: 'never', critical: true, title: 'Invented a fact' },
   change: { mark: 'parity', minPass: 0.8, title: 'Made the change that was discussed' },
   short: { mark: 'parity', minPass: 0.8, title: 'Stays a short reference (not a copy of the chat)' },
 };

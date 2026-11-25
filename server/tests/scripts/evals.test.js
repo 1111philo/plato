@@ -29,6 +29,16 @@ describe('pass marks', () => {
     assert.equal(judge({ mark: 'parity', trials: [true, true, true, true, false], minPass: 0.8 }).verdict, 'pass');
     assert.equal(judge({ mark: 'parity', trials: [false] }).verdict, 'no-baseline');
   });
+  it('a "never" that isn’t critical is confirmed: it fails only if it happens again, or more often than today', () => {
+    const once = [true, true, false, true, true, true];
+    assert.equal(judge({ mark: 'never', trials: once }).verdict, 'fail', 'before confirming');
+    assert.equal(judge({ mark: 'never', trials: once, extra: Array(12).fill(true), baseline: { fails: 1, n: 18 } }).verdict, 'pass', 'didn’t happen again');
+    assert.equal(judge({ mark: 'never', trials: once, extra: [...Array(11).fill(true), false], baseline: { fails: 1, n: 18 } }).verdict, 'fail', 'happened again');
+    assert.equal(judge({ mark: 'never', trials: Array(6).fill(false), extra: Array(12).fill(true), baseline: { fails: 0, n: 18 } }).verdict, 'fail', 'more often than today (6 of 18, today 0)');
+  });
+  it('a critical "never" fails on one slip, confirmed or not', () => {
+    assert.equal(judge({ mark: 'never', critical: true, trials: [true, false], extra: Array(12).fill(true) }).verdict, 'fail');
+  });
   it('"for reading" and "not yet expected" never fail a run', () => {
     assert.equal(judge({ mark: 'pending', trials: [false, false] }).verdict, 'pending');
     assert.equal(judge({ mark: 'reading', trials: [false] }).verdict, 'reading');

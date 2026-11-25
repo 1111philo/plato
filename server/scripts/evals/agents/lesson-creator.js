@@ -11,7 +11,7 @@ import { PROGRAM_KB } from '../fixtures/program.js';
 export const CHECKS = {
   readiness: { mark: 'never', title: 'Readiness score missing or unreadable' },
   cantTake: { mark: 'never', title: 'Accepted something plato can’t take' },
-  linkCode: { mark: 'never', title: 'Changed the author’s link or code' },
+  linkCode: { mark: 'never', critical: true, title: 'Changed the author’s link or code' },
   falseSave: { mark: 'never', title: 'Said something would be saved that won’t be' },
   language: { mark: 'never', title: 'Replied in the wrong language' },
   questions: { mark: 'parity', minPass: 0.7, title: 'More than one question' },

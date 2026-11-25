@@ -48,6 +48,11 @@ export async function loadAgent(id) {
   return { id, ...mod, cases };
 }
 
+/** Is a check critical on a case: one slip fails the run, unconfirmed (lib/score.js). */
+export function criticalFor(agent, c, check) {
+  return !!(agent.CHECKS[check].critical || (c.never && check === 'falseShown') || c.critical?.includes(check));
+}
+
 /** A check's pass mark on a case: the case can raise or set it. */
 export function markFor(agent, c, check) {
   if (c.mark === 'pending') return 'pending';
@@ -121,8 +126,11 @@ export function score({ agents, raw, baseline = {}, gaps = {} }) {
       if (!r) continue;
       const checks = {};
       for (const check of Object.keys(agent.CHECKS)) {
-        const trials = r.trials.filter((t) => !t.error).map((t) => (t.checks?.[check] === undefined ? null : t.checks[check]));
-        const j = judge({ mark: markFor(agent, c, check), trials, baseline: baseline[agent.id]?.[c.id]?.[check] || null, gap: gaps[`${agent.id}/${c.id}/${check}`] || 0, minPass: c.minPass ?? agent.CHECKS[check].minPass ?? null });
+        const pick = (list) => list.filter((t) => !t.error).map((t) => (t.checks?.[check] === undefined ? null : t.checks[check]));
+        // Trials after `confirmFrom` are the confirmation run's.
+        const cf = r.confirmFrom ?? r.trials.length;
+        const extra = cf < r.trials.length ? pick(r.trials.slice(cf)) : null;
+        const j = judge({ mark: markFor(agent, c, check), trials: pick(r.trials.slice(0, cf)), extra, critical: criticalFor(agent, c, check), baseline: baseline[agent.id]?.[c.id]?.[check] || null, gap: gaps[`${agent.id}/${c.id}/${check}`] || 0, minPass: c.minPass ?? agent.CHECKS[check].minPass ?? null });
         if (j.verdict !== 'n/a') checks[check] = { ...j, title: agent.CHECKS[check].title };
       }
       const errors = r.trials.filter((t) => t.error).length;
@@ -247,16 +255,21 @@ async function main() {
   say('\n');
   let cases = score({ agents, raw, baseline, gaps });
 
-  // A failed "at least as good as today" is confirmed before it counts: the
+  // A failed "at least as good as today", or a failed "never" that isn't
+  // critical, is confirmed before it counts: the
   // case runs CONFIRM_TRIALS more times on both versions and is judged on all
   // the trials. Six trials can't tell a 25% rate from 0% (the Knowledge Base
   // Editor's K3: 0 of 6 on main, then 3 of 12). A real regression survives it.
-  const toConfirm = cases.filter((c) => Object.values(c.checks).some((v) => v.verdict === 'fail' && v.mark === 'parity'));
+  // Also a failed "never" that isn't critical (Blake, 2026-11-24).
+  const toConfirm = cases.filter((c) => Object.entries(c.checks).some(([k, v]) => v.verdict === 'fail' && (v.mark === 'parity' || (v.mark === 'never' && !criticalFor(agents.find((a) => a.id === c.agent), agents.find((a) => a.id === c.agent).cases.find((x) => x.id === c.id), k)))));
   if (toConfirm.length && !opt['no-confirm']) {
     const sub = agents.map((a) => ({ ...a, cases: a.cases.filter((c) => toConfirm.some((x) => x.agent === a.id && x.id === c.id)) })).filter((a) => a.cases.length);
     say(`Confirming ${toConfirm.map((c) => `${c.agent} ${c.id}`).join(', ')}: ${CONFIRM_TRIALS} more trials each, on both versions\n`);
     const more = await runCases({ app, model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true });
-    for (const [a, cs] of Object.entries(more)) for (const [id, r] of Object.entries(cs)) raw[a][id].trials.push(...r.trials);
+    for (const [a, cs] of Object.entries(more)) for (const [id, r] of Object.entries(cs)) {
+      raw[a][id].confirmFrom = raw[a][id].trials.length;
+      raw[a][id].trials.push(...r.trials);
+    }
     if (baselineDir) {
       const extra = tally(await runCases({ app: await loadApp(baselineDir), model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true }));
       for (const [a, cs] of Object.entries(extra)) for (const [id, checks] of Object.entries(cs)) for (const [k, v] of Object.entries(checks)) {

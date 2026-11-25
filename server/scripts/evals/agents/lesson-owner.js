@@ -10,7 +10,7 @@ export const CHECKS = {
   readable: { mark: 'never', title: 'The setup is incomplete (plato’s own check refuses it)' },
   objectivesKept: { mark: 'never', title: 'Changed the author’s objectives (number or order)' },
   exemplarKept: { mark: 'never', title: 'Changed the exemplar' },
-  startsAtZero: { mark: 'never', title: 'Started the learner part-way' },
+  startsAtZero: { mark: 'never', critical: true, title: 'Started the learner part-way' },
   numbersKept: { mark: 'never', title: 'Changed the author’s numbers' },
   doingWords: { mark: 'parity', minPass: 0.8, title: 'Evidence says what the learner produces' },
   short: { mark: 'parity', minPass: 0.8, title: 'Evidence is under 20 words' },

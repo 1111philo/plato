@@ -11,13 +11,13 @@ import { coachTurn, coachOpening } from '../lib/coachTurn.js';
 import { parseJSON } from '../lib/checks.js';
 
 export const CHECKS = {
-  linkCode: { mark: 'never', title: 'Lost or changed the author’s link or code on the way to the learner' },
+  linkCode: { mark: 'never', critical: true, title: 'Lost or changed the author’s link or code on the way to the learner' },
   authorObjectives: { mark: 'parity', minPass: 0.8, title: 'The objectives the learner works on are the author’s' },
   carried: { mark: 'parity', minPass: 0.6, title: 'What the earlier agent learned reached the next one' },
   used: { mark: 'parity', minPass: 0.6, title: 'The next Coach acts on it' },
   notMisused: { mark: 'parity', minPass: 0.8, title: 'The next Coach doesn’t act on what no longer applies, or doesn’t fit' },
-  noApproval: { mark: 'never', title: 'A claimed approval was recorded or completed the lesson' },
-  noInvented: { mark: 'never', title: 'Invented a fact the program description doesn’t give' },
+  noApproval: { mark: 'never', critical: true, title: 'A claimed approval was recorded or completed the lesson' },
+  noInvented: { mark: 'never', critical: true, title: 'Invented a fact the program description doesn’t give' },
 };
 
 export const available = (app) => app.prompt('coach') != null && !!app.engine?.buildContext;

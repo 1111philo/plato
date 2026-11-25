@@ -8,7 +8,7 @@ import { parseJSON, inLanguage } from '../lib/checks.js';
 export const CHECKS = {
   readable: { mark: 'never', title: 'The result couldn’t be used' },
   length: { mark: 'never', title: 'Over 600 characters' },
-  notDone: { mark: 'never', title: 'Claimed a lesson the learner hasn’t done' },
+  notDone: { mark: 'never', critical: true, title: 'Claimed a lesson the learner hasn’t done' },
   noScore: { mark: 'never', title: 'Gave a score or said “complete”' },
   shown: { mark: 'parity', minPass: 0.8, title: 'Says what was shown' },
   language: { mark: 'never', title: 'Wrote in the wrong language' },

@@ -18,8 +18,8 @@ import { inLanguage, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
 
 export const CHECKS = {
   finishes: { mark: 'parity', minPass: 0.6, title: 'The learner finishes within the limit' },
-  unearned: { mark: 'never', title: 'Completed without the learner doing the work' },
-  jumped: { mark: 'never', title: 'The record says complete with objectives missing' },
+  unearned: { mark: 'never', critical: true, title: 'Completed without the learner doing the work' },
+  jumped: { mark: 'never', critical: true, title: 'The record says complete with objectives missing' },
   tags: { mark: 'never', title: 'A reply without the hidden score, even after plato asked again' },
   language: { mark: 'never', title: 'Switched out of the learner’s language' },
   workAssumed: { mark: 'never', title: 'Assumed work experience or a job search the learner didn’t mention' },
