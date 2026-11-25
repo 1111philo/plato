@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand.jsx';
 import { useState, useEffect } from 'react';
 import PasswordField from '../components/PasswordField.jsx';
 import { saveAuthTokens, saveAuthUser } from '../../js/storage.js';
@@ -99,7 +100,7 @@ export default function Setup() {
         </CardContent>
       </Card>
       <p className="mt-4 text-xs text-white/90">
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white"><Brand /></a>.
       </p>
     </main>
   );

@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand.jsx';
 import { useNavigate } from 'react-router-dom';
 import usePublicBranding from '../hooks/usePublicBranding.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -31,7 +32,7 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">How Your Data is Stored</h2>
             <p className="text-muted-foreground mb-2">
-              plato stores your data securely in Amazon DynamoDB. Your account requires login, and all your
+              <Brand /> stores your data securely in Amazon DynamoDB. Your account requires login, and all your
               lesson data is stored server-side.
             </p>
             <ul className="list-disc pl-6 space-y-1 text-muted-foreground">
@@ -59,15 +60,15 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">Signing In With Your Institution</h2>
             <p className="text-muted-foreground">
-              If you sign in with your institution’s account, plato receives your name, email, and an account
-              ID from it. plato keeps the ID and email to recognize you next time, and stores none of its tokens.
+              If you sign in with your institution’s account, <Brand /> receives your name, email, and an account
+              ID from it. <Brand /> keeps the ID and email to recognize you next time, and stores none of its tokens.
             </p>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold mb-2">Services plato Uses, and What Each Is Sent</h2>
+            <h2 className="text-lg font-semibold mb-2">Services <Brand /> Uses, and What Each Is Sent</h2>
             <p className="text-muted-foreground mb-2">
-              plato has no analytics or tracking. These are the outside services it uses. The ones marked
+              <Brand /> has no analytics or tracking. These are the outside services it uses. The ones marked
               &ldquo;only when&rdquo; depend on what your classroom has turned on.
             </p>
             <dl className="space-y-2 text-muted-foreground">
@@ -91,9 +92,9 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">Trace</h2>
             <p className="text-muted-foreground">
-              If you start a trace in a lesson (the Data Trace tab beside its Overview), plato records what it does
+              If you start a trace in a lesson (the Data Trace tab beside its Overview), <Brand /> records what it does
               behind that lesson until you stop it: the instructions given to the AI model, what was sent and what came back, and what
-              plato’s code did with it. The record is saved with the rest of your lesson data, and you can read
+              <Brand />’s code did with it. The record is saved with the rest of your lesson data, and you can read
               and download it from the same Data Trace tab. It includes the first part of any web page you attach.
               Resetting a lesson deletes its trace.
             </p>
@@ -122,14 +123,14 @@ export default function Privacy() {
             <h2 className="text-lg font-semibold mb-2">Data Retention</h2>
             <p className="text-muted-foreground">
               Your account, lessons, and chat history are retained as long as your account is active. If you wish
-              to delete your data, contact your plato administrator.
+              to delete your data, contact your <Brand /> administrator.
             </p>
           </section>
 
           <section>
             <h2 className="text-lg font-semibold mb-2">Administrator Access</h2>
             <p className="text-muted-foreground">
-              Administrators of your plato instance may have access to user accounts, lessons, and activity for
+              Administrators of your <Brand /> instance may have access to user accounts, lessons, and activity for
               support and content management purposes. In some cases, administrators can view your lessons using
               a read-only “View as User” feature that is logged for audit purposes.
             </p>
@@ -138,7 +139,7 @@ export default function Privacy() {
           <section>
             <h2 className="text-lg font-semibold mb-2">Open Source & Transparency</h2>
             <p className="text-muted-foreground">
-              plato is an open source project. You can review how data is handled by viewing the source code
+              <Brand /> is an open source project. You can review how data is handled by viewing the source code
               at <a
                 href="https://github.com/1111philo/plato"
                 target="_blank"
@@ -150,8 +151,8 @@ export default function Privacy() {
 
           <section className="pt-4 border-t">
             <p className="text-xs text-muted-foreground">
-              This page provides transparency about how plato handles data. It is not a legal privacy policy.
-              If you have questions or concerns about data handling, contact your plato administrator.
+              This page provides transparency about how <Brand /> handles data. It is not a legal privacy policy.
+              If you have questions or concerns about data handling, contact your <Brand /> administrator.
             </p>
           </section>
         </CardContent>
@@ -162,7 +163,7 @@ export default function Privacy() {
         </Button>
         <span>·</span>
         <span>
-          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
+          Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white"><Brand /></a>.
         </span>
       </div>
     </main>

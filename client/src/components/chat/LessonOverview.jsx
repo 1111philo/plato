@@ -1,3 +1,4 @@
+import { BrandText } from '../Brand.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Check from 'lucide-react/dist/esm/icons/check';
 import { getScreenshot } from '../../../js/storage.js';
@@ -40,7 +41,7 @@ export default function LessonOverview({ active, lesson, lessonKB, messages }) {
 
   return (
     <div className="space-y-4 text-sm">
-      {lesson.description && <p className="text-muted-foreground">{lesson.description}</p>}
+      {lesson.description && <p className="text-muted-foreground"><BrandText>{lesson.description}</BrandText></p>}
       <div className="space-y-2">
         <h3 className="font-medium">
           Objectives <span className="font-normal text-muted-foreground">· {complete ? 'Lesson complete' : objectivesMetLabel(lessonKB, lesson.learningObjectives)}</span>
@@ -52,7 +53,7 @@ export default function LessonOverview({ active, lesson, lessonKB, messages }) {
                 {o.met && <Check className="h-3 w-3" strokeWidth={3} />}
               </span>
               <span>
-                {o.objective}
+                <BrandText>{o.objective}</BrandText>
                 <span className="sr-only">{o.met ? ', met' : ', not yet'}</span>
               </span>
             </li>

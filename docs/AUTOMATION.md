@@ -1,6 +1,6 @@
-# plato Automation — CI/CD & agentic workflows
+# **plato** Automation — CI/CD & agentic workflows
 
-How plato's GitHub Actions ecosystem works: the agentic workflows (pilot,
+How **plato**'s GitHub Actions ecosystem works: the agentic workflows (pilot,
 intake, review, revise), the data-loss alarm, deploy dispatch, branch
 protection, and versioning. For the *error-reporting* side of monitoring (tiers,
 how to add a detector), see [`OBSERVABILITY.md`](OBSERVABILITY.md) — this doc
@@ -17,7 +17,7 @@ via `--model` in `claude_args` to Bedrock cross-region inference profiles:
 `us.anthropic.claude-sonnet-4-5-20250929-v1:0` for review/pilot,
 `us.anthropic.claude-haiku-4-5-20251001-v1:0` for intake/revise. The role is
 `arn:aws:iam::380610849750:role/plato-gha-bedrock-agents` (the dase account,
-same as prod plato), trusted for `pull_request` and `main` only and allowed only
+same as prod **plato**), trusted for `pull_request` and `main` only and allowed only
 these two models. Each workflow sets its own `role-session-name`
 (`plato-<workflow>`), so Bedrock invocation logs and CloudTrail show which
 workflow spent what. These calls count toward the Agentic Development budget. Bedrock cross-region inference profiles route across
@@ -83,7 +83,7 @@ tightening, `extendedLessons` is informational only.
 
 ## log-watch (`log-watch.yml`)
 
-Runs every 2 hours — plato's **data-loss alarm**, separate from the pilot.
+Runs every 2 hours — **plato**'s **data-loss alarm**, separate from the pilot.
 `scripts/log-watch.js` logs into the admin API, reads
 `GET /v1/admin/logs?view=groups`, and if any `unhandled_error` group's sample is
 a `PUT`/`POST` to `/v1/sync` (a learner-data write failing server-side) it opens

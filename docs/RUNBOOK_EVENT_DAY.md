@@ -1,7 +1,7 @@
 # Event-day runbook
 
-For a session where many learners use plato at the same time, e.g. "everyone
-open plato now" with a few hundred to ~900 people. It covers what to check
+For a session where many learners use **plato** at the same time, e.g. "everyone
+open **plato** now" with a few hundred to ~900 people. It covers what to check
 beforehand, what to watch while it runs, and how to stop or roll back. The
 numbers come from the scale review on #451 (measured on the prod account,
 us-east-2, 2026-11-06); re-check the ones marked *check* before each event.
@@ -48,7 +48,7 @@ Service Quotas the week before; ask AWS for more if the expected load is close.
    subscriptions are confirmed and the alarms are `OK`:
    `aws cloudwatch describe-alarms --alarm-name-prefix plato-prod` (us-east-2,
    and us-east-1 for CloudFront).
-7. **Tell the facilitators** to stagger "open plato now" over a few minutes
+7. **Tell the facilitators** to stagger "open **plato** now" over a few minutes
    (e.g. by table or group) if they can. A synchronized start is the worst case.
 
 ## During
@@ -58,7 +58,7 @@ Service Quotas the week before; ask AWS for more if the expected load is close.
   `conversation_too_long` (learner work not saving), `ai_stream_failed`,
   `ai_invoke_failed`, `coach_tags_unrecovered`. Meanings in
   `docs/OBSERVABILITY.md`. CloudWatch metrics for Lambda, DynamoDB, and Bedrock
-  give the same picture without plato in the loop (the logs endpoint itself
+  give the same picture without **plato** in the loop (the logs endpoint itself
   can be slow during an incident).
 - **Kill switches that exist:** Admin → Notifications → Automations (turn every
   email automation off); Admin → Plugins (turn off a misbehaving plugin);
@@ -93,7 +93,7 @@ machine, through CloudFront, against playground (Beta-RC-240 plus #546):
   starts at 1.2–1.6 s init. No DynamoDB or Lambda throttles.
 - **900 sign-ins in 30 s:** 17,068 requests, 2 client-side timeouts; server
   time stayed p50 14 ms, p99 320 ms (the slower client numbers were the test
-  machine's bandwidth, not plato). Peak concurrency 81.
+  machine's bandwidth, not **plato**). Peak concurrency 81.
 - **Real Bedrock**, 50 then 100 coach streams at once (350 calls): all
   completed, no throttles. Time to first token p50 0.7 s, p95 1.6 s, p99
   3.5 s; full reply p50 3.2 s, p99 7.4 s.
@@ -113,7 +113,7 @@ Fixed before launch (#516–#520): shared data cached for 30 s on learner paths
 and parsed lessons list, so a classroom refocusing at once doesn't overload
 the `_system` partition; time estimates precomputed; one-read setup check;
 each save written once and one AI call per coach turn; the AI endpoint locked
-to plato's model with per-user limits; reset links can't be used as sessions;
+to **plato**'s model with per-user limits; reset links can't be used as sessions;
 the refresh race that could sign a whole cohort out at the 15-minute mark.
 What remains is listed in `docs/POST_LAUNCH.md`. The per-user AI limits and
 per-IP limits count per Lambda container, so they're best-effort; the WAF rule

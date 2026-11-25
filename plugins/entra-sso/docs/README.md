@@ -1,7 +1,7 @@
 # Microsoft Entra SSO
 
 Adds "Sign in with Microsoft" (the label is a plugin setting, e.g. "Sign in
-with UIC") for one Entra tenant, alongside plato's own sign-in.
+with UIC") for one Entra tenant, alongside **plato**'s own sign-in.
 
 - **Setup, account rules, and security:** [`docs/SSO.md`](../../../docs/SSO.md).
 - **Settings in Admin → Plugins:** how the sign-in button looks, and nothing

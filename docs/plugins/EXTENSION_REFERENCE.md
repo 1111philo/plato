@@ -1,6 +1,6 @@
 # Extension reference
 
-Flat reference of every plato extension point. One section per surface; no nesting beyond H2 so AI agents can grep and find a single match.
+Flat reference of every **plato** extension point. One section per surface; no nesting beyond H2 so AI agents can grep and find a single match.
 
 ## Slots
 
@@ -12,7 +12,7 @@ Flat reference of every plato extension point. One section per surface; no nesti
 - **When:** the admin expands "Show settings" on the plugin's card
 - **Phase:** 1
 - **Example:** `plugins/slack/client/SlackSettingsPanel.jsx`
-- **Gotchas:** if you don't ship a custom panel, plato auto-renders a form from `manifest.settingsSchema`. Pick one; don't ship both.
+- **Gotchas:** if you don't ship a custom panel, **plato** auto-renders a form from `manifest.settingsSchema`. Pick one; don't ship both.
 
 ### `adminUserRowAction`
 
@@ -179,7 +179,7 @@ The hook bus is at `server/src/lib/plugins/hooks.js`. **Open by design** — any
 - **Emit point:** `server/src/routes/me.js` DELETE `/v1/me`; `server/src/routes/admin.js` DELETE `/v1/admin/users/:id`
 - **Fires:** BEFORE the cascade. Plugins can read their own `userMeta:<id>` records before they're deleted by the cascade. The host awaits all handlers before proceeding to delete the user's sync-data and user record.
 - **Phase:** 1.1
-- **Notes:** The user's `userMeta:*` records are auto-deleted by the cascade — plugins don't need to explicitly clean up. Subscribe to this hook only if you have side effects beyond plato (e.g., notify external systems, archive content).
+- **Notes:** The user's `userMeta:*` records are auto-deleted by the cascade — plugins don't need to explicitly clean up. Subscribe to this hook only if you have side effects beyond **plato** (e.g., notify external systems, archive content).
 
 ## Enrichment Pattern
 
@@ -221,7 +221,7 @@ A `lessonStarted` hook handler with `lessonEnrichment` capability can return an 
 
 ### Tracing what your plugin did (API 1.7.0)
 
-Trace mode (#595) lets a person read everything behind a lesson conversation: every AI call with what was sent and what came back, what plato's code did, and what went to outside services. Your handler runs on the server, where the learner's browser can't see it, so **a plugin that hooks `lessonStarted` must report its own work**. `client/tests/transparency.test.js` fails for one that doesn't.
+Trace mode (#595) lets a person read everything behind a lesson conversation: every AI call with what was sent and what came back, what **plato**'s code did, and what went to outside services. Your handler runs on the server, where the learner's browser can't see it, so **a plugin that hooks `lessonStarted` must report its own work**. `client/tests/transparency.test.js` fails for one that doesn't.
 
 When the learner is recording, the payload has `trace: true` and the host gives that one call a recorder. When they aren't, nothing below runs and nothing is returned.
 

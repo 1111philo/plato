@@ -119,4 +119,4 @@ When a slot/hook/capability is deprecated:
 
 ## When the host bumps
 
-Plato follows the same versioning policy as the rest of the codebase (`Beta-RC-N` tags). The plugin API version is decoupled from the plato release version — only changes to the plugin contract bump it.
+Plato follows the same versioning policy as the rest of the codebase (`Beta-RC-N` tags). The plugin API version is decoupled from the **plato** release version — only changes to the plugin contract bump it.

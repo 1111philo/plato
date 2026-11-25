@@ -8,6 +8,7 @@
  * in progress (traceSession.subscribeTrace) while `active`. Screen readers
  * hear one polite "Trace updated" when a turn's trace is saved, not every step.
  */
+import { Brand } from '../Brand.jsx';
 import { useCallback, useEffect, useState } from 'react';
 import { listTraceRecords } from '../../../js/storage.js';
 import { describeTrace, technologyFor, traceToText } from '../../lib/traceView.js';
@@ -38,7 +39,7 @@ function Recorder({ recording, onStart, onStop, error, what, compact }) {
       </div>
       {!recording && !compact && (
         <p className="text-xs text-muted-foreground">
-          Records every step behind {what} from your next message: what was sent to the AI model, what came back, and what plato’s code did with it.
+          Records every step behind {what} from your next message: what was sent to the AI model, what came back, and what <Brand />’s code did with it.
         </p>
       )}
       {error && <p className="text-xs text-red-800 dark:text-red-300" role="alert">{error}</p>}

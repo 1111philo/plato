@@ -37,7 +37,7 @@ The plugin migrated to this storage in the same release. Capability:
 
 **Symptom:** When a learner is invited and accepts, this plugin would like
 to react (e.g., seed an external CRM). When a user is deleted, plugins with
-side effects beyond plato (Slack notifications, archiving) need to know.
+side effects beyond **plato** (Slack notifications, archiving) need to know.
 
 **Closed in 1.1.0:** core now emits `userCreated` after `db.createUser`
 (both bootstrap-admin and signup) and `userDeleted` before the user-data
@@ -65,7 +65,7 @@ fine to leave to plugin authors.
 ## 5. Plugin must hard-code core-endpoint shapes (still open)
 
 **Symptom:** `SettingsPanel.jsx` calls `GET /v1/admin/users` directly
-because there's no plugin-scoped helper for "list users." If plato changes
+because there's no plugin-scoped helper for "list users." If **plato** changes
 the response shape, the plugin breaks.
 
 **Workaround used:** Direct fetch + defensive parsing.

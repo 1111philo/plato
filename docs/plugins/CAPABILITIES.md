@@ -153,4 +153,4 @@ Adding a capability is a core change. The bar:
 
 ## Future: `core.experimental`
 
-Phase 2 may add a `core.experimental` capability that gates direct access to internal APIs (full sync-data read, arbitrary hook subscription) for prototyping new extension points before they land in core. Admin must enable per-plugin with a "⚠️ Uses experimental APIs — may break on plato updates" warning. Modeled on VS Code's proposed APIs. **Not in Phase 1** because committing to an experimental surface this early risks turning it into a permanent escape hatch.
+Phase 2 may add a `core.experimental` capability that gates direct access to internal APIs (full sync-data read, arbitrary hook subscription) for prototyping new extension points before they land in core. Admin must enable per-plugin with a "⚠️ Uses experimental APIs — may break on **plato** updates" warning. Modeled on VS Code's proposed APIs. **Not in Phase 1** because committing to an experimental surface this early risks turning it into a permanent escape hatch.
