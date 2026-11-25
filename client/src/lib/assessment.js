@@ -648,6 +648,13 @@ export function withoutVoiceSamples(text, learnerTexts = []) {
   return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
 }
 
+/** The note on a turn where the learner only agreed ("yes, that's me") to a draft the coach wrote (C2). */
+export const AGREED_ADDENDUM = `## The learner only agreed to your wording (from plato, not the learner)
+
+Your last message wrote text for the learner, and they only said yes to it ("that's me", "post it"). That isn't their work and it isn't their voice. Don't call it theirs or praise it.
+
+Your whole reply is two sentences: one saying the wording is still yours, then one question asking them to write it themselves. For example: "Those are still my words, not yours yet. How would you say it yourself?" Nothing after the question.`;
+
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
 

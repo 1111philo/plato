@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, REPEATED_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, REPEATED_ADDENDUM, AGREED_ADDENDUM, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -643,9 +643,12 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // model doesn't notice its own words and praised them as the learner's.
   const coachSaid = assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text);
   const repeated = repeatsCoach(text || '', coachSaid);
-  trace?.step('repeatCheck', { repeated });
-  if (repeated) report('coach_wording_repeated');
-  const turnNote = repeated ? REPEATED_ADDENDUM : '';
+  // Or only "yes, that's me" to a draft the coach just wrote (C2).
+  const lastCoach = coachSaid[coachSaid.length - 1] || '';
+  const agreed = !repeated && onlyAgrees(text || '') && draftsForLearner(lastCoach, assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text));
+  trace?.step('repeatCheck', { repeated, ...(agreed ? { agreed } : {}) });
+  if (repeated || agreed) report('coach_wording_repeated');
+  const turnNote = repeated ? REPEATED_ADDENDUM : agreed ? AGREED_ADDENDUM : '';
   const withNote = (addendum) => [turnNote, addendum].filter(Boolean).join('\n\n---\n\n');
   const coachMsg = await orchestrator.converseStream(
     'coach',

@@ -29,7 +29,11 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
   ];
   // A message that repeats the coach's own wording: every call this turn is told (repeatsCoach), where this version does.
   const coachSaid = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text) : [];
-  const turnNote = assessment?.repeatsCoach && assessment.repeatsCoach(typeof message === 'string' ? message : '', coachSaid) ? assessment.REPEATED_ADDENDUM : '';
+  const said = typeof message === 'string' ? message : '';
+  const repeated = !!(assessment?.repeatsCoach && assessment.repeatsCoach(said, coachSaid));
+  const priorLearner = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
+  const agreed = !repeated && !!assessment?.AGREED_ADDENDUM && assessment.onlyAgrees(said) && assessment.draftsForLearner(coachSaid[coachSaid.length - 1] || '', priorLearner);
+  const turnNote = repeated ? assessment.REPEATED_ADDENDUM : agreed ? assessment.AGREED_ADDENDUM : '';
   const system = (addendum = '') => app.system('coach', { kb: programKb, catalog: CATALOG, addendum: [turnNote, addendum].filter(Boolean).join('\n\n---\n\n'), language });
   const coach = (addendum, msgs = messages, maxTokens = 2048) => model.call({ system: system(addendum), messages: msgs, maxTokens });
   // The tag repair has its own instructions only, as orchestrator.repairCoachTags sends it.
