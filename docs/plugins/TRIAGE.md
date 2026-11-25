@@ -15,7 +15,7 @@ Is the feature…
 ## Core changes
 
 **Core** is for functionality that:
-- Every plato deployment needs to serve learners effectively
+- Every **plato** deployment needs to serve learners effectively
 - Touches the coach-learner conversation, lesson completion, or learner profiles
 - Modifies auth, sync-data schema, or DynamoDB structure
 - Changes the lesson creation flow, Knowledge Base editor, or admin dashboard
@@ -52,7 +52,7 @@ Plugins **MUST NOT**:
 - Write to `_system:settings.*` or read/write another plugin's settings
 - Modify files outside `plugins/<id>/` from inside a plugin
 
-If a feature request requires any of the above, it's a **core change** (or should be rejected as violating plato's coaching philosophy).
+If a feature request requires any of the above, it's a **core change** (or should be rejected as violating **plato**'s coaching philosophy).
 
 ## Edge cases
 
@@ -68,7 +68,7 @@ If a feature request requires any of the above, it's a **core change** (or shoul
 
 ### "Add a new lesson type"
 
-- **Core** — lesson types are structural to how plato works. Even if the lesson type is specialized (e.g., "coding challenge" with a code editor), it affects the coach context, lesson parsing, and learner UX.
+- **Core** — lesson types are structural to how **plato** works. Even if the lesson type is specialized (e.g., "coding challenge" with a code editor), it affects the coach context, lesson parsing, and learner UX.
 
 ### "Add a button to the classroom"
 
@@ -78,7 +78,7 @@ If a feature request requires any of the above, it's a **core change** (or shoul
 ## When in doubt
 
 Ask:
-1. **Would every plato deployment benefit from this?** → Core
+1. **Would every **plato** deployment benefit from this?** → Core
 2. **Is this optional or org-specific?** → Plugin
 3. **Does this touch lesson completion, coach behavior, or learner profiles?** → Core (unless it's purely additive data storage in `userMeta`)
 
@@ -94,7 +94,7 @@ When triaging a `ready-for-pilot` issue:
    - If the extension points exist, implement the plugin.
    - If the extension points **do not exist**, label the issue `extension-point` and **SKIP** (maintainer judgment required).
 4. If the issue is **core-appropriate**, proceed with a core fix.
-5. If the issue violates an anti-goal (forced closures, hard cutoffs, etc.), **SKIP** with a comment explaining why the request conflicts with plato's philosophy.
+5. If the issue violates an anti-goal (forced closures, hard cutoffs, etc.), **SKIP** with a comment explaining why the request conflicts with **plato**'s philosophy.
 
 ## For maintainers
 

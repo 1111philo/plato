@@ -11,7 +11,6 @@ import { useRef, useEffect, useCallback } from 'react';
 export function useTitleNotification(baseTitle) {
   const hasPendingRef = useRef(false);
 
-  // Restore title when tab becomes visible or window gains focus
   useEffect(() => {
     function restore() {
       if (hasPendingRef.current) {
@@ -32,7 +31,6 @@ export function useTitleNotification(baseTitle) {
   }, [baseTitle]);
 
   const notify = useCallback(() => {
-    // Only flash title if the page is hidden or the window isn't focused
     if (document.hidden || !document.hasFocus()) {
       hasPendingRef.current = true;
       document.title = `(New message) ${baseTitle}`;

@@ -1,3 +1,4 @@
+import { BrandText } from '../components/Brand.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
@@ -18,9 +19,13 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
-import AgentActivity from '../components/chat/AgentActivity.jsx';
+import LessonPanel from '../components/chat/LessonPanel.jsx';
 import LessonOverview from '../components/chat/LessonOverview.jsx';
-import { progressLabel } from '../lib/lessonWork.js';
+import TraceContent from '../components/chat/TraceContent.jsx';
+import { useMediaQuery } from '../hooks/useMediaQuery.js';
+import useTraceSwitch from '../hooks/useTraceSwitch.js';
+import TraceRecordingDot from '../components/chat/TraceRecordingDot.jsx';
+import { overviewLabel } from '../lib/lessonWork.js';
 import { nextLessonAfter } from '../lib/lessonOrder.js';
 import LessonLoadingView from '../components/chat/LessonLoadingView.jsx';
 import ConfirmModal from '../components/modals/ConfirmModal.jsx';
@@ -68,11 +73,57 @@ export default function LessonChat() {
     lesson ? `${lesson.name} — plato` : 'Lesson — plato'
   );
 
-  // Confirm modal state
   const [confirmModal, setConfirmModal] = useState(null);
-  // The lesson overview (#438); `?view=overview` opens it (from the lessons
-  // page; `?view=work` is the old name).
-  const [showOverview, setShowOverview] = useState(() => ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')));
+  // The lesson panel (LessonPanel.jsx): Overview (#438) and Trace (#595)
+  // tabs, opened from the Overview button. `?view=overview` opens it on
+  // Overview (from the lessons page; `?view=work` is the old name). Wide
+  // screens dock it beside the chat; narrow ones open a dialog. No Trace
+  // while viewing as a learner.
+  const [panel, setPanel] = useState(() => ({
+    open: ['overview', 'work'].includes(new URLSearchParams(window.location.search).get('view')), tab: 'overview', focusAt: null,
+  }));
+  const [panelFrame, setPanelFrame] = useState({ top: 0, bottom: 0 });
+  const overviewButtonRef = useRef(null);
+  const openerRef = useRef(null);
+  const wide = useMediaQuery('(min-width: 1024px)');
+  const traceSwitch = useTraceSwitch(lessonGroupId);
+  const recording = !impersonating && traceSwitch.on;
+  const docked = panel.open && wide;
+  const openPanel = (tab, focusAt = null) => {
+    openerRef.current = document.activeElement;
+    setPanel({ open: true, tab, focusAt });
+  };
+  const togglePanel = () => (panel.open ? closePanel() : openPanel('overview'));
+  // Focus goes back to whatever opened it, or the Overview button.
+  const closePanel = () => {
+    setPanel((p) => ({ ...p, open: false, focusAt: null }));
+    const back = openerRef.current?.isConnected ? openerRef.current : overviewButtonRef.current;
+    requestAnimationFrame(() => back?.focus());
+  };
+  // The docked panel fills the space the page's <main> has (below the app
+  // header, above the footer).
+  useEffect(() => {
+    if (!docked) return undefined;
+    const measure = () => {
+      const rect = document.getElementById('main-content')?.getBoundingClientRect();
+      if (!rect) return;
+      // Clamped to the window: the page itself can scroll (an admin's extra bar
+      // makes it taller than the window), taking <main>'s top above the screen.
+      const next = { top: Math.max(0, Math.round(rect.top)), bottom: Math.max(0, Math.round(window.innerHeight - rect.bottom)) };
+      setPanelFrame((prev) => (prev.top === next.top && prev.bottom === next.bottom ? prev : next));
+    };
+    // Re-measure whenever <main> moves or resizes: bars above it (the admin
+    // bar, View as User) can appear after the panel opens, and the page can scroll.
+    const main = document.getElementById('main-content');
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (main) observer?.observe(main);
+    if (main?.parentElement) observer?.observe(main.parentElement);
+    measure();
+    window.addEventListener('resize', measure);
+    // Capture: any scroll container, including the page itself.
+    window.addEventListener('scroll', measure, true);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); window.removeEventListener('scroll', measure, true); };
+  }, [docked]);
   const [headerPinned, setHeaderPinned] = useState(false);
   const headerRef = useRef(null);
   const [composePinned, setComposePinned] = useState(true);
@@ -268,7 +319,7 @@ export default function LessonChat() {
     try {
       setLessonKB(await getLessonKB(lessonGroupId));
     } catch { /* the next turn refreshes it */ }
-  }, [lessonGroupId, lesson]);
+  }, [lessonGroupId, lesson, setComposeText, setComposeImages, setComposeLinks]);
 
   const isCustomLesson = lessonGroupId?.startsWith('custom-');
 
@@ -314,8 +365,8 @@ export default function LessonChat() {
 
   if (!state.loaded) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
   if (!lesson) return <p className="p-4 text-muted-foreground">Lesson not found.</p>;
-  // The header button opening the lesson overview: "Progress (N of M Objectives)".
-  const metLabel = progressLabel(lessonKB, lesson.learningObjectives);
+  // The header button opening the lesson panel: "Overview (N of M Objectives)".
+  const metLabel = overviewLabel(lessonKB, lesson.learningObjectives);
   const busy = !!loading;
   const sendBlocked = busy || cooldown.left > 0;
   const composePlaceholder = phase === LESSON_PHASES.COMPLETED
@@ -327,7 +378,6 @@ export default function LessonChat() {
       case MSG_TYPES.GUIDE:
         return (
           <div key={idx}>
-            <AgentActivity agents={msg.metadata?.agents} />
             <AssistantMessage content={msg.content} />
           </div>
         );
@@ -384,23 +434,29 @@ export default function LessonChat() {
   };
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-theme(spacing.20))]">
-      {/* Fixed header clone — appears when inline header scrolls out of view */}
+    <div className={`flex flex-col min-h-[calc(100vh-theme(spacing.20))] ${docked ? 'pr-[26rem]' : ''}`}>
+      {/* Fixed header clone — appears when inline header scrolls out of view.
+          aria-hidden (a screen reader would hear the header twice), so its
+          controls are out of the Tab order too (axe aria-hidden-focus); the
+          inline header's controls are the keyboard path, #584 e2e. */}
       {headerPinned && (
-        <div id="lesson-header-pinned" aria-hidden="true" className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md">
+        <div id="lesson-header-pinned" aria-hidden="true" className={`fixed top-0 left-0 z-50 border-b border-border bg-background px-4 py-2 shadow-md ${docked ? 'right-[26rem]' : 'right-0'}`}>
           <div className="mx-auto max-w-5xl flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
+            <Button variant="ghost" size="icon-sm" tabIndex={-1} aria-label="Back to lessons" onClick={() => navigate('/lessons')}>
               &larr;
             </Button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
-                <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
+                <h1 className="text-sm font-semibold truncate mr-auto"><BrandText>{lesson.name}</BrandText></h1>
+                {recording && (
+                  <button tabIndex={-1} className="shrink-0 cursor-pointer text-xs" onClick={() => openPanel('trace')} title="Trace is recording">
+                    <TraceRecordingDot withText="wide" />
+                  </button>
+                )}
                 <button
+                  tabIndex={-1}
                   className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                  onClick={() => setShowOverview(true)}
-                  aria-label={`${metLabel}: lesson overview`}
-                  aria-expanded={showOverview}
-                  aria-controls="lesson-overview-dialog"
+                  onClick={togglePanel}
                 >
                   {metLabel}
                 </button>
@@ -408,17 +464,17 @@ export default function LessonChat() {
               <ProgressBar lessonKB={lessonKB} />
             </div>
             {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleExport} title="Export lesson markdown">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleExport} title="Export lesson markdown">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               </Button>
             )}
             {phase && (
-              <Button variant="ghost" size="icon-sm" onClick={handleReset} title="Reset lesson">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleReset} title="Reset lesson">
                 &#8635;
               </Button>
             )}
             {isCustomLesson && (
-              <Button variant="ghost" size="icon-sm" onClick={handleDelete} title="Delete lesson">
+              <Button variant="ghost" size="icon-sm" tabIndex={-1} onClick={handleDelete} title="Delete lesson">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </Button>
             )}
@@ -434,13 +490,20 @@ export default function LessonChat() {
           </Button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3">
-              <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
+              <h1 className="text-sm font-semibold truncate mr-auto"><BrandText>{lesson.name}</BrandText></h1>
+              {recording && (
+                <button className="shrink-0 cursor-pointer rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-ring" onClick={() => openPanel('trace')}
+                  aria-label="Trace is recording this lesson: open the Trace">
+                  <TraceRecordingDot withText="wide" />
+                </button>
+              )}
               <button
+                ref={overviewButtonRef}
                 className="text-xs text-primary hover:underline shrink-0 cursor-pointer"
-                onClick={() => setShowOverview(true)}
-                aria-label={`${metLabel}: lesson overview`}
-                aria-expanded={showOverview}
-                aria-controls="lesson-overview-dialog"
+                onClick={togglePanel}
+                aria-label={`${metLabel}: lesson panel`}
+                aria-expanded={panel.open}
+                aria-controls="lesson-panel"
               >
                 {metLabel}
               </button>
@@ -534,7 +597,7 @@ export default function LessonChat() {
 
       {/* Fixed compose overlay — interactive when pinned */}
       {phase && composePinned && (
-        <div className="fixed bottom-9 left-0 right-0 z-50">
+        <div className={`fixed bottom-9 left-0 z-50 ${docked ? 'right-[26rem]' : 'right-0'}`}>
           <ComposeBar
             placeholder={impersonating ? 'Read-only — viewing as another user' : composePlaceholder}
             onSend={handleSend}
@@ -554,7 +617,16 @@ export default function LessonChat() {
         </div>
       )}
 
-      <LessonOverview open={showOverview} onOpenChange={setShowOverview} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+      <LessonPanel open={panel.open} tab={panel.tab} onTabChange={(tab) => setPanel((p) => ({ ...p, tab }))} onClose={closePanel}
+        docked={docked} frame={panelFrame} title={lesson.name} recording={recording}
+        overview={(active) => (
+          <LessonOverview active={active} lesson={lesson} lessonKB={lessonKB} messages={messages} />
+        )}
+        trace={impersonating ? undefined : (active) => (
+          <TraceContent scope={lessonGroupId} active={active} recording={recording} what="this lesson"
+            onStart={() => traceSwitch.set(true)} onStop={() => traceSwitch.set(false)} error={traceSwitch.error}
+            focusAt={panel.focusAt} stamp={lessonKB?.trace} title={lesson.name} />
+        )} />
 
 
       {confirmModal && (

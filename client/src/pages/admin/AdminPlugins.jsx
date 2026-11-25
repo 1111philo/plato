@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useState, useEffect, useCallback, createElement } from 'react';
 import { adminApi } from './adminApi.js';
 import { Badge } from '@/components/ui/badge';
@@ -86,7 +87,7 @@ export default function AdminPlugins() {
     <div>
       <h1 className="text-2xl font-bold mb-2">Plugins</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Enable, disable, and configure plato plugins.{' '}
+        Enable, disable, and configure <Brand /> plugins.{' '}
         <a href="https://github.com/1111philo/plato/blob/main/docs/plugins/AUTHORING.md" target="_blank" rel="noopener noreferrer" className="underline">
           Build your own.
         </a>

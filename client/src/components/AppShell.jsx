@@ -1,3 +1,4 @@
+import { Brand, BrandText } from './Brand.jsx';
 import { useEffect, useState } from 'react';
 import { can } from '../lib/permissions.js';
 import { useNavigate } from 'react-router-dom';
@@ -119,7 +120,7 @@ export default function AppShell({ children }) {
             {classroomLogo ? (
               <img src={classroomLogo} alt={`${classroomName}: lessons`} className="h-8 w-auto" />
             ) : (
-              <span className="text-sm font-semibold">{classroomName}<span className="sr-only">: lessons</span></span>
+              <span className="text-sm font-semibold"><BrandText>{classroomName}</BrandText><span className="sr-only">: lessons</span></span>
             )}
           </a>
           <div className="flex-1" />
@@ -171,7 +172,7 @@ export default function AppShell({ children }) {
       <footer className="shrink-0 border-t px-4 py-2 text-center text-xs text-muted-foreground">
         <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-foreground">Privacy</a>
         {' · '}
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground"><Brand /></a>.
       </footer>
 
       <AlertDialog open={signOutOpen} onOpenChange={setSignOutOpen}>

@@ -1,7 +1,7 @@
 # Single sign-on
 
 People can sign in with an institution's account (first: Microsoft Entra ID)
-**or** with plato's own email and password. Both stay available. SSO is off
+**or** with **plato**'s own email and password. Both stay available. SSO is off
 unless a deployment configures it.
 
 ## Who owns what
@@ -31,7 +31,7 @@ Decided 2026-11-17. In order:
 3. **An email the provider vouches for matches an account** → it's linked and
    signed in (everyone, staff included), and the account gets an email saying
    so. **If nobody ever proved that account's email, its password is removed
-   and every session ends.** plato accepts unproven emails (a learner can
+   and every session ends.** **plato** accepts unproven emails (a learner can
    change theirs; a shareable invite takes any), so someone could park an
    account on another person's address and wait for their first sign-in. An
    email counts as proven (`emailVerifiedAt`) when an emailed invite or an
@@ -82,8 +82,8 @@ Other rules:
 - An invite for a vouched-for email works through SSO even after its link
   expired. To stop someone joining, revoke the invite.
 - Roles never come from the provider. New accounts are learners.
-- Sign-out ends the plato session only. When someone's institutional account
-  is disabled, SSO stops working for them and their plato session runs out by
+- Sign-out ends the **plato** session only. When someone's institutional account
+  is disabled, SSO stops working for them and their **plato** session runs out by
   itself (up to 30 days).
 
 ## What people see
@@ -121,7 +121,7 @@ off, every page looks exactly as it did before.
   "Not set — use Forgot password to add one" in place of the change-password
   form (which asks for the current one). The provider rows only appear when
   SSO is on or the account is connected.
-- **Privacy** (`/privacy`): says what plato receives from the institution and
+- **Privacy** (`/privacy`): says what **plato** receives from the institution and
   what it keeps.
 
 Where a sentence names the provider ("UIC is now connected."), the name is
@@ -276,7 +276,7 @@ Code: `client/src/lib/signIn.js`, `client/src/lib/userFilters.js`,
 ## Security review (2026-11-18)
 
 An independent adversarial review found the protocol core sound and six
-issues where an identity meets plato's accounts; all are fixed and have
+issues where an identity meets **plato**'s accounts; all are fixed and have
 regression tests in `server/tests/routes/sso.test.js`:
 1. Pre-registering someone's address to capture their first sign-in (rule 3's
    `emailVerifiedAt` and takeover).

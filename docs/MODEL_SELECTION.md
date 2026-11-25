@@ -1,13 +1,13 @@
-# Model selection: choosing an open source model for plato
+# Model selection: choosing an open source model for **plato**
 
-**Status:** decided — `qwen.qwen3-vl-235b-a22b`, the only candidate satisfying all four constraints
+**Status:** decided — `qwen.qwen3-vl-235b-a22b`. Re-checked 2026-11-19 against three more Apache-2.0 image models (see [Re-check: grading, #584](#re-check-grading-584)); still the choice.
 **Date:** 2026-07-28
 **Supersedes:** Claude Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`)
 **Implementation:** [PR #332](https://github.com/1111philo/plato/pull/332)
 
 ## The goal
 
-Run plato on an **open source model** — weights publicly downloadable *under an
+Run **plato** on an **open source model** — weights publicly downloadable *under an
 OSI-approved license*. This was the stated objective, not a cost-reduction
 exercise. Everything below follows from it.
 
@@ -20,7 +20,7 @@ naming requirement; Gemma's Terms of Use carry their own use restrictions. Those
 fail the Open Source Definition on field-of-use and
 non-discrimination grounds (OSD #5, #6) and are not OSI-approved.
 
-plato itself is **AGPL-3.0**. Running an AGPL project on a model that isn't open
+**plato** itself is **AGPL-3.0**. Running an AGPL project on a model that isn't open
 source is an inconsistency, not a technicality — so the license bar is a
 constraint, not a tiebreaker. See [constraint 4](#4-must-carry-an-osi-approved-license).
 
@@ -28,10 +28,10 @@ The corollary matters as much as the goal: **a proprietary API model was not an
 acceptable outcome, even if it benchmarked better.** Haiku 4.5 appears in the
 comparisons as the incumbent baseline — the bar to clear — not as a candidate.
 
-plato runs **one model for all nine agents**. No per-agent routing: the model is
+**plato** runs **one model for all nine agents**. No per-agent routing: the model is
 declared once as `LLM` in `server/src/lib/ai-provider.js`, mirrored in
 `client/js/api.js`, and injected into plugins as `ctx.LLM`. Nine models to reason
-about is nine ways for prompt behavior to drift, and plato's agents share one
+about is nine ways for prompt behavior to drift, and **plato**'s agents share one
 output contract, so one model is the simpler and more testable choice.
 
 ## Hard constraints
@@ -46,7 +46,7 @@ Moonshot, Together, Groq, Fireworks, or any other third-party inference host.
 
 This is the single most consequential constraint, and it is easy to
 under-appreciate: **a model being open-weight does not mean it is available to
-us.** DeepSeek, Kimi, GLM, and Qwen all publish weights, but plato can only use
+us.** DeepSeek, Kimi, GLM, and Qwen all publish weights, but **plato** can only use
 the specific SKUs AWS has chosen to host in our region. The catalog, not the
 open-weight ecosystem, defines the candidate pool.
 
@@ -59,7 +59,7 @@ this document was measured against Bedrock `us-east-2` from this repo.
 Learners paste screenshots into the coach. That is a real, shipped feature —
 images are compressed client-side (`client/src/lib/imageCompression.js`, JPEG
 output), stored as individual `screenshot:*` records, and referenced from
-`metadata.imageKeys`. A text-only model cannot serve plato's coach at all.
+`metadata.imageKeys`. A text-only model cannot serve **plato**'s coach at all.
 
 This is a **hard filter applied before quality is considered**. It eliminates
 otherwise-strong open-weight models outright:
@@ -85,9 +85,9 @@ Of the 43 open-weight model IDs in `us-east-2`, only 12 accept `IMAGE`, and most
 of those are small (Ministral 3B/8B/14B, Nemotron Nano 12B, Palmyra Vision 7B,
 Gemma 3 4B/12B) — below the capability needed for open-ended coaching.
 
-### 3. Must reliably emit plato's literal output tags
+### 3. Must reliably emit **plato**'s literal output tags
 
-plato's agents do **not** use tool calling. There is no `tools` array anywhere in
+**plato**'s agents do **not** use tool calling. There is no `tools` array anywhere in
 the codebase. The coach ends every response with literal text markers that a
 regex plus a brace-walk extract (`parseCoachResponse` in
 `client/src/lib/lessonEngine.js`):
@@ -98,13 +98,13 @@ regex plus a brace-walk extract (`parseCoachResponse` in
 [PROFILE_UPDATE: {"observation": "..."}]
 ```
 
-If a model doesn't emit these, plato doesn't merely degrade — progress never
+If a model doesn't emit these, **plato** doesn't merely degrade — progress never
 advances, lessons never complete, and the learner profile never updates. This is
 the functional bar, and it's why tag compliance was measured directly rather than
 inferred from general benchmark scores.
 
 A consequence: **reasoning models are structurally disadvantaged.** Their
-`reasoningContent` output is dropped at the Converse boundary because plato's
+`reasoningContent` output is dropped at the Converse boundary because **plato**'s
 parser only reads visible text. Verified concretely: `gpt-oss-120b` at
 `maxTokens=16` returned *zero* visible characters (all reasoning), and spent 50
 output tokens to say "OK" where Haiku spent 4.
@@ -112,7 +112,7 @@ output tokens to say "OK" where Haiku spent 4.
 ### 4. Must carry an OSI-approved license
 
 This is a constraint, not a preference, and it is what ultimately decides the
-choice. plato ships under **AGPL-3.0**; the point of this migration is that the
+choice. **plato** ships under **AGPL-3.0**; the point of this migration is that the
 stack is open source. A model under a bespoke community license doesn't satisfy
 that, however freely its weights download.
 
@@ -123,7 +123,7 @@ that, however freely its weights download.
 | Gemma Terms of Use | no | Use restrictions via a prohibited-use policy; not a recognized open source license |
 | Proprietary (Haiku 4.5) | no | Weights not available at all |
 
-A tempting counter-argument, worth rejecting explicitly: plato reaches the model
+A tempting counter-argument, worth rejecting explicitly: **plato** reaches the model
 over Bedrock and never redistributes weights, so *as a matter of legal exposure*
 the Llama clauses are close to inert — the MAU threshold and naming requirement
 don't bind an API consumer. That reasoning is what nearly selected Llama 4 on
@@ -141,7 +141,7 @@ candidate is *good enough to ship* — not a competition it won.
 Every candidate was tested from this repo against Bedrock `us-east-2` using
 **plato's actual `coach.md`** (15,727 chars ≈ 3,685 tokens) plus a realistic
 runtime context block — not a synthetic prompt. Five scenarios exercised the
-judgments plato depends on:
+judgments **plato** depends on:
 
 | Scenario | What it tests |
 |---|---|
@@ -188,7 +188,7 @@ are marked *(license-ineligible)* or *(baseline)* accordingly.
 
 ### Completion — does it award 10 when the exemplar is met? (n=5)
 
-This is the make-or-break behavior: plato completes a lesson **only** at
+This is the make-or-break behavior: **plato** completes a lesson **only** at
 `progress >= 10` (there is no exchange-count cutoff). A model that stalls at 9
 would leave every learner unable to finish.
 
@@ -200,7 +200,7 @@ would leave every learner unable to finish.
 | Haiku 4.5 *(baseline)* | 10, 10, 10, 10, 10 | 5/5 |
 
 All four pass on an unambiguous prompt — the result that matters is that
-**Qwen3-VL matches the incumbent on plato's make-or-break behavior**. Note a
+**Qwen3-VL matches the incumbent on **plato**'s make-or-break behavior**. Note a
 weaker mid-lesson signal where Llama 4 capped at 9; with explicit "I'm done, both
 objectives feel complete" framing it awards 10 reliably. Worth re-testing if
 `coach.md` changes.
@@ -269,7 +269,7 @@ used as a proxy.
 
 Apache-2.0 is the only OSI-approved license in the set: no acceptable-use rider,
 no user threshold, no naming requirement. Gemma and Llama are permissive *in
-practice* for plato's usage but are not open source, and plato is an AGPL-3.0
+practice* for **plato**'s usage but are not open source, and **plato** is an AGPL-3.0
 project — see [constraint 4](#4-must-carry-an-osi-approved-license).
 
 ## Decision
@@ -277,7 +277,7 @@ project — see [constraint 4](#4-must-carry-an-osi-approved-license).
 **`qwen.qwen3-vl-235b-a22b`** (Qwen3-VL 235B A22B, Apache-2.0).
 
 **It is the only candidate that satisfies all four constraints.** Bedrock-hosted
-in `us-east-2`, accepts images, reliably emits plato's literal tags, and carries
+in `us-east-2`, accepts images, reliably emits **plato**'s literal tags, and carries
 an OSI-approved license. Every other model failed on at least one: Llama 4 and
 Gemma on license, Haiku on license (proprietary), the rest on image support or
 tag compliance.
@@ -294,7 +294,7 @@ Llama 4 Maverick measured better on speed and price — p50 526 ms vs ~1.1 s, no
 latency tail, 2.3× cheaper — and equal on every correctness measure. **That does
 not make it the better choice here; it makes it the cost of the license
 constraint.** An earlier draft of this document had it as the runner-up "arguably
-the better engineering choice," reasoning that plato only calls the model over an
+the better engineering choice," reasoning that **plato** only calls the model over an
 API and never redistributes weights, so the Llama clauses don't bind us. That's
 true as far as legal exposure goes and beside the point: the goal was an open
 source model, and Llama 4's license is not one.
@@ -312,7 +312,7 @@ in `server/src/lib/ai-provider.js` plus the mirror in `client/js/api.js`.
 
 Flipping to it means **knowingly dropping below the open source bar** that
 motivated this whole migration. That is a deliberate trade to make consciously and
-document, not a silent config change: plato would then be an AGPL project running
+document, not a silent config change: **plato** would then be an AGPL project running
 on a non-OSI-licensed model. Prefer fixing or waiting out the tail first.
 
 `MODEL_MAP` also retains the Anthropic IDs, so reverting to Claude is likewise a
@@ -338,7 +338,7 @@ to be justified — it pays for itself against the proprietary incumbent.
 Never on the table as a near-term plan, despite being what open weights
 technically enable. UIC requires Bedrock; standing up vLLM on EC2 or SageMaker
 would mean GPU capacity planning, our own scaling and patching, and a second
-production surface — against plato's whole architecture, which is serverless
+production surface — against **plato**'s whole architecture, which is serverless
 precisely so nobody babysits it.
 
 Worth being careful here, because this is where the license reasoning goes wrong
@@ -348,12 +348,12 @@ question when the requirement is definitional, and it also assumes the
 never-self-host status quo is permanent. **Apache-2.0 keeps that door open
 unconditionally; the Llama and Gemma licenses attach conditions to walking
 through it.** The practical value of an OSI license here is **optionality and
-consistency with plato's own AGPL-3.0 terms**, not an active self-hosting
+consistency with **plato**'s own AGPL-3.0 terms**, not an active self-hosting
 roadmap.
 
 ### Local / on-device inference
 
-Out of scope. plato is a hosted web app with server-side data and multi-tenant
+Out of scope. **plato** is a hosted web app with server-side data and multi-tenant
 classrooms; there is no local runtime to put a model in. Local dev calls the same
 Bedrock endpoint as production — deliberately, so dev and prod behavior can't
 diverge.
@@ -361,7 +361,7 @@ diverge.
 ### Benchmark leaderboards
 
 Largely ignored, as a considered choice. MMLU/GPQA/LMArena scores don't measure
-what plato needs, and one earlier round of this evaluation went wrong precisely
+what **plato** needs, and one earlier round of this evaluation went wrong precisely
 by trusting them: `gpt-oss-120b` was recommended on reputation, then failed on
 first contact because it's a reasoning model that emits no visible text at low
 token budgets. Direct measurement against `coach.md` replaced this entirely.
@@ -369,8 +369,8 @@ token budgets. Direct measurement against `coach.md` replaced this entirely.
 ### Long context windows
 
 Deliberately discounted. Kimi K2's 256k window was initially attractive, but
-plato caps the conversation tail at 40 messages (`slice(-40)`) and the whole
-design targets ~20-minute lessons. A larger window solves a problem plato doesn't
+**plato** caps the conversation tail at 40 messages (`slice(-40)`) and the whole
+design targets ~20-minute lessons. A larger window solves a problem **plato** doesn't
 have — and larger windows didn't correlate with better long-context accuracy
 anyway.
 
@@ -383,7 +383,7 @@ with `AccessDeniedException: You invoked an unsupported model or your request di
 not allow prompt caching`.
 
 A caching implementation existed on a branch and was **discarded** once this
-became clear (PR #330, closed unmerged). Do not reintroduce it while plato runs
+became clear (PR #330, closed unmerged). Do not reintroduce it while **plato** runs
 a non-Anthropic model.
 
 For the record, it wouldn't have helped much anyway: Claude's minimum cacheable
@@ -434,7 +434,7 @@ OpenAI-shaped body (`choices[0].message.content`), so a caller reading
 `content[0].text` silently gets `undefined`. This fails quietly, which is worse
 than failing loudly.
 
-plato keeps the **Anthropic Messages shape as its internal wire format** and
+**plato** keeps the **Anthropic Messages shape as its internal wire format** and
 translates only at the Bedrock boundary (`server/src/lib/converse.js`). The
 client, orchestrator, lesson engine, and plugin SDK are all unchanged. Converse
 event ordering was verified identical for Anthropic and open-weight models, so no
@@ -464,3 +464,45 @@ Reopen this decision if:
   every result here is prompt-specific.
 - Prompt caching becomes available for non-Anthropic Bedrock models, which would
   meaningfully change the cost and latency picture.
+
+## Re-check: grading (#584)
+
+**2026-11-19.** Auditors reported the coach awarding mastery for work it wrote
+itself and for one-line answers. Before deciding between a harness fix and a
+model switch, both were measured with `server/scripts/coach-eval.js`: one coach
+turn per scenario, through **plato**'s own context, prompt assembly, parsing, and
+completion rule, against Bedrock us-east-2, with AI Leaders' knowledge base.
+
+**The pool changed.** Three more image-capable models on Bedrock us-east-2 are
+Apache-2.0: Mistral Large 3 (`mistral.mistral-large-3-675b-instruct`),
+Magistral Small 1.2 (`mistral.magistral-small-2509`, a reasoning model), and
+Ministral 3 14B (`mistral.ministral-3-14b-instruct`). All four, Qwen included,
+answered the solid-red-image check "Red" this time, so Mistral Large 3's
+earlier vision failure no longer holds. (Kimi K3 and Pixtral Large remain
+non-OSI licenses.)
+
+**Results**, with the grading check (`harness` mode, what **plato** runs). False
+completions are turns where the lesson wasn't done and the coach completed
+it; missed completions are genuine work left open; "wrote it" is the share of
+replies that wrote the learner's message when asked to.
+
+| Model | False completions | Missed completions | Wrote it when asked | Calls/turn |
+|---|---|---|---|---|
+| Qwen3-VL 235B | 0 of 64 | 6 of 16 | 3 of 8 | 1.80 |
+| Mistral Large 3 | 0 of 48 | 8 of 12 | 5 of 6 | 1.47 |
+| Magistral Small 1.2 | 2 of 48 | 4 of 12 | 2 of 6 | 2.02 |
+| Ministral 3 14B | 0 of 48 | 10 of 12 | 5 of 6 | 1.92 |
+
+Without the check (`baseline`), every model over-credited: false completions
+were 9 of 64 for Qwen, 6 for Mistral Large 3, 11 for Magistral, and 9 for
+Ministral (of 48). So the fix is in the harness, not the model, and no
+candidate beats Qwen with it on both false and missed completions. Qwen stays.
+No model reliably refuses to write the learner's text when asked outright; the
+check keeps that from counting, and it remains a coaching gap
+(`docs/ARCHITECTURE.md`, "The grading check").
+
+These model results used the first version of the assessor; it was revised the
+same day against prod (`docs/ARCHITECTURE.md`, "Measured on prod"). Re-run the
+eval when `coach.md` or `assessor.md` change, or to evaluate a model
+(`--models <bedrock id>,…`).
+

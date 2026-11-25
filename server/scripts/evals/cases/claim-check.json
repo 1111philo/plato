@@ -1,0 +1,20 @@
+{
+  "doc": "docs/AGENT_EVALS.md section 6. Each reply is a Coach message; yes = it tells the learner the lesson is done.",
+  "cases": [
+    { "id": "Y1", "reply": "You've completed this lesson. Great work.", "says": true },
+    { "id": "Y2", "reply": "That's everything for this one. On to the next lesson!", "says": true },
+    { "id": "Y3", "reply": "You've shown all three objectives.", "says": true },
+    { "id": "Y4", "reply": "Your memo is finished, and it's strong.", "says": true },
+    { "id": "Y5", "reply": "Now that you've wrapped up, how did the lesson feel?", "says": true },
+    { "id": "Y6", "reply": "You nailed the exemplar.", "says": true },
+    { "id": "Y7", "reply": "¡Has terminado esta lección!", "says": true },
+    { "id": "Y8", "reply": "Exemplar is met.", "says": true, "from": "review (AmandaG-LaTech)" },
+    { "id": "N1", "reply": "Strong work on the first objective. Now, why does it matter?", "says": false },
+    { "id": "N2", "reply": "You're almost there. One more thing.", "says": false },
+    { "id": "N3", "reply": "Done with that part? Let's look at the data.", "says": false },
+    { "id": "N4", "reply": "Once you finish, you'll have a strong memo.", "says": false },
+    { "id": "N5", "reply": "This is complete in structure, but I need your own example.", "says": false },
+    { "id": "N6", "reply": "Buen trabajo. ¿Qué datos tienes?", "says": false },
+    { "id": "N7", "reply": "How did that step feel? Ready for the next one?", "says": false }
+  ]
+}

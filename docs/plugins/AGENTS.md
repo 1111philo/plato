@@ -1,10 +1,10 @@
 # Plato plugins — AI agent guide
 
-This file is the entry point for any AI agent (Claude Code, Cursor, etc.) working on plato plugins. Read this before generating code. The recipes at the bottom are copy-paste-ready.
+This file is the entry point for any AI agent (Claude Code, Cursor, etc.) working on **plato** plugins. Read this before generating code. The recipes at the bottom are copy-paste-ready.
 
 ## Decision tree (run this first)
 
-When asked to build/modify plato functionality, decide which surface area to touch:
+When asked to build/modify **plato** functionality, decide which surface area to touch:
 
 ```
 ┌─ Is the change inside plugins/<id>/?  ────────► PLUGIN PATH (this guide)
@@ -70,6 +70,7 @@ The pilot agent is explicitly told not to claim extension-point requests — the
 - ❌ Read or write another plugin's settings record
 - ❌ Modify files outside `plugins/<id>/` from inside a plugin (CLAUDE.md scope)
 - ❌ Re-export or shadow core API endpoints under your plugin's prefix
+- ❌ Hook `lessonStarted` without reporting your work to Trace mode: call the AI through `ctx.ai`, send requests with `ctx.trace.fetch`, and never put a credential in a step ([EXTENSION_REFERENCE.md](./EXTENSION_REFERENCE.md#tracing-what-your-plugin-did-api-170))
 - ❌ Block boot — keep `onActivate` short; if you need expensive work, schedule it via setTimeout(0)
 
 ## Recipes (copy-paste-ready)

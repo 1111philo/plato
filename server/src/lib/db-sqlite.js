@@ -13,7 +13,6 @@ import {
 
 const SQLITE_PATH = process.env.SQLITE_PATH || './data/plato.db';
 
-// Ensure directory exists
 const dir = dirname(SQLITE_PATH);
 if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
@@ -183,7 +182,6 @@ if (hasMaxUsages.count === 0) {
 }
 // Make email nullable for link invites
 // SQLite doesn't support ALTER COLUMN, so we need to recreate the table
-// Check if email is still NOT NULL
 const emailNotNull = sqlite.prepare(
   "SELECT COUNT(*) as count FROM pragma_table_info('invites') WHERE name = 'email' AND \"notnull\" = 1"
 ).get();
@@ -601,7 +599,6 @@ const db = {
 
   async getAllSyncData(userId) {
     const rows = sqlite.prepare('SELECT * FROM sync_data WHERE userId = ?').all(userId);
-    // Parse JSON data field
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
 
@@ -622,10 +619,11 @@ const db = {
   },
 
   // Same contract as db-dynamodb.js getSyncDataExcept.
-  async getSyncDataExcept(userId, prefix) {
+  async getSyncDataExcept(userId, prefixes) {
+    const list = [].concat(prefixes);
     const rows = sqlite.prepare(
-      'SELECT * FROM sync_data WHERE userId = ? AND dataKey NOT LIKE ? ESCAPE ?'
-    ).all(userId, `${prefix.replace(/[%_\\]/g, '\\$&')}%`, '\\');
+      `SELECT * FROM sync_data WHERE userId = ?${list.map(() => ' AND dataKey NOT LIKE ? ESCAPE ?').join('')}`
+    ).all(userId, ...list.flatMap((p) => [`${p.replace(/[%_\\]/g, '\\$&')}%`, '\\']));
     return rows.map(r => ({ ...r, data: JSON.parse(r.data) }));
   },
 

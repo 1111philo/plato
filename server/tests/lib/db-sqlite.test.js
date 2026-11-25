@@ -300,6 +300,15 @@ describe('db-sqlite', () => {
       assert.deepEqual(keys, ['profile', 'userMeta:x']);
     });
 
+    it('getSyncDataExcept skips several prefixes (screenshots and Trace records)', async () => {
+      const u = 'usr_except_many';
+      for (const key of ['profile', 'screenshot:k1', 'trace:wp-1:t:1', 'trace:wp-1:p:ab', 'tracer', 'zebra']) await db.putSyncData(u, key, { a: 1 }, 0);
+      const keys = (await db.getSyncDataExcept(u, ['screenshot:', 'trace:'])).map((i) => i.dataKey).sort();
+      assert.deepEqual(keys, ['profile', 'tracer', 'zebra']);
+      const listed = (await db.getSyncDataByPrefix(u, 'trace:wp-1:')).map((i) => i.dataKey).sort();
+      assert.deepEqual(listed, ['trace:wp-1:p:ab', 'trace:wp-1:t:1']);
+    });
+
     it('puts and gets sync data', async () => {
       const result = await db.putSyncData(userId, 'profile', { name: 'Blake' }, 0);
       assert.equal(result.version, 1);

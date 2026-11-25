@@ -30,7 +30,6 @@ function findPluginsDir() {
 export async function seedDefaultContent() {
   let seeded = 0;
 
-  // Seed prompts
   const promptsDir = join(clientDir, 'prompts');
   if (existsSync(promptsDir)) {
     const promptFiles = readdirSync(promptsDir).filter(f => f.endsWith('.md'));

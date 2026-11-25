@@ -1,14 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Brand } from '../../components/Brand.jsx';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
 import { Button } from '@/components/ui/button';
 
-import { converseStream, extractKBMarkdown } from '../../../js/orchestrator.js';
-import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useTitleNotification } from '../../hooks/useTitleNotification.js';
+import { buildConversationText } from '../../lib/lessonCreationEngine.js';
+import { authoringExtract, kbProblem } from '../../lib/authoringEngine.js';
+import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
-import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
@@ -19,17 +18,10 @@ import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
 
 export default function AdminKBSetup() {
   const navigate = useNavigate();
-  const [chatMessages, setChatMessages] = useState([]);
-  const [readiness, setReadiness] = useState(0);
-  const readinessRef = useRef(readiness);
-  useEffect(() => { readinessRef.current = readiness; }, [readiness]);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-
-  const [streamingText, setStreamingText] = useState(null);
-  const pendingRef = useRef(null);
-  const [srAnnouncement, setSrAnnouncement] = useState('');
-  const notifyTitle = useTitleNotification('Set Up Knowledge Base — plato');
+  const {
+    chatMessages, readiness, busy, setBusy, error, setError,
+    streamingText, srAnnouncement, start, handleSend,
+  } = useAuthoringChat({ agent: 'knowledge-base-editor', title: 'Set Up Knowledge Base — plato' });
 
   // Markdown preview pane — manual refresh via the knowledge-base-extractor,
   // mirroring the lesson editor. Never persisted until the admin saves.
@@ -42,95 +34,30 @@ export default function AdminKBSetup() {
     document.title = 'Set Up Knowledge Base — plato';
   }, []);
 
-  useEffect(() => {
-    if (streamingText === null && pendingRef.current) {
-      const { msgs, r } = pendingRef.current;
-      pendingRef.current = null;
-      if (msgs) {
-        setChatMessages(prev => [...prev, ...msgs]);
-        if (msgs.some(m => m.role === 'assistant')) {
-          setSrAnnouncement('');
-          requestAnimationFrame(() => setSrAnnouncement('New message received'));
-          notifyTitle();
-        }
-      }
-      if (r != null) setReadiness(r);
-      setBusy('');
-    }
-  }, [streamingText, notifyTitle]);
-
-  // Start conversation
-  useEffect(() => {
-    let cancelled = false;
-    setBusy('starting');
-    setStreamingText('');
-
-    (async () => {
-      try {
-        const raw = await converseStream(
-          'knowledge-base-editor',
-          [{ role: 'user', content: 'I want to create a knowledge base for my program.' }],
-          cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
-          512
-        );
-        if (cancelled) return;
-        const { text, readiness: r } = parseResponse(raw);
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: null, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-        pendingRef.current = { msgs: [msg], r: r ?? 1 };
-        setStreamingText(null);
-      } catch (e) {
-        if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, []);
-
-  const chatMessagesRef = useRef(chatMessages);
-  useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
-
-  const handleSend = useCallback(async ({ text }) => {
-    if (!text?.trim()) return;
-    setError('');
-    setBusy('qa');
-    setStreamingText('');
-
-    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, timestamp: Date.now() };
-    setChatMessages(prev => [...prev, userMsg]);
-
-    try {
-      const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
-      const raw = await converseStream(
-        'knowledge-base-editor',
-        tail,
-        cleanStream((partial) => setStreamingText(partial)),
-        512
-      );
-      const { text: respText, readiness: r } = parseResponse(raw);
-      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('knowledge-base-editor', { before: readinessRef.current, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-      pendingRef.current = { msgs: [assistantMsg], r };
-      setStreamingText(null);
-    } catch (e) {
-      setError(e.message || 'Failed to send.');
-      setStreamingText(null);
-      setBusy('');
-    }
-  }, []);
+  useEffect(
+    () => start([{ role: 'user', content: 'I want to create a knowledge base for my program.' }], { fallbackReadiness: 1 }),
+    [start],
+  );
 
   async function handleSaveKB() {
     setError('');
     setBusy('creating');
     try {
-      const md = await extractKBMarkdown(buildConversationText(chatMessages));
-      if (!md || md.length < 50) {
-        setError('Could not generate a knowledge base from the conversation. Keep adding information.');
+      const { problem } = await authoringExtract({
+        what: 'knowledgeBase', conversationText: buildConversationText(chatMessages),
+        check: kbProblem,
+        save: async (md) => {
+          setPreviewMarkdown(md);
+          setPreviewSyncedAt(chatMessages.length);
+          const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+          await adminApi('PUT', '/v1/admin/knowledge-base', { content: md, conversation, readiness });
+        },
+      });
+      if (problem) {
+        setError(problem);
         setBusy('');
         return;
       }
-      setPreviewMarkdown(md);
-      setPreviewSyncedAt(chatMessages.length);
-      const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
-      await adminApi('PUT', '/v1/admin/knowledge-base', { content: md, conversation, readiness });
       navigate('/plato');
     } catch (e) {
       setError(e.message || 'Failed to save.');
@@ -151,7 +78,7 @@ export default function AdminKBSetup() {
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const md = await extractKBMarkdown(buildConversationText(chatMessages));
+      const { markdown: md } = await authoringExtract({ what: 'knowledgeBase', conversationText: buildConversationText(chatMessages) });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -165,7 +92,6 @@ export default function AdminKBSetup() {
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return (
       <div key={idx}>
-        <AgentActivity agents={msg.metadata?.agents} />
         <AssistantMessage content={msg.content} />
       </div>
     );
@@ -178,7 +104,7 @@ export default function AdminKBSetup() {
         <Button variant="ghost" size="sm" onClick={() => navigate('/plato')}>Skip for now</Button>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
-        The knowledge base tells plato&apos;s AI about your program — who you are, what you do, and how things work.
+        The knowledge base tells <Brand />&apos;s AI about your program — who you are, what you do, and how things work.
         Chat with the editor below to build it, or skip and come back later from the Customizer.
       </p>
 

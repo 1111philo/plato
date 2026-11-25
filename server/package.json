@@ -9,7 +9,9 @@
     "dev": "node dev.js",
     "dev:sqlite": "node dev-sqlite.js",
     "setup-db": "node scripts/setup-local-db.js",
-    "start": "sam local start-api"
+    "start": "sam local start-api",
+    "eval": "node scripts/evals/run.js",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",

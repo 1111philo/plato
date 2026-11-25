@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { adminApi } from './adminApi.js';
@@ -12,13 +12,11 @@ import {
 import ConfirmModal from '../../components/modals/ConfirmModal.jsx';
 import ShareLessonModal from '../../components/modals/ShareLessonModal.jsx';
 import MarkdownPreviewPane from './MarkdownPreviewPane.jsx';
-import { converseStream, extractLessonMarkdown } from '../../../js/orchestrator.js';
 import { parseLessonPrompt } from '../../../js/lessonOwner.js';
-import { parseResponse, cleanStream, buildConversationText } from '../../lib/lessonCreationEngine.js';
-import { useTitleNotification } from '../../hooks/useTitleNotification.js';
+import { buildConversationText } from '../../lib/lessonCreationEngine.js';
+import { authoringExtract } from '../../lib/authoringEngine.js';
+import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import { authoringActivity, AUTHORING_READS } from '../../lib/agentActivity.js';
-import AgentActivity from '../../components/chat/AgentActivity.jsx';
 import BundledLessonNotices from './BundledLessonNotices.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -124,7 +122,6 @@ export default function AdminLessons() {
     setLoading(false);
   }
 
-  // Open the editor for a lesson by navigating to its deep-linkable route.
   function openLessonEditor(lessonId) {
     navigate(`/plato/lessons/${encodeURIComponent(lessonId)}/edit`);
   }
@@ -147,10 +144,8 @@ export default function AdminLessons() {
         const initialCourse = data.course || null;
         const markdown = data.markdown || '';
         if (data.conversation?.length) {
-          // Resume the in-progress creation/edit conversation.
           setEditing({ lessonId: routeLessonId, conversation: data.conversation, readiness: data.readiness ?? (isDraft ? 1 : 8), isDraft, initialCourse, markdown });
         } else if (isDraft) {
-          // Empty draft — open the editor in create mode.
           setEditing({ lessonId: routeLessonId, conversation: null, readiness: 0, isDraft: true, initialCourse, markdown: '' });
         } else {
           // Finalized lesson with no stored conversation — seed one with the
@@ -322,7 +317,6 @@ export default function AdminLessons() {
   const shownColumns = visibleColumns(allColumns, columnPrefs);
   const updateColumns = (next) => { setColumnPrefs(next); savePrefs(`${LESSON_COLUMNS_KEY}:${user?.userId || "anon"}`, next); };
 
-  // Lesson list
   if (loading) return spinner;
 
   return (
@@ -490,11 +484,10 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
   const isCreate = !!isDraft;
   const pageTitle = isCreate ? 'New Lesson — Admin' : 'Edit Lesson — Admin';
   useEffect(() => { document.title = pageTitle; }, [pageTitle]);
-  const notifyTitle = useTitleNotification(pageTitle);
-  const [chatMessages, setChatMessages] = useState(initialMessages || []);
-  const [readiness, setReadiness] = useState(initialReadiness ?? 0);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
+  const {
+    chatMessages, setChatMessages, readiness, setReadiness, busy, setBusy, error, setError,
+    streamingText, srAnnouncement, start, handleSend,
+  } = useAuthoringChat({ agent: 'lesson-creator', title: pageTitle, initialMessages, initialReadiness });
   const [key, setKey] = useState(0); // increment to restart conversation
   const [courses, setCourses] = useState([]); // units (stored course:*)
   const [unitGroups, setUnitGroups] = useState([]); // courses (programs), each with ordered unitIds
@@ -528,11 +521,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     })();
     return () => { cancelled = true; };
   }, []);
-
-  // Streaming
-  const [streamingText, setStreamingText] = useState(null);
-  const pendingRef = useRef(null);
-  const [srAnnouncement, setSrAnnouncement] = useState('');
 
   // Auto-save conversation after each exchange. Drafts use the main PUT with
   // status=draft so the first save creates the record; non-drafts use the
@@ -579,24 +567,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     }
   }
 
-  // The stream finished: append the persisted reply
-  useEffect(() => {
-    if (streamingText === null && pendingRef.current) {
-      const { msgs, r } = pendingRef.current;
-      pendingRef.current = null;
-      if (msgs) {
-        setChatMessages(prev => [...prev, ...msgs]);
-        if (msgs.some(m => m.role === 'assistant')) {
-          setSrAnnouncement('');
-          requestAnimationFrame(() => setSrAnnouncement('New message received'));
-          notifyTitle();
-        }
-      }
-      if (r != null) setReadiness(r);
-      setBusy('');
-    }
-  }, [streamingText, notifyTitle]);
-
   // Start conversation on mount (and on key change after lesson creation).
   // Skip when resuming an existing conversation that already has an agent reply.
   const skipInitRef = useRef(!!initialMessages?.length && !needsAgentReply);
@@ -606,9 +576,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       return;
     }
     if (chatMessages.length > 0 && key === 0) return;
-    let cancelled = false;
 
-    // Determine the opening message(s) to send to the agent
     const openingMessages = (needsAgentReply && initialMessages?.length)
       ? initialMessages.map(m => ({ role: m.role, content: m.content }))
       : [{ role: 'user', content: 'I want to create a new lesson.' }];
@@ -617,64 +585,9 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
       setChatMessages([]);
       setReadiness(0);
     }
-    setBusy('starting');
-    setStreamingText('');
     setError('');
-
-    (async () => {
-      try {
-        const raw = await converseStream(
-          'lesson-creator',
-          openingMessages,
-          cleanStream((partial) => { if (!cancelled) setStreamingText(partial); }),
-          512
-        );
-        if (cancelled) return;
-        const { text, readiness: r } = parseResponse(raw);
-        const msg = { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('lesson-creator', { before: null, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-        pendingRef.current = { msgs: [msg], r: r ?? readiness };
-        setStreamingText(null);
-      } catch (e) {
-        if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
-      }
-    })();
-
-    return () => { cancelled = true; };
+    return start(openingMessages, { fallbackReadiness: readiness });
   }, [key]);
-
-  // Keep a ref to chatMessages so handleSend always has the latest
-  const chatMessagesRef = useRef(chatMessages);
-  useEffect(() => { chatMessagesRef.current = chatMessages; }, [chatMessages]);
-
-  const handleSend = useCallback(async ({ text }) => {
-    if (!text?.trim()) return;
-    setError('');
-    setBusy('qa');
-    setStreamingText('');
-
-    const userMsg = { role: 'user', content: text, msgType: MSG_TYPES.USER, timestamp: Date.now() };
-    setChatMessages(prev => [...prev, userMsg]);
-
-    try {
-      const tail = [...chatMessagesRef.current, userMsg].slice(-15).map(m => ({ role: m.role, content: m.content }));
-
-      const raw = await converseStream(
-        'lesson-creator',
-        tail,
-        cleanStream((partial) => setStreamingText(partial)),
-        512
-      );
-
-      const { text: respText, readiness: r } = parseResponse(raw);
-      const assistantMsg = { role: 'assistant', content: respText, msgType: MSG_TYPES.GUIDE, metadata: { agents: authoringActivity('lesson-creator', { before: readinessRef.current, after: r, reads: AUTHORING_READS }) }, timestamp: Date.now() };
-      pendingRef.current = { msgs: [assistantMsg], r };
-      setStreamingText(null);
-    } catch (e) {
-      setError(e.message || 'Failed to send.');
-      setStreamingText(null);
-      setBusy('');
-    }
-  }, []);
 
   async function handleCreate() {
     setError('');
@@ -701,22 +614,26 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     }
     setBusy('creating');
     try {
-      const md = await extractLessonMarkdown(buildConversationText(chatMessages));
-      const lesson = parseLessonPrompt(lessonId, md);
-
-      if (!lesson.name || !lesson.exemplar || !lesson.learningObjectives.length) {
-        setError('Could not build a complete lesson. Keep refining with the agent.');
+      let lesson;
+      const { problem } = await authoringExtract({
+        what: 'lesson', conversationText: buildConversationText(chatMessages),
+        check: (md) => {
+          lesson = parseLessonPrompt(lessonId, md);
+          return lesson.name && lesson.exemplar && lesson.learningObjectives.length ? null : 'Could not build a complete lesson. Keep refining with the agent.';
+        },
+        save: async (md) => {
+          // Keep the preview in sync with what we're about to save.
+          setPreviewMarkdown(md);
+          setPreviewSyncedAt(chatMessages.length);
+          // Save conversation alongside the markdown so it can be resumed later
+          const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
+          await onSave(lesson.name, md, conversation, readiness);
+        },
+      });
+      if (problem) {
+        setError(problem);
         setBusy('');
-        return;
       }
-
-      // Keep the preview in sync with what we're about to save.
-      setPreviewMarkdown(md);
-      setPreviewSyncedAt(chatMessages.length);
-
-      // Save conversation alongside the markdown so it can be resumed later
-      const conversation = chatMessages.map(m => ({ role: m.role, content: m.content, msgType: m.msgType }));
-      await onSave(lesson.name, md, conversation, readiness);
     } catch (e) {
       setError(e.message || 'Failed to create lesson.');
       setBusy('');
@@ -736,7 +653,7 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     setPreviewError('');
     setPreviewLoading(true);
     try {
-      const md = await extractLessonMarkdown(buildConversationText(chatMessages));
+      const { markdown: md } = await authoringExtract({ what: 'lesson', conversationText: buildConversationText(chatMessages) });
       setPreviewMarkdown(md);
       setPreviewSyncedAt(chatMessages.length);
     } catch (e) {
@@ -750,7 +667,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return (
       <div key={idx}>
-        <AgentActivity agents={msg.metadata?.agents} />
         <AssistantMessage content={msg.content} />
       </div>
     );

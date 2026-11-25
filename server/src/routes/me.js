@@ -32,7 +32,6 @@ me.use('/v1/me/*', authenticate);
 me.use('/v1/plugins', authenticate);
 me.use('/v1/plugins/extension-points', authenticate);
 
-// GET /v1/me — get own profile
 me.get('/v1/me', async (c) => {
   const user = c.get('user');
   const defs = await loadFieldDefinitions();
@@ -70,7 +69,6 @@ me.get('/v1/me/fields', async (c) => {
   });
 });
 
-// PATCH /v1/me — update profile fields
 me.patch('/v1/me', async (c) => {
   const userId = c.get('userId');
   const body = await c.req.json().catch(() => null);
@@ -292,7 +290,6 @@ me.delete('/v1/me', async (c) => {
     await db.deleteSyncData(userId, item.dataKey);
   }
 
-  // Delete user record
   await db.deleteUser(userId);
 
   return c.json({ ok: true, message: 'Account and all associated data have been permanently deleted' });
@@ -328,7 +325,7 @@ me.get('/v1/plugins/extension-points', (c) => {
         { name: 'userDeleted', payload: '{ userId, email, role }', emitPoint: 'me.js DELETE /v1/me, admin.js DELETE /v1/admin/users/:id', phase: '1.1' },
         { name: 'userUpdated', payload: '{ userId, updates }', emitPoint: '(not yet wired)', phase: '2' },
         { name: 'profileUpdated', payload: '{ userId, key, data }', emitPoint: '(not yet wired)', phase: '2' },
-        { name: 'lessonStarted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
+        { name: 'lessonStarted', payload: '{ userId, lessonId, lesson, lessonKB, trace? }', emitPoint: 'sync.js POST /v1/sync/lesson-started', phase: '1.3' },
         { name: 'lessonCompleted', payload: '{ userId, lessonId, lessonKB }', emitPoint: '(not yet wired)', phase: '2' },
         { name: 'coachExchangeRecorded', payload: '{ userId, lessonId, messageCount }', emitPoint: '(not yet wired)', phase: '3' },
       ],

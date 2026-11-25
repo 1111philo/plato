@@ -1,6 +1,6 @@
 # Error Reporting & Alerting
 
-How plato notices when something is wrong, and the framework for adding new
+How **plato** notices when something is wrong, and the framework for adding new
 checks. Read this before adding any new error detection or alert.
 
 ## Why this exists
@@ -104,16 +104,26 @@ lost something?* Yes → A. No → B.
 | `ai_stream_failed` | error | B | an AI reply stream failed (Bedrock error, throttle, or the 115 s timeout; `code` says which); the learner sees an error, a busy service holds Send with a countdown, and the turn isn't saved |
 | `ai_invoke_failed` | error | B | a non-streamed AI call failed (background agents: learner profile, unit notes, lesson creation, extractors); the caller gets a typed error (`code`: throttled / overloaded / timeout / failed) |
 | `ai_rate_limited` | warn | B | one user went over the AI proxy's per-user limit (30 calls a minute or 4 in flight, per container); they got a 429 with `retryAfterMs`. Many at once means a script, or limits set too low |
-| `email_template_invalid` | error | B | a stored email template that needs a link button has no `{{link}}` in its body (or has one in the subject); plato sent its default copy instead (`{ template, problem }`). Fix the template in Admin → Notifications → Automations |
+| `email_template_invalid` | error | B | a stored email template that needs a link button has no `{{link}}` in its body (or has one in the subject); **plato** sent its default copy instead (`{ template, problem }`). Fix the template in Admin → Notifications → Automations |
 | `coach_tags_recovered` | warn | B | a coach reply came without `[PROGRESS]` or `[KB_UPDATE]` and the tag-repair call filled it in (reported by the client via `POST /v1/ai/events`); the rate is the model's tag-drop rate |
 | `coach_tags_unrecovered` | warn | B | the same, but the repair didn't help: that turn recorded no progress (or no checklist/notes). A rising count means the coach prompt or model needs attention |
+| `coach_completion_held` | warn | B | the coach scored a lesson 10, but the grading check (#584) didn't find every objective in the learner's own words, so the lesson stayed open and the coach replied again. A steady trickle is the check working; a spike after a prompt or model change means the coach is over-crediting again (or the assessor got stricter: compare with `server/scripts/coach-eval.js`) |
+| `coach_objectives_unverified` | warn | B | the coach checked off an objective the check didn't back up, so it stayed unchecked (no completion was claimed) |
+| `coach_assessment_failed` | warn | B | the grading check itself failed (Bedrock error, no JSON after a repair and a retry), so nothing new was checked off and any completion waited for the next turn (fail closed). Should be rare; a rising count means learners can't finish lessons |
+| `coach_assessment_failed_open` | warn | B | the grading check failed on a second completing turn in a row for that lesson, so the coach's grading stood (no learner is stuck behind a broken check). Each one is a completion nobody verified: review the conversation |
+| `coach_draft_rewritten` | warn | B | a coach reply wrote the learner's answer for them (a 20+ word sample passage) and was rewritten as a question before grading. The rate is how often the coach drafts |
+| `coach_draft_kept` | warn | B | the same, but the rewrite still drafted (it's kept, so the reply doesn't switch back) or failed (the first reply stands); the grading check still won't count copied text. A high share of `kept` to `rewritten` means the guard isn't changing the coach's behavior |
+| `coach_script_rewritten` | warn | B | a reply mixed in characters from another script (Chinese in an English reply: a Qwen3-VL slip the agent evaluations measured at about 1 in 6 on some turns) and was rewritten once, cleanly |
+| `coach_script_kept` | warn | B | the same, but the rewrite still mixed scripts or failed, so the reply stood. Rising counts mean the model, or a prompt change, is slipping languages more often |
+| `coach_literal_restored` | warn | B | a coach reply wrote a near-miss of a link or code from the lesson's coach directive ("https:// comunidad.example.org/join"), and **plato**'s code put back the author's exact text. Frequent ones mean the model is mangling links more often |
+| `coach_wording_repeated` | warn | B | a learner's message was mostly the coach's own wording sent back (a pasted hint or example), so the coach was told not to praise or count it. A rising count means learners are copying the coach's text, often because it's writing answers into its hints |
 | `conversation_too_long` | warn | A | a lesson's conversation is past the 340 KB budget even after trimming, so new turns aren't saved (progress still is). Reported by the client; the record is never sent |
 | `sync_item_too_large` | error | **A** | a learner record (e.g. a long conversation) was refused for size; log-watch pages on it |
 | `completion_without_conversation` | warn | B | `PUT /v1/sync` refused a lessonKB write that would complete a lesson with no coach conversation stored (S5; `{ custom, messagesRecord }`, no ids). A real client doesn't send these; a few is someone trying, a spike after a deploy is a client bug |
 | `completion_check_failed` | warn | B | the conversation read behind that check failed, so the completion was let through (fail open) |
 | `email_not_allowlisted` | warn | C | a notification email was skipped by `EMAIL_ALLOWLIST` (expected on non-prod) |
 | `email_suppressed` | warn | C | an email wasn't sent because SES has the address on its bounce/complaint list (`{ template, reason }`, no address). The admin sees it in Admin → Users; a burst after a bulk invite means a bad list |
-| `email_suppression_check_failed` | warn | B | plato couldn't ask SES about the suppression list (`{ op, error }`), so it sent anyway (fail open). Logged once per container; usually a missing `ses:*SuppressedDestination*` permission |
+| `email_suppression_check_failed` | warn | B | **plato** couldn't ask SES about the suppression list (`{ op, error }`), so it sent anyway (fail open). Logged once per container; usually a missing `ses:*SuppressedDestination*` permission |
 | `email_suppression_remove_failed` | error | B | an admin's "Remove from the bounce list" failed at SES; they saw an error and can retry |
 
 ## How to add a check
@@ -171,7 +181,7 @@ occurrence — and give its issue a label distinct from `data-loss`.
 ### Tier C — add a filter
 
 If a benign log line is showing up as an error, filter it in
-`cloudwatch-logs.js` (follow `isProcessWarning`). If plato itself logs the
+`cloudwatch-logs.js` (follow `isProcessWarning`). If **plato** itself logs the
 benign condition, downgrade it to `logger.warn` or stop logging it.
 
 ## Anti-goals (never violate)

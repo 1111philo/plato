@@ -1,10 +1,10 @@
 # Wait list API
 
-Add people to a plato classroom's wait list from your own form or system. An
+Add people to a **plato** classroom's wait list from your own form or system. An
 admin then invites them from **Admin → Users → Wait List** filter; the invite
 email takes them to signup, prefilled with what they sent.
 
-Everything below uses `https://plato.courses`. For another plato deployment,
+Everything below uses `https://plato.courses`. For another **plato** deployment,
 swap in its URL.
 
 ## Two ways to send people in
@@ -13,7 +13,7 @@ swap in its URL.
 | --- | --- | --- |
 | Works when the wait list is | open **or** closed | open only |
 | Call it from | your **server** | a web page (browser) or a server |
-| Use when | you run your own form backend, a CRM, a sign-up sheet sync, … | you just want a form on another site to post straight to plato |
+| Use when | you run your own form backend, a CRM, a sign-up sheet sync, … | you just want a form on another site to post straight to **plato** |
 
 Never put the API key in a web page — anyone could read it from the page
 source. A browser form should use the no-key route (and needs the list open).
@@ -22,7 +22,7 @@ source. A browser form should use the no-key route (and needs the list open).
 
 1. Sign in as an admin → **Admin → Users** → **Wait List** button.
 2. Click **Make a key**. Copy it right away — it starts with `wlk_` and is
-   shown **once**. plato stores only a hash, so a lost key can't be recovered.
+   shown **once**. **plato** stores only a hash, so a lost key can't be recovered.
 3. To rotate, click **Make a new key** (the old one stops working
    immediately). **Revoke key** turns key access off entirely.
 
@@ -31,7 +31,7 @@ on the sign-in page"). Closing it doesn't affect requests that carry the key.
 
 ## Look up groups and fields first
 
-The request uses plato's exact group names and custom-field **ids**. Both
+The request uses **plato**'s exact group names and custom-field **ids**. Both
 lookups are public (no key):
 
 ```bash
@@ -121,7 +121,7 @@ updated.
 
 If an admin has turned on **Wait list confirmation** (Admin → Notifications),
 a new entry gets one confirmation email, whether it came from your form or
-plato's. A repeat request for an email already on the wait list sends
+**plato**'s. A repeat request for an email already on the wait list sends
 nothing, so retries are safe. If your own system already confirms sign-ups, leave it off.
 
 The other emails a person on the wait list can get are the **invitation**
@@ -133,7 +133,7 @@ from the wait list"** email when an admin removes their entry.
 
 Requests **without** the key are limited to 60 per client IP address per 10
 minutes (`429 {"error":"Too many requests…"}` beyond that). The address is
-the one plato's CDN saw, so a sender going through plato's address can't get
+the one **plato**'s CDN saw, so a sender going through **plato**'s address can't get
 around the limit by setting its own `X-Forwarded-For`. Requests with the
 key aren't limited; send those from your server.
 
@@ -164,7 +164,7 @@ from any origin):
 </script>
 ```
 
-Don't send a field named `website` from a no-key request: plato's own form
+Don't send a field named `website` from a no-key request: **plato**'s own form
 uses it as a hidden spam trap, and a non-empty `website` is silently dropped
 (you still get `202`). Keyed requests are exempt.
 
@@ -179,10 +179,10 @@ curl https://plato.courses/v1/waitlist
 
 - **No rate limiting.** Throttle on your side if you're importing in bulk.
 - **No bulk endpoint** — send one request per person.
-- Submissions don't send the person an email. Their first email from plato is
+- Submissions don't send the person an email. Their first email from **plato** is
   the invite.
 - Keep the key in your server's secrets store. If it leaks, make a new key in
   the Wait List dialog — the old one stops working at once.
 
-Implementation notes for plato contributors live in
+Implementation notes for **plato** contributors live in
 [`ARCHITECTURE.md` → Wait list](ARCHITECTURE.md#wait-list-363).

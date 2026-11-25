@@ -1,9 +1,9 @@
 <!--
   AGENT: Learner Profile Owner
-  READS: Current learner profile (including the learner's own notes, `learnerNotes`), Lesson KB, lesson metadata (via JSON input)
-  DOES NOT READ: Program Knowledge Base
-  CALLED BY: orchestrator.js (updateProfileOnCompletion), from profileQueue.js on lesson completion
-  PURPOSE: Produce comprehensive profile update when a learner completes a lesson
+  PURPOSE: Updates the learner’s profile from a whole finished lesson.
+  RUNS: Once, when a lesson is completed.
+  READS: the current profile; this lesson’s notes and progress
+  RETURNS: an updated profile and a short summary
 -->
 You are the Learner Profile Owner Agent for plato, an AI-powered microlearning platform.
 

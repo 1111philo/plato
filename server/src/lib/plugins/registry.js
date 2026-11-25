@@ -26,6 +26,7 @@ import { satisfies, PLUGIN_API_VERSION } from './version.js';
 import { on as hookOn, emit as hookEmit } from './hooks.js';
 import { invokeOnActivate, invokeOnDeactivate, invokeOnUninstall } from './lifecycle.js';
 import { createPluginLogger } from './logger.js';
+import { NO_TRACE } from './trace.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -113,8 +114,16 @@ function loadManifest(manifestPath, expectedId) {
   return validateManifest(raw, { expectedId });
 }
 
-/** Build a context object for hooks/lifecycle invocations. Exported for tests. */
-export function buildContext(id, settings) {
+/**
+ * Build a context object for hooks/lifecycle invocations. Exported for tests.
+ *
+ * `recorder` is set only for a traced `lessonStarted` call (Trace mode, #595):
+ * it becomes `ctx.trace`, and `ctx.ai` becomes the same provider with every
+ * call recorded. Otherwise `ctx.trace` is a stand-in that records nothing and
+ * `ctx.ai` is the provider itself. A recorder belongs to one call of one
+ * plugin; it is never kept on the registry.
+ */
+export function buildContext(id, settings, { recorder = null } = {}) {
   return {
     pluginId: id,
     logger: createPluginLogger(id),
@@ -124,8 +133,9 @@ export function buildContext(id, settings) {
       await pluginRegistry.updateSettings(id, next);
     },
     emit: (event, payload) => hookEmit(event, payload),
-    ai,
+    ai: recorder?.ai || ai,
     LLM,
+    trace: recorder || NO_TRACE,
   };
 }
 
@@ -135,16 +145,44 @@ function subscribeHooks(id, plugin) {
   if (!plugin || !plugin.hooks || typeof plugin.hooks !== 'object') return subs;
   for (const [event, fn] of Object.entries(plugin.hooks)) {
     if (typeof fn !== 'function') continue;
-    const wrapped = (payload) => {
+    const wrapped = (payload, extra) => {
       const entry = state.entries.get(id);
       // Gate hook execution on enabled state — disabled plugins must produce zero side effects.
       if (!entry?.enabled) return;
-      const ctx = buildContext(id, entry.settings);
-      return fn(payload, ctx);
+      // Trace mode (#595): a traced lesson start hands over a collector made
+      // for that one request. Everything else takes the path it always has.
+      const collector = event === 'lessonStarted' ? extra?.traceCollector : null;
+      if (!collector) return fn(payload, buildContext(id, entry.settings));
+      return runTraced(id, fn, payload, entry.settings, collector);
     };
     subs.push(hookOn(event, wrapped, { pluginId: id }));
   }
   return subs;
+}
+
+/**
+ * Run a `lessonStarted` handler with a recorder of its own. What it records,
+ * and any `trace` list it returns, go to the collector; the `trace` key is
+ * taken off the return so it can't reach `lessonKB.enrichments`. A recorder
+ * failure never changes what the handler returns or throws.
+ */
+async function runTraced(id, fn, payload, settings, collector) {
+  let recorder = null;
+  try { recorder = collector.recorderFor(id, { ai }); } catch { /* run untraced */ }
+  let result;
+  try {
+    result = await fn(payload, buildContext(id, settings, { recorder }));
+  } catch (err) {
+    try { recorder?.note(`The plugin stopped with an error: ${err?.message || err}`); } catch { /* noop */ }
+    throw err;
+  }
+  if (result && typeof result === 'object' && !Array.isArray(result) && 'trace' in result) {
+    const { trace, ...enrichment } = result;
+    try { collector.addReturned(id, trace); } catch { /* a bad trace is dropped */ }
+    // A handler that returned only a trace returned no enrichment.
+    return Object.keys(enrichment).length ? enrichment : null;
+  }
+  return result;
 }
 
 async function dynamicImportServer(dir, manifest) {

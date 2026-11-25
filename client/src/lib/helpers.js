@@ -1,3 +1,4 @@
+import { brandHtml } from './brand.js';
 /** XSS-safe text escaping. */
 export function esc(s) {
   const el = document.createElement('span');
@@ -47,7 +48,6 @@ export function renderMd(text) {
   escaped = escaped.replace(/(?:<uli>.*<\/uli>\n?)+/g, (run) => `<ul>${run.replace(/\n/g, '').replace(/<(\/?)uli>/g, '<$1li>')}</ul>\n`);
   escaped = escaped.replace(/(?:<oli>.*<\/oli>\n?)+/g, (run) => `<ol>${run.replace(/\n/g, '').replace(/<(\/?)oli>/g, '<$1li>')}</ol>\n`);
   escaped = linkify(escaped);
-  // Convert markdown tables to HTML tables
   escaped = escaped.replace(/((?:^\|.+\|$\n?)+)/gm, (block) => {
     const rows = block.trim().split('\n').filter(r => r.trim());
     if (rows.length < 2) return block;
@@ -73,7 +73,8 @@ export function renderMd(text) {
   // Clean up <br> tags adjacent to block-level elements
   escaped = escaped.replace(/<br>(<\/?(?:[uo]l|table|thead|tbody|tr)>)/g, '$1');
   escaped = escaped.replace(/(<\/?(?:[uo]l|table|thead|tbody|tr)>)<br>/g, '$1');
-  return escaped;
+  // The product's name is always **plato**, bold (lib/brand.js).
+  return brandHtml(escaped);
 }
 
 /** Detect and linkify bare URLs in escaped HTML. */

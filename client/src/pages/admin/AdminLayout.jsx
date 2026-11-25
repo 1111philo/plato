@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -49,7 +50,6 @@ export default function AdminLayout() {
     fetch('/v1/version').then(r => r.json()).then(d => setVersion(d.version)).catch(() => {});
   }, []);
 
-  // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   const handleSignOut = async () => {
@@ -143,7 +143,7 @@ export default function AdminLayout() {
                     rel="noopener noreferrer"
                     className="text-xs opacity-60 hover:opacity-100 transition-opacity"
                   >
-                    plato {version}
+                    <Brand /> {version}
                   </a>
                 </>
               )}
@@ -192,7 +192,7 @@ export default function AdminLayout() {
                 rel="noopener noreferrer"
                 className="text-xs opacity-60 hover:opacity-100 transition-opacity"
               >
-                plato {version}
+                <Brand /> {version}
               </a>
             </>
           )}

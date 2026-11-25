@@ -1,8 +1,3 @@
-/**
- * Authentication module for plato.
- * Handles login, logout, token refresh, and authenticated requests.
- */
-
 import {
   getAuthTokens, saveAuthTokens, clearAuth,
   saveAuthUser,
@@ -55,8 +50,6 @@ function appendQueryParam(path, key, value) {
   const sep = path.includes('?') ? '&' : '?';
   return `${path}${sep}${key}=${encodeURIComponent(value)}`;
 }
-
-// -- Session expiry event -----------------------------------------------------
 
 const _sessionExpiredListeners = new Set();
 
@@ -236,10 +229,7 @@ async function doRefresh(staleAccessToken) {
   }
 }
 
-/**
- * Make an authenticated request to the plato server.
- * Automatically refreshes the access token on 401.
- */
+/** Refreshes the access token on 401. */
 export async function authenticatedFetch(path, options = {}) {
   const tokens = await getAuthTokens();
   if (!tokens?.accessToken) throw new Error('Not logged in');
@@ -284,9 +274,6 @@ export async function authenticatedFetch(path, options = {}) {
 }
 
 
-/**
- * Request a password reset email.
- */
 export async function forgotPassword(email) {
   const res = await fetch(`${SERVICE_URL}/v1/auth/forgot-password`, {
     method: 'POST',

@@ -95,9 +95,20 @@ export function toConverseRequest(modelId, body) {
   return input;
 }
 
-/** Translate a Converse response into the Anthropic response shape. */
-export function fromConverseResponse(response) {
+/** The text of a reasoning block or delta, in either shape Converse uses. */
+function reasoningText(r) {
+  const text = r?.reasoningText?.text ?? r?.text;
+  return typeof text === 'string' ? text : '';
+}
+
+/**
+ * Translate a Converse response into the Anthropic response shape. With
+ * `reasoning` (a Trace request), the model's reasoning is returned beside the
+ * reply as `reasoning`; it never joins `content`.
+ */
+export function fromConverseResponse(response, { reasoning = false } = {}) {
   const blocks = response?.output?.message?.content || [];
+  const thought = reasoning ? blocks.map((b) => reasoningText(b.reasoningContent)).join('') : '';
   const text = blocks
     .filter((b) => typeof b.text === 'string')
     .map((b) => b.text)
@@ -113,6 +124,7 @@ export function fromConverseResponse(response) {
       input_tokens: response?.usage?.inputTokens ?? 0,
       output_tokens: response?.usage?.outputTokens ?? 0,
     },
+    ...(thought ? { reasoning: thought } : {}),
   };
 }
 
@@ -124,14 +136,20 @@ export function fromConverseResponse(response) {
  * Anthropic and open-weight models — messageStart → contentBlockDelta* →
  * contentBlockStop → messageStop → metadata.
  */
-export function fromConverseStreamEvent(event) {
+export function fromConverseStreamEvent(event, { reasoning = false } = {}) {
   if (event.messageStart) {
     return { type: 'message_start', message: { role: event.messageStart.role, content: [] } };
   }
 
   if (event.contentBlockDelta) {
     const text = event.contentBlockDelta.delta?.text;
-    if (typeof text !== 'string') return null; // reasoning / tool deltas
+    if (typeof text !== 'string') {
+      // Reasoning and tool deltas. A Trace request gets the reasoning as its
+      // own delta type, which the chat ignores.
+      const thought = reasoning ? reasoningText(event.contentBlockDelta.delta?.reasoningContent) : '';
+      if (!thought) return null;
+      return { type: 'content_block_delta', index: event.contentBlockDelta.contentBlockIndex ?? 0, delta: { type: 'reasoning_delta', text: thought } };
+    }
     return {
       type: 'content_block_delta',
       index: event.contentBlockDelta.contentBlockIndex ?? 0,

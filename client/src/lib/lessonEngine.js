@@ -9,19 +9,29 @@
 
 import {
   getLearnerProfileSummary, getPreferences, getAuthUser,
-  getLessonKB, saveLessonKB, getCourseProgress,
+  getLessonKB, saveLessonKB, getCourseProgress, lastSaveResult,
   saveScreenshot, getScreenshot,
   saveLessonMessages, getLessonMessages, replaceLessonMessages,
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import { learnerLanguageName } from '../../js/language.js';
 import { compressImageDataUrl } from './imageCompression.js';
 import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
-import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES } from './constants.js';
-import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
+import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
+import { openTrace, traceBytes, traceFull } from './traceSession.js';
+import { rulesApplied } from './lessonTrace.js';
+import {
+  assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
+  heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, NO_DRAFT_REPLY, repeatsCoach, copyReply, hasFixedReplies, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+} from './assessment.js';
+
+/** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
+const RETRY_TEMPERATURE = 0.7;
 
 function ts() { return Date.now(); }
 
@@ -68,8 +78,15 @@ export function assertImageWithinBedrockLimit(imageDataUrl) {
 
 // -- Tag parsing --------------------------------------------------------------
 
+/**
+ * The tags plato's code reads from a coach reply, by what each carries. The
+ * Trace names them from here (and records the list on each parse), so a tag
+ * added here shows up there by itself.
+ */
+export const COACH_TAGS = Object.freeze({ progress: 'PROGRESS', notes: 'KB_UPDATE', profile: 'PROFILE_UPDATE' });
+
 // Detects where the coach tag section begins (tags always come at the end)
-const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
+const TAG_SECTION_REGEX = new RegExp(`\\n?\\[(?:${Object.values(COACH_TAGS).join('|')})[:\\s]`);
 
 /**
  * Extract a JSON object from text starting after startPos, using bracket
@@ -77,7 +94,7 @@ const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
  */
 function extractBracketedJSON(text, startPos) {
   let i = startPos;
-  while (i < text.length && /\s/.test(text[i])) i++; // skip whitespace
+  while (i < text.length && /\s/.test(text[i])) i++;
   if (text[i] !== '{') return null;
 
   let depth = 0;
@@ -133,33 +150,203 @@ export async function recoverMissingTags(parsed, repair) {
   };
 }
 
+/**
+ * The grading check for one coach turn (#584; lib/assessment.js). When the
+ * reply checks off a new objective or scores 10, `assess(input, images)` asks
+ * the assessor which objectives the learner's own words show, and only those
+ * stay checked off. When the reply scored 10 but some objective isn't shown,
+ * completion is held and `regenerate(addendum)` streams the coach's second
+ * try, told what's missing; its score is held to HELD_PROGRESS and its
+ * objectives to the ones the check found. When that try still says the
+ * lesson is done, plato's own held message replaces it, put into the
+ * learner's language by `localize(addendum)` when one is given.
+ *
+ * Never throws. If the check itself fails, the coach's grading stands, as it
+ * did before: a completing turn checks off every objective, so the
+ * every-objective rule in applyCoachResponseToKB still lets it complete.
+ * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
+ */
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim, localize, onStep }) {
+  // `onStep(type, data)` (Trace mode) hears each decision as it is made. It
+  // changes nothing: the result is the same with or without it.
+  const note = (type, data) => { try { onStep?.(type, data); } catch { /* never breaks grading */ } };
+  const confirms = confirmingCounts(kb);
+  const ground = (verdict, tr, check) => groundVerdict(verdict, tr, check, { imageThisTurn, confirms, ...(onStep ? { evidence: true } : {}) });
+  const plan = assessmentPlan(kb, parsed);
+  note('gradingPlan', { ...plan, ran: plan.check.length > 0 });
+  if (!plan.check.length) return { parsed, assessment: null };
+  const imageThisTurn = imageParts.length > 0;
+  const transcript = assessmentTranscript(messages);
+  const input = assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn });
+  let grounded = null;
+  try {
+    // A reply that isn't JSON gets one retry that says so (at temperature 0
+    // the same request returns the same reply). Busy errors are retried by
+    // orchestrator.callApi.
+    let verdict;
+    try { verdict = parseVerdict(await assess(input, imageParts, { purpose: 'grading check' })); } catch (e) {
+      note('gradingRetry', { why: String(e?.message || e) });
+      verdict = parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: plan.check, imageThisTurn, note: FORMAT_NOTE }), imageParts, { temperature: RETRY_TEMPERATURE, purpose: 'grading check, second try (the first reply could not be read)' }));
+    }
+    grounded = ground(verdict, transcript, plan.check);
+    note('verdict', { transcript, verdict, ...grounded });
+    // A "shown" whose quote wasn't the learner's (often the coach's paraphrase
+    // when the learner's own words were there too, measured on prod): ask once
+    // more about just those, saying why. A failed recheck keeps the first answer.
+    if (grounded.ungrounded.length) {
+      try {
+        const recheck = grounded.ungrounded.map((n) => ({ n, problem: grounded.missing[n] }));
+        const againVerdict = parseVerdict(await assess(assessmentInput({ lesson, kb, transcript, check: grounded.ungrounded, imageThisTurn, recheck }), imageParts, { purpose: 'grading check, asked again about quotes that were not the learner’s' }));
+        const again = ground(againVerdict, transcript, grounded.ungrounded);
+        note('recheck', { asked: recheck, verdict: againVerdict, ...again });
+        const missing = { ...grounded.missing };
+        for (const n of again.shown) delete missing[n];
+        grounded = { ...grounded, shown: [...grounded.shown, ...again.shown].sort((a, b) => a - b), missing };
+      } catch (e) { note('recheck', { asked: grounded.ungrounded, failed: String(e?.message || e) }); /* keep the first answer */ }
+    }
+  } catch (e) { note('gradingFailed', { why: String(e?.message || e), failuresBefore: kb.gradingCheckFailures || 0 }); grounded = null; }
+
+  // Fail closed: when the check can't run, nothing new is checked off and a
+  // completion waits for a turn it can (playground, 2026-11-21: failing open
+  // completed a lesson the check had held for 16 turns). But not forever: a
+  // conversation that keeps breaking the assessor (0.4% of prod completions
+  // in the replay) would leave that learner unable to finish. On the second
+  // completing turn in a row that can't be checked, the coach's grading
+  // stands, as before #584, and it's logged for review.
+  const failed = !grounded;
+  if (failed && plan.completionClaimed && (kb.gradingCheckFailures || 0) >= 1) {
+    const all = (kb.objectives || []).map((_, i) => i + 1);
+    note('gradingStood', { objectivesMet: all });
+    return {
+      parsed: { ...parsed, kbUpdate: { ...(parsed.kbUpdate || {}), objectivesMet: all } },
+      assessment: { failed: true, failedOpen: true, checked: plan.check.length, shown: 0, unverified: 0, held: false, regenerated: false },
+    };
+  }
+  if (failed) {
+    const why = 'couldn’t be checked this turn: ask them to share that part of their work in their own words';
+    grounded = { shown: [], missing: Object.fromEntries(plan.check.map((n) => [n, why])), ungrounded: [] };
+  }
+
+  const applied = applyVerdict(parsed, kb, plan, grounded);
+  note('verdictApplied', {
+    held: applied.held, unverified: applied.unverified, outstanding: applied.outstanding, missing: grounded.missing,
+    progressBefore: parsed.progress ?? null, progressAfter: applied.parsed.progress ?? null,
+    claimed: parsed.kbUpdate?.objectivesMet || [], kept: applied.parsed.kbUpdate?.objectivesMet || [],
+  });
+  let out = applied.parsed;
+  let regenerated = false;
+  let replaced = false;
+  // Objectives the coach claimed and the check didn't keep: the reply mustn't
+  // tell the learner they're met (withoutUnbackedClaims).
+  if (applied.unverified?.length && !applied.held && out.text) {
+    const cleaned = withoutUnbackedClaims(out.text, applied.unverified);
+    if (cleaned !== out.text) { note('claimsRemoved', { before: out.text, after: cleaned, objectives: applied.unverified }); out = { ...out, text: cleaned }; }
+  }
+  if (applied.held) {
+    if (regenerate) {
+      try {
+        const second = parseCoachResponse(await regenerate(heldCompletionAddendum(kb, applied.outstanding, grounded.missing)));
+        if (second.text) {
+          regenerated = true;
+          note('heldRewrite', { before: applied.parsed.text, after: second.text, progressAsked: second.progress ?? null, progressKept: Math.min(second.progress ?? out.progress ?? 0, HELD_PROGRESS) });
+          const kept = applied.parsed.kbUpdate?.objectivesMet || [];
+          out = {
+            ...second,
+            progress: Math.min(second.progress ?? out.progress ?? 0, HELD_PROGRESS),
+            kbUpdate: { ...(second.kbUpdate || applied.parsed.kbUpdate || {}), objectivesMet: kept },
+            profileUpdate: second.profileUpdate || parsed.profileUpdate,
+          };
+        }
+      } catch (e) { note('heldRewrite', { failed: String(e?.message || e) }); /* keep the first reply, with completion held */ }
+    }
+    // The coach's words must agree with the hold. Its second try often still
+    // said "this one is complete" (playground testing), so in code: a reply or
+    // "Where you are" note that says the lesson is done is replaced.
+    // Patterns first; for wording they don't know, a one-word model check
+    // (judgeClaim). A failed check keeps the reply.
+    const byPattern = claimsCompletion(out.text);
+    let saysDone = byPattern;
+    let byModel = null;
+    if (!saysDone && judgeClaim && out.text) {
+      try { saysDone = byModel = await judgeClaim(out.text); } catch { byModel = 'failed'; /* keep the reply */ }
+    }
+    note('claimCheck', { byPattern, byModel, saysDone });
+    if (saysDone) {
+      let standard = heldReply(kb, applied.outstanding, grounded.missing);
+      // In the learner's language, when it isn't English (`localize`, from
+      // sendMessage). A failed or empty translation keeps the English.
+      if (localize) {
+        try {
+          const translated = parseCoachResponse(await localize(localizeAddendum(standard))).text;
+          if (translated) standard = translated;
+        } catch { /* keep the English */ }
+      }
+      note('replyReplaced', { before: out.text, after: standard });
+      out = { ...out, text: standard };
+      replaced = true;
+    }
+    if (out.kbUpdate?.learnerPosition && claimsCompletion(out.kbUpdate.learnerPosition)) {
+      const standard = heldPosition(kb, applied.outstanding);
+      note('positionReplaced', { before: out.kbUpdate.learnerPosition, after: standard });
+      out = { ...out, kbUpdate: { ...out.kbUpdate, learnerPosition: standard } };
+    }
+  }
+  return {
+    parsed: out,
+    assessment: {
+      checked: plan.check.length,
+      shown: grounded.shown.length,
+      unverified: applied.unverified.length,
+      held: applied.held,
+      regenerated,
+      ...(replaced ? { replaced } : {}),
+      ...(failed ? { failed } : {}),
+    },
+  };
+}
+
+/**
+ * Completing turns in a row the grading check couldn't run, after this turn
+ * (checkGrading lets the coach's grading stand once it's 1 and the next one
+ * fails too). A turn the check ran, or a fallback, resets it; a failed check
+ * on an ordinary turn leaves it as it was.
+ */
+export function nextGradingFailures(prev = 0, assessment) {
+  if (!assessment) return prev || 0;
+  if (assessment.failedOpen || !assessment.failed) return 0;
+  return assessment.held ? (prev || 0) + 1 : prev || 0;
+}
+
 /** A coach turn updates the learner profile only when it says so ([PROFILE_UPDATE]). */
 export function shouldUpdateProfile(parsed) {
   return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
 }
+
+/** How many of the latest stored messages the coach is sent as the conversation so far. */
+// Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32
+// msgs). 40 covers outliers up to 22 exchanges without being unlimited.
+export const COACH_TAIL = 40;
+
+// checkGrading's steps that read the reply of the call just made.
+const CALL_RESULTS = new Set(['gradingRetry', 'verdict', 'recheck', 'claimCheck', 'heldRewrite']);
 
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
   let profileUpdate = null;
 
-  // Extract progress
-  const progressMatch = raw.match(/\[PROGRESS:\s*(\d+)\]/);
+  const progressMatch = raw.match(new RegExp(`\\[${COACH_TAGS.progress}:\\s*(\\d+)\\]`));
   if (progressMatch) progress = parseInt(progressMatch[1], 10);
 
-  // Extract KB update — bracket-aware so }] inside string values don't mislead
-  const kbIdx = raw.indexOf('[KB_UPDATE:');
-  if (kbIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, kbIdx + '[KB_UPDATE:'.length);
-    if (jsonStr) { try { kbUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
-
-  // Extract profile update
-  const profIdx = raw.indexOf('[PROFILE_UPDATE:');
-  if (profIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, profIdx + '[PROFILE_UPDATE:'.length);
-    if (jsonStr) { try { profileUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
+  const json = (tag) => {
+    const idx = raw.indexOf(`[${tag}:`);
+    if (idx === -1) return null;
+    const jsonStr = extractBracketedJSON(raw, idx + tag.length + 2);
+    if (!jsonStr) return null;
+    try { return JSON.parse(jsonStr); } catch { return null; }
+  };
+  kbUpdate = json(COACH_TAGS.notes);
+  profileUpdate = json(COACH_TAGS.profile);
 
   return { text: stripTags(raw), progress, kbUpdate, profileUpdate };
 }
@@ -186,18 +373,33 @@ export function cleanStream(onStream) {
  */
 export async function startLesson(lessonId, lesson, onStream, onProgress) {
   assertNotImpersonating('start a lesson');
+  // Trace mode (#595): a recorder when it's on, else undefined. A start that
+  // fails still leaves its trace.
+  const trace = await openTrace(lessonId, 'start');
+  try {
+    return await startLessonTraced(lessonId, lesson, onStream, onProgress, trace);
+  } catch (e) {
+    trace?.fail(e);
+    throw e;
+  } finally {
+    trace?.flush();
+  }
+}
+
+async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) {
   await ensureProfileExists();
   const profileSummary = await getLearnerProfileSummary();
+  trace?.step('lesson', lessonForTrace(lesson));
 
-  // Lesson Owner generates the KB
   if (onProgress) onProgress('initializing');
-  const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary);
+  const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary, { trace });
+  // What the planner wrote, before plato's code sets the fields it owns.
+  trace?.step('planned', { call: trace.lastCall(), fromModel: { ...lessonKB }, authorObjectives: lesson.learningObjectives || [], authorExemplar: lesson.exemplar || '' });
   lessonKB.lessonId = lessonId;
   lessonKB.name = lesson.name;
   lessonKB.progress = 0;
   lessonKB.startedAt = ts();
 
-  // Emit lessonStarted hook and collect enrichments from plugins
   let enrichments = [];
   try {
     if (onProgress) onProgress('enriching', { enrichments: [] });
@@ -214,54 +416,87 @@ export async function startLesson(lessonId, lesson, onStream, onProgress) {
           coachDirective: lesson.coachDirective,
         },
         lessonKB,
+        // Trace mode (#595): ask each plugin for what it did (its AI calls
+        // and outside requests). Not sent otherwise, so the request is the
+        // same as it always was.
+        ...(trace ? { trace: true } : {}),
       }),
     });
+    // What each plugin did, by plugin id. Only ever recorded in the trace:
+    // it is not part of an enrichment, so it never reaches the lessonKB or
+    // the coach.
+    let pluginTraces = {};
     if (res.ok) {
       const data = await res.json();
       enrichments = data.enrichments || [];
+      if (trace && data.pluginTraces && typeof data.pluginTraces === 'object') pluginTraces = data.pluginTraces;
     }
+    trace?.step('plugins', { status: res.status, enrichments, pluginTraces });
   } catch (err) {
     // Fail open — enrichment errors must never block lesson start
     console.warn('[startLesson] Failed to collect enrichments:', err);
+    trace?.step('plugins', { failed: String(err?.message || err), enrichments: [] });
   }
 
   // One KB write before the coach opens, with the enrichments in it (a later
   // write would race the coach's progress update). It used to be written up
   // to three times, each re-sent in the background (#451 scale review H2).
   if (enrichments.length > 0) lessonKB.enrichments = enrichments;
+  // The lesson is being recorded from its start (set only when Trace is on,
+  // and after the plugins have seen the KB: it's about the recording, not
+  // the lesson).
+  if (trace) lessonKB.trace = { since: lessonKB.startedAt };
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
+  trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
 
-  // Coach opens the conversation
   if (onProgress) onProgress('starting');
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
+  const opening = [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }];
+  trace?.step('context', { context: JSON.parse(context) });
+  trace?.setBase(opening);
   const coachMsg = await orchestrator.converseStream(
     'coach',
-    [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }],
-    cleanStream(onStream),
-    1024
+    opening,
+    // Not streamed: the opener is checked first, like every reply (the
+    // author's links and codes, example answers), and a corrected one would switch.
+    () => {},
+    1024,
+    '',
+    trace ? { trace, purpose: 'opening message' } : undefined,
   );
 
-  const { text, progress } = parseCoachResponse(coachMsg);
+  const firstOpening = parseCoachResponse(coachMsg);
+  const { progress } = firstOpening;
+  // The author's links and codes, exactly (withDirectiveLiterals).
+  const exact = withDirectiveLiterals(firstOpening.text, lesson.coachDirective);
+  if (exact !== firstOpening.text) orchestrator.reportEvent('coach_literal_restored', { lessonId });
+  // No example answers in the learner's voice in the opener either: one was
+  // pasted back as the first answer (Blake's trace, 2026-11-25).
+  const text = withoutVoiceSamples(exact, []) || exact;
+  if (text !== exact) trace?.step('samplesRemoved', { before: exact, after: text, from: 'opener' });
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
   // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
   // completes lessons. A lesson's Coach Directive can't change that.
-  const opening = openingProgress(progress);
-  if (opening != null && opening !== lessonKB.progress) {
-    lessonKB.progress = opening;
+  const openingScore = openingProgress(progress);
+  trace?.step('applied', { opener: true, modelProgress: progress, progress: openingScore ?? lessonKB.progress, rules: openingScore != null && progress != null && openingScore !== progress ? ['openerCap'] : [] });
+  if (openingScore != null && openingScore !== lessonKB.progress) {
+    lessonKB.progress = openingScore;
     syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
+    trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
   }
 
-  const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
   const savedMessages = await saveLessonMessages(lessonId, messages);
   // Retry the opener once in the background if it didn't land ('too_long' was never sent; there's nothing to retry).
   if (savedMessages !== 'too_long') syncIfUnsaved(savedMessages, `messages:${lessonId}`);
+  trace?.step('save', { record: 'messages', ...(savedMessages === 'too_long' ? { ok: false, code: 'too_long' } : lastSaveResult(`messages:${lessonId}`)) });
   return { messages, lessonKB, phase: LESSON_PHASES.LEARNING };
 }
 
@@ -313,7 +548,42 @@ export function buildUserParts(text, imageDataUrls = [], links = []) {
 export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, onStream) {
   assertNotImpersonating('send a message');
   let lessonKB = await getLessonKB(lessonId);
+  // Trace mode (#595): a recorder when it's on, else undefined. A lesson that
+  // started before it was turned on is recorded from here and marked partial.
+  const trace = await openTrace(lessonId, 'turn', { partial: !lessonKB?.trace || !!lessonKB.trace.partial, used: lessonKB?.trace?.bytes });
+  if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), partial: true } };
+  // The stamp carries the trace's size so far, so the limit holds across
+  // sessions and devices; past it, recording stops and the stamp says so.
+  if (lessonKB?.trace && (trace || traceFull(lessonId))) {
+    const bytes = traceBytes(lessonId);
+    if (bytes !== lessonKB.trace.bytes || traceFull(lessonId) !== !!lessonKB.trace.full) {
+      lessonKB = { ...lessonKB, trace: { ...lessonKB.trace, bytes, ...(traceFull(lessonId) ? { full: true } : {}) } };
+    }
+  }
+  try {
+    return await sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, onStream, lessonKB, trace);
+  } catch (e) {
+    trace?.fail(e);
+    throw e;
+  } finally {
+    trace?.flush();
+  }
+}
+
+async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, onStream, lessonKB, trace) {
   const profileSummary = await getLearnerProfileSummary();
+  // Events the server logs (a code and the lesson id only), noted in the trace too.
+  const report = (code) => { orchestrator.reportEvent(code, { lessonId }); trace?.step('event', { code }); };
+  // What the learner watched arrive, when a later reply replaced it.
+  // The reply isn't streamed to the learner while it's written: plato checks
+  // it first (tags, the draft guard, the script guard, the grading check) and
+  // may rewrite or replace it, and the learner watching a reply arrive and
+  // then switch to another was a problem (Blake, 2026-11-25). The page shows
+  // its thinking indicator until the checked reply is ready. `onStream` is
+  // kept in the signature for the page; nothing unchecked reaches it.
+  const stream = () => {};
+  // `stage` and `check`: where the call belongs in the Trace (orchestrator.converseStream).
+  const opts = (purpose, where = {}) => (trace ? { trace, purpose, ...where } : undefined);
 
   const imageDataUrls = normalizeImageDataUrls(imageDataUrl);
   const linkList = Array.isArray(links) ? links.filter((l) => l && l.url) : [];
@@ -330,45 +600,199 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     await saveScreenshot(key, url);
     imageKeys.push(key);
   }
+  trace?.step('lesson', lessonForTrace(lesson));
+  trace?.step('input', {
+    text: text || '',
+    images: imageDataUrls.map((url, i) => {
+      const type = (url.match(/^data:([^;,]+)/) || [])[1] || null;
+      // buildUserParts sends an image only when its type is a plain word (image/png).
+      return { key: imageKeys[i], type, chars: url.length, sent: /^data:(image\/\w+);base64,/.test(url) };
+    }),
+    links: linkList.map((l) => ({ url: l.url, title: l.title || null, chars: (l.text || '').length, ...(l.truncated ? { truncated: true } : {}), ...(l.finalUrl && l.finalUrl !== l.url ? { finalUrl: l.finalUrl } : {}) })),
+  });
+  trace?.step('state', {
+    progress: lessonKB.progress ?? 0, status: lessonKB.status || 'active',
+    objectivesMet: lessonKB.objectivesMet || [], activitiesCompleted: lessonKB.activitiesCompleted || 0,
+    gradingCheckFailures: lessonKB.gradingCheckFailures || 0,
+  });
 
   // Build conversation tail — filter out messages with empty content (e.g. image-only)
-  // Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32 msgs).
-  // Set to 40 to cover outliers up to 22 exchanges without being unlimited.
   const allMsgs = await getLessonMessages(lessonId);
-  const tail = allMsgs.slice(-40)
+  const tail = allMsgs.slice(-COACH_TAIL)
     .map(m => ({ role: m.role, content: m.content }))
     .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : m.content.length));
+  trace?.step('tail', {
+    stored: allMsgs.length, sent: tail.length, limit: COACH_TAIL, olderLeftOut: Math.max(0, allMsgs.length - COACH_TAIL),
+    // Earlier images and attached pages aren't sent again: only this turn's are.
+    earlierImages: allMsgs.filter((m) => m.metadata?.imageKeys?.length).length,
+    earlierLinks: allMsgs.filter((m) => m.metadata?.links?.length).length,
+  });
 
-  // Build user message content (text, link page-text, then images)
   const userParts = buildUserParts(text, imageDataUrls, linkList);
 
   // Always include context as first message so coach has lesson + profile info
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
+  trace?.step('context', { context: JSON.parse(contextMsg) });
+  trace?.setBase(messages);
 
   // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
   // "The reply was cut off", since the tags come last).
-  const coachMsg = await orchestrator.converseStream(
-    'coach',
-    messages,
-    cleanStream(onStream),
-    2048
-  );
-
-  const parsed = await recoverMissingTags(
-    parseCoachResponse(coachMsg),
-    () => orchestrator.repairCoachTags(messages, stripTags(coachMsg)),
-  );
-  // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
-  if (parsed.tagsRepairTried) {
-    orchestrator.reportEvent(parsed.progress != null && parsed.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered', { lessonId });
+  // A message that's mostly the coach's own wording sent back (a pasted hint
+  // or example), or only a yes to a draft the coach wrote: plato answers it
+  // itself (copyReply). The coach isn't asked: told about the copy in a note,
+  // it still praised a pasted example (Blake's trace, 2026-11-25). The fixed
+  // reply carries the lesson's current score and no notes, so nothing is
+  // graded or recorded from a copy.
+  const coachSaid = assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text);
+  const repeated = repeatsCoach(text || '', coachSaid);
+  const lastCoach = coachSaid[coachSaid.length - 1] || '';
+  const agreed = !repeated && onlyAgrees(text || '') && draftsForLearner(lastCoach, assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text));
+  trace?.step('repeatCheck', { repeated, ...(agreed ? { agreed } : {}) });
+  // One of plato's fixed replies (copyReply) in the learner's language: built
+  // in for English and Spanish; otherwise the coach translates it, and a
+  // failed translation keeps the English.
+  const platoSays = async (kind) => {
+    const language = learnerLanguageName();
+    const fixed = copyReply(kind, language);
+    if (hasFixedReplies(language)) return fixed;
+    try {
+      return parseCoachResponse(await orchestrator.converseStream('coach', messages, () => {}, 600, localizeAddendum(fixed), opts('plato’s own reply, in the learner’s language'))).text || fixed;
+    } catch { return fixed; }
+  };
+  let coachMsg;
+  if (repeated || agreed) {
+    report('coach_wording_repeated');
+    const fixed = await platoSays(agreed ? 'agreed' : 'repeated');
+    trace?.step('copyReply', { kind: agreed ? 'agreed' : 'repeated', text: fixed });
+    coachMsg = `${fixed}\n[PROGRESS: ${lessonKB.progress ?? 0}]\n[KB_UPDATE: {}]`;
+  } else {
+    coachMsg = await orchestrator.converseStream('coach', messages, stream, 2048, '', opts('reply'));
   }
 
-  const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
+  const firstParse = parseCoachResponse(coachMsg);
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, ...firstParse });
+  // Each check is recorded whether or not it finds anything, so the Trace
+  // says it ran.
+  trace?.step('tagCheck', tagsFound(firstParse));
+  const repaired = await recoverMissingTags(
+    firstParse,
+    () => orchestrator.repairCoachTags(messages, stripTags(coachMsg), opts('tag repair')),
+  );
+  // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
+  if (repaired.tagsRepairTried) {
+    trace?.step('tagRepair', { call: trace.lastCall(), missing: repaired.tagsMissing || null, recovered: !!repaired.tagsRecovered, progress: repaired.progress, kbUpdate: repaired.kbUpdate || null, profileUpdate: repaired.profileUpdate || null });
+    report(repaired.progress != null && repaired.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered');
+  }
+
+  // The draft guard (#584): a reply that writes the learner's answer for them
+  // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
+  // feedback plus a question. Learners copied these drafts, and the grading
+  // check then (rightly) didn't count them. The rewrite is kept even when it
+  // still drafts (playground: it still drafted 21 of 26 times). A failed
+  // rewrite keeps the first reply. Nothing is streamed, so the learner sees
+  // only the reply plato keeps.
+  let coachReply = repaired;
+  // What the learner has written, so their own words quoted back aren't a draft.
+  const learnerSaid = assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text);
+  // Example answers written in the learner's voice are cut by code first
+  // (withoutVoiceSamples): no model call, and usually nothing left to rewrite.
+  const cutSamples = (reply, why) => {
+    const cleaned = withoutVoiceSamples(reply.text || '', learnerSaid);
+    if (cleaned === (reply.text || '') || !cleaned.trim()) return reply;
+    trace?.step('samplesRemoved', { before: reply.text, after: cleaned, from: why });
+    return { ...reply, text: cleaned };
+  };
+  // plato's own reply to a copy isn't the coach's: it skips the draft guard.
+  const platoReply = repeated || agreed;
+  if (lessonKB.status !== 'completed' && !platoReply) coachReply = cutSamples(coachReply, 'reply');
+  // A rewrite is asked for only when the cut wasn't enough: the reply still
+  // drafts, or it had samples cut and still asks several questions (replies
+  // that write the answer tend to: agent evaluations C63).
+  const drafts = lessonKB.status !== 'completed' && !platoReply && (draftsForLearner(coachReply.text, learnerSaid)
+    || (coachReply.text !== repaired.text && (coachReply.text.match(/\?/g) || []).length > 1));
+  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
+  if (drafts) {
+    try {
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
+      const rewriteParse = parseCoachResponse(raw);
+      trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
+      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
+      if (again.text) { const cut = cutSamples(again, 'rewrite'); coachReply = { ...cut, draftRewritten: !draftsForLearner(cut.text, learnerSaid) }; }
+      trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
+    } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
+    // Still drafting after the rewrite: the drafted passages come out in code.
+    if (!coachReply.draftRewritten) {
+      let stripped = withoutDrafts(coachReply.text, learnerSaid);
+      // Nothing left to say: plato's fixed reply, in the learner's language.
+      if (stripped === NO_DRAFT_REPLY) stripped = await platoSays('noDraft');
+      trace?.step('samplesRemoved', { before: coachReply.text, after: stripped, from: 'still drafting' });
+      coachReply = { ...coachReply, text: stripped };
+    }
+    report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
+  }
+
+  // The script guard: the model sometimes slips characters from another
+  // script into a reply (Chinese in an English one: agent evaluations C59,
+  // about 1 in 6 on some turns). Rewritten once; the rewrite is shown only
+  // when it's clean, otherwise the reply stays as it was.
+  const language = learnerLanguageName();
+  const mixed = mixesScripts(coachReply.text, language);
+  trace?.step('scriptCheck', { mixed });
+  if (mixed) {
+    const before = coachReply.text;
+    let fixed = false;
+    try {
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
+      fixed = !!again.text && !mixesScripts(again.text, language);
+      if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
+      trace?.step('scriptGuard', { call: trace.lastCall(), before, after: again.text || null, used: fixed });
+    } catch (e) { trace?.step('scriptGuard', { before, failed: String(e?.message || e), used: false }); /* keep the reply */ }
+    report(fixed ? 'coach_script_rewritten' : 'coach_script_kept');
+  }
+
+  // The author's links and codes, exactly: a near-miss of one in the lesson's
+  // coach directive ("https:// comunidad.example.org/join") is put back as the
+  // author wrote it (agent evaluations H1). Code, no model call.
+  const exact = withDirectiveLiterals(coachReply.text, lesson.coachDirective);
+  if (exact !== coachReply.text) {
+    trace?.step('literals', { before: coachReply.text, after: exact });
+    coachReply = { ...coachReply, text: exact };
+    report('coach_literal_restored');
+  }
+
+  // The grading check (#584): objectives stay checked off only when the
+  // learner's own words show them, and a completion that isn't backed up is
+  // held while the coach asks for what's missing (its second try streams in
+  // place of the first).
+  const graded = await checkGrading({
+    lesson, kb: lessonKB, parsed: coachReply, messages,
+    imageParts: userParts.filter((p) => p.type === 'image'),
+    // Only the recorder and its label are passed on: the request itself is
+    // the same with Trace on or off.
+    // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
+    assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
+    judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
+    // plato's own held message, in the learner's language (not streamed: it replaces the reply).
+    ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),
+    // A result says which call it came from: the latest one (a claim decided
+    // by wording alone made no call).
+    ...(trace ? { onStep: (type, data) => trace.step(type, CALL_RESULTS.has(type) && !(type === 'claimCheck' && data.byPattern) ? { call: trace.lastCall(), ...data } : data) } : {}),
+  });
+  const parsed = graded.parsed;
+  const assessment = graded.assessment;
+  if (assessment?.failedOpen) report('coach_assessment_failed_open');
+  else if (assessment?.failed) report('coach_assessment_failed');
+  else if (assessment?.held) report('coach_completion_held');
+  else if (assessment?.unverified) report('coach_objectives_unverified');
+
+  const kbBeforeFull = lessonKB;
   // The objectives checklist (#438) first, against the KB as it was, so the
   // turn that completes the lesson can still check off what it showed.
   // Informational only: applyCoachResponseToKB alone decides completion.
@@ -378,22 +802,33 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     .map((i) => withMet.objectives?.[i]?.objective).filter(Boolean);
   const applied = applyCoachResponseToKB(withMet, parsed, { now: ts });
   lessonKB = applied.lessonKB;
+  // Completing turns in a row the check couldn't run (checkGrading lets the
+  // coach's grading stand on the second). Any turn the check ran resets it.
+  if (assessment) {
+    const failures = nextGradingFailures(lessonKB.gradingCheckFailures, assessment);
+    if (failures || lessonKB.gradingCheckFailures) lessonKB = { ...lessonKB, gradingCheckFailures: failures };
+  }
   const { achieved, phase } = applied;
+  trace?.step('applied', rulesApplied({ before: kbBeforeFull, after: lessonKB, modelProgress: firstParse.progress, replyProgress: coachReply.progress, parsed, assessment, achieved, newlyMet }));
 
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
+  trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
 
   // The profile is updated from the coach's explicit [PROFILE_UPDATE] only
   // (and on completion). Treating every turn's KB insights as a profile
   // signal made most turns cost a second model call (#451 scale review H2).
   if (shouldUpdateProfile(parsed)) {
     updateProfileFromObservation(lessonKB, parsed.profileUpdate.observation);
+    trace?.step('followUp', { agent: 'learner-profile-update', why: 'the coach noted something about the learner', observation: parsed.profileUpdate.observation });
   }
   if (achieved) {
     updateProfileOnCompletionInBackground(lessonKB, lesson);
+    trace?.step('followUp', { agent: 'learner-profile-owner', why: 'the lesson was completed' });
     // When the lesson belongs to a course, refresh the cross-lesson progress
     // note so the coach for sibling lessons sees what was just demonstrated.
     if (lesson.course?.id) {
       updateCourseProgressOnCompletionInBackground(lessonKB, lesson);
+      trace?.step('followUp', { agent: 'course-progress-update', why: 'the lesson was completed and belongs to a unit' });
     }
   }
 
@@ -412,14 +847,10 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
     msgType: MSG_TYPES.USER, phase,
     metadata, timestamp: ts(),
   };
-  // What each agent read and did on this turn (#411), for "Behind this response".
-  const agents = coachTurnActivity({
-    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet,
-    images: imageDataUrls.length, links: linkList.length,
-    hasUnitNote: !!courseProgress,
-    unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
-  });
-  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
+  // `firstReply`: what the model wrote first. Not streamed, so the learner
+  // never saw it when plato replaced it (`streamedLive: false`).
+  trace?.step('shown', { text: parsed.text, firstReply: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedLive: false });
 
   // true = saved. false = the server refused it; 'too_long' = not sent (past
   // the size budget). Either way tell the learner, and don't retry in the
@@ -433,7 +864,8 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // 'too_long': the conversation itself is past the size limit, so later
   // turns won't save either (saveLessonMessages doesn't even send it).
   const saveFailed = saved === 'too_long' ? 'too_long' : saved === false;
-  if (saveFailed === 'too_long') orchestrator.reportEvent('conversation_too_long', { lessonId });
+  trace?.step('save', { record: 'messages', ...(saved === 'too_long' ? { ok: false, code: 'too_long' } : lastSaveResult(`messages:${lessonId}`)) });
+  if (saveFailed === 'too_long') report('conversation_too_long');
   return { messages: [userMsg, assistantMsg], progress: parsed.progress, achieved, phase, saveFailed };
 }
 
@@ -516,9 +948,6 @@ export async function migrateLegacyImages(lessonId, messages) {
   return changed ? migrated : messages;
 }
 
-/**
- * Resume an existing lesson. Loads messages and KB.
- */
 export async function resumeLesson(lessonId) {
   let messages = await getLessonMessages(lessonId);
   // Heal pre-#193 conversations whose embedded base64 images bloated the
@@ -537,8 +966,6 @@ export async function resumeLesson(lessonId) {
 
 // -- Helpers ------------------------------------------------------------------
 
-/** Progress is a 0–10 signal; a lesson completes at MAX_PROGRESS. */
-const MAX_PROGRESS = 10;
 
 /** The lesson opener's score: clamped 0–10 and never 10 (it can't complete a lesson). */
 export function openingProgress(progress) {
@@ -576,10 +1003,9 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   if (parsed.kbUpdate) {
     if (parsed.kbUpdate.insights?.length) {
       next.insights = [...(next.insights || []), ...parsed.kbUpdate.insights];
-      // Prune old insights (keep last 10)
-      if (next.insights.length > 10) {
-        const older = next.insights.slice(0, next.insights.length - 10);
-        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-10)];
+      if (next.insights.length > MAX_INSIGHTS) {
+        const older = next.insights.slice(0, next.insights.length - MAX_INSIGHTS);
+        next.insights = [`[Earlier: ${older.join('; ')}]`, ...next.insights.slice(-MAX_INSIGHTS)];
       }
     }
     if (parsed.kbUpdate.learnerPosition) {
@@ -595,7 +1021,15 @@ export function applyCoachResponseToKB(prevKB, parsed, { now = Date.now } = {}) 
   //
   // A null clamp means the score was absent or unparseable — leave the stored
   // value alone rather than overwriting it with nothing.
-  const reportedProgress = clampProgress(parsed.progress);
+  let reportedProgress = clampProgress(parsed.progress);
+  // A lesson completes only when every objective is checked off (#584). The
+  // coach's 10 alone isn't enough: on its own it completed lessons on one-line
+  // answers. sendMessage's grading check decides which objectives are checked
+  // off (client/src/lib/assessment.js); this is the rule. Lessons without
+  // objectives keep the old behavior.
+  if (reportedProgress >= MAX_PROGRESS && !wasCompleted && !allObjectivesMet(next)) {
+    reportedProgress = MAX_PROGRESS - 1;
+  }
   if (reportedProgress != null && !wasCompleted) {
     next.progress = reportedProgress;
   }
@@ -646,7 +1080,21 @@ async function loadCourseProgressSummary(lesson) {
   }
 }
 
-export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress) {
+/** Which of the coach's tags a reply carried, for a Trace. */
+function tagsFound(parsed) {
+  return { progress: parsed.progress != null, notes: !!parsed.kbUpdate, profile: !!parsed.profileUpdate };
+}
+
+/** The lesson as the author wrote it, for a Trace: which lesson, which version, and the parts the coach is given. */
+function lessonForTrace(lesson) {
+  return {
+    lessonId: lesson?.lessonId || null, name: lesson?.name || null, updatedAt: lesson?.updatedAt || null,
+    exemplar: lesson?.exemplar || '', learningObjectives: lesson?.learningObjectives || [], coachDirective: lesson?.coachDirective || '',
+    unit: lesson?.unit?.name || lesson?.course?.name || null, course: lesson?.program?.name || null,
+  };
+}
+
+export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress, learnerLanguage = null) {
   const completed = lessonKB?.activitiesCompleted || 0;
   const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
@@ -662,6 +1110,11 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // The learner's language (#240), when it isn't English: the context is the
+  // first thing the coach reads, and with only the system prompt's Language
+  // section it still opened in English about half the time (AGENT_EVALS).
+  // English adds nothing, as everywhere else.
+  if (learnerLanguage) context.learnerLanguage = learnerLanguage;
   // Objectives the coach has already marked as shown (#438), 1-based.
   const met = objectivesMetForContext(lessonKB);
   if (met) context.objectivesMet = met;

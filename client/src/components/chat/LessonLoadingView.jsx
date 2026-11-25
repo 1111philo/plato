@@ -1,5 +1,5 @@
 /**
- * LessonLoadingView — stepped build progress UI shown when starting a lesson.
+ * Stepped build progress shown when starting a lesson.
  *
  * Shows 3 phases:
  * 1. Initializing lesson (Lesson Owner agent generates KB)
@@ -64,7 +64,6 @@ export default function LessonLoadingView({ step, enrichments = [] }) {
   // Show enrichment step once we've reached it (and keep showing it after)
   const showEnrichmentStep = step === STEPS.ENRICHING || step === STEPS.STARTING;
 
-  // Compute step statuses based on current step
   const steps = [
     {
       key: STEPS.INITIALIZING,
@@ -76,7 +75,6 @@ export default function LessonLoadingView({ step, enrichments = [] }) {
     },
   ];
 
-  // Show enrichment step when we're actively enriching OR when enrichments were found
   if (showEnrichmentStep) {
     steps.push({
       key: STEPS.ENRICHING,
@@ -123,5 +121,4 @@ export default function LessonLoadingView({ step, enrichments = [] }) {
   );
 }
 
-// Export step constants so parent can use them
 export { STEPS };

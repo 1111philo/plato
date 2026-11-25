@@ -122,7 +122,6 @@ admin.get('/v1/admin/users', async (c) => {
   return c.json(enriched);
 });
 
-// GET /v1/admin/users/:userId
 admin.get('/v1/admin/users/:userId', async (c) => {
   const user = await db.getUserById(c.req.param('userId'));
   if (!user) {
@@ -195,7 +194,6 @@ admin.post('/v1/admin/impersonation/end', async (c) => {
   return c.json({ ok: true });
 });
 
-// POST /v1/admin/invites — create invite and send email
 admin.post('/v1/admin/invites', async (c) => {
   const { email } = await c.req.json();
   if (!email) {
@@ -226,7 +224,6 @@ admin.post('/v1/admin/invites', async (c) => {
   return c.json({ inviteToken, email, ...result }, 201);
 });
 
-// POST /v1/admin/invites/bulk — invite multiple users from a list of emails
 admin.post('/v1/admin/invites/bulk', async (c) => {
   const { emails } = await c.req.json();
   if (!Array.isArray(emails) || emails.length === 0) {
@@ -399,7 +396,6 @@ admin.post('/v1/admin/invites/resend-bulk', async (c) => {
   return c.json({ results });
 });
 
-// DELETE /v1/admin/invites/:token
 admin.delete('/v1/admin/invites/:token', async (c) => {
   const token = c.req.param('token');
   const invite = await db.getInvite(token);
@@ -410,7 +406,6 @@ admin.delete('/v1/admin/invites/:token', async (c) => {
   return c.json({ ok: true });
 });
 
-// GET /v1/admin/invites/link — get current invite link
 admin.get('/v1/admin/invites/link', async (c) => {
   const linkInvite = await db.getInviteLinkToken();
   if (!linkInvite) {
@@ -426,11 +421,9 @@ admin.get('/v1/admin/invites/link', async (c) => {
   });
 });
 
-// POST /v1/admin/invites/link — create or regenerate invite link
 admin.post('/v1/admin/invites/link', async (c) => {
   const adminUser = c.get('user');
 
-  // Delete any existing link invite
   const existingLink = await db.getInviteLinkToken();
   if (existingLink) {
     await db.deleteInvite(existingLink.inviteToken);
@@ -448,7 +441,6 @@ admin.post('/v1/admin/invites/link', async (c) => {
     });
   }
 
-  // Create new link invite
   const inviteToken = generateInviteToken();
   await db.createInvite({
     inviteToken,
@@ -469,7 +461,6 @@ admin.post('/v1/admin/invites/link', async (c) => {
   }, 201);
 });
 
-// DELETE /v1/admin/invites/link — delete current invite link
 admin.delete('/v1/admin/invites/link', async (c) => {
   const adminUser = c.get('user');
   const linkInvite = await db.getInviteLinkToken();
@@ -534,7 +525,6 @@ admin.post('/v1/admin/waitlist/key', async (c) => {
   return c.json({ apiKey }, 201);
 });
 
-// DELETE /v1/admin/waitlist/key — revoke the API key
 admin.delete('/v1/admin/waitlist/key', async (c) => {
   const { item, config } = await readWaitlistConfig();
   await writeWaitlistConfig(item, { ...config, apiKeyHash: null });
@@ -641,7 +631,6 @@ admin.put('/v1/admin/waitlist/:token', async (c) => {
   });
 });
 
-// DELETE /v1/admin/waitlist/:token — remove an entry
 admin.delete('/v1/admin/waitlist/:token', async (c) => {
   const entry = await db.getInvite(c.req.param('token'));
   if (!entry || entry.status !== 'waitlist') return c.json({ error: 'Wait-list entry not found' }, 404);
@@ -658,7 +647,6 @@ admin.delete('/v1/admin/waitlist/:token', async (c) => {
   return c.json({ ok: true });
 });
 
-// PATCH /v1/admin/users/:userId — update user fields
 // POST /v1/admin/users/bulk-update — one change for many people at once:
 // body `{ userIds, waitlistTokens, set: { field: 'userGroup' | '<custom field id>', value } }`.
 // Wait-list entries (by invite token) get the change in their answers
@@ -835,7 +823,6 @@ admin.patch('/v1/admin/users/:userId', async (c) => {
   return c.json({ ok: true });
 });
 
-// PUT /v1/admin/users/:userId/role
 admin.put('/v1/admin/users/:userId/role', async (c) => {
   const userId = c.req.param('userId');
   const adminUser = c.get('user');
@@ -882,8 +869,6 @@ admin.put('/v1/admin/users/:userId/role', async (c) => {
   return c.json({ ok: true, role });
 });
 
-// POST /v1/admin/users/:userId/reset-password
-// Admin initiates password reset for a user by sending them a reset email.
 admin.post('/v1/admin/users/:userId/reset-password', async (c) => {
   const userId = c.req.param('userId');
   const user = await db.getUserById(userId);
@@ -941,13 +926,11 @@ admin.delete('/v1/admin/email-suppression/:email', async (c) => {
   return c.json({ ok: true });
 });
 
-// GET /v1/admin/settings
 admin.get('/v1/admin/settings', async (c) => {
   const item = await db.getSyncData('_system', 'settings');
   return c.json(item?.data || {});
 });
 
-// PUT /v1/admin/settings
 admin.put('/v1/admin/settings', async (c) => {
   const body = await c.req.json();
   const current = await db.getSyncData('_system', 'settings');
@@ -956,7 +939,6 @@ admin.put('/v1/admin/settings', async (c) => {
   return c.json(merged);
 });
 
-// PUT /v1/admin/groups — add or rename an group
 admin.put('/v1/admin/groups', async (c) => {
   const { name, oldName } = await c.req.json().catch(() => ({}));
   const user = c.get('user');
@@ -995,7 +977,6 @@ async function writeUserFields(current, settings, fields) {
   await db.putSyncData('_system', 'settings', settings, current?.version || 0);
 }
 
-// GET /v1/admin/user-fields
 admin.get('/v1/admin/user-fields', async (c) => {
   const { fields } = await readUserFieldSettings();
   return c.json({ userFields: fields });
@@ -1102,7 +1083,6 @@ admin.delete('/v1/admin/user-fields/:id', async (c) => {
   return c.json({ userFields: fields });
 });
 
-// DELETE /v1/admin/users/:userId
 admin.delete('/v1/admin/users/:userId', async (c) => {
   const userId = c.req.param('userId');
   const adminUser = c.get('user');
@@ -1135,7 +1115,6 @@ admin.delete('/v1/admin/users/:userId', async (c) => {
 
 // ── Content management (prompts, lessons, knowledge base, theme) ──
 
-// GET /v1/admin/prompts — list all prompts
 admin.get('/v1/admin/prompts', async (c) => {
   const items = await db.getAllSyncData('_system');
   const prompts = items
@@ -1148,7 +1127,6 @@ admin.get('/v1/admin/prompts', async (c) => {
   return c.json(prompts);
 });
 
-// GET /v1/admin/prompts/:name
 admin.get('/v1/admin/prompts/:name', async (c) => {
   const name = c.req.param('name');
   const item = await db.getSyncData('_system', `prompt:${name}`);
@@ -1156,7 +1134,6 @@ admin.get('/v1/admin/prompts/:name', async (c) => {
   return c.json({ name, content: item.data.content, updatedAt: item.updatedAt });
 });
 
-// PUT /v1/admin/prompts/:name
 admin.put('/v1/admin/prompts/:name', async (c) => {
   const name = c.req.param('name');
   const { content } = await c.req.json();
@@ -1170,7 +1147,6 @@ admin.put('/v1/admin/prompts/:name', async (c) => {
   return c.json({ name, ok: true });
 });
 
-// GET /v1/admin/lessons — list all lessons
 admin.get('/v1/admin/lessons', async (c) => {
   const items = await db.getAllSyncData('_system');
   const lessons = items
@@ -1190,7 +1166,6 @@ admin.get('/v1/admin/lessons', async (c) => {
   return c.json(lessons);
 });
 
-// GET /v1/admin/lessons/:lessonId
 admin.get('/v1/admin/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
@@ -1198,7 +1173,6 @@ admin.get('/v1/admin/lessons/:lessonId', async (c) => {
   return c.json({ lessonId, ...item.data, updatedAt: item.updatedAt });
 });
 
-// PUT /v1/admin/lessons/:lessonId
 admin.put('/v1/admin/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const body = await c.req.json();
@@ -1349,7 +1323,6 @@ admin.put('/v1/admin/lessons/:lessonId/conversation', async (c) => {
   return c.json({ ok: true });
 });
 
-// DELETE /v1/admin/lessons/:lessonId
 admin.delete('/v1/admin/lessons/:lessonId', async (c) => {
   const lessonId = c.req.param('lessonId');
   const item = await db.getSyncData('_system', `lesson:${lessonId}`);
@@ -1384,7 +1357,6 @@ registerNotificationRoutes(admin);
 // Routes and rules live in routes/admin-hierarchy.js and lib/hierarchy.js.
 registerHierarchyRoutes(admin);
 
-// GET /v1/admin/knowledge-base
 admin.get('/v1/admin/knowledge-base', async (c) => {
   const item = await db.getSyncData('_system', 'knowledgeBase');
   const data = item?.data || {};
@@ -1402,7 +1374,6 @@ admin.get('/v1/admin/knowledge-base', async (c) => {
   });
 });
 
-// PUT /v1/admin/knowledge-base
 admin.put('/v1/admin/knowledge-base', async (c) => {
   const body = await c.req.json();
   if (body.content === undefined) return c.json({ error: 'content is required' }, 400);
@@ -1431,7 +1402,6 @@ admin.put('/v1/admin/knowledge-base/conversation', async (c) => {
   return c.json({ ok: true });
 });
 
-// GET /v1/admin/theme
 admin.get('/v1/admin/theme', async (c) => {
   const item = await db.getSyncData('_system', 'settings');
   const settings = item?.data || {};
@@ -1442,7 +1412,6 @@ admin.get('/v1/admin/theme', async (c) => {
   });
 });
 
-// PUT /v1/admin/theme
 admin.put('/v1/admin/theme', async (c) => {
   const body = await c.req.json();
   const current = await db.getSyncData('_system', 'settings');
@@ -1476,7 +1445,6 @@ admin.get('/v1/admin/plugins', async (c) => {
   }));
 });
 
-// PUT /v1/admin/plugins/:id/activation — enable/disable a plugin.
 admin.put('/v1/admin/plugins/:id/activation', async (c) => {
   await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
@@ -1528,7 +1496,6 @@ admin.post('/v1/admin/plugins/:id/uninstall-data', async (c) => {
   return c.json({ ok: true });
 });
 
-// PUT /v1/admin/plugins/:id/settings — update plugin settings.
 admin.put('/v1/admin/plugins/:id/settings', async (c) => {
   await pluginRegistry.sync(); // this container's copy can be older than the stored record
   const id = c.req.param('id');
@@ -1767,7 +1734,6 @@ admin.get('/v1/admin/users/:userId/stats', async (c) => {
   const daysParam = parseInt(url.searchParams.get('days') || '30', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 365 ? daysParam : 30;
 
-  // Lesson name lookup
   const systemItems = await db.getAllSyncData('_system');
   const publicIds = publicLessonIds(systemItems);
   const lessonNames = new Map();
@@ -1879,7 +1845,6 @@ admin.get('/v1/admin/logs', async (c) => {
     .map((e) => ({ ...e, source: [...sourcesByLogId.get(e.logId)].join('+') }))
     .sort((a, b) => b.ts.localeCompare(a.ts));
 
-  // Build groups across both sources.
   const groups = new Map();
   for (const e of entries) {
     const srcSet = sourcesByLogId.get(e.logId);

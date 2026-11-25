@@ -104,12 +104,10 @@ auth.post('/v1/auth/setup', async (c) => {
   // logged inside emit() — never bubble up to the user-facing request.
   await emitHook('userCreated', { userId, email: email.toLowerCase(), role: 'admin' });
 
-  // Seed default prompts and lessons
   try { await seedDefaultContent(); } catch (e) {
     console.error('Content seed failed (non-fatal):', e.message);
   }
 
-  // Save classroom name if provided
   if (classroomName?.trim()) {
     try {
       const current = await db.getSyncData('_system', 'settings');
@@ -188,7 +186,6 @@ auth.post('/v1/auth/signup', async (c) => {
     return c.json({ error: 'Invalid or expired invite' }, 400);
   }
 
-  // Determine the email based on invite type
   let userEmail;
   if (invite.email) {
     // Email-specific invite: email must match if provided (for backwards compat, providedEmail is optional)
@@ -284,13 +281,11 @@ auth.post('/v1/auth/signup', async (c) => {
 
   // Mark invite as used after successful user creation
   if (invite.isLink) {
-    // Check if we should mark the invite as used (maxUsages reached)
     const updated = await db.getInvite(inviteToken);
     if (updated.maxUsages && updated.usageCount >= updated.maxUsages) {
       await db.markInviteUsed(inviteToken);
     }
   } else {
-    // Email-specific invites are marked as used immediately
     await db.markInviteUsed(inviteToken);
   }
 
@@ -303,7 +298,6 @@ auth.post('/v1/auth/signup', async (c) => {
   }, 201);
 });
 
-// POST /v1/auth/login
 auth.post('/v1/auth/login', async (c) => {
   if (limited(c, 'login')) return c.json(TOO_MANY, 429);
   const body = await readJson(c);
@@ -314,7 +308,6 @@ auth.post('/v1/auth/login', async (c) => {
     return c.json({ error: 'Email/username and password are required' }, 400);
   }
 
-  // If the identifier contains @, look up by email; otherwise by username
   const user = email.includes('@')
     ? await db.getUserByEmail(email)
     : await db.getUserByUsername(email);
@@ -381,7 +374,6 @@ auth.post('/v1/auth/refresh', async (c) => {
   return c.json({ accessToken: result.accessToken, refreshToken: result.refreshToken });
 });
 
-// POST /v1/auth/logout
 auth.post('/v1/auth/logout', async (c) => {
   const body = await readJson(c);
   if (typeof body?.refreshToken === 'string' && body.refreshToken) {

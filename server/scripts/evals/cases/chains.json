@@ -1,0 +1,41 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 15.",
+ "cases": [
+  {
+   "id": "H1",
+   "chain": "design",
+   "title": "Design to teaching: L12 with a link and a code, through the Lesson Extractor, Lesson Owner and Coach",
+   "trials": 5
+  },
+  {
+   "id": "H2",
+   "chain": "profile",
+   "title": "Lesson to profile to next lesson: “a beginner on a Chromebook”",
+   "trials": 5
+  },
+  {
+   "id": "H3",
+   "chain": "unit",
+   "title": "Unit memory: the unit note reaches the next lesson, and stays out of one it doesn’t fit",
+   "trials": 5
+  },
+  {
+   "id": "H4",
+   "chain": "removedNote",
+   "title": "A note the learner removes stops shaping the next lesson",
+   "trials": 5
+  },
+  {
+   "id": "H5",
+   "chain": "trick",
+   "title": "A claimed admin approval fails end to end",
+   "trials": 5
+  },
+  {
+   "id": "H6",
+   "chain": "program",
+   "title": "Program description to Coach: office hours, and a fact it doesn’t give",
+   "trials": 5
+  }
+ ]
+}

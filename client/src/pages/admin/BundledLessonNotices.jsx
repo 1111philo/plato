@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
@@ -76,7 +77,7 @@ export default function BundledLessonNotices({ onChanged, onMessage }) {
         {toPublish.length > 0 && (
           <li className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
             <p>
-              The <strong>Getting Started with plato</strong> course was added to show learners how plato works:{' '}
+              The <strong>Getting Started with <Brand /></strong> course was added to show learners how <Brand /> works:{' '}
               {listed}. {toPublish.length === 1 ? 'It’s' : 'They’re'} private until you publish {toPublish.length === 1 ? 'it' : 'them'}.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -89,7 +90,7 @@ export default function BundledLessonNotices({ onChanged, onMessage }) {
         {updates.map((item) => (
           <li key={item.lessonId} className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
             <p>
-              <strong>{item.name}</strong> has an update from plato. Your copy was edited, so it wasn&rsquo;t changed.
+              <strong>{item.name}</strong> has an update from <Brand />. Your copy was edited, so it wasn&rsquo;t changed.
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => setViewing(item)}>View update</Button>

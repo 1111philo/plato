@@ -1,6 +1,6 @@
-# plato Automation — CI/CD & agentic workflows
+# **plato** Automation — CI/CD & agentic workflows
 
-How plato's GitHub Actions ecosystem works: the agentic workflows (pilot,
+How **plato**'s GitHub Actions ecosystem works: the agentic workflows (pilot,
 intake, review, revise), the data-loss alarm, deploy dispatch, branch
 protection, and versioning. For the *error-reporting* side of monitoring (tiers,
 how to add a detector), see [`OBSERVABILITY.md`](OBSERVABILITY.md) — this doc
@@ -17,7 +17,7 @@ via `--model` in `claude_args` to Bedrock cross-region inference profiles:
 `us.anthropic.claude-sonnet-4-5-20250929-v1:0` for review/pilot,
 `us.anthropic.claude-haiku-4-5-20251001-v1:0` for intake/revise. The role is
 `arn:aws:iam::380610849750:role/plato-gha-bedrock-agents` (the dase account,
-same as prod plato), trusted for `pull_request` and `main` only and allowed only
+same as prod **plato**), trusted for `pull_request` and `main` only and allowed only
 these two models. Each workflow sets its own `role-session-name`
 (`plato-<workflow>`), so Bedrock invocation logs and CloudTrail show which
 workflow spent what. These calls count toward the Agentic Development budget. Bedrock cross-region inference profiles route across
@@ -83,7 +83,7 @@ tightening, `extendedLessons` is informational only.
 
 ## log-watch (`log-watch.yml`)
 
-Runs every 2 hours — plato's **data-loss alarm**, separate from the pilot.
+Runs every 2 hours — **plato**'s **data-loss alarm**, separate from the pilot.
 `scripts/log-watch.js` logs into the admin API, reads
 `GET /v1/admin/logs?view=groups`, and if any `unhandled_error` group's sample is
 a `PUT`/`POST` to `/v1/sync` (a learner-data write failing server-side) it opens
@@ -164,6 +164,24 @@ Node 24 to match the Lambda runtime.
   WCAG 2.1 A/AA violation on any page or dialog, or a broken keyboard flow.
   On failure the Playwright report is uploaded as an artifact.
 
+## Agent evaluations (`agent-evals.yml`, `.githooks/pre-push`)
+
+The tests in `docs/AGENT_EVALS.md` run against the real model (Bedrock, us-east-2). Built in `server/scripts/evals/`; see its README.
+
+**They run automatically, on the developer's machine.** `npm install` in `server/` sets `core.hooksPath` to `.githooks/`. The pre-push hook:
+- works out whether the push changes anything the evaluations cover (the coverage map, `server/scripts/evals/lib/watch.js`: prompts, prompt assembly, the orchestrator, the lesson engine and assessment, authoring and profile code, constants, `converse.js`, `ai-provider.js`, the harness);
+- if it does and there are no passing results for the commit, runs the affected agents (every agent, at full level, when pushing `playground`), commits the results to `evals/`, and asks for a second push;
+- stops the push on a failure.
+
+It uses the developer's AWS login. `EVAL_SKIP=1 git push` skips it once.
+
+**The check, `agent-evals.yml`, on every PR, never calls the model.**
+- It recomputes the version fingerprint (git blob ids of the covered files at the PR's head).
+- It fails unless `evals/results/<fingerprint>-<level>.json` exists, passed, and covers the affected agents.
+- A PR into `main` needs the full level, every agent.
+
+GitHub Actions can't call the model (`plato-gha-bedrock-agents` allows only two Claude models), so nothing here needed an IAM change. `agent-evals` is a required check on `main` and `playground` (Blake, 2026-11-24; below), so a PR that changes what the evaluations cover can't merge without passing results for its exact version.
+
 ## Deploy dispatch & environments
 
 Deploy workflows live only in the private fork (UIC-OSF/plato-deploy),
@@ -225,7 +243,12 @@ For the full deploy procedure, SSM parameters, and backup layers, see
 
 `main` and `playground` are ruleset-protected (Settings → Rules → Rulesets →
 "Protect main and playground"): required PR + 1 approving review + passing
-`review` status check from the Code Review workflow; no force pushes; no deletion.
+`review` status check from the Code Review workflow + passing `agent-evals`
+(the agent evaluations' check, `.github/workflows/agent-evals.yml`: it passes
+on any PR that doesn't change what the evaluations cover); no force pushes;
+no deletion. A PR from a branch without that workflow file never reports
+`agent-evals`, so until the harness is on a branch's base, merge with the
+admin bypass.
 
 **Bypass mode**: "Pull requests only" — repository admins **cannot push directly**
 to protected branches (even for emergencies), but can merge PRs without waiting
@@ -236,6 +259,7 @@ This ensures every change to production:
 - Goes through a PR (no direct pushes)
 - Gets code-reviewed by the Bedrock workflow
 - Runs the full CI suite (lint, tests, CodeQL)
+- Carries passing agent evaluations when it changes a prompt, prompt assembly, the lesson engine or the model
 
 ### Emergency hotfix procedure
 

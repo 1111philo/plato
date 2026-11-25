@@ -54,7 +54,7 @@ export function emailWrapper(classroom, body, footer = '') {
         ${body}
         ${footer}
         <p style="color: #999; font-size: 11px; line-height: 1.5; margin: 24px 0 0; text-align: center;">
-          Powered by <a href="https://github.com/1111philo/plato" style="color: #999; text-decoration: underline;">plato</a>.
+          Powered by <a href="https://github.com/1111philo/plato" style="color: #999; text-decoration: underline;"><strong>plato</strong></a>.
         </p>
       </div>
     </div>

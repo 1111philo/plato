@@ -1,8 +1,3 @@
-/**
- * Lesson Owner — loads lesson prompts from markdown files
- * and parses their structure.
- */
-
 import { authenticatedFetch } from './auth.js';
 import { getUserLessons } from './storage.js';
 import { sortLessons } from '../src/lib/lessonOrder.js';
@@ -27,13 +22,10 @@ export async function loadLessons() {
         // #451 scale review: not the whole catalog's markdown); an older
         // server still sends `markdown`.
         if (lesson.parsed || lesson.markdown) {
-          // parseLessonPrompt only knows about fields encoded inside the
-          // markdown (name, description, exemplar, objectives). Top-level
-          // server fields need to be carried forward explicitly so they
-          // survive into the client-side lesson model used by the classroom
-          // UI and the coach context builder: `unit` and `program` (the
-          // Course → Unit → Lesson placement and order, #408) and the legacy
-          // `course` block, which is the unit.
+          // parseLessonPrompt only knows the fields inside the markdown, so
+          // top-level server fields are carried forward here: `unit` and
+          // `program` (Course → Unit → Lesson placement and order, #408) and
+          // the legacy `course` block, which is the unit.
           const parsed = lesson.parsed
             ? { lessonId: lesson.lessonId, ...lesson.parsed }
             : parseLessonPrompt(lesson.lessonId, lesson.markdown);
@@ -41,6 +33,9 @@ export async function loadLessons() {
           if (lesson.unit) parsed.unit = lesson.unit;
           if (lesson.program) parsed.program = lesson.program;
           if (lesson.startHere) parsed.startHere = true; // bundled orientation (#443)
+          // When the lesson was last edited: a Trace shows it, so a lesson
+          // changed after someone started it can be told apart.
+          if (lesson.updatedAt) parsed.updatedAt = lesson.updatedAt;
           lessons.push(parsed);
         }
       }
@@ -61,7 +56,6 @@ export async function loadLessons() {
   return lessonsCache;
 }
 
-/** Clear the cache so loadLessons() re-fetches on next call. */
 export function invalidateLessonsCache() {
   lessonsCache = null;
 }
@@ -80,9 +74,8 @@ export async function getLessonsInCourse(courseId) {
     .map(l => ({ name: l.name, description: l.description }));
 }
 
-/**
- * Parse a lesson prompt markdown file into structured data.
- */
+const EMPTY_DIRECTIVE = /^[\s*_(]*(none|n\/a|na|no|nothing|not applicable|no (coach )?(instructions|directive)( given)?|-+|—)[\s.*_)]*$/i;
+
 export function parseLessonPrompt(lessonId, markdown) {
   const lines = markdown.split('\n');
   let name = '';
@@ -134,6 +127,10 @@ export function parseLessonPrompt(lessonId, markdown) {
   flushSection();
 
   const parsed = { lessonId, name, description, exemplar, learningObjectives: objectives };
-  if (coachDirective) parsed.coachDirective = coachDirective;
+  // "None" isn't an instruction: the Lesson Extractor sometimes writes the
+  // heading with "None" under it instead of leaving it out (agent
+  // evaluations X1, X4), and the coach would get "None" as the author's
+  // directive.
+  if (coachDirective && !EMPTY_DIRECTIVE.test(coachDirective)) parsed.coachDirective = coachDirective;
   return parsed;
 }

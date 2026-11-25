@@ -1,0 +1,482 @@
+/**
+ * The Trace (#595), conversation first: a list of the exchanges with what
+ * plato did across all of them, and one exchange at a time.
+ *
+ * An exchange reads top to bottom: what you sent and saw, who decided, where
+ * plato stepped in (only when it did), then "Every step", folded away, in
+ * stages. A repeat reader sees what happened; a first-time reader opens "ⓘ"
+ * for what each part means. Shown in the lesson panel's Trace tab
+ * (TraceContent.jsx).
+ *
+ * `view` is lib/traceView.js describeTrace(...). Exact text is always in a
+ * <pre>, never rendered as markdown: it includes model output and text from
+ * web pages a learner attached.
+ */
+import { Brand, BrandText } from '../Brand.jsx';
+import { useEffect, useRef, useState } from 'react';
+import ChevronLeft from 'lucide-react/dist/esm/icons/chevron-left';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right';
+import TriangleAlert from 'lucide-react/dist/esm/icons/triangle-alert';
+import ListFilter from 'lucide-react/dist/esm/icons/list-filter';
+import X from 'lucide-react/dist/esm/icons/x';
+import { Button } from '@/components/ui/button';
+import { SOURCES } from '../../lib/transparency.js';
+import Explain from './Explain.jsx';
+
+const SOURCE_STYLE = {
+  model: 'border-sky-700 text-sky-900 dark:border-sky-400 dark:text-sky-200',
+  instructions: 'border-violet-700 text-violet-900 dark:border-violet-400 dark:text-violet-200',
+  code: 'border-amber-700 text-amber-900 dark:border-amber-400 dark:text-amber-200',
+  person: 'border-emerald-700 text-emerald-900 dark:border-emerald-400 dark:text-emerald-200',
+};
+
+/** Who decided: always text, with a border colour as a second cue. */
+function Source({ source, label }) {
+  return <span className={`inline-block shrink-0 rounded-sm border px-1.5 py-0.5 text-[0.6875rem] leading-none font-medium ${SOURCE_STYLE[source] || ''}`}>{label}</span>;
+}
+
+const focusRing = 'rounded-sm focus-visible:outline-2 focus-visible:outline-ring';
+const summaryClass = `cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground ${focusRing}`;
+const preClass = 'mt-1 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] rounded-sm bg-muted p-2 text-xs leading-relaxed';
+
+// Sentence case, but "plato" stays lowercase (the brand).
+const capital = (t) => (!t || /^plato/.test(t) ? t : t[0].toUpperCase() + t.slice(1));
+
+function when(at) {
+  try { return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); } catch { return ''; }
+}
+const secs = (ms) => (ms == null ? null : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
+
+/**
+ * What you sent and what you saw, as the chat shows them: your message in its
+ * bubble, the coach's reply as plain text. Plain text, never markdown (it is
+ * model output). A long reply shows its start, with the rest one click away.
+ */
+function ChatQuote({ who, text }) {
+  const [all, setAll] = useState(false);
+  const long = text.length > 420;
+  if (who === 'you') {
+    return (
+      <div className="flex justify-end">
+        <p className="max-w-[90%] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm text-primary-foreground">
+          <span className="sr-only">You sent: </span><BrandText>{text}</BrandText>
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className={`whitespace-pre-wrap [overflow-wrap:anywhere] font-serif text-sm leading-relaxed ${long && !all ? 'line-clamp-5' : ''}`}>
+        <span className="sr-only">You saw: </span><BrandText>{text}</BrandText>
+      </p>
+      {long && (
+        <button type="button" aria-expanded={all} onClick={() => setAll((a) => !a)} className={`mt-1 text-xs text-primary hover:underline ${focusRing}`}>
+          {all ? 'Show less' : 'Show the whole reply'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The exact text behind a step, behind one disclosure. */
+function ExactText({ details }) {
+  if (!details.length) return null;
+  return (
+    <details className="mt-1">
+      <summary className={summaryClass}>Show the exact text ({details.length})</summary>
+      <div className="mt-1 space-y-2 border-l-2 border-muted pl-2">
+        {details.map((d, i) => (
+          <details key={i}>
+            <summary className={summaryClass}><BrandText>{d.label}</BrandText></summary>
+            {d.note && <p className="mt-1 text-xs text-muted-foreground"><BrandText>{d.note}</BrandText></p>}
+            <pre className={preClass}>{d.text}</pre>
+          </details>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+const NOTE_STYLE = {
+  changed: { box: 'border-amber-700 bg-amber-50 dark:border-amber-400 dark:bg-amber-950', label: 'plato stepped in' },
+  problem: { box: 'border-red-700 bg-red-50 dark:border-red-400 dark:bg-red-950', label: 'Something went wrong' },
+};
+
+function Note({ note }) {
+  const style = NOTE_STYLE[note.kind] || NOTE_STYLE.changed;
+  return (
+    <p className={`flex items-start gap-1.5 rounded-sm border-l-4 px-2 py-1 ${style.box}`}>
+      <TriangleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+      <span><span className="font-medium"><BrandText>{style.label}</BrandText>:</span> <BrandText>{note.text}</BrandText></span>
+    </p>
+  );
+}
+
+const FIELD_NAME = { purpose: 'what the agent is for', runs: 'when it runs', reads: 'what it’s given', returns: 'what it sends back' };
+
+/** Who an agent is, from the header its call recorded. */
+function AgentCard({ info }) {
+  const rows = [['When it runs', info.runs], ['What it’s given', info.reads?.join('; ')], ['What it sends back', info.returns?.join('; ')]].filter(([, v]) => v);
+  return (
+    <Explain text label={`Who is the ${info.name}?`}>
+      <p>{info.purpose}</p>
+      {rows.length > 0 && (
+        <dl className="mt-1 space-y-0.5">
+          {rows.map(([k, v]) => <div key={k}><dt className="inline font-medium text-foreground">{k}: </dt><dd className="inline"><BrandText>{v}</BrandText></dd></div>)}
+        </dl>
+      )}
+      <p className="mt-1 italic">
+        <BrandText>{info.from === 'file' ? `From the ${info.name}’s prompt file at the time. plato doesn’t send this description to the model.`
+          : info.from === 'sent' ? 'From the instructions this call sent.'
+            : 'Today’s description: this trace didn’t record one.'}</BrandText>
+        {info.from && info.fromToday?.length ? ` It didn’t say ${info.fromToday.map((k) => FIELD_NAME[k]).join(' or ')}; that is today’s description.` : ''}
+      </p>
+    </Explain>
+  );
+}
+
+/** One step: a line that opens to what it did and the exact text. */
+function Step({ step, id }) {
+  return (
+    <li id={id}>
+      <details>
+        <summary className={`cursor-pointer ${focusRing}`}>
+          <span className="font-medium"><BrandText>{step.title}</BrandText></span>{' '}
+          <Source source={step.source} label={step.sourceLabel} />
+          {step.note && <span className="sr-only"> ({NOTE_STYLE[step.note.kind]?.label})</span>}
+          {step.note && <TriangleAlert aria-hidden="true" className="ml-1 inline size-3.5 text-amber-700 dark:text-amber-400" />}
+          {step.at != null && <span className="ml-2 text-xs text-muted-foreground">at {secs(step.at)}{step.took != null ? ` · took ${secs(step.took)}` : ''}</span>}
+        </summary>
+        <div className="mt-1 space-y-1 border-l-2 border-muted pl-2">
+          {step.note && <Note note={step.note} />}
+          <div className="flex flex-wrap items-start gap-1">
+            <p className="min-w-0 flex-1"><BrandText>{step.summary}</BrandText></p>
+            {step.means && <Explain label={`What is this: ${step.title}`}><BrandText>{step.means}</BrandText></Explain>}
+          </div>
+          {step.agentInfo && step.part === 'request' && <div className="flex flex-wrap"><AgentCard info={step.agentInfo} /></div>}
+          {step.hint && <p className="text-xs text-muted-foreground">{step.hint}</p>}
+          {step.rules.length > 0 && (
+            <ul className="list-disc space-y-1 pl-5">
+              {step.rules.map((r) => <li key={r.id}><span className="font-medium">Rule:</span> <BrandText>{r.text}</BrandText></li>)}
+            </ul>
+          )}
+          {step.change && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium">Before</p><pre className={preClass}>{step.change.before}</pre>
+              <p className="text-xs font-medium">After</p><pre className={preClass}>{step.change.after}</pre>
+            </div>
+          )}
+          <ExactText details={step.details} />
+        </div>
+      </details>
+    </li>
+  );
+}
+
+const stepId = (e, n) => `trace-x-${e.id}-step-${n}`;
+
+/** A check: its question and answer in one line; it opens for the steps behind it, and starts open when it found something. */
+function Check({ check, e }) {
+  const all = [check.answer, ...check.steps];
+  return (
+    <li>
+      <details open={all.some((s) => s.note)}>
+        <summary className={`cursor-pointer ${focusRing}`}>
+          <span className="font-medium"><BrandText>{check.title}</BrandText></span>{' '}
+          <span className="text-muted-foreground"><BrandText>{check.answer.summary}</BrandText></span>
+        </summary>
+        <div className="mt-1 space-y-1 border-l-2 border-muted pl-2">
+          {check.means && <p className="text-xs text-muted-foreground"><BrandText>{check.means}</BrandText></p>}
+          <ul className="space-y-2">{all.map((s) => <Step key={s.n} step={s} id={stepId(e, s.n)} />)}</ul>
+        </div>
+      </details>
+    </li>
+  );
+}
+
+function Stage({ stage, e }) {
+  return (
+    <li className="space-y-1.5">
+      <h5 className="flex flex-wrap items-center gap-1 font-semibold">
+        <BrandText>{stage.title}</BrandText>
+        {stage.means && <Explain label={`What is this stage: ${stage.title}`}><BrandText>{stage.means}</BrandText></Explain>}
+      </h5>
+      <ul className="space-y-2 border-l-2 border-muted pl-3">
+        {stage.checks
+          ? stage.checks.map((c) => <Check key={c.id} check={c} e={e} />)
+          : stage.steps.map((s) => <Step key={s.n} step={s} id={stepId(e, s.n)} />)}
+        {(stage.followups || []).map((f, i) => (
+          <li key={`f${i}`} className="space-y-1">
+            <p><span className="font-medium"><BrandText>{f.title}</BrandText></span>{f.why ? ` ran because ${f.why}.` : ''}{f.failed ? ' It failed.' : ''}</p>
+            <ul className="space-y-2 border-l-2 border-muted pl-3">{f.steps.map((s) => <Step key={s.n} step={s} id={stepId(e, s.n)} />)}</ul>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
+function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
+  const stepsRef = useRef(null);
+  // "Show this step": open "Every step", then the step (and any check around
+  // it), and take focus there.
+  const goTo = (n) => {
+    if (stepsRef.current) stepsRef.current.open = true;
+    requestAnimationFrame(() => {
+      const li = document.getElementById(stepId(e, n));
+      if (!li) return;
+      for (let d = li.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+      const own = li.querySelector('details');
+      if (own) own.open = true;
+      li.querySelector('summary')?.focus();
+      li.scrollIntoView?.({ block: 'center' });
+    });
+  };
+  const count = e.stages.reduce((n, st) => n + st.steps.length + (st.followups || []).reduce((m, f) => m + f.steps.length, 0), 0);
+  return (
+    <article className="space-y-3" aria-labelledby={`trace-x-${e.id}`}>
+      {/* Stays at the top of the panel while an exchange scrolls. */}
+      <nav aria-label="Exchanges" className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-stone-50 py-2 dark:bg-stone-950">
+        <Button variant="outline" size="sm" onClick={onBack}>
+          <ChevronLeft aria-hidden="true" className="size-4" /> All exchanges
+        </Button>
+        <span className="ml-auto" />
+        <Button variant="ghost" size="sm" onClick={onPrev} disabled={!onPrev} aria-label="Previous exchange">
+          <ChevronLeft aria-hidden="true" className="size-4" /> Previous
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onNext} disabled={!onNext} aria-label="Next exchange">
+          Next <ChevronRight aria-hidden="true" className="size-4" />
+        </Button>
+      </nav>
+
+      <h3 id={`trace-x-${e.id}`} ref={headingRef} tabIndex={-1} className={`scroll-mt-14 text-base font-semibold ${focusRing}`}>
+        {e.kind === 'start' ? 'Lesson start' : `Exchange ${e.n} of ${total}`}{' '}
+        <span className="font-normal text-muted-foreground">· {when(e.at)}{e.took != null ? ` · took ${secs(e.took)} in all` : ''}</span>
+      </h3>
+      {e.kind !== 'turn' && e.kind !== 'start' && <p className="-mt-2"><BrandText>{e.title}</BrandText></p>}
+
+      {/* The exchange as it looked in the chat. */}
+      {((e.you != null && e.you !== '') || (e.saw != null && e.saw !== '')) && (
+        <div className="space-y-2 rounded-md border border-border bg-background p-3">
+          {e.you != null && e.you !== '' && <ChatQuote who="you" text={e.you} />}
+          {e.saw != null && e.saw !== '' && <ChatQuote who="coach" text={e.saw} />}
+          {e.firstSeen && (
+            <details className="mt-1">
+              <summary className={summaryClass}><BrandText>{e.firstSeenLive ? 'A different reply appeared first, then plato replaced it' : 'The model’s first reply, which plato replaced before you saw it'}</BrandText></summary>
+              <pre className={preClass}>{e.firstSeen}</pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-baseline gap-2">
+        <Source source={e.verdict.source} label={e.verdict.sourceLabel} />
+        {/* With "Where plato stepped in" below, the verdict's first sentence is enough. */}
+        <p className="min-w-0 flex-1"><BrandText>{`${e.headline ? `${e.headline}. ` : ''}${e.interventions.length ? e.verdict.lead : e.verdict.text}`}</BrandText></p>
+        <Explain label="What do these labels mean?">
+          <ul className="space-y-0.5">{Object.values(SOURCES).map((x) => <li key={x.label}><span className="font-medium text-foreground">{x.label}:</span> {x.means}</li>)}</ul>
+        </Explain>
+      </div>
+
+      {e.interventions.length > 0 && (
+        <section aria-labelledby={`trace-x-${e.id}-in`} className="space-y-1">
+          <h4 id={`trace-x-${e.id}-in`} className="font-semibold">Where <Brand /> stepped in</h4>
+          <ul className="space-y-1">
+            {e.interventions.map((x, i) => (
+              <li key={i} className={`flex flex-wrap items-baseline gap-x-2 rounded-sm border-l-4 px-2 py-1 ${NOTE_STYLE[x.kind]?.box || ''}`}>
+                <span className="sr-only">{NOTE_STYLE[x.kind]?.label}: </span>
+                <span className="min-w-0 flex-1">{capital(x.text)}</span>
+                <button type="button" className={`text-xs text-primary hover:underline ${focusRing}`} onClick={() => goTo(x.n)}>Show this step</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <details ref={stepsRef} className="rounded-md border border-border bg-background px-2 py-1.5">
+        <summary className={`cursor-pointer font-semibold ${focusRing}`}>Every step ({count})</summary>
+        <p className="mt-1 text-xs text-muted-foreground">Times are counted from when {e.kind === 'start' ? 'the lesson started' : e.kind === 'turn' ? 'you sent the message' : 'this began'}.</p>
+        <ol className="mt-2 space-y-4">{e.stages.map((st) => <Stage key={st.id} stage={st} e={e} />)}</ol>
+      </details>
+    </article>
+  );
+}
+
+function Row({ exchange: e, onOpen, buttonRef }) {
+  return (
+    <li>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={onOpen}
+        className={`w-full rounded-md border border-border bg-background p-2 text-left hover:bg-muted ${focusRing}`}
+      >
+        <span className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">{e.n}. <BrandText>{e.title}</BrandText></span>
+          <span className="shrink-0 text-xs text-muted-foreground">{when(e.at)}</span>
+        </span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">
+          {[e.headline, e.verdict.short].filter(Boolean).join(' · ')}
+        </span>
+        {e.wentWrong && (
+          <span className="mt-1 flex items-center gap-1 text-xs font-medium text-red-800 dark:text-red-300">
+            <TriangleAlert aria-hidden="true" className="size-3.5" /> Something went wrong
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+/**
+ * What plato did across the conversation. Each line is a filter: it shows
+ * only the exchanges it counts, says so on the line ("Showing"), and the list
+ * below says what it's narrowed to.
+ */
+function Summary({ summary, filter, setFilter }) {
+  if (!summary?.items?.length) return null;
+  return (
+    <section aria-labelledby="trace-summary" className="space-y-1.5">
+      <h3 id="trace-summary" className="font-semibold">{summary.exchanges === 1 ? 'In this exchange' : `Across ${summary.exchanges} exchanges`}, <Brand />…</h3>
+      <ul className="space-y-1.5">
+        {summary.items.map((it) => {
+          const on = filter === it.id;
+          return (
+            <li key={it.id}>
+              <button type="button" aria-pressed={on} onClick={() => setFilter(on ? null : it.id)}
+                className={`flex w-full items-start gap-2 rounded-md border px-2 py-1.5 text-left ${on ? 'border-primary bg-primary/10' : 'border-border bg-background hover:bg-muted'} ${focusRing}`}>
+                <span className="min-w-0 flex-1"><BrandText>{it.text}</BrandText></span>
+                <span className={`flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs font-medium ${on ? 'bg-primary text-primary-foreground' : 'text-primary'}`}>
+                  <ListFilter aria-hidden="true" className="size-3.5" />
+                  {on ? 'Showing' : `Show ${it.exchanges.length === 1 ? 'it' : `these ${it.exchanges.length}`}`}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * @param {object} p
+ * @param {object} p.view      describeTrace(...) result
+ * @param {boolean} p.loading
+ * @param {string[]} p.live    titles of steps of an exchange happening now
+ * @param {number} [p.focusAt] a message's timestamp: open the exchange that produced it
+ * @param {object} [p.stamp]   lessonKB.trace
+ * @param {boolean} [p.recording] Trace is recording this conversation now
+ * @param {string} [p.scope]   to remember the exchange last open, for the session
+ */
+export default function TraceTimeline({ view, loading, live = [], focusAt, stamp, recording, scope }) {
+  const memory = scope ? `plato-trace-open:${scope}` : null;
+  const [openId, setOpenId] = useState(() => {
+    try { return memory ? Number(sessionStorage.getItem(memory)) || null : null; } catch { return null; }
+  });
+  const [filter, setFilter] = useState(null);
+  const heading = useRef(null);
+  const rows = useRef(new Map());
+  const exchanges = view?.exchanges || [];
+  const index = exchanges.findIndex((x) => x.id === openId);
+  const open = index >= 0 ? exchanges[index] : null;
+
+  useEffect(() => {
+    if (!memory) return;
+    try { if (openId) sessionStorage.setItem(memory, String(openId)); else sessionStorage.removeItem(memory); } catch { /* storage unavailable */ }
+  }, [memory, openId]);
+
+  // Where focus goes after the view changes: the exchange's heading, or the
+  // row of the exchange just left. Two frames, after the view has rendered:
+  // the row clicked has gone, and a dialog's own focus handling reacts first.
+  const [focusTarget, setFocusTarget] = useState(null);
+  useEffect(() => {
+    if (!focusTarget) return undefined;
+    let cancelled = false;
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (cancelled) return;
+      if (focusTarget.kind === 'heading') {
+        heading.current?.closest('[role=tabpanel],[role=region]')?.scrollTo?.({ top: 0 });
+        heading.current?.focus({ preventScroll: true });
+      } else {
+        rows.current.get(focusTarget.id)?.focus();
+      }
+    }));
+    return () => { cancelled = true; cancelAnimationFrame(id); };
+  }, [focusTarget]);
+  const show = (id) => { setOpenId(id); setFocusTarget({ kind: 'heading', id, at: Date.now() }); };
+  const back = () => { const id = openId; setOpenId(null); setFocusTarget({ kind: 'row', id, at: Date.now() }); };
+
+  // "Open the trace for this reply": the exchange recorded just before that message.
+  useEffect(() => {
+    if (!focusAt || !exchanges.length) return undefined;
+    const target = [...exchanges].reverse().find((x) => x.at <= focusAt) || exchanges[0];
+    const id = requestAnimationFrame(() => show(target.id));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusAt, exchanges.length]);
+
+  if (open) {
+    return (
+      <Exchange
+        key={open.id}
+        exchange={open}
+        total={exchanges.length}
+        headingRef={heading}
+        onBack={back}
+        onPrev={index > 0 ? () => show(exchanges[index - 1].id) : null}
+        onNext={index < exchanges.length - 1 ? () => show(exchanges[index + 1].id) : null}
+      />
+    );
+  }
+
+  const filtering = filter ? view?.summary?.items.find((it) => it.id === filter) || null : null;
+  const narrowed = filtering ? new Set(filtering.exchanges) : null;
+  const listed = narrowed ? exchanges.filter((x) => narrowed.has(x.at)) : exchanges;
+  return (
+    <div className="space-y-4 text-sm">
+      {stamp?.partial && <p>Recording began partway through this lesson. Earlier messages weren’t recorded.</p>}
+      {stamp?.full && <p>This trace is full. Later messages weren’t recorded.</p>}
+      {stamp && !recording && !stamp.full && <p>Recording is off, so new messages aren’t recorded.</p>}
+
+      {live.length > 0 && (
+        <section aria-labelledby="trace-live" className="rounded-md border border-border p-2">
+          <h3 id="trace-live" className="font-semibold">Happening now</h3>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-muted-foreground">
+            {live.map((t, i) => <li key={i}>{t}</li>)}
+          </ol>
+        </section>
+      )}
+
+      <Summary summary={view?.summary} filter={filter} setFilter={setFilter} />
+
+      <section aria-labelledby="trace-exchanges" className="space-y-2">
+        <h3 id="trace-exchanges" className="font-semibold">Exchanges{exchanges.length ? ` (${narrowed ? `${listed.length} of ${exchanges.length}` : exchanges.length})` : ''}</h3>
+        {/* The list says what it's narrowed to, with the way back. */}
+        <div aria-live="polite">
+          {filtering && (
+            <p className="flex flex-wrap items-center gap-2 rounded-md border border-primary bg-primary/10 px-2 py-1.5">
+              <ListFilter aria-hidden="true" className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">Showing {listed.length} of {exchanges.length} exchanges: where <Brand /> <BrandText>{filtering.label || filtering.text}</BrandText>.</span>
+              <Button variant="outline" size="sm" onClick={() => setFilter(null)}>
+                <X aria-hidden="true" className="size-3.5" /> Show all
+              </Button>
+            </p>
+          )}
+        </div>
+        {loading && !exchanges.length && <p className="text-muted-foreground" role="status">Loading…</p>}
+        {!loading && !exchanges.length && <p className="text-muted-foreground">Nothing recorded yet.</p>}
+        <ol className="space-y-2">
+          {listed.map((x) => (
+            <Row key={x.id} exchange={x} onOpen={() => show(x.id)}
+              buttonRef={(el) => { if (el) rows.current.set(x.id, el); else rows.current.delete(x.id); }} />
+          ))}
+        </ol>
+      </section>
+
+      <p className="text-xs text-muted-foreground">
+        A trace is recorded by your browser and saved with your lesson. It explains what happened; it isn’t tamper-proof evidence.
+      </p>
+    </div>
+  );
+}

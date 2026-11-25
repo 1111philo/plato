@@ -1,9 +1,9 @@
 <!--
   AGENT: Course Progress Updater
-  READS: Prior progress summary for the unit, just-completed Lesson KB, the unit's lesson list (via JSON input)
-  DOES NOT READ: Program Knowledge Base, Lesson Catalog
-  CALLED BY: orchestrator.js (updateCourseProgress) — in the background when a learner completes a lesson that belongs to a unit
-  PURPOSE: Maintain a tiny, distilled, per-learner summary of progress across a unit, injected into the coach context for every other lesson in that unit (stored as courseProgress:<unitId>; units were called courses before #408)
+  PURPOSE: Keeps a short note of what the learner has shown across a unit’s lessons, so the Coach in the next lesson knows.
+  RUNS: Once, when a lesson that belongs to a unit is completed.
+  READS: the unit’s earlier note; this lesson’s notes; the unit’s list of lessons
+  RETURNS: the unit note (about 600 characters)
 -->
 You are the Course Progress Updater for plato, an AI-powered microlearning platform.
 

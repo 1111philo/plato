@@ -9,6 +9,7 @@
  * lesson in the course (see lessonEngine.buildContext).
  */
 
+import { tracedFollowUp } from './traceSession.js';
 import { getCourseProgress, saveCourseProgress } from '../../js/storage.js';
 import { getLessonsInCourse } from '../../js/lessonOwner.js';
 import * as orchestrator from '../../js/orchestrator.js';
@@ -56,7 +57,7 @@ export function updateCourseProgressOnCompletionInBackground(lessonKB, lesson) {
   // the persisted completedLessonIds array (defense-in-depth — the caller in
   // lessonEngine already gates on lesson.course?.id).
   if (!courseId || !lesson?.lessonId) return Promise.resolve();
-  return queueCourseProgressUpdate(async () => {
+  return queueCourseProgressUpdate(() => tracedFollowUp(lesson.lessonId, 'course-progress-update', 'the lesson was completed and belongs to a unit', async (trace) => {
     const prior = await getCourseProgress(courseId);
     const lessonsInCourse = await getLessonsInCourse(courseId);
     const completedLesson = {
@@ -70,9 +71,11 @@ export function updateCourseProgressOnCompletionInBackground(lessonKB, lesson) {
       prior?.summary || '',
       completedLesson,
       prior?.completedLessonIds || [],
+      trace ? { trace } : undefined,
     );
     if (!result?.summary) {
       console.error('[plato] Course progress agent returned no summary:', result);
+      trace?.step('unitNoteUnchanged', { why: 'the agent returned no summary, so nothing was saved (this lesson is not added to the unit’s completed list)' });
       return;
     }
     const completedLessonIds = mergeCompletedLessonIds(
@@ -80,11 +83,13 @@ export function updateCourseProgressOnCompletionInBackground(lessonKB, lesson) {
       result.completedLessonIds,
       lesson.lessonId,
     );
-    syncIfUnsaved(await saveCourseProgress(courseId, {
+    const saved = await saveCourseProgress(courseId, {
       courseId,
       summary: result.summary,
       completedLessonIds,
       updatedAt: Date.now(),
-    }), `courseProgress:${courseId}`);
-  });
+    });
+    syncIfUnsaved(saved, `courseProgress:${courseId}`);
+    trace?.step('unitNoteSaved', { call: trace.lastCall(), before: prior?.summary || '', after: result.summary, completedLessonIds, saved });
+  }));
 }

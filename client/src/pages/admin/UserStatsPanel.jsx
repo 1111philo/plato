@@ -47,7 +47,6 @@ export default function UserStatsPanel({ userId }) {
     lessonDurations = [], windowDays,
   } = stats;
 
-  // Format lastActiveAt as relative time
   const formatRelativeTime = (isoString) => {
     if (!isoString) return 'Never';
     const then = new Date(isoString);

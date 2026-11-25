@@ -20,9 +20,9 @@ async function authedReq(app, method, path, body) {
 let excludedPrefixes = [];
 beforeEach(() => {
   excludedPrefixes = [];
-  db.getSyncDataExcept = async (userId, prefix) => {
-    excludedPrefixes.push(prefix);
-    return (await db.getAllSyncData(userId)).filter((i) => !i.dataKey?.startsWith(prefix));
+  db.getSyncDataExcept = async (userId, prefixes) => {
+    excludedPrefixes.push(...[].concat(prefixes));
+    return (await db.getAllSyncData(userId)).filter((i) => ![].concat(prefixes).some((p) => i.dataKey?.startsWith(p)));
   };
 });
 
@@ -79,7 +79,7 @@ describe('GET /v1/sync', () => {
     app.route('/', sync);
     const res = await authedReq(app, 'GET', '/v1/sync');
     assert.equal(res.status, 200);
-    assert.deepEqual(excludedPrefixes, ['screenshot:']);
+    assert.deepEqual(excludedPrefixes, ['screenshot:', 'trace:']);
   });
 });
 
@@ -713,5 +713,68 @@ describe('POST /v1/sync/lesson-started', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.ok(Array.isArray(data.enrichments), 'enrichments must be an array');
+  });
+});
+
+// Trace mode records (docs/ARCHITECTURE.md "Trace mode"): their own keys,
+// out of the bulk load, listed one scope at a time.
+describe('trace:* records', () => {
+  const app = () => { const a = new Hono(); a.route('/', sync); return a; };
+  let stored;
+  beforeEach(() => {
+    stored = [
+      { dataKey: 'profile', data: {}, version: 1, updatedAt: 'x' },
+      { dataKey: 'trace:wp-1:t:1763900000000', data: { steps: [] }, version: 1, updatedAt: 'x' },
+      { dataKey: 'trace:wp-1:p:ab12', data: { text: 'prompt' }, version: 1, updatedAt: 'x' },
+      { dataKey: 'trace:wp-10:t:1763900000001', data: {}, version: 1, updatedAt: 'x' },
+    ];
+    db.getUserById = async (id) => ({ userId: id, role: id === 'usr_admin' ? 'admin' : 'user' });
+    db.getAllSyncData = async () => stored;
+    db.getSyncDataByPrefix = async (_u, prefix) => stored.filter((i) => i.dataKey.startsWith(prefix));
+    db.getSyncData = async () => null;
+    db.putSyncData = async () => ({ version: 1 });
+    db.createAuditLog = async () => {};
+  });
+
+  it('are left out of the bulk GET /v1/sync, at the database and in the reply', async () => {
+    const data = await (await authedReq(app(), 'GET', '/v1/sync')).json();
+    assert.deepEqual(data.map((d) => d.dataKey), ['profile']);
+    assert.ok(excludedPrefixes.includes('trace:'));
+  });
+
+  it('GET /v1/sync?prefix= lists one scope, or one kind within it, and nothing from a longer lesson id', async () => {
+    const all = await (await authedReq(app(), 'GET', '/v1/sync?prefix=trace:wp-1:')).json();
+    assert.deepEqual(all.map((d) => d.dataKey), ['trace:wp-1:t:1763900000000', 'trace:wp-1:p:ab12']);
+    const turns = await (await authedReq(app(), 'GET', '/v1/sync?prefix=trace:wp-1:t:')).json();
+    assert.deepEqual(turns.map((d) => d.dataKey), ['trace:wp-1:t:1763900000000']);
+  });
+
+  it('refuses any other prefix, so the list can’t be used to read messages or other records', async () => {
+    for (const prefix of ['', 'trace:', 'messages:', 'trace:wp-1', 'trace:wp-1:x:', 'userMeta:', 'trace:a b:']) {
+      const res = await authedReq(app(), 'GET', `/v1/sync?prefix=${encodeURIComponent(prefix)}`);
+      assert.equal(res.status, 400, prefix);
+    }
+  });
+
+  it('accepts turn, follow-up and part keys, and refuses malformed ones', async () => {
+    for (const key of ['trace:wp-1:t:1763900000000', 'trace:custom-abc_1:b:1763900000000', 'trace:profile:t:1', 'trace:author-wp-1:p:9f8e7d6c5b4a3210']) {
+      const res = await authedReq(app(), 'PUT', `/v1/sync/${key}`, { data: { a: 1 }, version: 0 });
+      assert.equal(res.status, 200, key);
+    }
+    for (const key of ['trace:wp-1', 'trace:wp-1:x:1', 'trace:wp-1:t:', 'trace::t:1', 'trace:wp-1:t:a.b', 'trace:wp 1:t:1']) {
+      const res = await authedReq(app(), 'PUT', `/v1/sync/${encodeURIComponent(key)}`, { data: { a: 1 }, version: 0 });
+      assert.equal(res.status, 400, key);
+    }
+  });
+
+  it('View as User: an admin lists the learner’s trace; a learner can’t list someone else’s', async () => {
+    let readFor;
+    db.getSyncDataByPrefix = async (u, prefix) => { readFor = u; return stored.filter((i) => i.dataKey.startsWith(prefix)); };
+    const token = await signAccessToken('usr_admin', 'admin');
+    const res = await app().request('/v1/sync?prefix=trace:wp-1:&asUserId=usr_target', { headers: { Authorization: 'Bearer ' + token } });
+    assert.equal(res.status, 200);
+    assert.equal(readFor, 'usr_target');
+    const denied = await authedReq(app(), 'GET', '/v1/sync?prefix=trace:wp-1:&asUserId=usr_target');
+    assert.equal(denied.status, 403);
   });
 });

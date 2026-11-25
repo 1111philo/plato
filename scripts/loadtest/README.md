@@ -10,7 +10,7 @@ on playground are in `docs/RUNBOOK_EVENT_DAY.md` ("Load test").
 | `learners.js` | k6: 0→900 learners signing in over 2 min, loading the classroom, saving a coach turn every 60–90 s, refocusing, refreshing a token; no AI |
 | `ai.js` | k6: real coach streams through `POST /v1/ai/messages` (Bedrock): 50 at once × 3, then 100 at once × 2 (350 calls) |
 | `analyze.mjs` | per-endpoint p50/p95/p99 and status codes from a k6 CSV |
-| `cw.mjs` | the CloudWatch side for the same window: Lambda concurrency, cold starts, throttles; DynamoDB throttles and latency; Bedrock; plato's error codes |
+| `cw.mjs` | the CloudWatch side for the same window: Lambda concurrency, cold starts, throttles; DynamoDB throttles and latency; Bedrock; **plato**'s error codes |
 
 ## Running
 
@@ -46,7 +46,7 @@ that skip CloudFront (`origin_not_verified`, #546).
 
 ## Things to know
 
-- **One machine, one IP.** plato's per-IP sign-in limits (`AUTH_IP_LIMITS`,
+- **One machine, one IP.** **plato**'s per-IP sign-in limits (`AUTH_IP_LIMITS`,
   login 1,000 and refresh 3,000 per 10 minutes) count per Lambda container,
   so 900 sign-ins from one IP stay under them. Prod's CloudFront has a WAF
   rule on `/v1/auth/*` (10,000 per IP per 5 minutes); playground has none.

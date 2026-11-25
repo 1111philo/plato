@@ -1,3 +1,4 @@
+import { BrandText } from '../Brand.jsx';
 import { useState, useRef, useId, useEffect } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
 import { compressImageDataUrl } from '../../lib/imageCompression.js';
@@ -72,7 +73,6 @@ export default function ComposeBar({
   const { state: appState } = useApp();
   const sendKey = sendKeyOf(appState.preferences);
 
-  // Link-attach UI state.
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState('');
   const [fetchingLink, setFetchingLink] = useState(false);
@@ -427,7 +427,7 @@ export default function ComposeBar({
           <div className="flex-1" />
           {!disabled && (
             <span id={hintId} className="text-xs text-muted-foreground px-1 truncate">
-              {sendDisabled ? sendDisabledHint : sendHint(sendKey)}
+              <BrandText>{sendDisabled ? sendDisabledHint : sendHint(sendKey)}</BrandText>
             </span>
           )}
           <Button

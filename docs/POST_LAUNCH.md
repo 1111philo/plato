@@ -6,7 +6,7 @@ delivered part of each issue below. The originals and Milestones 2 and 3 were cl
 
 | Issue | Done in the launch | Left (follow-up issue) |
 |---|---|---|
-| #257 How assessment works | Public `/how-assessment-works` page describing what plato actually does; coach asks for learners' own thinking | The three "To be decided by the program team" policies on the page: AI-assisted work, human review and appeals, what course completion certifies (and each course's competencies, written in that classroom's own content) (#541) |
+| #257 How assessment works | Public `/how-assessment-works` page describing what **plato** actually does; coach asks for learners' own thinking | The three "To be decided by the program team" policies on the page: AI-assisted work, human review and appeals, what course completion certifies (and each course's competencies, written in that classroom's own content) (#541) |
 | #261 Lesson rewrites | Export/apply scripts; drafts for Foundations 1–3 and AI Leadership 1–7 (UIC-OSF/plato-deploy#6) | Review the drafts, compare before/after with an outside reader, apply with `server/scripts/apply-lessons.js`; then the remaining lessons |
 | #385 Admin table columns | Columns dialog (show, hide, reorder; saved per browser) for Users and Lessons; tables scroll instead of clipping | Column resizing (#544) |
 | #414 Originality feedback | Coach asks for personal examples and reasons, never accuses; the "Your work" checklist only counts evidence in the learner's own words | Any separate visual indicator, once the policy in #257 is set (no AI-text detector, per #272) (#542) |
@@ -47,7 +47,7 @@ Valid, but left for after the launch:
 - **Focus-style test pass-throughs:** `focus:ring-0`, `*-transparent`, `shadow-none`, `ring-offset-0`, `.css` files, and class strings that span several lines aren't checked.
 - **Publishing Getting Started lowers dashboard completion rates** (left as is with the decision above) on the day it's published (three new public lessons in every denominator). Consider leaving bundled lessons out of the KPIs, or calling it out in the release notes.
 - **Bundled lessons in future releases** go public automatically when Getting Started lesson 1 is public. Decided 2026-11-10 (Blake): keep this behavior; don't change how Getting Started works.
-- ~~**`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.~~ Done in the pre-event security sprint: `client/js/learnerNoteFilter.js` keeps notes with plato tags, role markers, or English instruction/approval phrases away from the profile agents, and every profile-agent input frames learner text as untrusted (`docs/ARCHITECTURE.md`, learner notes). English phrases only; injections in other languages are still left to the prompts.
+- ~~**`learnerNotes` trust:** learner-written notes go to the profile agents on every update, with only prompt text between them and the summary. A code-level filter, for example dropping notes that read as approvals or instructions, would make this sturdier.~~ Done in the pre-event security sprint: `client/js/learnerNoteFilter.js` keeps notes with **plato** tags, role markers, or English instruction/approval phrases away from the profile agents, and every profile-agent input frames learner text as untrusted (`docs/ARCHITECTURE.md`, learner notes). English phrases only; injections in other languages are still left to the prompts.
 
 ## From the scale review (900 concurrent learners, Nov 7)
 
@@ -71,25 +71,25 @@ Fixed before launch in #515–#521. Left for after:
 
 ## Bounced and complained email addresses (Nov 9)
 
-SES already protects sender reputation: the account has account-level suppression on for bounces and complaints, so SES stops delivering to those addresses (verified 2026-11-09; status HEALTHY; one suppressed address, not plato's). The gap is that **plato doesn't know**: an invite to a suppressed address still says "Invite sent".
+SES already protects sender reputation: the account has account-level suppression on for bounces and complaints, so SES stops delivering to those addresses (verified 2026-11-09; status HEALTHY; one suppressed address, not **plato**'s). The gap is that **plato doesn't know**: an invite to a suppressed address still says "Invite sent".
 
 Post-launch fix: draft PR #530, built and tested, waiting on Blake's approval of its SES permissions (account-wide, because SES can't scope them):
 - check suppression before every send and say "Not sent" instead
 - a "Bounced" / "Marked as spam" badge in Admin → Users
 - "Remove from the bounce list" in Edit User
-- three SES suppression permissions on plato's Lambda roles
+- three SES suppression permissions on **plato**'s Lambda roles
 
 Kept out of the launch PR on purpose: it touches the invite and reset send paths and IAM.
 
 ## Considered and not pursued: Campaign Monitor (Nov 9)
 
-We scoped replacing plato's email and in-app notifications with a Campaign Monitor plugin (Smart Emails for transactional mail, journeys and campaigns for engagement, contact sync from plato hooks), about two weeks plus setup. We decided to keep notifications in plato:
+We scoped replacing **plato**'s email and in-app notifications with a Campaign Monitor plugin (Smart Emails for transactional mail, journeys and campaigns for engagement, contact sync from **plato** hooks), about two weeks plus setup. We decided to keep notifications in **plato**:
 - it's built and tested
 - no learner data goes to a third party
 - one tool for admins
 - it works for self-hosted installs
 
-**Revisit if** there's real demand for campaign-style email (A/B tests, drip sequences, engagement analytics). If that happens, the cheaper option is a one-way contact sync to a Campaign Monitor list alongside plato's notifications, not a replacement. Keep password reset off third-party click tracking.
+**Revisit if** there's real demand for campaign-style email (A/B tests, drip sequences, engagement analytics). If that happens, the cheaper option is a one-way contact sync to a Campaign Monitor list alongside **plato**'s notifications, not a replacement. Keep password reset off third-party click tracking.
 
 ## Admin requests after the launch (Nov 9)
 

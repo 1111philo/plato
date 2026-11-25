@@ -9,7 +9,7 @@ const overflow = (page) => page.evaluate(() => document.documentElement.scrollWi
 test.use({ viewport: { width: 320, height: 640 } });
 
 test('learner pages reflow at 320 px', async ({ page }) => {
-  for (const path of ['/login', '/waitlist', '/how-assessment-works']) {
+  for (const path of ['/login', '/waitlist']) {
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     expect(await overflow(page), path).toBeLessThanOrEqual(1);

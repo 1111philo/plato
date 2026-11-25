@@ -220,3 +220,109 @@ describe('POST /v1/ai/messages', () => {
     assert.equal(data.usage.input_tokens, 3700);
   });
 });
+
+// A Trace request (docs/ARCHITECTURE.md "Trace mode") also gets what only the
+// server knows. Without `trace: true` nothing changes.
+describe('POST /v1/ai/messages with trace: true', () => {
+  const REQ = { model: 'qwen3-vl-235b', max_tokens: 512, messages: [{ role: 'user', content: 'Hi' }] };
+  const app = () => { const a = new Hono(); a.route('/', ai); return a; };
+  const sse = async (res) => (await res.text()).split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6));
+  let saved;
+  beforeEach(() => {
+    db.getUserById = async () => ({ userId: 'usr_test', role: 'user' });
+    _resetAiLimits();
+    saved = { describe: aiProvider.describe };
+    aiProvider.describe = () => ({ provider: 'bedrock', model: 'qwen.qwen3-vl-235b-a22b', region: 'us-east-2', api: 'converse' });
+  });
+
+  it('non-stream: adds provider, applied settings, attempts and timing; the reply itself is unchanged', async () => {
+    let opts;
+    aiProvider.invoke = async (_m, _b, o) => { opts = o; return { content: [{ type: 'text', text: 'Hello!' }], stop_reason: 'end_turn', usage: { input_tokens: 10, output_tokens: 5 }, ...(o?.trace ? { reasoning: 'thinking…', attempts: 2 } : {}) }; };
+    const plain = await (await authedReq(app(), 'POST', '/v1/ai/messages', REQ)).json();
+    assert.deepEqual(Object.keys(plain).sort(), ['content', 'stop_reason', 'usage']);
+    assert.equal(opts, undefined, 'an ordinary request calls the provider exactly as before');
+
+    const traced = await (await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, trace: true, top_p: 0.5, max_tokens: undefined })).json();
+    assert.deepEqual(traced.content, plain.content);
+    assert.equal(traced.reasoning, 'thinking…');
+    assert.equal(traced.attempts, undefined);
+    assert.deepEqual(traced.plato.provider, { provider: 'bedrock', model: 'qwen.qwen3-vl-235b-a22b', region: 'us-east-2', api: 'converse' });
+    assert.deepEqual(traced.plato.applied, { max_tokens: 1024, maxTokensDefaulted: true, temperature: null, dropped: ['top_p'] });
+    assert.equal(traced.plato.attempts, 2);
+    assert.equal(typeof traced.plato.ms, 'number');
+    aiProvider.describe = saved.describe;
+  });
+
+  it('stream: a plato event before and after the model’s events, which are unchanged', async () => {
+    const events = [{ type: 'message_start', message: { role: 'assistant', content: [] } }, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } }, { type: 'message_stop', usage: { input_tokens: 1, output_tokens: 1 } }];
+    aiProvider.invokeStream = async function* () { yield* events; };
+    const plain = await sse(await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, stream: true }));
+    assert.deepEqual(plain, [...events.map((e) => JSON.stringify(e)), '[DONE]']);
+
+    const traced = await sse(await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, stream: true, trace: true, temperature: 0 }));
+    assert.deepEqual(traced.slice(1, -2), events.map((e) => JSON.stringify(e)));
+    const first = JSON.parse(traced[0]);
+    assert.equal(first.type, 'plato');
+    assert.equal(first.provider.region, 'us-east-2');
+    assert.deepEqual(first.applied, { max_tokens: 512, maxTokensDefaulted: false, temperature: 0, dropped: [] });
+    assert.equal(typeof JSON.parse(traced.at(-2)).ms, 'number');
+    assert.equal(traced.at(-1), '[DONE]');
+    aiProvider.describe = saved.describe;
+  });
+
+  it('a failure carries the provider’s own error with AWS identifiers removed; an ordinary request gets only the generic one', async () => {
+    const boom = () => { throw Object.assign(new Error('User: arn:aws:sts::123456789012:assumed-role/plato-Role/fn is not authorized to perform: bedrock:InvokeModel on account 123456789012'), { name: 'AccessDeniedException', $metadata: { httpStatusCode: 403, attempts: 1 } }); };
+    aiProvider.invoke = async () => boom();
+    const plain = await (await authedReq(app(), 'POST', '/v1/ai/messages', REQ)).json();
+    assert.deepEqual(Object.keys(plain).sort(), ['code', 'error']);
+    const res = await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, trace: true });
+    assert.equal(res.status, 502);
+    const { plato } = await res.json();
+    assert.equal(plato.error.name, 'AccessDeniedException');
+    assert.equal(plato.error.status, 403);
+    assert.doesNotMatch(plato.error.message, /123456789012|arn:aws/);
+    assert.match(plato.error.message, /\[arn\].*not authorized.*\[account\]/);
+    aiProvider.describe = saved.describe;
+  });
+
+  it('a mid-stream failure and a rate limit say why', async () => {
+    aiProvider.invokeStream = async function* () { yield { type: 'message_start' }; throw Object.assign(new Error('stream broke'), { name: 'ModelStreamErrorException' }); };
+    const lines = await sse(await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, stream: true, trace: true }));
+    const err = JSON.parse(lines.at(-1));
+    assert.equal(err.type, 'error');
+    assert.equal(err.plato.error.name, 'ModelStreamErrorException');
+
+    _resetAiLimits();
+    aiProvider.invoke = async () => ({ content: [{ type: 'text', text: 'x' }] });
+    let last;
+    for (let i = 0; i < 31; i++) last = await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, trace: true });
+    assert.equal(last.status, 429);
+    assert.equal((await last.json()).plato.limit, 'rate');
+    aiProvider.describe = saved.describe;
+  });
+
+  it('works with a provider that can’t describe itself', async () => {
+    aiProvider.describe = undefined;
+    aiProvider.invoke = async () => ({ content: [{ type: 'text', text: 'x' }] });
+    const data = await (await authedReq(app(), 'POST', '/v1/ai/messages', { ...REQ, trace: true })).json();
+    assert.equal(data.plato.provider, null);
+    aiProvider.describe = saved.describe;
+  });
+});
+
+describe('converse: reasoning is passed on only when asked', () => {
+  const response = { output: { message: { content: [{ reasoningContent: { reasoningText: { text: 'because…' } } }, { text: 'Answer' }] } }, stopReason: 'end_turn', usage: { inputTokens: 1, outputTokens: 2 } };
+  it('response', () => {
+    assert.equal(fromConverseResponse(response).reasoning, undefined);
+    const traced = fromConverseResponse(response, { reasoning: true });
+    assert.equal(traced.reasoning, 'because…');
+    assert.deepEqual(traced.content, [{ type: 'text', text: 'Answer' }]);
+    assert.equal(fromConverseResponse({ output: { message: { content: [{ text: 'A' }] } } }, { reasoning: true }).reasoning, undefined);
+  });
+  it('stream delta', () => {
+    const event = { contentBlockDelta: { contentBlockIndex: 0, delta: { reasoningContent: { text: 'hmm' } } } };
+    assert.equal(fromConverseStreamEvent(event), null);
+    assert.deepEqual(fromConverseStreamEvent(event, { reasoning: true }), { type: 'content_block_delta', index: 0, delta: { type: 'reasoning_delta', text: 'hmm' } });
+    assert.equal(fromConverseStreamEvent({ contentBlockDelta: { delta: { toolUse: {} } } }, { reasoning: true }), null);
+  });
+});

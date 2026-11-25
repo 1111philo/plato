@@ -164,3 +164,26 @@
   100% { transform: translate(var(--x, 0), var(--y, -200px)) rotate(var(--r, 360deg)); opacity: 0; }
 }
 
+
+/* "Thinking…" while plato checks a reply: a light sweeps across the word.
+   The sweep runs between the muted and the main text colour (both readable,
+   so contrast holds mid-animation), and stops with reduced motion. */
+.thinking-shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 30%, var(--foreground) 50%, var(--muted-foreground) 70%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: thinking-shimmer 1.8s ease-in-out infinite, thinking-in 0.25s ease-out;
+}
+@keyframes thinking-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+@keyframes thinking-in {
+  from { transform: translateY(2px); }
+  to { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-shimmer { animation: none; background: none; color: var(--muted-foreground); }
+}

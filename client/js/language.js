@@ -12,6 +12,12 @@ const LANGUAGE_NAMES = {
   ru: 'Russian', nl: 'Dutch', pl: 'Polish', tr: 'Turkish', sv: 'Swedish',
   da: 'Danish', fi: 'Finnish', nb: 'Norwegian', no: 'Norwegian', vi: 'Vietnamese',
   uk: 'Ukrainian', tl: 'Tagalog', fil: 'Filipino', id: 'Indonesian', he: 'Hebrew',
+  // Added after review (AGENT_EVALS): learners use Bengali, and a Bengali
+  // browser got no directive at all.
+  bn: 'Bengali', ur: 'Urdu', pa: 'Punjabi', gu: 'Gujarati', ta: 'Tamil', te: 'Telugu',
+  mr: 'Marathi', ne: 'Nepali', fa: 'Persian', sw: 'Swahili', am: 'Amharic', so: 'Somali',
+  ht: 'Haitian Creole', my: 'Burmese', km: 'Khmer', th: 'Thai', el: 'Greek', ro: 'Romanian',
+  cs: 'Czech', hu: 'Hungarian',
 };
 
 /**

@@ -28,5 +28,4 @@ export async function loadAll() {
  * Kept for backward compatibility with syncInBackground.
  */
 export async function save(_syncKey) {
-  // No-op — writes are handled by storage.js putSyncData
 }

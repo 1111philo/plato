@@ -12,7 +12,6 @@ import SignedInInvite from './pages/SignedInInvite.jsx';
 import Waitlist from './pages/Waitlist.jsx';
 import SsoComplete from './pages/SsoComplete.jsx';
 import Privacy from './pages/Privacy.jsx';
-import HowAssessmentWorks from './pages/HowAssessmentWorks.jsx';
 import Setup from './pages/Setup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
@@ -149,7 +148,8 @@ export default function App() {
             single sign-on) sets one from the emailed link (Settings). */}
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<Privacy />} />
-        <Route path="/how-assessment-works" element={<HowAssessmentWorks />} />
+        {/* The page it was is now the lesson panel's Data Trace tab, built from what actually happened. */}
+        <Route path="/how-assessment-works" element={<Navigate to="/" replace />} />
 
         <Route path="/plato/*" element={
           <RequireAuth>

@@ -1,0 +1,11 @@
+#!/bin/sh
+# plato: run the agent evaluations when a push changes what they cover
+# (docs/AGENT_EVALS.md section 16; server/scripts/evals/hook.js).
+# Installed by `npm install` in server/ (git config core.hooksPath .githooks).
+# Skip once with EVAL_SKIP=1 git push (the GitHub check still applies).
+[ "$EVAL_SKIP" = "1" ] && exit 0
+root="$(git rev-parse --show-toplevel)"
+hook="$root/server/scripts/evals/hook.js"
+# A branch from before the evaluations existed has nothing to run.
+[ -f "$hook" ] || exit 0
+exec node "$hook" "$@"

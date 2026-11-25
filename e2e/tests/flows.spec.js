@@ -32,6 +32,22 @@ test('learner completes a lesson using only the keyboard', async ({ page }) => {
   await expect(page.getByRole('button', { name: `Continue to next lesson: ${LESSONS[2].name}` })).toBeVisible({ timeout: 20_000 });
 });
 
+// #584: a 10 the learner's own words don't back up doesn't complete the lesson.
+// The mock assessor finds nothing on MOCK_UNBACKED, so the completion is held
+// and the coach's second try (told what's missing) replaces its first reply.
+test('a completion the learner’s words don’t back up is held', async ({ page }) => {
+  await login(page, LEARNER);
+  await page.goto(`/lessons/${LESSONS[2].id}`);
+  await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
+  const composer = page.getByRole('textbox', { name: /message|coach|response/i }).last();
+  await expect(composer).toBeEnabled({ timeout: 20_000 });
+  await composer.fill('MOCK_COMPLETE MOCK_UNBACKED');
+  await composer.press(process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter');
+  await expect(page.getByText(/Not done yet\. In your own words/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/You have met every objective/)).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Continue to next lesson/ })).toHaveCount(0);
+});
+
 test('admin reaches main content with the skip link', async ({ page }) => {
   await login(page, ADMIN);
   await page.goto('/plato/users');

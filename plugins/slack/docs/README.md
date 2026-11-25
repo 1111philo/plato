@@ -1,13 +1,13 @@
 # Slack plugin
 
-plato plugin that adds Slack DM invites for the learner-onboarding flow.
+**plato** plugin that adds Slack DM invites for the learner-onboarding flow.
 
 ## Setup
 
 1. Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps).
 2. Add OAuth scopes: `users:read`, `users:read.email`, `channels:read`, `groups:read`, `chat:write`, `im:write`.
 3. Install to your workspace, copy the **Bot User OAuth Token** (starts with `xoxb-`).
-4. In plato, go to **Admin → Plugins → Slack**, paste the token, click **Test Connection**, then **Connect**.
+4. In **plato**, go to **Admin → Plugins → Slack**, paste the token, click **Test Connection**, then **Connect**.
 5. The Invite Users dialog on the Users page now shows a Slack tab.
 
 ## Settings
@@ -17,14 +17,14 @@ plato plugin that adds Slack DM invites for the learner-onboarding flow.
 | `botToken` | string (writeOnly) | Stored encrypted at rest in DynamoDB. |
 | `workspaceName` | string | Display name; populated on successful test. |
 | `connected` | boolean | True once auth.test succeeds. |
-| `autoInviteEnabled` | boolean | Add new plato accounts to a channel (#379). Off by default. |
+| `autoInviteEnabled` | boolean | Add new **plato** accounts to a channel (#379). Off by default. |
 | `autoInviteChannelId` / `autoInviteChannelName` | string | The channel for auto-invite. |
 
 ## Add new accounts to a channel (#379)
 
-When it's on, every new plato account (the `userCreated` hook) is looked up
+When it's on, every new **plato** account (the `userCreated` hook) is looked up
 in the workspace **by email**. A member is added to the chosen channel with
-`conversations.invite`. plato doesn't send workspace invitations, so someone
+`conversations.invite`. **plato** doesn't send workspace invitations, so someone
 not in the workspace is recorded as "Not in the workspace".
 
 - **Scopes:** `users:read.email`, plus `channels:manage` for a public channel
@@ -34,7 +34,7 @@ not in the workspace is recorded as "Not in the workspace".
   settings panel lists recent results with **Retry**, and **Retry everyone
   not added** picks up people who joined the workspace later.
 - **Slack linked:** when the email matches a member, their Slack id is saved
-  on the plato account (`user.slackUserId`), which shows as "Slack linked" in
+  on the **plato** account (`user.slackUserId`), which shows as "Slack linked" in
   Admin → Users. This happens even if they're already in the channel or the
   channel invite fails. An account that's already linked (from a Slack
   invite) keeps its link and skips the email lookup. **Retry everyone not
@@ -57,7 +57,7 @@ not in the workspace is recorded as "Not in the workspace".
 ## Routes (admin-only)
 
 - `POST /v1/plugins/slack/admin/test` — validate a bot token (no persistence)
-- `GET  /v1/plugins/slack/admin/users?q=` — search workspace users
+- `GET  /v1/plugins/slack/admin/users?q=` — search workspace users (the member list is read from Slack at most once a minute; 429 `slack_rate_limited` when Slack is rate-limiting)
 - `GET  /v1/plugins/slack/admin/channels` — list public channels
 - `GET  /v1/plugins/slack/admin/channels/:id/members` — list channel members
 - `POST /v1/plugins/slack/admin/invites` — send DMs (max 200 per batch)

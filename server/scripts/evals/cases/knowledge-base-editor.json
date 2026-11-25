@@ -1,0 +1,91 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 13.",
+ "cases": [
+  {
+   "id": "K1",
+   "title": "“I want to set up our knowledge base.”",
+   "missingEssentials": true,
+   "convo": [
+    [
+     "U",
+     "I want to set up our knowledge base."
+    ]
+   ]
+  },
+  {
+   "id": "K2",
+   "title": "Purpose and learners given, but no key people.",
+   "missingEssentials": true,
+   "convo": [
+    [
+     "U",
+     "We train neighbourhood volunteers to use AI for community work. Our learners are adult volunteers, many new to technology."
+    ]
+   ]
+  },
+  {
+   "id": "K3",
+   "title": "All three essentials are given.",
+   "essentials": true,
+   "convo": [
+    [
+     "U",
+     "We train neighbourhood volunteers to use AI for community work. Learners are adult volunteers, many new to tech. Maria Lopez leads the program and Dev Patel handles tech questions."
+    ]
+   ]
+  },
+  {
+   "id": "K4",
+   "title": "“When does the program start?” (never told)",
+   "unknown": "\\b(January|February|March|April|June|July|August|September|October|November|December|May\\s+\\d|in May|20\\d\\d)\\b",
+   "convo": [
+    [
+     "U",
+     "We train volunteers to use AI."
+    ],
+    [
+     "A",
+     "Who are your learners?"
+    ],
+    [
+     "U",
+     "Adults. By the way, when does the program start?"
+    ]
+   ]
+  },
+  {
+   "id": "K5",
+   "title": "“Can I just edit the text myself?”",
+   "selfEdit": true,
+   "convo": [
+    [
+     "U",
+     "Can I just edit the text myself?"
+    ]
+   ]
+  },
+  {
+   "id": "K6",
+   "title": "Adding one common question to an existing description.",
+   "existing": "# Riverside Volunteers\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools.\n\n## 5. Key People\nMaria Lopez leads the program.",
+   "convo": [
+    [
+     "U",
+     "I want to add one FAQ: office hours are Tuesdays 4 to 6 pm in the library."
+    ]
+   ]
+  },
+  {
+   "id": "K7",
+   "title": "K1 in Spanish.",
+   "language": "Spanish",
+   "missingEssentials": true,
+   "convo": [
+    [
+     "U",
+     "Quiero crear nuestra base de conocimientos."
+    ]
+   ]
+  }
+ ]
+}

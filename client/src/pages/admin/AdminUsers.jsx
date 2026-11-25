@@ -76,12 +76,6 @@ const SORT_KEY_FNS = {
   date: (i) => i.createdAt || '',
 };
 
-/**
- * The keyboard/screen-reader way into a table row's edit view: a real button
- * in the first cell, whose name starts with the visible text. The row itself
- * stays clickable for the mouse. The button stops propagation so the click
- * doesn't fire twice.
- */
 // SES won't deliver to this address (it bounced, or the person marked our
 // email as spam). The badge text is the accessible name; the date is a title.
 function SuppressedBadge({ s }) {
@@ -93,6 +87,12 @@ function SuppressedBadge({ s }) {
   );
 }
 
+/**
+ * The keyboard/screen-reader way into a table row's edit view: a real button
+ * in the first cell, whose name starts with the visible text. The row itself
+ * stays clickable for the mouse. The button stops propagation so the click
+ * doesn't fire twice.
+ */
 function RowOpenButton({ onClick, srPrefix, children }) {
   return (
     <button
@@ -165,7 +165,6 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
 
-  // Modal states
   const [inviteOpen, setInviteOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [fieldsOpen, setFieldsOpen] = useState(false);
@@ -174,14 +173,12 @@ export default function AdminUsers() {
   const [editUser, setEditUser] = useState(null);
   const [editForm, setEditForm] = useState({ firstName: '', lastName: '', email: '', username: '', userGroup: '', role: '', customFields: {} });
 
-  // Invite modal state
   const [inviteInput, setInviteInput] = useState('');
   const [emailQueue, setEmailQueue] = useState([]);
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteNotice, setInviteNotice] = useState(null);
   const csvRef = useRef(null);
 
-  // Search, filter, pagination
   const [search, setSearch] = useState('');
   // Combined filters (#362): { [facetKey]: [values] }; see lib/userFilters.js.
   const [filters, setFilters] = useState({});
@@ -199,18 +196,17 @@ export default function AdminUsers() {
   const [sortAnnouncement, setSortAnnouncement] = useState('');
 
 
-  // Slack integration state
   const [slackConnected, setSlackConnected] = useState(false);
   const [inviteTab, setInviteTab] = useState('email');
   const [slackSearch, setSlackSearch] = useState('');
   const [slackSearchResults, setSlackSearchResults] = useState([]);
   const [slackSearching, setSlackSearching] = useState(false);
+  const [slackSearchError, setSlackSearchError] = useState('');
   const [slackChannels, setSlackChannels] = useState([]);
   const [slackSelectedChannel, setSlackSelectedChannel] = useState('');
   const [slackQueue, setSlackQueue] = useState([]);
   const [slackSending, setSlackSending] = useState(false);
 
-  // Link invite state
   const [linkInvite, setLinkInvite] = useState(null);
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkGenerating, setLinkGenerating] = useState(false);
@@ -267,7 +263,7 @@ export default function AdminUsers() {
   const existingEmails = useMemo(() => {
     const set = new Set();
     for (const u of users) {
-      if (u.email) set.add(u.email.toLowerCase()); // Skip users without an email
+      if (u.email) set.add(u.email.toLowerCase());
     }
     for (const inv of pendingInvites) {
       if (inv.email) set.add(inv.email.toLowerCase()); // Skip link invites (email is null)
@@ -302,7 +298,6 @@ export default function AdminUsers() {
     if (!inviteInput.trim()) return;
     setInviteNotice(null);
     const parts = inviteInput.split(/[,\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-    // Check against current queue + existing users before setState
     const skipped = parts.filter(email =>
       !emailRegex.test(email) || existingEmails.has(email) || emailQueue.includes(email)
     ).length;
@@ -375,6 +370,7 @@ export default function AdminUsers() {
       setSlackQueue([]);
       setSlackSearch('');
       setSlackSearchResults([]);
+      setSlackSearchError('');
       setInviteTab('email');
       setInviteNotice(null);
     }
@@ -388,15 +384,22 @@ export default function AdminUsers() {
   function handleSlackSearchChange(value) {
     setSlackSearch(value);
     clearTimeout(slackSearchTimeout.current);
-    if (!value.trim()) { setSlackSearchResults([]); return; }
-    slackSearchTimeout.current = setTimeout(async () => {
+    slackSearchTimeout.current = null;
+    setSlackSearchError('');
+    if (!value.trim()) { setSlackSearchResults([]); setSlackSearching(false); return; }
+    const timer = setTimeout(async () => {
+      // A slower, older search must not replace a newer one's results.
+      const current = () => slackSearchTimeout.current === timer;
       setSlackSearching(true);
       try {
         const results = await adminApi('GET', `/v1/plugins/slack/admin/users?q=${encodeURIComponent(value)}`);
-        setSlackSearchResults(Array.isArray(results) ? results : []);
-      } catch { setSlackSearchResults([]); }
-      setSlackSearching(false);
+        if (current()) setSlackSearchResults(Array.isArray(results) ? results : []);
+      } catch (err) {
+        if (current()) { setSlackSearchResults([]); setSlackSearchError(err.message); }
+      }
+      if (current()) setSlackSearching(false);
     }, 300);
+    slackSearchTimeout.current = timer;
   }
 
   async function loadSlackChannels() {
@@ -411,7 +414,6 @@ export default function AdminUsers() {
     setSlackSearching(true);
     try {
       const members = await adminApi('GET', `/v1/plugins/slack/admin/channels/${channelId}/members`);
-      // Add all members to queue at once
       if (Array.isArray(members)) {
         setSlackQueue(prev => {
           const existingIds = new Set(prev.map(u => u.slackUserId));
@@ -711,7 +713,6 @@ export default function AdminUsers() {
   // -- Filtering, search, pagination --
 
   const combinedList = useMemo(() => {
-    // Build unified list: invites first, then users
     // Filter out link invites (shown in the Link tab, not the user list)
     const items = [];
     for (const inv of pendingInvites) {
@@ -770,7 +771,7 @@ export default function AdminUsers() {
       const aNull = va == null || va === '';
       const bNull = vb == null || vb === '';
       if (aNull && bNull) return 0;
-      if (aNull) return 1;   // nullish always last
+      if (aNull) return 1;
       if (bNull) return -1;
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mult;
       return va.toString().localeCompare(vb.toString(), undefined, { numeric: true, sensitivity: 'base' }) * mult;
@@ -858,7 +859,6 @@ export default function AdminUsers() {
   }
 
 
-  // Reset page when filter/search/sort changes
   useEffect(() => { setPage(1); }, [filters, search, sortBy]);
 
   if (loading) return <div className="flex items-center justify-center py-12 text-muted-foreground" role="status" aria-live="polite">Loading...</div>;
@@ -881,7 +881,6 @@ export default function AdminUsers() {
     );
   }
 
-  // Edit user view
   if (editUser) {
     const isSelf = editUser.userId === currentUser?.userId;
     const canEditUser = shows('users.write');
@@ -1368,6 +1367,7 @@ export default function AdminUsers() {
                   onChange={e => handleSlackSearchChange(e.target.value)}
                 />
                 {slackSearching && <p className="text-xs text-muted-foreground">Searching...</p>}
+                {slackSearchError && <p className="text-sm text-red-800 dark:text-destructive" role="alert">{slackSearchError}</p>}
                 {slackSearchResults.length > 0 && (
                   <div className="max-h-40 overflow-y-auto rounded-md border">
                     {slackSearchResults.map(u => (
@@ -1505,14 +1505,13 @@ export default function AdminUsers() {
         </DialogContent>
       </Dialog>
 
-      {/* User Groups Modal */}
+      {/* User Fields Modal */}
       <UserFieldsDialog
         open={fieldsOpen}
         onOpenChange={setFieldsOpen}
         fields={userFields}
         onChange={(next) => {
           setUserFields(next);
-          // Reset a filter pointing at a deleted field.
           // Drop filters on a deleted field.
           setFilters((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith('field:') || next.some((f) => `field:${f.id}` === k))));
           // Values for deleted fields were erased server-side; refresh rows,

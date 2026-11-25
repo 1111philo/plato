@@ -1,4 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { rangesExcluding } from './key-ranges.js';
 import {
   DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand,
   UpdateCommand, DeleteCommand, ScanCommand, TransactWriteCommand,
@@ -418,7 +419,6 @@ const db = {
       KeyConditionExpression: 'email = :email',
       ExpressionAttributeValues: { ':email': email.toLowerCase() },
     }));
-    // Return the most recent pending invite if any
     const pending = (result.Items || []).filter(i => i.status === 'pending');
     return pending[0] || null;
   },
@@ -663,26 +663,28 @@ const db = {
     return items;
   },
 
-  // Every record except those whose key starts with `prefix`, as two key-range
-  // queries (below and above the prefix), so the excluded records are never
-  // read or billed. GET /v1/sync uses it to skip screenshots (#451 scale review).
-  async getSyncDataExcept(userId, prefix) {
-    const after = prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1);
+  // Every record except those whose key starts with one of `prefixes` (one
+  // prefix or a list), as key-range queries around them, so the excluded
+  // records are never read or billed. GET /v1/sync uses it to skip
+  // screenshots (#451 scale review) and Trace records.
+  async getSyncDataExcept(userId, prefixes) {
+    const { ranges, excluded } = rangesExcluding(prefixes);
     const items = [];
-    for (const [cond, value] of [['dataKey < :k', prefix], ['dataKey >= :k', after]]) {
+    for (const { from, to } of ranges) {
+      const cond = from === undefined ? 'dataKey < :b' : to === undefined ? 'dataKey >= :a' : 'dataKey BETWEEN :a AND :b';
       let lastKey;
       do {
         const result = await doc.send(new QueryCommand({
           TableName: SYNC_DATA_TABLE,
           KeyConditionExpression: `userId = :uid AND ${cond}`,
-          ExpressionAttributeValues: { ':uid': userId, ':k': value },
+          ExpressionAttributeValues: { ':uid': userId, ...(from !== undefined ? { ':a': from } : {}), ...(to !== undefined ? { ':b': to } : {}) },
           ExclusiveStartKey: lastKey,
         }));
         items.push(...result.Items);
         lastKey = result.LastEvaluatedKey;
       } while (lastKey);
     }
-    return items;
+    return items.filter((item) => !excluded(item.dataKey));
   },
 
   async putSyncData(userId, dataKey, data, expectedVersion) {

@@ -1,4 +1,4 @@
-# Authoring a plato plugin
+# Authoring a **plato** plugin
 
 A walkthrough for humans. (If you're an AI agent, start with [AGENTS.md](./AGENTS.md).)
 
@@ -118,7 +118,7 @@ The host's existing tests live under `server/tests/` and won't run your plugin's
 
 ### 7. Distribute
 
-For Phase 1, plugins ship by being committed to a plato fork. Open a PR to `1111philo/plato` adding `plugins/<your-id>/`, or maintain the plugin in your own fork.
+For Phase 1, plugins ship by being committed to a **plato** fork. Open a PR to `1111philo/plato` adding `plugins/<your-id>/`, or maintain the plugin in your own fork.
 
 ## Common mistakes
 

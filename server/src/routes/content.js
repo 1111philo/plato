@@ -25,7 +25,6 @@ function normalizeStatus(status, hasMarkdown = true) {
   return 'private';
 }
 
-// All content routes require authentication
 content.use('/v1/prompts/*', authenticate);
 content.use('/v1/lessons', authenticate);
 content.use('/v1/lessons/*', authenticate);
@@ -68,7 +67,6 @@ content.get('/v1/branding', async (c) => {
   });
 });
 
-// GET /v1/prompts/:name — get a system prompt
 content.get('/v1/prompts/:name', async (c) => {
   const name = c.req.param('name');
   const item = await systemItem(`prompt:${name}`);
@@ -184,7 +182,6 @@ content.get('/v1/lessons/:lessonId', async (c) => {
   return c.json({ lessonId, ...data, ...placement, startHere: isStartHere(data), updatedAt: item.updatedAt });
 });
 
-// GET /v1/knowledge-base — get the knowledge base content
 content.get('/v1/knowledge-base', async (c) => {
   const item = await systemItem('knowledgeBase');
   if (!item) return c.json({ content: '' });

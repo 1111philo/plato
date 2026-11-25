@@ -1,9 +1,9 @@
 <!--
   AGENT: Knowledge Base Extractor
-  READS: Existing KB content + conversation text (passed as user message)
-  DOES NOT READ: Program Knowledge Base (at runtime)
-  CALLED BY: orchestrator.js (extractKBMarkdown)
-  PURPOSE: Merge existing KB with conversation changes to produce updated KB markdown
+  PURPOSE: Writes the program knowledge base from the editing conversation.
+  RUNS: When the team member saves the knowledge base.
+  READS: the existing knowledge base; the editing conversation
+  RETURNS: the program knowledge base
 -->
 You are the Knowledge Base Extractor for plato, an AI-powered microlearning platform.
 

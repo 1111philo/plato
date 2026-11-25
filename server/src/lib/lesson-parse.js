@@ -8,6 +8,8 @@
  * two identical: client/tests/lessonParse.test.js runs both on the same
  * inputs, including every bundled lesson.
  */
+const EMPTY_DIRECTIVE = /^[\s*_(]*(none|n\/a|na|no|nothing|not applicable|no (coach )?(instructions|directive)( given)?|-+|—)[\s.*_)]*$/i;
+
 export function parseLessonFields(markdown) {
   const lines = markdown.split('\n');
   let name = '';
@@ -54,6 +56,8 @@ export function parseLessonFields(markdown) {
   flushSection();
 
   const parsed = { name, description, exemplar, learningObjectives: objectives };
-  if (coachDirective) parsed.coachDirective = coachDirective;
+  // "None" isn't an instruction (agent evaluations X1, X4); the client's
+  // parser (client/js/lessonOwner.js) reads it the same way.
+  if (coachDirective && !EMPTY_DIRECTIVE.test(coachDirective)) parsed.coachDirective = coachDirective;
   return parsed;
 }

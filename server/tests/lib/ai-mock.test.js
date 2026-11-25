@@ -16,7 +16,7 @@ describe('ai-mock', () => {
       coach: 'Coach', 'lesson-owner': 'Lesson Owner', 'lesson-creator': 'Lesson Creator', 'lesson-extractor': 'Lesson Extractor',
       'knowledge-base-editor': 'Knowledge Base Editor', 'knowledge-base-extractor': 'Knowledge Base Extractor',
       'learner-profile-owner': 'Learner Profile Owner', 'learner-profile-update': 'Learner Profile Update',
-      'course-progress-update': 'Course Progress Updater',
+      'course-progress-update': 'Course Progress Updater', assessor: 'Assessor', 'claim-check': 'Claim Check',
     };
     for (const [file, agent] of Object.entries(expected)) assert.equal(agentOf(prompt(file)), agent, file);
   });
@@ -33,6 +33,27 @@ describe('ai-mock', () => {
     const kb = JSON.parse(mid.match(/\[KB_UPDATE: (\{.*\})\]/)[1]);
     assert.ok(Array.isArray(kb.insights) && typeof kb.learnerPosition === 'string');
     assert.match(replyFor('Coach', turn('MOCK_COMPLETE')), /\[PROGRESS: 10\]/);
+  });
+
+  it('assessor backs each objective with the learner’s latest words, or none on MOCK_UNBACKED (#584)', () => {
+    const ask = (text) => [{ role: 'user', content: JSON.stringify({ check: [2, 3], transcript: [{ by: 'coach', text: 'c' }, { by: 'learner', text }] }) }];
+    const ok = JSON.parse(replyFor('Assessor', ask('MOCK_COMPLETE')));
+    assert.deepEqual(ok.objectives, [{ n: 2, shown: true, quote: 'MOCK_COMPLETE' }, { n: 3, shown: true, quote: 'MOCK_COMPLETE' }]);
+    const no = JSON.parse(replyFor('Assessor', ask('MOCK_COMPLETE MOCK_UNBACKED')));
+    assert.deepEqual(no.objectives.map((o) => o.shown), [false, false]);
+  });
+
+  it('assessor answers MOCK_GARBLED with a reply that isn’t JSON, until the retry’s format note (#604)', () => {
+    const ask = (note) => [{ role: 'user', content: JSON.stringify({ check: [1], transcript: [{ by: 'learner', text: 'MOCK_GARBLED' }], ...(note ? { note } : {}) }) }];
+    assert.throws(() => JSON.parse(replyFor('Assessor', ask())));
+    assert.equal(JSON.parse(replyFor('Assessor', ask('Reply with valid JSON only.'))).objectives[0].shown, true);
+  });
+
+  it('coach’s second try after a held completion asks for more instead of completing', () => {
+    const msgs = [{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, { role: 'assistant', content: 'c' }, { role: 'user', content: 'MOCK_COMPLETE' }];
+    const reply = replyFor('Coach', msgs, `${prompt('coach')}\n\n## Assessment check (from plato, not the learner)\n…`);
+    assert.match(reply, /^Not done yet/);
+    assert.doesNotMatch(reply, /\[PROGRESS: 10\]/);
   });
 
   it('lesson owner returns a KB that keeps the lesson objectives', () => {
@@ -57,5 +78,15 @@ describe('ai-mock', () => {
       if (e.type === 'content_block_delta') text += e.delta.text;
     }
     assert.equal(text, replyFor('Coach', msgs));
+  });
+
+  it('ends a stream like Bedrock does: a stop reason, then usage', async () => {
+    const msgs = [{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }];
+    const events = [];
+    for await (const e of mockAi.invokeStream('x', { system: prompt('coach'), messages: msgs })) events.push(e);
+    assert.deepEqual(events.at(-2), { type: 'message_delta', delta: { stop_reason: 'end_turn' } });
+    assert.equal(events.at(-1).type, 'message_stop');
+    assert.deepEqual(Object.keys(events.at(-1).usage).sort(), ['input_tokens', 'output_tokens']);
+    assert.equal(mockAi.describe().provider, 'mock');
   });
 });

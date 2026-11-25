@@ -1,0 +1,151 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 14.",
+ "cases": [
+  {
+   "id": "B1",
+   "title": "No description yet; a full conversation.",
+   "convo": [
+    [
+     "U",
+     "We train neighbourhood volunteers to use AI for community work."
+    ],
+    [
+     "A",
+     "Who are the learners?"
+    ],
+    [
+     "U",
+     "Adult volunteers, many new to tech."
+    ],
+    [
+     "A",
+     "Key people?"
+    ],
+    [
+     "U",
+     "Maria Lopez leads it; Dev Patel answers tech questions."
+    ]
+   ],
+   "want": "maria lopez"
+  },
+  {
+   "id": "B2",
+   "title": "Add office hours to an existing description.",
+   "existing": "# Riverside Volunteers — Knowledge Base & FAQ\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools for community work.\n\n## 2. Program Structure & Timeline\nEight weekly lessons, starting in September.\n\n## 5. Key People\nMaria Lopez leads the program.",
+   "keep": [
+    "What Is Riverside Volunteers",
+    "Program Structure",
+    "Key People",
+    "Maria Lopez"
+   ],
+   "convo": [
+    [
+     "U",
+     "Add that office hours are Tuesdays 4 to 6 pm in the library."
+    ],
+    [
+     "A",
+     "Added. Anything else?"
+    ],
+    [
+     "U",
+     "No, that's all."
+    ]
+   ],
+   "want": "tuesday"
+  },
+  {
+   "id": "B3",
+   "title": "The team corrects a date.",
+   "existing": "# Riverside Volunteers — Knowledge Base & FAQ\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools for community work.\n\n## 2. Program Structure & Timeline\nEight weekly lessons, starting in September.\n\n## 5. Key People\nMaria Lopez leads the program.",
+   "keep": [
+    "Maria Lopez",
+    "Key People"
+   ],
+   "convo": [
+    [
+     "U",
+     "Correction: lessons start in October, not September."
+    ]
+   ],
+   "want": "october",
+   "gone": "september"
+  },
+  {
+   "id": "B4",
+   "title": "Remove a person who left.",
+   "existing": "# Riverside Volunteers — Knowledge Base & FAQ\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools for community work.\n\n## 2. Program Structure & Timeline\nEight weekly lessons, starting in September.\n\n## 5. Key People\nMaria Lopez leads the program.\nDev Patel answers technical questions.",
+   "keep": [
+    "Maria Lopez"
+   ],
+   "convo": [
+    [
+     "U",
+     "Dev Patel has left; please remove him."
+    ]
+   ],
+   "want": "maria lopez",
+   "gone": "dev patel"
+  },
+  {
+   "id": "B5",
+   "title": "A long chatty conversation about one small change.",
+   "existing": "# Riverside Volunteers — Knowledge Base & FAQ\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools for community work.\n\n## 2. Program Structure & Timeline\nEight weekly lessons, starting in September.\n\n## 5. Key People\nMaria Lopez leads the program.",
+   "keep": [
+    "Maria Lopez"
+   ],
+   "convo": [
+    [
+     "U",
+     "So, we've been thinking a lot about how volunteers find us, and honestly most come from the library flyers, which is great, and some from the newsletter. Anyway, add that most learners hear about us from library flyers."
+    ],
+    [
+     "A",
+     "Got it."
+    ],
+    [
+     "U",
+     "Thanks, that's the only change."
+    ]
+   ],
+   "want": "flyer"
+  },
+  {
+   "id": "B6",
+   "title": "The team never gave a start date.",
+   "convo": [
+    [
+     "U",
+     "We train volunteers to use AI. Learners are adults. Maria Lopez leads it."
+    ]
+   ],
+   "unknown": "\\b(January|February|March|April|June|July|August|September|October|November|December|May\\s+\\d|in May|20\\d\\d)\\b"
+  },
+  {
+   "id": "B7",
+   "title": "Ask a question but make no change.",
+   "existing": "# Riverside Volunteers — Knowledge Base & FAQ\n\n## 1. What Is Riverside Volunteers?\nA program that trains neighbourhood volunteers to use AI tools for community work.\n\n## 2. Program Structure & Timeline\nEight weekly lessons, starting in September.\n\n## 5. Key People\nMaria Lopez leads the program.",
+   "keep": [
+    "What Is Riverside Volunteers",
+    "Program Structure",
+    "Key People",
+    "Maria Lopez",
+    "September"
+   ],
+   "convo": [
+    [
+     "U",
+     "Does the knowledge base mention the start month?"
+    ],
+    [
+     "A",
+     "Yes: lessons start in September."
+    ],
+    [
+     "U",
+     "Great, no changes then."
+    ]
+   ]
+  }
+ ]
+}

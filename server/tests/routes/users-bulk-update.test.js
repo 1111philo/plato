@@ -52,6 +52,10 @@ beforeEach(() => {
 });
 
 describe('bulk user update', () => {
+  it('rejects a value that isn’t text', async () => {
+    assert.equal((await bulk({ userIds: ['usr_a'], set: { field: 'userGroup', value: true } })).status, 400);
+  });
+
   it('sets a group for everyone selected, skipping those already in it', async () => {
     const res = await bulk({ userIds: ['usr_a', 'usr_b'], set: { field: 'userGroup', value: 'Cohort A' } });
     assert.deepEqual(await res.json(), { updated: 1, unchanged: 1, failed: [] });
