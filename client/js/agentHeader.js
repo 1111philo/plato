@@ -10,9 +10,11 @@
  *     RETURNS: a; b
  *   -->
  *
- * The header is part of the instructions sent to the model, so reading it
- * back from what was sent tells a Trace (#595) exactly which agent a call was
- * and what it was for at the time. It is also the one place an agent is
+ * The header is documentation, not instructions: promptAssembly.js takes it
+ * off before a prompt is sent, and the Trace (#595) records it beside each
+ * call so it can say which agent the call was and what it was for at the
+ * time. (A trace from before 2026-11-24, when the header was sent, is read
+ * from the instructions sent.) It is also the one place an agent is
  * described: lib/agents.generated.js is built from these headers.
  *
  * Pure. Unit tests: client/tests/agentHeader.test.js.

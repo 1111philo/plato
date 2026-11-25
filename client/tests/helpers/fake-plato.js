@@ -108,9 +108,9 @@ function webStorage() {
 globalThis.localStorage = webStorage();
 globalThis.sessionStorage = webStorage();
 
-/** Sign in as a learner; `traceMode` is the admin-set flag on the account. */
-export function signIn({ traceMode = false } = {}) {
-  user = { userId: 'usr_test', firstName: 'Ada', name: 'Ada Lovelace', ...(traceMode ? { traceMode: true } : {}) };
+/** Sign in as a learner. */
+export function signIn() {
+  user = { userId: 'usr_test', firstName: 'Ada', name: 'Ada Lovelace' };
   localStorage.setItem('plato_auth', JSON.stringify({ accessToken: 't', refreshToken: 'r', user }));
 }
 

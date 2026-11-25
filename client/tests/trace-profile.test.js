@@ -1,7 +1,6 @@
 /**
- * Trace mode beyond lessons (#595): Settings → Learner Profile (scope
- * `profile`) and the admin authoring chats (`author-<lessonId>`, `kb`), run
- * through the same functions the pages call, against a fake server.
+ * Trace beyond lessons (#595): Settings → Learner Profile (scope `profile`),
+ * run through the same functions the page calls, against a fake server.
  *
  * - Off is a no-op: no request asks for a trace, nothing is recorded.
  * - Recording changes nothing: the same requests with Trace on or off.
@@ -15,42 +14,26 @@ import { store, ai, reset, signIn, traces, settle } from './helpers/fake-plato.j
 
 const { clearCache, savePreferences, getLearnerProfile, getLearnerProfileSummary } = await import('../js/storage.js');
 const { addLearnerNote, removeLearnerNote } = await import('../src/lib/profileQueue.js');
-const { authoringTurn, authoringExtract, authoringTail, kbProblem, AUTHORING_TAIL } = await import('../src/lib/authoringEngine.js');
-const { resetTraceSession, authorScope, storedTraceBytes, traceBytes, traceFull, openTrace } = await import('../src/lib/traceSession.js');
+const { resetTraceSession, storedTraceBytes, traceBytes, traceFull, openTrace } = await import('../src/lib/traceSession.js');
 const { rebuildRequest, storableBody, MAX_SCOPE_BYTES } = await import('../src/lib/lessonTrace.js');
 const { STEPS, AGENTS } = await import('../src/lib/transparency.js');
 const { describeTrace } = await import('../src/lib/traceView.js');
 
-const AUTHOR = authorScope('admin-1700000000000');
-const SCOPES = ['profile', AUTHOR, 'kb'];
-const CHAT = [
-  { role: 'user', content: 'I want to create a new lesson.' },
-  { role: 'assistant', content: 'What should learners be able to do?' },
-  { role: 'user', content: 'Write a clear bug report.' },
-];
-const CONVERSATION = 'User: I want to create a new lesson.\n\nAgent: What should learners be able to do?\n\nUser: Write a clear bug report.';
+const SCOPES = ['profile'];
 
 async function fresh({ trace = false } = {}) {
   reset(); clearCache(); resetTraceSession(); signIn();
-  if (trace) await savePreferences({ name: '', traceMode: true });
+  if (trace) await savePreferences({ name: '', traceScopes: SCOPES });
   ai.length = 0;
 }
 
-/** Everything the pages do, once each. */
+/** Everything the page does, once each. */
 async function everything() {
   await addLearnerNote('I use a Chromebook and I am new to this.');
   await (await removeLearnerNote(0)).done;
-  await authoringTurn({ scope: AUTHOR, agent: 'lesson-creator', messages: [CHAT[0]] });
-  await authoringTurn({ scope: AUTHOR, agent: 'lesson-creator', text: CHAT[2].content, messages: authoringTail(CHAT), readinessBefore: 3 });
-  await authoringExtract({ scope: AUTHOR, what: 'lesson', conversationText: CONVERSATION, messages: 3 });
-  let saved = null;
-  await authoringExtract({ scope: AUTHOR, what: 'lesson', conversationText: CONVERSATION, messages: 3, check: () => null, save: async (md) => { saved = md; } });
-  await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'We teach adults to code.', messages: [{ role: 'user', content: 'We teach adults to code.' }] });
-  await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: CONVERSATION, existingKB: '# Program\n\nOld text.', messages: 3, check: kbProblem, save: async () => {} });
   await settle();
-  return { requests: ai.map((b) => structuredClone(b)), saved };
+  return { requests: ai.map((b) => structuredClone(b)) };
 }
-
 const records = (scope) => { const all = traces(scope); return { ...all, turns: [...all.t, ...all.b].sort((a, b) => a.at - b.at) }; };
 const step = (r, type) => r.steps.find((s) => s.type === type);
 const types = (r) => r.steps.map((s) => s.type);
@@ -63,12 +46,11 @@ describe('Trace off, beyond lessons', () => {
     const realFetch = globalThis.fetch;
     globalThis.fetch = (url, opts) => { if (String(url).includes('prefix=')) reads.push(String(url)); return realFetch(url, opts); };
     try {
-      const { requests, saved } = await everything();
-      assert.equal(requests.length, 8, 'two profile updates, three chat turns, three extractions');
+      const { requests } = await everything();
+      assert.equal(requests.length, 2, 'two profile updates');
       assert.ok(requests.every((b) => !('trace' in b)));
       assert.deepEqual([...store.keys()].filter((k) => k.startsWith('trace:')), []);
       assert.deepEqual(reads, [], 'the stored size is only looked up when a trace is opened');
-      assert.ok(saved && saved.length > 0);
       assert.equal(await getLearnerProfileSummary(), 'Mock learner profile summary.');
       assert.deepEqual((await getLearnerProfile()).learnerNotes, []);
     } finally { globalThis.fetch = realFetch; }
@@ -86,7 +68,6 @@ describe('Trace on, beyond lessons', () => {
     // The two runs happen at different moments; clock readings in the profile agent's input differ.
     const plain = (b) => JSON.stringify({ ...b, trace: undefined }).replace(/\b1[6-9]\d{11}\b/g, '0');
     assert.deepEqual(on.requests.map(plain), off.requests.map(plain));
-    assert.equal(on.saved, off.saved);
   });
 
   it('replay: every request is rebuilt exactly from the trace', async () => {
@@ -122,14 +103,14 @@ describe('Trace on, beyond lessons', () => {
         let t = realNow() + every * 1000;
         Date.now = () => (++reads % every === 0 ? ++t : t);
         const opened = [];
-        for (let i = 0; i < 6; i++) opened.push(await openTrace('kb', 'authoring'));
+        for (let i = 0; i < 6; i++) opened.push(await openTrace('profile', 'profile'));
         for (const tr of opened) keys.push((await tr.flush()).key);
       }
     } finally {
       Date.now = realNow;
     }
     assert.equal(new Set(keys).size, keys.length, 'two traces shared a record');
-    assert.equal(traces('kb').t.length, keys.length);
+    assert.equal(traces('profile').t.length, keys.length);
   });
 
   it('Settings: adding and removing a note are each a turn, with what was done and what was saved', async () => {
@@ -146,7 +127,7 @@ describe('Trace on, beyond lessons', () => {
     assert.deepEqual(types(removed), ['noteChange', 'call', 'profileSaved']);
     assert.equal(step(removed, 'noteChange').action, 'removed');
     assert.equal(step(removed, 'call').purpose, 'profile update (learner-removed)');
-    assert.ok(records('profile').t.every((r) => r.app.by === 'self' && !r.failed));
+    assert.ok(records('profile').t.every((r) => !r.failed));
   });
 
   it('a note the filter holds back is recorded as screened, and no model is asked', async () => {
@@ -183,70 +164,6 @@ describe('Trace on, beyond lessons', () => {
     assert.match(view('profile').exchanges[0].verdict.text, /had already been saved/);
   });
 
-  it('authoring: each message and each extraction is a turn in the lesson’s own scope', async () => {
-    await fresh({ trace: true });
-    await everything();
-    assert.equal(AUTHOR, 'author-admin-1700000000000');
-    const [opening, message, preview, save] = records(AUTHOR).t;
-    assert.ok([opening, message, preview, save].every((r) => r.kind === 'authoring'));
-
-    assert.deepEqual(types(opening), ['authoringOpened', 'authoringTail', 'call', 'authoringParsed']);
-    assert.equal(step(opening, 'authoringOpened').opening, 'I want to create a new lesson.');
-    assert.equal(step(opening, 'call').purpose, 'opening message');
-
-    assert.deepEqual(types(message), ['authorInput', 'authoringTail', 'call', 'authoringParsed']);
-    assert.equal(step(message, 'authorInput').text, 'Write a clear bug report.');
-    assert.deepEqual({ sent: step(message, 'authoringTail').sent, left: step(message, 'authoringTail').olderLeftOut }, { sent: 3, left: 0 });
-    assert.equal(step(message, 'call').agent, 'lesson-creator');
-    assert.equal(step(message, 'call').stream, true);
-    assert.match(step(message, 'authoringParsed').raw, /\[READINESS: 3\]$/);
-    assert.doesNotMatch(step(message, 'authoringParsed').text, /READINESS/);
-    assert.equal(step(message, 'authoringParsed').readiness, 3);
-
-    assert.deepEqual(types(preview), ['extractAsked', 'call', 'extracted']);
-    assert.equal(step(preview, 'extractAsked').why, 'preview');
-    assert.equal(step(preview, 'call').agent, 'lesson-extractor');
-    assert.equal(step(preview, 'extracted').use, 'preview');
-    assert.ok(step(preview, 'extracted').markdown.length > 0);
-
-    assert.deepEqual(types(save), ['extractAsked', 'call', 'extracted', 'authoringSaved']);
-    assert.equal(step(save, 'authoringSaved').ok, true);
-
-    const [kbMessage, kbSave] = records('kb').t;
-    assert.equal(step(kbMessage, 'call').agent, 'knowledge-base-editor');
-    assert.equal(step(kbSave, 'call').agent, 'knowledge-base-extractor');
-    assert.equal(step(kbSave, 'extractAsked').what, 'knowledgeBase');
-  });
-
-  it('authoring: only the last 15 messages are sent, and the trace says how many were left out', async () => {
-    await fresh({ trace: true });
-    const long = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `Message ${i}`, msgType: 'x' }));
-    const tail = authoringTail(long);
-    assert.equal(tail.length, AUTHORING_TAIL);
-    assert.deepEqual(Object.keys(tail[0]), ['role', 'content']);
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'Message 20', messages: tail, total: long.length });
-    await settle();
-    assert.deepEqual(ai[0].messages, tail);
-    assert.equal(step(records('kb').t[0], 'authoringTail').olderLeftOut, 5);
-  });
-
-  it('authoring: text that can’t be used is recorded with the reason and not saved; a failed save is recorded', async () => {
-    await fresh({ trace: true });
-    let saves = 0;
-    const unusable = await authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: CONVERSATION, check: () => 'It is too short.', save: async () => { saves++; } });
-    assert.equal(unusable.problem, 'It is too short.');
-    assert.equal(saves, 0);
-    await assert.rejects(authoringExtract({ scope: 'kb', what: 'knowledgeBase', conversationText: CONVERSATION, save: async () => { throw new Error('Server said no'); } }), /Server said no/);
-    await settle();
-    const [first, second] = records('kb').t;
-    assert.deepEqual({ problem: step(first, 'extracted').problem, use: step(first, 'extracted').use }, { problem: 'It is too short.', use: 'none' });
-    assert.equal(step(first, 'authoringSaved'), undefined);
-    assert.deepEqual({ ok: step(second, 'authoringSaved').ok, why: step(second, 'authoringSaved').why }, { ok: false, why: 'Server said no' });
-    assert.equal(second.failed, true);
-    const flags = view('kb').exchanges.flatMap((e) => e.steps.filter((s) => s.note?.kind === 'problem').map((s) => s.type));
-    assert.ok(flags.includes('extracted') && flags.includes('authoringSaved'));
-  });
-
   it('every recorded step and agent is described, and reads as a sentence with who decided', async () => {
     await fresh({ trace: true });
     await everything();
@@ -269,7 +186,7 @@ describe('Trace on, beyond lessons', () => {
         }
       }
     }
-    for (const t of ['noteChange', 'noteScreened', 'profileSaved', 'profileUnchanged', 'authorInput', 'authoringOpened', 'authoringTail', 'authoringParsed', 'extractAsked', 'extracted', 'authoringSaved', 'call']) {
+    for (const t of ['noteChange', 'noteScreened', 'profileSaved', 'profileUnchanged', 'call']) {
       assert.ok(seen.has(t), `the script never recorded "${t}"`);
     }
   });
@@ -278,23 +195,23 @@ describe('Trace on, beyond lessons', () => {
 describe('the size limit beyond lessons', () => {
   it('sums what is already stored, once per scope, the first time a trace is opened', async () => {
     await fresh({ trace: true });
-    store.set('trace:kb:t:0000000000001', { v: 1, kind: 'authoring', at: 1, steps: [{ n: 1, type: 'authorInput', text: 'x'.repeat(1000) }] });
-    store.set('trace:kb:b:0000000000002', { v: 1, kind: 'followup', at: 2, steps: [] });
-    store.set('trace:kb:p:abc', { v: 1, hash: 'abc', text: 'y'.repeat(5000) });
-    const expected = JSON.stringify(store.get('trace:kb:t:0000000000001')).length + JSON.stringify(store.get('trace:kb:b:0000000000002')).length;
+    store.set('trace:profile:t:0000000000001', { v: 1, kind: 'profile', at: 1, steps: [{ n: 1, type: 'noteChange', action: 'added', text: 'x'.repeat(1000) }] });
+    store.set('trace:profile:b:0000000000002', { v: 1, kind: 'followup', at: 2, steps: [] });
+    store.set('trace:profile:p:abc', { v: 1, hash: 'abc', text: 'y'.repeat(5000) });
+    const expected = JSON.stringify(store.get('trace:profile:t:0000000000001')).length + JSON.stringify(store.get('trace:profile:b:0000000000002')).length;
     const reads = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (url, opts) => { if (String(url).includes('prefix=')) reads.push(decodeURIComponent(String(url).split('prefix=')[1])); return realFetch(url, opts); };
     try {
-      await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'One.', messages: [{ role: 'user', content: 'One.' }] });
+      await addLearnerNote('One.');
       await settle();
-      const afterOne = traceBytes('kb');
+      const afterOne = traceBytes('profile');
       assert.ok(afterOne > expected, 'the stored size, plus this turn');
-      assert.equal(await storedTraceBytes('kb'), expected, 'turns and follow-ups; prompt parts are not counted');
-      await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'Two.', messages: [{ role: 'user', content: 'Two.' }] });
+      assert.equal(await storedTraceBytes('profile'), expected, 'turns and follow-ups; prompt parts are not counted');
+      await addLearnerNote('Two.');
       await settle();
-      assert.ok(traceBytes('kb') > afterOne);
-      assert.deepEqual(reads.sort(), ['trace:kb:b:', 'trace:kb:t:'], 'read once, not per turn');
+      assert.ok(traceBytes('profile') > afterOne);
+      assert.deepEqual(reads.sort(), ['trace:profile:b:', 'trace:profile:t:'], 'read once, not per turn');
     } finally { globalThis.fetch = realFetch; }
   });
 
@@ -311,25 +228,22 @@ describe('the size limit beyond lessons', () => {
     assert.equal([...store.keys()].filter((k) => k.startsWith('trace:')).length, before, 'nothing more is recorded');
     assert.equal(ai.length, 1);
     assert.ok(!('trace' in ai[0]));
-    // Another scope is unaffected.
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'Hello.', messages: [{ role: 'user', content: 'Hello.' }] });
-    await settle();
-    assert.equal(records('kb').t.length, 1);
   });
 
   it('a different person signing in starts from nothing', async () => {
     await fresh({ trace: true });
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'Hello.', messages: [{ role: 'user', content: 'Hello.' }] });
+    await addLearnerNote('Hello.');
     await settle();
-    const first = traceBytes('kb');
+    const first = traceBytes('profile');
     assert.ok(first > 0);
     store.clear(); clearCache();
-    localStorage.setItem('plato_auth', JSON.stringify({ accessToken: 't', refreshToken: 'r', user: { userId: 'usr_other', firstName: 'Bo', traceMode: true } }));
-    await authoringTurn({ scope: 'kb', agent: 'knowledge-base-editor', text: 'Hi.', messages: [{ role: 'user', content: 'Hi.' }] });
+    localStorage.setItem('plato_auth', JSON.stringify({ accessToken: 't', refreshToken: 'r', user: { userId: 'usr_other', firstName: 'Bo' } }));
+    await savePreferences({ name: '', traceScopes: SCOPES });
+    await addLearnerNote('Hi.');
     await settle();
     // One turn, with its prompt parts stored again (they were the other person's).
-    assert.ok(traceBytes('kb') > first * 0.9 && traceBytes('kb') < first * 1.5, 'only this person’s trace is counted');
-    assert.ok([...store.keys()].some((k) => k.startsWith('trace:kb:p:')), 'prompt parts are written again for the new person');
+    assert.ok(traceBytes('profile') > first * 0.9 && traceBytes('profile') < first * 1.5, 'only this person’s trace is counted');
+    assert.ok([...store.keys()].some((k) => k.startsWith('trace:profile:p:')), 'prompt parts are written again for the new person');
   });
 });
 

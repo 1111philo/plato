@@ -14,6 +14,7 @@
  * Pure except for the injected `save`. Unit tests: client/tests/lessonTrace.test.js.
  */
 
+import { traceScopeKey } from '../../js/traceScope.js';
 import { MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 
 export const TRACE_VERSION = 1;
@@ -29,19 +30,28 @@ export const LINK_EXCERPT_CHARS = 2000;
 const INLINE_PART_CHARS = 600;
 const LINK_MARKER = '[REFERENCE CONTEXT';
 
-/** Whether Trace mode is on for this person: their own switch, or an admin's. */
-export function isTraceOn({ preferences, user } = {}) {
-  return !!(preferences?.traceMode || user?.traceMode);
+/**
+ * Whether Trace records `scope` (a lesson id, or `profile`). A person starts
+ * it one conversation at a time, from that conversation's Trace
+ * (`preferences.traceScopes`), so nothing is recorded that nobody asked to read.
+ */
+export function isTraceOn(preferences, scope) {
+  return !!scope && Array.isArray(preferences?.traceScopes) && preferences.traceScopes.includes(scope);
 }
 
-/** Who turned it on: `'team'` (an admin, for this person) or `'self'`. */
-export function traceTurnedOnBy({ user } = {}) {
-  return user?.traceMode ? 'team' : 'self';
+/** `preferences` with `scope` switched on or off. */
+export function withTraceScope(preferences, scope, on) {
+  const scopes = (Array.isArray(preferences?.traceScopes) ? preferences.traceScopes : []).filter((x) => x !== scope);
+  return { ...(preferences || {}), traceScopes: on ? [...scopes, scope] : scopes };
 }
 
-/** `trace:<scope>:<kind>:<id>`: kind t = a turn, b = a follow-up agent, p = a prompt part. */
+/**
+ * `trace:<scope>:<kind>:<id>`: kind t = a turn, b = a follow-up agent, p = a
+ * prompt part. The scope is made key-safe (js/traceScope.js): a lesson's id
+ * can hold characters a key can't.
+ */
 export function traceKey(scope, kind, id) {
-  return `trace:${scope}:${kind}:${id}`;
+  return `trace:${traceScopeKey(scope)}:${kind}:${id}`;
 }
 
 /**
@@ -104,14 +114,13 @@ function errorInfo(err) {
 }
 
 /**
- * Start recording one turn (or a lesson start, a follow-up agent, an
- * authoring turn).
+ * Start recording one turn (or a lesson start, or a follow-up agent).
  *
  * @param {object} o
- * @param {string} o.scope    a lesson id, 'profile', 'kb', or 'author-<lessonId>'
- * @param {string} o.kind     'start' | 'turn' | 'followup' | 'profile' | 'authoring'
+ * @param {string} o.scope    a lesson id, or 'profile'
+ * @param {string} o.kind     'start' | 'turn' | 'followup' | 'profile'
  * @param {function} o.save   async (key, data) => ({ ok }) — storage.putTraceRecord
- * @param {object} [o.app]    what was running: `{ build, language, by }`
+ * @param {object} [o.app]    what was running: `{ build, language }`
  * @param {boolean} [o.partial] recording began after the lesson did
  * @param {Set} [o.knownParts] hashes already stored for this scope (shared across turns)
  * @param {function} [o.onStep] called with each step as it is recorded (the live panel)
@@ -144,6 +153,13 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     return { kind: partKind, chars: t.length, hash, ...(t.length > MAX_PART_CHARS ? { cut: true } : {}) };
   };
 
+  // The agent's prompt-file header as it was for this call, every field.
+  const about = (parts) => {
+    const h = parts.find((p) => p.kind === 'prompt')?.header;
+    return h ? { name: h.name, purpose: h.purpose, runs: h.runs, reads: h.reads, returns: h.returns } : null;
+  };
+  let lastCall = null;
+
   const messagesRef = (messages) => {
     if (base && messages.length >= base.length && base.every((m, i) => m === messages[i])) {
       return { base: base.length, extra: storableMessages(messages.slice(base.length)) };
@@ -158,6 +174,12 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     steps,
     step,
 
+    /**
+     * The step number of the latest AI call, for a result step to name the
+     * call it came from (`{ call: trace.lastCall() }`).
+     */
+    lastCall: () => lastCall,
+
     /** The messages every coach call this turn starts from; stored once. */
     setBase(messages) {
       base = messages;
@@ -167,16 +189,21 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
     /**
      * One AI call. Returns a handle: `attempt(err)` for each failed try that
      * was retried, `meta(m)` for stream metadata, `end(reply)` or `fail(err)`.
+     * `stage` and `check` are the caller's: where in the exchange the call
+     * belongs (STAGES) and, for a call made by a check, which one (CHECKS).
      */
-    begin({ agent, purpose, model, maxTokens, temperature, stream = false, parts = [], messages = [] }) {
+    begin({ agent, purpose, stage = null, check = null, model, maxTokens, temperature, stream = false, parts = [], messages = [] }) {
       const callStart = now();
       const call = step('call', {
-        agent, purpose: purpose || null, model, maxTokens,
+        agent, purpose: purpose || null, stage, check, model, maxTokens,
         temperature: temperature ?? null, stream,
         system: parts.map(partRef),
+        // The prompt file's header (who the agent is), which isn't sent.
+        ...(about(parts) ? { about: about(parts) } : {}),
         messages: messagesRef(messages),
         attempts: [],
       });
+      lastCall = call.n;
       const meta = (m = {}) => {
         if (m.usage) call.usage = m.usage;
         if (m.stopReason) call.stopReason = m.stopReason;
@@ -199,7 +226,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
 
     /**
      * Write the trace: new prompt parts first, then the turn's record. Never
-     * throws, and never runs twice. Returns `{ key, ok, bytes }`.
+     * throws, and never runs twice. Returns `{ key, ok, status, bytes }`.
      */
     async flush() {
       if (flushed) return null;
@@ -219,7 +246,7 @@ export function createTrace({ scope, kind, save, app = {}, partial = false, know
           steps,
         };
         const res = await put(key, data);
-        return { key, ok: !!res?.ok, bytes };
+        return { key, ok: !!res?.ok, status: res?.status ?? null, bytes };
       } catch {
         return { key, ok: false };
       }

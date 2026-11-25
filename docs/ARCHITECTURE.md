@@ -198,11 +198,26 @@ system prompt except the two whose output only plato reads (`assessor`,
   the directive too.
 - Admin-side agents (lesson creator/extractor, KB editor/extractor) follow
   the *admin's* browser, so lessons and the KB are authored in that language.
+- **The Coach also gets it in its context** (`learnerLanguage` in
+  `buildContext`, omitted for English). With only the system prompt's
+  Language section, which comes after 22,000 characters of English, it opened
+  lessons in English about half the time, and a rule asking for "the
+  language of this conversation" made it worse, because everything it reads
+  first is English (agent evaluations, 2026-11-24). With the context field, 8
+  of 8 openers in Spanish and in Bengali.
+- **plato's own fixed text** (the held-completion message, `heldReply`) is
+  put into the learner's language by the Coach (`checkGrading`'s `localize`,
+  `localizeAddendum`); a failed translation keeps the English.
+- The map covers the languages learners use. Bengali was missing, so Bengali
+  browsers got no directive at all; it and other South Asian, African and
+  Southeast Asian languages were added after review.
 - Verified against Qwen3-VL on Bedrock (Spanish, 3 runs × 7 agents, outputs
   run through plato's own parsers): all tags, JSON, headings, and `- Can `
-  objectives parsed; prose came back in Spanish. Internal KB fields the coach
-  reads but learners never see (`evidence`, `learnerPosition`) sometimes stay
-  English because their input (the lesson) is English — harmless.
+  objectives parsed; prose came back in Spanish. `evidence`, which only the
+  Coach and Assessor read, sometimes stays English because its input (the
+  lesson) is English: harmless. `learnerPosition` is learner-facing ("Where
+  you are") and must be in their language. The agent evaluations
+  (`server/scripts/evals/`) check these on every change.
 
 ## AI provider & model choice
 
@@ -573,9 +588,17 @@ which it links to when the conversation has a trace.
 
 A readable record of everything behind a conversation: what was sent to the
 model, what came back, and every place plato's instructions or code shaped the
-result. Any user can turn it on in Settings (`preferences.traceMode`); an admin
-can turn it on for a person (`user.traceMode`, Admin → Users). Either one
-records. "Audit" keeps its older meaning here (the audit log, View as User).
+result. It is for learners, **one conversation at a time**: **Start trace**
+in a lesson panel's **Data Trace** tab (or in Settings → Learner Profile's Data Trace)
+starts recording that conversation; **Stop trace** ends it. The
+scopes being recorded are `preferences.traceScopes`; `lessonTrace.isTraceOn
+(preferences, scope)` is the one check. Nothing is recorded that nobody asked
+to read, and it's on only where someone is looking (Blake, 2026-11-24).
+Admins have no Trace: not for the authoring chats, not in View as User, and
+no per-person switch. (An account-wide Settings switch and an admin
+per-person switch shipped first, on playground only; `preferences.traceMode`
+and `user.traceMode` from them are ignored.) "Audit" keeps its older meaning
+here (the audit log, View as User).
 
 **It is off by default and a strict no-op when off.** A request without
 `trace: true` gets byte-identical responses, and no record is written.
@@ -590,7 +613,14 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
 | `trace:<scope>:b:<ms>` | one follow-up agent (profile, unit note) |
 | `trace:<scope>:p:<hash>` | one part of a system prompt, stored once per distinct text |
 
-`<scope>` is a lesson id, `profile`, `kb`, or `author-<lessonId>`.
+`<scope>` is a lesson id or `profile`, made key-safe by `js/traceScope.js`
+(`traceScopeKey`): the server allows only letters, digits, `-` and `_` there,
+and a lesson id can hold anything its author typed. On playground, lessons
+with `&`, `:` or spaces in their ids had every trace write refused, without a
+word (Blake, 2026-11-24). A safe id is used as it is (older traces keep their
+keys); any other becomes its safe characters plus a fingerprint of the whole
+id. A refused write is now said in the Data Trace ("An exchange couldn't be
+saved to the trace").
 
 - **Out of the bulk load.** `GET /v1/sync` skips `trace:` at the database, as
   it does `screenshot:` (`getSyncDataExcept` takes a list; the ranges come from
@@ -602,8 +632,8 @@ Traces are the caller's own sync-data, never part of `messages:` (which has a
   the bulk payload, so the client filters what comes back.
 - **Deleted key by key.** Never add a prefix to `DELETE /v1/sync`: a rolled-back
   server would ignore it and delete all of the learner's data.
-- **Read-only for staff.** View as User (`?asUserId=`) reads a learner's trace
-  like any other record; writes are refused as everywhere.
+- **Not shown to staff.** The records are ordinary sync-data, so View as User
+  could read them, but the app offers no Trace there.
 - No migration. RC-232 ignores the new keys and fields (covered by
   `upgrade-from-rc232.test.js`).
 
@@ -614,7 +644,7 @@ delete theirs. It explains behaviour; it is not tamper-proof evidence.
 Prompts are assembled in the browser, so that is where a trace is recorded.
 
 - `lib/traceSession.js` `openTrace(scope, kind)` returns a recorder when
-  either switch is on, else `undefined`. Every caller passes it on as `trace`
+  Trace is on for that scope, else `undefined`. Every caller passes it on as `trace`
   and reaches it only through `trace?.…`. That is the whole off switch.
 - `lib/lessonTrace.js` is the recorder (pure): ordered steps, each AI call
   with its request and raw reply, and `flush()`, which writes the new prompt
@@ -625,14 +655,29 @@ Prompts are assembled in the browser, so that is where a trace is recorded.
 - `lessonEngine.sendMessage` / `startLesson` record what the code did around
   the calls: the learner's input, the context, what was parsed, tag repair,
   the draft guard, each grading-check decision (`checkGrading`'s `onStep`,
-  with which message each quote was found in), the rules applied
-  (`rulesApplied`), saves with their HTTP status, and events.
+  with which message each quote was found in), the values before and after
+  the rules, saves with their HTTP status, and events.
+- **Record facts, not guesses** (2026-11-24, from Blake's real trace). Each
+  call records the agent's whole prompt header (`about`: name, purpose, runs,
+  reads, returns), and the caller names where the call belongs (`stage`, and
+  `check` for a check's call). Each result step names the call it read
+  (`call: trace.lastCall()`). The numbers and names in force are recorded
+  where they're used: the tail size (`tail.limit`, `COACH_TAIL`), the draft
+  threshold (`draftCheck.minWords`), the tags looked for (`parsed.tags`,
+  `COACH_TAGS`). The view reads these; it has no table mapping steps to agents
+  and doesn't match purpose wording (traces from before fall back to that).
+- **Rules are worked out when the trace is viewed** (`traceView.deriveRules`)
+  from the recorded values, not read from a list stored at the time. The list
+  stored by the 2026-11-23 build said "no progress score, so your score
+  didn't change" on 8 of 10 turns of Blake's lesson whose score went up (the
+  tag repair supplied it; fixed in #609, but stored conclusions stay wrong);
+  derived, those turns read correctly.
 - Follow-up agents (profile, unit note) write their own `b` records
   (`tracedFollowUp`), since they finish after the turn was saved.
-- `lessonKB.trace = { since, by, partial? }` marks a lesson as recorded: set
-  at the start when Trace is on, or on the first recorded turn (`partial`).
-  It is removed from anything given to an agent. Recording follows the
-  switches, not the stamp: turn Trace off and it stops.
+- `lessonKB.trace = { since, partial? }` marks a lesson as recorded: set at
+  the start when Trace is on, or on the first recorded turn (`partial`). It is
+  removed from anything given to an agent. Recording follows
+  `traceScopes`, not the stamp: stop tracing and it stops.
 
 **Who decided.** `lib/transparency.js` is plato's one description of itself:
 every agent, context field, prompt part, recorded step, rule, threshold,
@@ -649,92 +694,74 @@ off, and every request can be rebuilt from the stored trace alone (replay).
 A request the trace can't reproduce means the trace is missing something.
 
 ### The Trace view
-- **Settings → Trace mode** sets `preferences.traceMode`. If an admin set
-  `user.traceMode`, the box is checked and disabled, with "Turned on by your
-  classroom team".
-- **Lesson header**: a Trace button (footprints) when the lesson has a stamp
-  or is being recorded. `components/chat/LessonTrace.jsx` shows it **docked
-  beside the chat at 1024 px and up** (an `<aside>` landmark, not a modal: no
-  focus trap; Escape closes it from inside; focus returns to the button), and
-  as a **dialog below that**. Docked, it is `position: fixed` in the space
-  `<main>` occupies, clamped to the window, and re-measured when `<main>`
-  resizes or anything scrolls: an admin's extra bar makes the page itself
-  scroll, and a panel measured once ended up over the app header (Blake's
-  test, 2026-11-23). The page gets `pr-[26rem]`, and the pinned header and
-  composer overlays stop at the panel. The chat's scroll container and
-  `useStickToBottom` are untouched.
-- **Content** (`components/chat/TraceTimeline.jsx`, from `lib/traceView.js`),
-  conversation first (Blake, 2026-11-23: "a comprehensive step-by-step
-  human-readable look at what happens that can easily be navigated"):
-  - **The list of exchanges**: one row per stored turn ("Lesson start",
-    "Your message: …"), with what changed ("Progress 3 → 6 of 10"), who shaped
-    it ("The model's own answer" / "Shaped by plato's instructions" / "Changed
-    by plato's code"), and how many unusual things happened (anything that went
-    wrong, or a place plato changed the model's answer). A checkbox narrows
-    it to those.
-  - **One exchange**: a bar pinned to the top (All exchanges, Previous, Next);
-    what you sent and what you saw (and the reply that streamed first, when
-    plato replaced it); the verdict; then **What happened, in order**, in the
-    stages of `STAGES` (`transparency.js`): You sent → plato prepared and sent
-    the request → The AI model answered → plato checked the answer → plato
-    recorded the result → In the background. "Jump to" links go to each stage.
-  - **Each AI call is two steps**: *Sent to the AI model* (for which agent, the
-    model and region, the instructions' and messages' size in characters, the
-    tokens the model counted, the reply limit; in the stage that prepared it)
-    and *The AI model replied* (its size, how long it took, why it stopped).
-    Every step shows when it happened, counted from the start of the exchange.
-  - **plato checked the answer** is the list of checks in `CHECKS`, each a
-    question with its answer, even when it found nothing: did the reply include
-    its tags (`tagCheck`), did it write the learner's answer (`draftCheck`), is
-    every objective checked off shown in their own words (the grading check).
-    The steps a check led to sit under it.
-  - **Where plato stepped in or something went wrong is said on that step**
-    (`noteFor`), not in a separate list: amber "plato stepped in: …" or red
-    "Something went wrong: …", saying what happened and why it matters
-    (Blake: most readers won't know what a list of flags is asking them to
-    look for). The list of exchanges shows only who shaped each result and
-    "Something went wrong" when it did; its filter is "Only where plato stepped
-    in or something went wrong".
-  - **Agents are described by their own prompts.** Each prompt file's header
-    (`AGENT`, `PURPOSE`, `RUNS`, `READS`, `RETURNS`) is the one description
-    of its agent. The header is part of the instructions sent, so for each
-    call the Trace reads the agent's name and purpose back from what that
-    call sent (`js/agentHeader.js`), and an old turn keeps the description
-    true then. Everything else (the registry, "Behind this response", How
-    assessment works, `HOW_IT_WORKS.md`) uses `lib/agents.generated.js`,
-    built from the headers; a test fails when it's stale. Names are the
-    prompts' own ("Lesson Owner", "Assessor"): rename one in its prompt and
-    every surface follows (Blake, 2026-11-24).
-  - **Who's this? / What's a request?** The first time an agent comes up in
-    an exchange, the Trace says who it is; the first request says what a
-    request is (one model; instructions, messages, settings). Each message
-    in a request says who wrote it (plato's gathered context, the fixed
-    "Ready.", the learner, the coach's earlier reply). Checks say what they
-    look for: the setup check lists the six things `validateLessonKB`
-    requires (`LESSON_KB_CHECKS`), a held-back note gives its reason
-    (`NOTE_RULE_REASONS`). Rule wording takes its numbers from the code's
-    constants (`MAX_PROGRESS`, `HELD_PROGRESS`, `DRAFT_WORDS`, …).
-  - **Noise left out**: the lesson as written is shown once, at the start,
-    unless it was edited after the learner started (then it's shown and
-    flagged). Background agents' records join the exchange that set them off.
-  - Exact text is always in a `<pre>`, never rendered as markdown: it includes
-    model output and attached pages. Long words wrap (`overflow-wrap:
-    anywhere`), so nothing is wider than the panel.
-- **Focus**: opening an exchange focuses its heading; All exchanges returns
-  focus to its row. Both wait two frames, because the row clicked is gone and
-  a dialog's own focus handling reacts first.
-- **Live**: while a turn runs, "Happening now" lists its steps
-  (`subscribeTrace`); when its trace is saved the timeline reloads and screen
-  readers hear one polite "Trace updated".
-- **"Behind this response"** stays as the always-on summary and gains "Open
-  the trace for this reply", which opens the turn recorded just before that
-  message and focuses its heading.
-- **View as User** shows the learner's trace read-only: the button depends on
-  the lesson's stamp, never on the viewer's own switches.
-- **Size**: a conversation's trace stops at about 1.5 MB
-  (`MAX_SCOPE_BYTES`). The running size rides on `lessonKB.trace.bytes`, so
-  the limit holds across sessions; past it the stamp gets `full: true` and
-  the view says so.
+- **Where it is**: the **Data Trace** tab of the lesson panel (see [The lesson
+  panel](#the-lesson-panel-overview-438-and-trace)), opened from the
+  "Overview (N of M Objectives)" button; "Data Trace" says plainly what it is
+  (Blake, 2026-11-24). Trace is rarely used, so it has no control of its own
+  in the header.
+- **Starting and stopping** (`hooks/useTraceSwitch.js`, `TraceContent.jsx`):
+  "Not recording" with **Start trace** (and one line on what it records,
+  until there's a trace to read), or "● Recording" with **Stop trace**.
+  Closing the panel keeps recording. While it records, the tab is named "Data
+  Trace (recording)" and the lesson header shows a "● Recording" marker,
+  which opens the tab. Not offered in View as User.
+- **Docked or a dialog**: as the lesson panel, docked beside the chat at
+  1024 px and up (`position: fixed` in the space `<main>` occupies, clamped
+  to the window, re-measured when `<main>` resizes or anything scrolls), a
+  dialog below that.
+- **Written for reading and re-reading** (Blake, 2026-11-24: "a user visiting
+  the first time will probably click to helper text … that a repeat user
+  doesn't need"). Explanations sit behind **ⓘ** (`Explain.jsx`, a Base UI
+  popover anchored to its button, styled like the app's menus; Escape or a
+  click outside closes it): what a stage, step, check or label means, and
+  "How to read a trace" (`GLOSSARY`). What's left in view is what happened.
+- **The list of exchanges** (`TraceTimeline.jsx`): first, **what plato did
+  across the conversation**, counted from the records (`lessonSummary`):
+  "asked the coach again for the tags its reply left out, 8 times (19.8 s in
+  all)", "held a completion once", "added a pacing instruction … on 1
+  exchange". Each line is a filter button ("Show these 8", then "Showing"),
+  and a filtered list says so above it ("Showing 8 of 11 exchanges: where
+  plato …", with Show all). Then one row per turn with what changed and who
+  shaped it.
+- **One exchange**, top to bottom: a bar pinned to the top (All exchanges,
+  Previous, Next); what you sent and what you saw, as the chat shows them
+  (your message in its bubble, the reply as plain text; a long reply opens
+  with "Show the whole reply"); the verdict (with "Where
+  plato stepped in" below, just its first sentence); **Where plato stepped
+  in**, only when it did, each with "Show this step"; then **Every step (N)**,
+  folded, in the stages of `STAGES`. An exchange shows about 100 words before
+  anything is opened (a test holds it there); Blake's showed 320 to 680.
+  - **Each AI call is two steps**: *Sent to the {agent}* (model and region,
+    sizes, tokens, the reply limit; "the same as in exchange N" when its
+    instructions were) with **"Who is the {agent}?"**, the card from the
+    recorded header (what it's for, when it runs, what it's given, what it
+    sends back; the card says when a field came from today's description
+    because the recorded header didn't have it); and *The {agent} replied*.
+  - **What plato told the coach** is what changed since the last exchange;
+    the unchanged fields are listed by name. A field the registry has no
+    label for is shown by its name made readable, so a new field appears
+    with no change to the view.
+  - **Checks** are their questions with their answers on one line; a check
+    that found something starts open.
+  - **Instructions plato's code adds to steer the coach**
+    (`CONTEXT_FIELDS[k].steers`: `pacingDirective`,
+    `postCompletionDirective`) are listed where plato stepped in, with why
+    ("after 8 exchanges; lessons are designed for about 11"), and the reply
+    is no longer called the model's own.
+  - **A step with no wording here** is shown by its recorded fields, never
+    blank.
+  - **The header is not sent to the model** (`js/promptAssembly.js` strips
+    it, #614), so rewording a description can't change behaviour. A trace
+    from before reads the header from the instructions sent.
+  - Exact text is always in a `<pre>`, never rendered as markdown. A long
+    message or instruction already shown in an earlier exchange says "the
+    same as in exchange N".
+- **Drift is tested** (`client/tests/trace-readable.test.js`): every call
+  names a stage (and a check), every result names a call of the right agent,
+  each call carries its agent's whole header, every prompt header has all
+  five fields, old records' rules are re-derived, steering is listed, the
+  wording restates no tag name or threshold, and the word budget holds.
+- The last opened exchange is kept for the session (`sessionStorage`).
 
 ### Technology, download, and the single source
 - **Technology and services** (a tab in the Trace): every outside service
@@ -742,8 +769,11 @@ A request the trace can't reproduce means the trace is missing something.
   (plugin-backed services follow `GET /v1/plugins`). The model and region
   come from the server's own account in a recorded call (`plato.provider`),
   so a stand-in model in testing says so.
-- **Download**: the trace as readable text (`traceToText`, the same
-  sentences as the view) or as its stored JSON records.
+- **Download**: the trace as readable text (`traceToText`: the summary
+  across the conversation, then each exchange in the view's words; a long
+  exact text is written once and later repeats say "the same text as in
+  exchange N", so Blake's 12,693-line download is about 4,100) or as its
+  stored JSON records (complete).
 - **One description, many readers.** `transparency.js` feeds the Trace,
   "Behind this response" labels, the agent and rules sections of
   `/how-assessment-works`, the services section of `/privacy`, and
@@ -752,38 +782,26 @@ A request the trace can't reproduce means the trace is missing something.
   change to the registry must regenerate it (`npm run docs:how-it-works`).
 
 ### Beyond lessons
-Two more AI-driven places are recorded the same way, each under its own scope
-in the person's own records:
+One more place is recorded the same way, under its own scope in the
+learner's own records:
 
 | Scope | What | Trace button |
 |---|---|---|
 | `profile` | Settings → Learner Profile: each note added (Add Feedback) or removed is a turn: what the person did (`noteChange`), the profile agent's call (or `noteScreened` when the note filter held it back, with no call), and what was saved (`profileSaved` / `profileUnchanged`) | in the Learner Profile card, beside Add Feedback |
-| `author-<lessonId>` | the lesson editor's chat with the lesson creator, and each time the lesson writer is run (preview, Create/Update Lesson) | beside the editor's heading |
-| `kb` | the knowledge base editor (Customizer and first-time setup), and each run of the knowledge base writer | beside the editor's heading |
 
-- The flows live outside the pages so they can be tested from node:
+- The flow lives outside the page so it can be tested from node:
   `profileQueue.addLearnerNote` / `removeLearnerNote` (reusing
-  `saveProfileResult`, so the merge is the one the coach's observations use),
-  and `lib/authoringEngine.js` `authoringTurn` (one chat message: `authorInput`
-  or `authoringOpened`, `authoringTail`, the call, `authoringParsed` with the
-  `[READINESS: n]` score and the cleaned text) and `authoringExtract` (a writer
-  run: `extractAsked`, the call, `extracted` with the page's own check, and
-  `authoringSaved`). The three authoring pages share one hook,
-  `hooks/useAuthoringChat.js`, which replaced three copies of the same
-  streaming code.
-- A brand-new lesson already has its draft id when the editor opens
-  (`/plato/lessons/new` mints `admin-<ms>`), so its chat is recorded under that
-  lesson from the first message (`traceSession.authorScope`).
-- These conversations are session-only React state; the trace is the part
-  that is kept, in the admin's own sync records.
-- The buttons (`components/chat/TraceButton.jsx`) show while Trace mode is on
-  for the signed-in person; the profile one also when `profile` already has a
-  trace. Each opens `LessonTrace` as a dialog (`docked={false}`) and returns
-  focus to the button on close.
-- **Size.** These scopes have no record to carry `bytes`, so the first trace
+  `saveProfileResult`, so the merge is the one the coach's observations use).
+- The button (`components/chat/TraceButton.jsx`, "Trace" beside Add
+  Feedback) opens the same Trace content as a dialog, with Start trace and
+  Stop trace at the top; while recording it shows a red dot and "Recording".
+- The admin authoring chats (lesson editor, knowledge base editor) aren't
+  traced. They share `hooks/useAuthoringChat.js` and `lib/authoringEngine.js`,
+  which replaced three copies of the same streaming code.
+- **Size.** These scopes- **Size.** `profile` has no record to carry `bytes`, so the first trace
   opened for one in a session sums the JSON size of its stored `t` and `b`
   records once (`traceSession.storedTraceBytes`, cached per scope); the session
-  adds each flush to that. Nothing is listed while Trace mode is off. A
+  adds each flush to that. Nothing is listed while Trace is off. A
   different person signing in on the same tab starts the counts afresh.
 - Record ids are the start time in ms; two turns of one scope that start in the
   same millisecond get consecutive ids, so neither overwrites the other.
@@ -842,29 +860,6 @@ Coverage: `transparency.test.js` fails for a plugin whose manifest hooks
 outside `ctx.ai`, or sends a request the recorder doesn't see.
 `server/tests/routes/lesson-started-trace.test.js` runs WordPress Info through
 the real route with a fake model and fake searches.
-
-### The admin flag
-`PATCH /v1/admin/users/:userId { traceMode }` (`users.write`) writes a
-`trace_mode_changed { on }` audit entry when it changes. Bulk update takes
-`{ field: 'traceMode', value: true|false }` for accounts (wait-list entries
-have no lessons). `/v1/me` returns `traceMode` so the learner's app records and
-Settings can say who turned it on. The flag is honoured by the client; it is a
-diagnostic, not a control.
-
-**Admin controls (Admin → Users).** Everything here reads and writes the
-account's `traceMode`, never the person's own Settings choice.
-- **Edit User**: a "Trace mode" checkbox. Save sends `traceMode` only when it
-  changed, so an unrelated edit writes no audit entry. Anyone who can open the
-  view sees it; it's disabled without `users.write`.
-- **Table**: a "Trace" column ("On" or a dash), hidden until chosen in the
-  Columns dialog. It sits last, so layouts saved before it keep their order.
-- **Filters**: "Trace mode": On / Off, signed-up users only (invites and
-  wait-list entries match neither).
-- **Update…** (`BulkUpdateDialog.jsx`): "Trace mode" with On / Off. Only the
-  selected accounts are sent; with only wait-list entries selected the option
-  isn't offered. The wording (sentence, button, result message) is in
-  `client/src/lib/traceAdmin.js`.
-- **CSV**: a "Trace mode" column ("On" or blank) after the custom fields.
 
 ## Chat auto-scroll (#319, #321)
 
@@ -1019,8 +1014,8 @@ and objectives), where they can reference it throughout the lesson.
 6. **Coach context** — `buildContext()` injects enrichments into coach system prompt
    as `enrichmentContext: [{ source, context, reasoning }]`
 7. **UI display** — enrichments show in the "Additional context" section of
-   the lesson overview dialog (`LessonOverview.jsx`, opened from the lesson
-   header's "Progress (N of M Objectives)" button)
+   the lesson panel's Overview tab (`LessonOverview.jsx`, opened from the
+   lesson header's "Overview (N of M Objectives)" button)
 8. **Resume** — enrichments are read from cached `lessonKB` (never re-computed)
 
 ### Enrichment data contract
@@ -1323,10 +1318,17 @@ already finished the intro lesson." These flow end-to-end through one optional
 
 1. **Extract** — `lesson-extractor` emits `## Coach Directive` **verbatim**
    (codes, URLs, caveats intact) only when the conversation contained such
-   instructions; otherwise it omits the heading.
-2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`) reads the
-   section into `lesson.coachDirective` (buffered like the exemplar so multi-line
-   directives survive; absent ⇒ no key).
+   instructions; otherwise it omits the heading. It used to write coaching
+   advice of its own there (agent evaluations X1: 6 of 6 on main), so
+   `authoringExtract` drops a directive unless at least half its words are in
+   the author's messages (`withoutInventedDirective`; verbatim means they
+   are), and asks the extractor once more when plato's check refuses the
+   lesson (`EXTRACT_ATTEMPTS`).
+2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`, and its server
+   copy `server/src/lib/lesson-parse.js`) reads the section into
+   `lesson.coachDirective` (buffered like the exemplar so multi-line
+   directives survive; absent ⇒ no key). A directive that only says "None",
+   "N/A" or "—" is no directive.
 3. **Serve** — `buildContext` (`client/src/lib/lessonEngine.js`) surfaces it as
    `context.coachDirective` in **both** active and completed states.
 4. **Obey** — `coach.md` treats it as a high-priority instruction followed every
@@ -1458,15 +1460,23 @@ admin moved out of every course still shows first, under **Start here**.
 lesson that teaches it (see CLAUDE.md). Unedited copies everywhere pick up
 the change on the next deploy.
 
-### The lesson overview (#438)
+### The lesson panel: Overview (#438) and Trace
 
-One read-only dialog per lesson (`client/src/components/chat/LessonOverview.jsx`).
-It used to be two, "Lesson Overview" and "Your work", which repeated the
-exemplar and the objectives; Blake's review on #451 merged them. It opens from
-the lesson header's **"Progress (N of M Objectives)"** button (accessible name
-"Progress (N of M Objectives): lesson overview"; `progressLabel`),
-and from **Your progress** in the lessons page's outline dialog for started
-lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
+One panel per lesson (`client/src/components/chat/LessonPanel.jsx`), with two
+tabs: **Overview** (`LessonOverview.jsx`, read-only) and **Trace**
+(`TraceContent.jsx`, see [Trace mode](#trace-mode-595); not in View as User).
+It opens from the lesson header's **"Overview (N of M Objectives)"** button
+(accessible name "Overview (N of M Objectives): lesson panel";
+`overviewLabel`), and from **Your progress** in the lessons page's outline
+dialog for started lessons (`/lessons/:id?view=overview`; `?view=work` still
+works). At 1024 px and up it is docked beside the chat (an `<aside>`, not a
+modal; Escape closes it from inside; focus returns to what opened it), so
+the checklist stays in view while the learner works; below that it is a
+dialog. It replaced two separate things: the overview dialog, and a docked
+Trace with its own header button; Trace is rarely used, so it lives in a tab
+rather than in the header (Blake, 2026-11-24). The overview used to be two
+dialogs too, "Lesson Overview" and "Your work", which repeated the exemplar and
+the objectives; Blake's review on #451 merged them. The Overview tab, in order:
 - **Objectives:** the checklist (met / not yet, with sr-only state). Before
   the lesson starts nothing is met; a completed lesson shows all met.
 - **What finished work looks like:** the exemplar, once.
@@ -1477,11 +1487,11 @@ lessons (`/lessons/:id?view=overview`; `?view=work` still works). In order:
   Images are fetched only when the section opens, each key once.
 - **Additional context** (`<details>`): plugin enrichments, when there are any.
 
-The progress score isn't repeated; the header's progress bar shows it. The
-footer has **How assessment works** (left of Close), the one place in the
-classroom that links the assessment page, next to the progress it explains.
-The dialog's body is one focusable scroll region (axe scrollable-region-focusable).
-It works the same on completed lessons and in View as User (it only reads).
+The progress score isn't repeated; the header's progress bar shows it. It
+ends with **How assessment works**, the one place in the classroom that links
+the assessment page, next to the progress it explains. Each tab panel is its
+own focusable scroll area (axe scrollable-region-focusable). It works the same
+on completed lessons and in View as User (it only reads).
 
 **The checklist.** The coach may add `"objectivesMet": [1, 3]` (1-based, as
 the objectives are listed in its context) to `[KB_UPDATE]`.
@@ -2155,8 +2165,7 @@ filter.
   (Password / SSO, only while single sign-on is in play: a provider is on or
   an account is linked; signed-up users only, and someone with both matches
   both; Status then also offers "Wait list: email verified", see
-  [`SSO.md`](SSO.md#for-admins)), Trace mode (On / Off, the admin's flag;
-  signed-up users only, see [Trace mode](#trace-mode-595)), and every
+  [`SSO.md`](SSO.md#for-admins)), and every
   custom field (its dropdown options plus Empty, or Has a value / Empty).
   Each option shows its count.
 - Filters combine as **OR within a facet, AND across facets**. Each facet has
@@ -2178,7 +2187,6 @@ change is announced.
 - The name/open column and the actions column are fixed.
 - Every custom field is a Users column, hidden until chosen. This replaced the
   old filter-driven extra column.
-- Users also has a hidden Trace column (see [Trace mode](#trace-mode-595)).
 - Lessons adds a hidden Lesson ID column.
 - Column resizing isn't built.
 

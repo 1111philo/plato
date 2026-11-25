@@ -70,6 +70,23 @@ export function mergeProfile(existing, returned) {
   return merged;
 }
 
+// A summary sentence about where a fact came from, not about the learner:
+// "Any coach observation … does not override their self-described beginner
+// status", "No learner notes currently override this profile". The prompts
+// forbid these, and the agents still wrote them about 1 in 6 times (agent
+// evaluations P4, P6, P11, O4; the same on main). The learner reads the
+// summary, so plato's code takes those sentences out, and any about AI use
+// or copying ("with no evidence of AI-generated content", P11).
+const PROVENANCE = /\b(?:ignored|overrid\w*|according to|was told|observations?|ai[- ]generated|chatgpt|copied|plagiar\w*|the coach (?:noted|noticed|said)|(?:learner|their|the|a|any|this|that) notes?\b|(?:removed|removing|deleted) (?:the |a |their )?note)/i;
+
+/** The summary without sentences about its sources. Pure; never empty when the input wasn't. */
+export function withoutProvenance(summary) {
+  const text = String(summary || '').trim();
+  const sentences = text.match(/[^.!?]+[.!?]+["”’)]*|[^.!?]+$/g) || [];
+  const kept = sentences.filter((x) => !PROVENANCE.test(x)).map((x) => x.trim());
+  return kept.length ? kept.join(' ') : text;
+}
+
 async function saveProfileResult(existing, result, trace) {
   if (!result?.profile) {
     // null: the note was screened out (learnerNoteFilter), which is expected.
@@ -81,9 +98,10 @@ async function saveProfileResult(existing, result, trace) {
   const savedProfile = await saveLearnerProfile(merged);
   syncIfUnsaved(savedProfile, 'profile');
   let savedSummary = null;
+  if (result.summary) result = { ...result, summary: withoutProvenance(result.summary) };
   if (result.summary) { savedSummary = await saveLearnerProfileSummary(result.summary); syncIfUnsaved(savedSummary, 'profileSummary'); }
   // The learner's own notes and the lesson lists are kept by code whatever the agent returned (mergeProfile).
-  trace?.step('profileSaved', { before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
+  trace?.step('profileSaved', { call: trace.lastCall(), before: existing, returned: result.profile, after: merged, summary: result.summary || null, saved: { profile: savedProfile, summary: savedSummary } });
 }
 
 // -- The learner's own notes (Settings → Learner Profile) ---------------------
@@ -137,7 +155,7 @@ export async function removeLearnerNote(index, { onSummary } = {}) {
         lessonName: 'Settings', activityType: 'feedback', activityGoal: 'User removed a profile note',
       }, 'learner-removed', trace ? { trace } : undefined);
       await saveProfileResult(current, result, trace);
-      if (result?.profile && result.summary) onSummary?.(result.summary);
+      if (result?.profile && result.summary) onSummary?.(withoutProvenance(result.summary));
     } catch (e) {
       trace?.fail(e);
       throw e;

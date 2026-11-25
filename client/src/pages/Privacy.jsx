@@ -89,13 +89,13 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold mb-2">Trace Mode</h2>
+            <h2 className="text-lg font-semibold mb-2">Trace</h2>
             <p className="text-muted-foreground">
-              If you turn on Trace mode in Settings, or your classroom team turns it on for you, plato records
-              what it does behind your conversations: the instructions given to the AI model, what was sent
-              and what came back, and what plato’s code did with it. The record is saved with your lesson, you
-              can read and download it from the lesson’s Trace button, and your classroom team can read it too.
-              It includes the first part of any web page you attach. Resetting a lesson deletes its trace.
+              If you start a trace in a lesson (the Data Trace tab beside its Overview), plato records what it does
+              behind that lesson until you stop it: the instructions given to the AI model, what was sent and what came back, and what
+              plato’s code did with it. The record is saved with the rest of your lesson data, and you can read
+              and download it from the same Data Trace tab. It includes the first part of any web page you attach.
+              Resetting a lesson deletes its trace.
             </p>
           </section>
 

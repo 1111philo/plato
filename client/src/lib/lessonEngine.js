@@ -15,6 +15,7 @@ import {
 } from '../../js/storage.js';
 import * as orchestrator from '../../js/orchestrator.js';
 import { authenticatedFetch } from '../../js/auth.js';
+import { learnerLanguageName } from '../../js/language.js';
 import { compressImageDataUrl } from './imageCompression.js';
 import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
@@ -27,7 +28,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, claimsCompletion, heldReply, heldPosition, draftsForLearner, DRAFT_ADDENDUM,
+  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -78,8 +79,15 @@ export function assertImageWithinBedrockLimit(imageDataUrl) {
 
 // -- Tag parsing --------------------------------------------------------------
 
+/**
+ * The tags plato's code reads from a coach reply, by what each carries. The
+ * Trace names them from here (and records the list on each parse), so a tag
+ * added here shows up there by itself.
+ */
+export const COACH_TAGS = Object.freeze({ progress: 'PROGRESS', notes: 'KB_UPDATE', profile: 'PROFILE_UPDATE' });
+
 // Detects where the coach tag section begins (tags always come at the end)
-const TAG_SECTION_REGEX = /\n?\[(?:PROGRESS|KB_UPDATE|PROFILE_UPDATE)[:\s]/;
+const TAG_SECTION_REGEX = new RegExp(`\\n?\\[(?:${Object.values(COACH_TAGS).join('|')})[:\\s]`);
 
 /**
  * Extract a JSON object from text starting after startPos, using bracket
@@ -150,18 +158,21 @@ export async function recoverMissingTags(parsed, repair) {
  * stay checked off. When the reply scored 10 but some objective isn't shown,
  * completion is held and `regenerate(addendum)` streams the coach's second
  * try, told what's missing; its score is held to HELD_PROGRESS and its
- * objectives to the ones the check found.
+ * objectives to the ones the check found. When that try still says the
+ * lesson is done, plato's own held message replaces it, put into the
+ * learner's language by `localize(addendum)` when one is given.
  *
  * Never throws. If the check itself fails, the coach's grading stands, as it
  * did before: a completing turn checks off every objective, so the
  * every-objective rule in applyCoachResponseToKB still lets it complete.
  * Returns `{ parsed, assessment }`; `assessment` is null when nothing was checked.
  */
-export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim, onStep }) {
+export async function checkGrading({ lesson, kb, parsed, messages, imageParts = [], assess, regenerate, judgeClaim, localize, onStep }) {
   // `onStep(type, data)` (Trace mode) hears each decision as it is made. It
   // changes nothing: the result is the same with or without it.
   const note = (type, data) => { try { onStep?.(type, data); } catch { /* never breaks grading */ } };
-  const ground = (verdict, tr, check) => groundVerdict(verdict, tr, check, { imageThisTurn, ...(onStep ? { evidence: true } : {}) });
+  const confirms = confirmingCounts(kb);
+  const ground = (verdict, tr, check) => groundVerdict(verdict, tr, check, { imageThisTurn, confirms, ...(onStep ? { evidence: true } : {}) });
   const plan = assessmentPlan(kb, parsed);
   note('gradingPlan', { ...plan, ran: plan.check.length > 0 });
   if (!plan.check.length) return { parsed, assessment: null };
@@ -256,7 +267,15 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
     }
     note('claimCheck', { byPattern, byModel, saysDone });
     if (saysDone) {
-      const standard = heldReply(kb, applied.outstanding, grounded.missing);
+      let standard = heldReply(kb, applied.outstanding, grounded.missing);
+      // In the learner's language, when it isn't English (`localize`, from
+      // sendMessage). A failed or empty translation keeps the English.
+      if (localize) {
+        try {
+          const translated = parseCoachResponse(await localize(localizeAddendum(standard))).text;
+          if (translated) standard = translated;
+        } catch { /* keep the English */ }
+      }
       note('replyReplaced', { before: out.text, after: standard });
       out = { ...out, text: standard };
       replaced = true;
@@ -298,25 +317,31 @@ export function shouldUpdateProfile(parsed) {
   return typeof parsed?.profileUpdate?.observation === 'string' && parsed.profileUpdate.observation.trim().length > 0;
 }
 
+/** How many of the latest stored messages the coach is sent as the conversation so far. */
+// Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32
+// msgs). 40 covers outliers up to 22 exchanges without being unlimited.
+export const COACH_TAIL = 40;
+
+// checkGrading's steps that read the reply of the call just made.
+const CALL_RESULTS = new Set(['gradingRetry', 'verdict', 'recheck', 'claimCheck', 'heldRewrite']);
+
 export function parseCoachResponse(raw) {
   let progress = null;
   let kbUpdate = null;
   let profileUpdate = null;
 
-  const progressMatch = raw.match(/\[PROGRESS:\s*(\d+)\]/);
+  const progressMatch = raw.match(new RegExp(`\\[${COACH_TAGS.progress}:\\s*(\\d+)\\]`));
   if (progressMatch) progress = parseInt(progressMatch[1], 10);
 
-  const kbIdx = raw.indexOf('[KB_UPDATE:');
-  if (kbIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, kbIdx + '[KB_UPDATE:'.length);
-    if (jsonStr) { try { kbUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
-
-  const profIdx = raw.indexOf('[PROFILE_UPDATE:');
-  if (profIdx !== -1) {
-    const jsonStr = extractBracketedJSON(raw, profIdx + '[PROFILE_UPDATE:'.length);
-    if (jsonStr) { try { profileUpdate = JSON.parse(jsonStr); } catch { /* ignore */ } }
-  }
+  const json = (tag) => {
+    const idx = raw.indexOf(`[${tag}:`);
+    if (idx === -1) return null;
+    const jsonStr = extractBracketedJSON(raw, idx + tag.length + 2);
+    if (!jsonStr) return null;
+    try { return JSON.parse(jsonStr); } catch { return null; }
+  };
+  kbUpdate = json(COACH_TAGS.notes);
+  profileUpdate = json(COACH_TAGS.profile);
 
   return { text: stripTags(raw), progress, kbUpdate, profileUpdate };
 }
@@ -364,7 +389,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   if (onProgress) onProgress('initializing');
   const lessonKB = await orchestrator.initializeLessonKB(lesson, profileSummary, { trace });
   // What the planner wrote, before plato's code sets the fields it owns.
-  trace?.step('planned', { fromModel: { ...lessonKB }, authorObjectives: lesson.learningObjectives || [], authorExemplar: lesson.exemplar || '' });
+  trace?.step('planned', { call: trace.lastCall(), fromModel: { ...lessonKB }, authorObjectives: lesson.learningObjectives || [], authorExemplar: lesson.exemplar || '' });
   lessonKB.lessonId = lessonId;
   lessonKB.name = lesson.name;
   lessonKB.progress = 0;
@@ -415,14 +440,14 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   // The lesson is being recorded from its start (set only when Trace is on,
   // and after the plugins have seen the KB: it's about the recording, not
   // the lesson).
-  if (trace) lessonKB.trace = { since: lessonKB.startedAt, by: trace.app?.by || 'self' };
+  if (trace) lessonKB.trace = { since: lessonKB.startedAt };
   syncIfUnsaved(await saveLessonKB(lessonId, lessonKB), `lessonKB:${lessonId}`);
   trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
 
   if (onProgress) onProgress('starting');
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const context = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
   const opening = [{ role: 'user', content: context }, { role: 'assistant', content: 'Ready.' }, { role: 'user', content: 'Start the lesson.' }];
   trace?.step('context', { context: JSON.parse(context) });
   trace?.setBase(opening);
@@ -436,7 +461,7 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   );
 
   const { text, progress } = parseCoachResponse(coachMsg);
-  trace?.step('parsed', { raw: coachMsg, text, progress, opener: true });
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
   // the lesson: nothing has been shown yet, and only applyCoachResponseToKB
@@ -512,7 +537,7 @@ export async function sendMessage(lessonId, lesson, text, imageDataUrl, links, o
   // Trace mode (#595): a recorder when it's on, else undefined. A lesson that
   // started before it was turned on is recorded from here and marked partial.
   const trace = await openTrace(lessonId, 'turn', { partial: !lessonKB?.trace || !!lessonKB.trace.partial, used: lessonKB?.trace?.bytes });
-  if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), by: trace.app?.by || 'self', partial: true } };
+  if (trace && lessonKB && !lessonKB.trace) lessonKB = { ...lessonKB, trace: { since: ts(), partial: true } };
   // The stamp carries the trace's size so far, so the limit holds across
   // sessions and devices; past it, recording stops and the stamp says so.
   if (lessonKB?.trace && (trace || traceFull(lessonId))) {
@@ -538,7 +563,8 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // What the learner watched arrive, when a later reply replaced it.
   let streamed = 0;
   const stream = trace ? (...a) => { streamed++; return cleanStream(onStream)(...a); } : cleanStream(onStream);
-  const opts = (purpose) => (trace ? { trace, purpose } : undefined);
+  // `stage` and `check`: where the call belongs in the Trace (orchestrator.converseStream).
+  const opts = (purpose, where = {}) => (trace ? { trace, purpose, ...where } : undefined);
 
   const imageDataUrls = normalizeImageDataUrls(imageDataUrl);
   const linkList = Array.isArray(links) ? links.filter((l) => l && l.url) : [];
@@ -572,14 +598,12 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   });
 
   // Build conversation tail — filter out messages with empty content (e.g. image-only)
-  // Target: 11 exchanges (22 msgs), but over-target avg is 15.9 exchanges (~32 msgs).
-  // Set to 40 to cover outliers up to 22 exchanges without being unlimited.
   const allMsgs = await getLessonMessages(lessonId);
-  const tail = allMsgs.slice(-40)
+  const tail = allMsgs.slice(-COACH_TAIL)
     .map(m => ({ role: m.role, content: m.content }))
     .filter(m => m.content && (typeof m.content === 'string' ? m.content.trim() : m.content.length));
   trace?.step('tail', {
-    stored: allMsgs.length, sent: tail.length, olderLeftOut: Math.max(0, allMsgs.length - 40),
+    stored: allMsgs.length, sent: tail.length, limit: COACH_TAIL, olderLeftOut: Math.max(0, allMsgs.length - COACH_TAIL),
     // Earlier images and attached pages aren't sent again: only this turn's are.
     earlierImages: allMsgs.filter((m) => m.metadata?.imageKeys?.length).length,
     earlierLinks: allMsgs.filter((m) => m.metadata?.links?.length).length,
@@ -590,7 +614,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // Always include context as first message so coach has lesson + profile info
   const name = await learnerFirstName();
   const courseProgress = await loadCourseProgressSummary(lesson);
-  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress);
+  const contextMsg = buildContext(lesson, lessonKB, profileSummary, name, courseProgress, learnerLanguageName());
   const messages = [{ role: 'user', content: contextMsg }, { role: 'assistant', content: 'Ready.' }, ...tail];
   // Collapse to a plain string only when the turn is a single text block.
   messages.push({ role: 'user', content: userParts.length === 1 && userParts[0].type === 'text' ? userParts[0].text : userParts });
@@ -609,7 +633,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   );
 
   const firstParse = parseCoachResponse(coachMsg);
-  trace?.step('parsed', { raw: coachMsg, ...firstParse });
+  trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, ...firstParse });
   // Each check is recorded whether or not it finds anything, so the Trace
   // says it ran.
   trace?.step('tagCheck', tagsFound(firstParse));
@@ -619,7 +643,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   );
   // Visible in /v1/admin/logs, so the drop rate on prod isn't a guess.
   if (repaired.tagsRepairTried) {
-    trace?.step('tagRepair', { missing: repaired.tagsMissing || null, recovered: !!repaired.tagsRecovered, progress: repaired.progress, kbUpdate: repaired.kbUpdate || null, profileUpdate: repaired.profileUpdate || null });
+    trace?.step('tagRepair', { call: trace.lastCall(), missing: repaired.tagsMissing || null, recovered: !!repaired.tagsRecovered, progress: repaired.progress, kbUpdate: repaired.kbUpdate || null, profileUpdate: repaired.profileUpdate || null });
     report(repaired.progress != null && repaired.kbUpdate ? 'coach_tags_recovered' : 'coach_tags_unrecovered');
   }
 
@@ -632,17 +656,37 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // of 26 times). A failed rewrite keeps the first reply.
   let coachReply = repaired;
   const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
-  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts });
+  trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them'));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
-      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite')));
+      const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
       if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
-      trace?.step('draftGuard', { before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
+      trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
+  }
+
+  // The script guard: the model sometimes slips characters from another
+  // script into a reply (Chinese in an English one: agent evaluations C59,
+  // about 1 in 6 on some turns). Rewritten once; the rewrite is shown only
+  // when it's clean, otherwise the reply stays as it was.
+  const language = learnerLanguageName();
+  const mixed = mixesScripts(coachReply.text, language);
+  trace?.step('scriptCheck', { mixed });
+  if (mixed) {
+    const before = coachReply.text;
+    let fixed = false;
+    try {
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
+      fixed = !!again.text && !mixesScripts(again.text, language);
+      if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
+      trace?.step('scriptGuard', { call: trace.lastCall(), before, after: again.text || null, used: fixed });
+    } catch (e) { trace?.step('scriptGuard', { before, failed: String(e?.message || e), used: false }); /* keep the reply */ }
+    report(fixed ? 'coach_script_rewritten' : 'coach_script_kept');
   }
 
   // The grading check (#584): objectives stay checked off only when the
@@ -656,9 +700,13 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     // the same with Trace on or off.
     // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
-    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held')),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
-    ...(trace ? { onStep: (type, data) => trace.step(type, data) } : {}),
+    // plato's own held message, in the learner's language (not streamed: it replaces the reply).
+    ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),
+    // A result says which call it came from: the latest one (a claim decided
+    // by wording alone made no call).
+    ...(trace ? { onStep: (type, data) => trace.step(type, CALL_RESULTS.has(type) && !(type === 'claimCheck' && data.byPattern) ? { call: trace.lastCall(), ...data } : data) } : {}),
   });
   const parsed = graded.parsed;
   const assessment = graded.assessment;
@@ -975,7 +1023,7 @@ function lessonForTrace(lesson) {
   };
 }
 
-export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress) {
+export function buildContext(lesson, lessonKB, profileSummary, learnerName, courseProgress, learnerLanguage = null) {
   const completed = lessonKB?.activitiesCompleted || 0;
   const lessonStatus = lessonKB?.status === 'completed' ? 'completed' : 'active';
   const context = {
@@ -991,6 +1039,11 @@ export function buildContext(lesson, lessonKB, profileSummary, learnerName, cour
     progress: lessonKB?.progress ?? 0,
     activitiesCompleted: completed,
   };
+  // The learner's language (#240), when it isn't English: the context is the
+  // first thing the coach reads, and with only the system prompt's Language
+  // section it still opened in English about half the time (AGENT_EVALS).
+  // English adds nothing, as everywhere else.
+  if (learnerLanguage) context.learnerLanguage = learnerLanguage;
   // Objectives the coach has already marked as shown (#438), 1-based.
   const met = objectivesMetForContext(lessonKB);
   if (met) context.objectivesMet = met;

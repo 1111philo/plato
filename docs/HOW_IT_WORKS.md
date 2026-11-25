@@ -169,12 +169,13 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 | `HELD_PROGRESS` | A held completion is recorded as at most 8. | `client/src/lib/assessment.js` |
 | `DRAFT_WORDS` | A quoted passage of 20 or more words in a reply counts as the coach drafting the learner’s answer. | `client/src/lib/assessment.js` |
 | `COPY_WORDS` | A quote of 8 or more words that the coach wrote first doesn’t count as the learner’s. | `client/src/lib/assessment.js` |
+| `COPIED_SHARE` | Nor does a quote mostly in the coach’s wording: when more than 50% of its three-word phrases appeared first in the coach’s messages (its sentences joined up, or sent back with a word swapped). The coach polishing the learner’s own words still counts as theirs. | `client/src/lib/assessment.js` |
 | `OWN_SHARE` | A passage the coach wrote first still counts as the learner’s when 70% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text. | `client/src/lib/assessment.js` |
 | `MAX_TRANSCRIPT` | The Assessor reads the last 40 messages. | `client/src/lib/assessment.js` |
 
 ## What a Trace records
 
-With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
+With Trace on for a conversation, each exchange of it is recorded step by step. The Trace shows the steps grouped in these stages, in this order:
 
 1. **plato set up the lesson.** Once, when a lesson starts: the lesson as written, the Lesson Owner’s version of it, and anything plugins added.
 2. **You sent.** What you wrote or did, exactly as plato received it.
@@ -192,15 +193,17 @@ With Trace mode on, each exchange of a conversation is recorded step by step. Th
 | Extra context from plugins (`plugins`) | plato set up the lesson | plato’s code | Plugins the classroom has turned on can add background for the coach when a lesson starts. Each plugin’s own work is listed with it: the AI calls it made, the outside requests it sent, and its notes. |
 | What you sent (`input`) | You sent | A person | Your message, with any images and attached web pages. |
 | Where the lesson stood (`state`) | plato prepared and sent the request | plato’s code | The progress and objectives on record before this message. |
-| The conversation so far (`tail`) | plato prepared and sent the request | plato’s code | plato sends the last 40 messages. Images and attached pages from earlier messages are not sent again. |
-| What plato told the coach about you and the lesson (`context`) | plato prepared and sent the request | plato’s code | plato’s code gathers this before every reply: the lesson, your progress, notes, and profile summary. |
+| The conversation so far (`tail`) | plato prepared and sent the request | plato’s code | plato sends the latest messages, up to a limit. Images and attached pages from earlier messages are not sent again. |
+| What plato told the coach (`context`) | plato prepared and sent the request | plato’s code | Before every reply plato’s code gathers what the coach should know about you and the lesson, and sends it as the first message. |
 | The messages sent to the model (`history`) | plato prepared and sent the request | plato’s code | The exact list of messages every coach call on this turn starts from. |
 | A call to the AI model (`call`) | The AI model answered | The AI model | One request to the model and its raw reply. |
-| What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags only plato’s code reads: a progress score and notes. The learner sees the text before them. |
-| Were the reply’s tags there? (`tagCheck`) | plato checked the answer | plato’s code | plato’s code looks for the two tags it needs: the progress score and the notes. Without them, nothing from the reply can be recorded. |
-| Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a quoted passage of 20 or more words, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
+| What plato read from the reply (`parsed`) | The AI model answered | plato’s code | The coach ends each reply with tags that only plato’s code reads. You see the text before them. |
+| Were the reply’s tags there? (`tagCheck`) | plato checked the answer | plato’s code | plato’s code looks for the tags it needs. Without them, nothing from the reply can be recorded. |
+| Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
 | What the second request got back (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
 | The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
+| Was the reply in one language? (`scriptCheck`) | plato checked the answer | plato’s code | plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others). |
+| The reply mixed in another language (`scriptGuard`) | plato checked the answer | plato’s instructions | plato asked the coach to write the same reply again in your language, and showed the rewrite if it came back clean. |
 | Whether to check the grading (`gradingPlan`) | plato checked the answer | plato’s code | The Assessor runs only when the coach checks off an objective or scores 10. |
 | The Assessor’s answer couldn’t be read (`gradingRetry`) | plato checked the answer | plato’s code | Its reply wasn’t in the expected format, so plato asked once more. |
 | The Assessor’s verdict (`verdict`) | plato checked the answer | The AI model | For each objective, the quote it relied on. plato’s code then looked for each quote in your own messages: a quote counts only if you wrote it, and didn’t copy it from the coach. |
@@ -223,13 +226,6 @@ With Trace mode on, each exchange of a conversation is recorded step by step. Th
 | The unit note was updated (`unitNoteSaved`) | In the background | plato’s code | The short note the coach in this unit’s other lessons will see. |
 | The unit note was not changed (`unitNoteUnchanged`) | In the background | plato’s code | Nothing usable came back, so the note stayed as it was. |
 | What you did (`noteChange`) | You sent | A person | A note you added to or removed from your profile in Settings. Notes you add are kept word for word. |
-| What you wrote (`authorInput`) | You sent | A person | Your message in the editing conversation. |
-| plato started the conversation (`authoringOpened`) | You sent | plato’s code | The editor opens with a first message that plato’s code writes, so the agent replies first. |
-| The conversation so far (`authoringTail`) | plato prepared and sent the request | plato’s code | plato sends the agent the last 15 messages of the editing conversation. |
-| What plato read from the reply (`authoringParsed`) | The AI model answered | plato’s code | The agent ends each reply with a readiness score from 0 to 10 that only plato’s code reads. You see the text before it, and the score moves the readiness bar. |
-| What you asked for (`extractAsked`) | You sent | A person | You asked plato to write the lesson or the knowledge base from the editing conversation: for the preview, or to save it. |
-| What was written, and whether it could be used (`extracted`) | The AI model answered | plato’s code | The model wrote the text. plato’s code checked it had what it needs before showing or saving it. |
-| Saved (`authoringSaved`) | plato recorded the result | plato’s code | Whether what was written reached plato’s database. |
 | What you were shown (`shown`) | plato recorded the result | plato’s code | The reply that was kept. If a later reply replaced the first, you watched the first one arrive before it changed. |
 | This attempt failed (`error`) | plato recorded the result | plato’s code | Nothing from this attempt was saved to the conversation. |
 
@@ -246,6 +242,8 @@ A code and the lesson’s id. Never conversation text.
 - `coach_assessment_failed_open`: The Assessor couldn’t run twice in a row and the coach’s grading stood.
 - `coach_draft_rewritten`: A reply that drafted the learner’s answer was rewritten.
 - `coach_draft_kept`: A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.
+- `coach_script_rewritten`: A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.
+- `coach_script_kept`: A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.
 
 ## Outside services, and what each is sent
 

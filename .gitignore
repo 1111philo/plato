@@ -18,3 +18,4 @@ server/client-content/
 # See .github/workflows/version-bump.yml (tag creation) and the private
 # deploy fork's deploy.yml (version.json generation).
 version.json
+evals/scratch/

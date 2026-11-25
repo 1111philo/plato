@@ -79,7 +79,7 @@ export function render() {
   for (const [id, text] of Object.entries(RULES)) out.push(`- **\`${id}\`** ${text}`);
   out.push('', '### The numbers behind them', '', '| Name | Meaning | Defined in |', '|---|---|---|');
   for (const [id, t] of Object.entries(THRESHOLDS)) out.push(`| \`${id}\` | ${t.means} | \`${t.where}\` |`);
-  out.push('', '## What a Trace records', '', 'With Trace mode on, each exchange of a conversation is recorded step by step. The Trace shows the steps grouped in these stages, in this order:', '');
+  out.push('', '## What a Trace records', '', 'With Trace on for a conversation, each exchange of it is recorded step by step. The Trace shows the steps grouped in these stages, in this order:', '');
   Object.values(STAGES).forEach((st, i) => out.push(`${i + 1}. **${st.title}.** ${st.means}`));
   out.push('', '| Step | Stage | Decided by | Meaning |', '|---|---|---|---|');
   for (const [id, s] of Object.entries(STEPS)) out.push(`| ${s.title} (\`${id}\`) | ${STAGES[s.stage].title} | ${who(s.source)} | ${s.means} |`);

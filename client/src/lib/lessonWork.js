@@ -1,4 +1,4 @@
-// The lesson overview (#438): objectives checklist, summary, and the
+// The lesson panel's Overview tab (#438): objectives checklist, summary, and the
 // learner's saved attachments, read from what plato already stores. Pure,
 // tested in client/tests/lessonWork.test.js.
 
@@ -40,10 +40,10 @@ export function objectivesMetLabel(kb, fallbackObjectives = []) {
   return `${list.filter((o) => o.met).length} of ${list.length} objectives met`;
 }
 
-/** "Progress (N of M Objectives)": the lesson header's button, which opens the overview. */
-export function progressLabel(kb, fallbackObjectives = []) {
+/** "Overview (N of M Objectives)": the lesson header's button, which opens the lesson panel. */
+export function overviewLabel(kb, fallbackObjectives = []) {
   const list = objectiveStatuses(kb, fallbackObjectives);
-  return `Progress (${list.filter((o) => o.met).length} of ${list.length} Objectives)`;
+  return `Overview (${list.filter((o) => o.met).length} of ${list.length} Objectives)`;
 }
 
 /** 1-based numbers for the coach's context, or undefined when none are met. */

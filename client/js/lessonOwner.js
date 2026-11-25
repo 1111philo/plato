@@ -74,6 +74,8 @@ export async function getLessonsInCourse(courseId) {
     .map(l => ({ name: l.name, description: l.description }));
 }
 
+const EMPTY_DIRECTIVE = /^[\s*_(]*(none|n\/a|na|no|nothing|not applicable|no (coach )?(instructions|directive)( given)?|-+|—)[\s.*_)]*$/i;
+
 export function parseLessonPrompt(lessonId, markdown) {
   const lines = markdown.split('\n');
   let name = '';
@@ -125,6 +127,10 @@ export function parseLessonPrompt(lessonId, markdown) {
   flushSection();
 
   const parsed = { lessonId, name, description, exemplar, learningObjectives: objectives };
-  if (coachDirective) parsed.coachDirective = coachDirective;
+  // "None" isn't an instruction: the Lesson Extractor sometimes writes the
+  // heading with "None" under it instead of leaving it out (agent
+  // evaluations X1, X4), and the coach would get "None" as the author's
+  // directive.
+  if (coachDirective && !EMPTY_DIRECTIVE.test(coachDirective)) parsed.coachDirective = coachDirective;
   return parsed;
 }

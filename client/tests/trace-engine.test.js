@@ -23,11 +23,11 @@ const { STEPS, RULES, AGENTS } = await import('../src/lib/transparency.js');
 const ID = LESSON.lessonId;
 const noop = () => {};
 
-async function lesson(messages, { trace = false, admin = false } = {}) {
+async function lesson(messages, { trace = false } = {}) {
   reset();
   clearCache();
-  signIn({ traceMode: admin });
-  if (trace && !admin) await savePreferences({ name: '', traceMode: true });
+  signIn();
+  if (trace) await savePreferences({ name: '', traceScopes: [ID] });
   ai.length = 0;
   await startLesson(ID, LESSON, noop);
   const results = [];
@@ -92,17 +92,17 @@ describe('Trace on', () => {
   it('stamps the lesson, stores each prompt part once, and keeps traces out of the bulk load', async () => {
     await lesson(SCRIPT, { trace: true });
     const kb = await getLessonKB(ID);
-    assert.equal(kb.trace.by, 'self');
     assert.equal(kb.trace.partial, undefined);
     const all = traces(ID);
     assert.equal(all.t.length, 1 + SCRIPT.length, 'the start and each turn');
     assert.equal(all.t[0].kind, 'start');
     // 17 calls share 9 distinct long parts (each agent's instructions, the
-    // knowledge base, one held-completion addition).
+    // Claim Check's included since it says "next step" isn't "next lesson",
+    // the knowledge base, one held-completion addition).
     assert.equal(Object.keys(all.p).length, 9, 'parts are stored once, not per call');
     const bulk = await (await fetch('/v1/sync')).json();
     assert.ok(bulk.every((i) => !i.dataKey.startsWith('trace:')));
-    assert.ok(all.t.every((r) => r.app.build && r.app.by === 'self'));
+    assert.ok(all.t.every((r) => r.app.build && !('by' in r.app)));
   });
 
   it('plugins: what each one did at the start is in the trace, and nowhere else', async () => {
@@ -183,18 +183,12 @@ describe('Trace on', () => {
     assert.equal(call.error.server.error.name, 'ThrottlingException', 'with the provider’s own error');
   });
 
-  it('turned on by an admin: recorded the same way, marked as the team’s', async () => {
-    await lesson(['My first answer.'], { admin: true });
-    assert.equal((await getLessonKB(ID)).trace.by, 'team');
-    assert.ok(traces(ID).t.every((r) => r.app.by === 'team'));
-  });
-
   it('turned on mid-lesson: recorded from the next message and marked partial', async () => {
     reset(); clearCache(); signIn();
     await startLesson(ID, LESSON, noop);
     await sendMessage(ID, LESSON, 'Before trace.', null, [], noop);
     assert.equal(traces(ID).t.length, 0);
-    await savePreferences({ name: '', traceMode: true });
+    await savePreferences({ name: '', traceScopes: [ID] });
     await sendMessage(ID, LESSON, 'After trace.', null, [], noop);
     await settle();
     const all = traces(ID);
@@ -202,10 +196,21 @@ describe('Trace on', () => {
     assert.equal(all.t[0].partial, true);
     assert.equal((await getLessonKB(ID)).trace.partial, true);
     // Turned off again: recording stops, what was recorded stays.
-    await savePreferences({ name: '', traceMode: false });
+    await savePreferences({ name: '', traceScopes: [] });
     await sendMessage(ID, LESSON, 'Off again.', null, [], noop);
     await settle();
     assert.equal(traces(ID).t.length, 1);
+  });
+
+  it('is on for the lesson it was turned on for, and no other', async () => {
+    reset(); clearCache(); signIn();
+    const OTHER = { ...LESSON, lessonId: 'other-lesson', name: 'Other lesson' };
+    await savePreferences({ name: '', traceScopes: [ID] });
+    await startLesson(OTHER.lessonId, OTHER, noop);
+    await sendMessage(OTHER.lessonId, OTHER, 'Not traced.', null, [], noop);
+    await settle();
+    assert.equal([...store.keys()].filter((k) => k.startsWith('trace:other-lesson:')).length, 0);
+    assert.equal((await getLessonKB(OTHER.lessonId)).trace, undefined);
   });
 
   it('stops recording at the size limit, and the lesson’s stamp says so', async () => {

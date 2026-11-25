@@ -1,0 +1,317 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 7: every test lesson with three profiles, plus Spanish and Bengali.",
+ "cases": [
+  {
+   "id": "L1-empty",
+   "lesson": "L1",
+   "title": "L1 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L1-beginner",
+   "lesson": "L1",
+   "title": "L1 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L1-experienced",
+   "lesson": "L1",
+   "title": "L1 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L2-empty",
+   "lesson": "L2",
+   "title": "L2 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L2-beginner",
+   "lesson": "L2",
+   "title": "L2 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L2-experienced",
+   "lesson": "L2",
+   "title": "L2 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L3-empty",
+   "lesson": "L3",
+   "title": "L3 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L3-beginner",
+   "lesson": "L3",
+   "title": "L3 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L3-experienced",
+   "lesson": "L3",
+   "title": "L3 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L4-empty",
+   "lesson": "L4",
+   "title": "L4 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L4-beginner",
+   "lesson": "L4",
+   "title": "L4 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L4-experienced",
+   "lesson": "L4",
+   "title": "L4 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L5-empty",
+   "lesson": "L5",
+   "title": "L5 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L5-beginner",
+   "lesson": "L5",
+   "title": "L5 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L5-experienced",
+   "lesson": "L5",
+   "title": "L5 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L6-empty",
+   "lesson": "L6",
+   "title": "L6 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2,
+   "mustMention": "screenshot"
+  },
+  {
+   "id": "L6-beginner",
+   "lesson": "L6",
+   "title": "L6 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2,
+   "mustMention": "screenshot"
+  },
+  {
+   "id": "L6-experienced",
+   "lesson": "L6",
+   "title": "L6 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2,
+   "mustMention": "screenshot"
+  },
+  {
+   "id": "L7-empty",
+   "lesson": "L7",
+   "title": "L7 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2,
+   "mustMention": "link|url|page"
+  },
+  {
+   "id": "L7-beginner",
+   "lesson": "L7",
+   "title": "L7 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2,
+   "mustMention": "link|url|page"
+  },
+  {
+   "id": "L7-experienced",
+   "lesson": "L7",
+   "title": "L7 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2,
+   "mustMention": "link|url|page"
+  },
+  {
+   "id": "L8-empty",
+   "lesson": "L8",
+   "title": "L8 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L8-beginner",
+   "lesson": "L8",
+   "title": "L8 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L8-experienced",
+   "lesson": "L8",
+   "title": "L8 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L9-empty",
+   "lesson": "L9",
+   "title": "L9 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L9-beginner",
+   "lesson": "L9",
+   "title": "L9 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L9-experienced",
+   "lesson": "L9",
+   "title": "L9 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L10-empty",
+   "lesson": "L10",
+   "title": "L10 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L10-beginner",
+   "lesson": "L10",
+   "title": "L10 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L10-experienced",
+   "lesson": "L10",
+   "title": "L10 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L11-empty",
+   "lesson": "L11",
+   "title": "L11 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L11-beginner",
+   "lesson": "L11",
+   "title": "L11 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L11-experienced",
+   "lesson": "L11",
+   "title": "L11 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L12-empty",
+   "lesson": "L12",
+   "title": "L12 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L12-beginner",
+   "lesson": "L12",
+   "title": "L12 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L12-experienced",
+   "lesson": "L12",
+   "title": "L12 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L13-empty",
+   "lesson": "L13",
+   "title": "L13 for a empty profile",
+   "profile": "New learner, no profile yet.",
+   "trials": 2
+  },
+  {
+   "id": "L13-beginner",
+   "lesson": "L13",
+   "title": "L13 for a beginner profile",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "trials": 2
+  },
+  {
+   "id": "L13-experienced",
+   "lesson": "L13",
+   "title": "L13 for a experienced profile",
+   "profile": "Data analyst for six years; comfortable with Excel and SQL; wants to lead AI projects.",
+   "trials": 2
+  },
+  {
+   "id": "L1-es",
+   "lesson": "L1",
+   "title": "L1 in Spanish",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "language": "Spanish",
+   "trials": 2
+  },
+  {
+   "id": "L3-es",
+   "lesson": "L3",
+   "title": "L3 in Spanish",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "language": "Spanish",
+   "trials": 2
+  },
+  {
+   "id": "L7-es",
+   "lesson": "L7",
+   "title": "L7 in Spanish",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "language": "Spanish",
+   "trials": 2
+  },
+  {
+   "id": "L2-bn",
+   "lesson": "L2",
+   "title": "L2 in Bengali",
+   "profile": "Beginner with technology; uses a Chromebook at the library; returning to work after caring for family.",
+   "language": "Bengali",
+   "trials": 2,
+   "from": "review"
+  }
+ ]
+}
