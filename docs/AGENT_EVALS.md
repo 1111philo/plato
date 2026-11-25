@@ -165,7 +165,7 @@ Every check has one of four pass marks.
 
 | Pass mark | Meaning | Examples |
 |---|---|---|
-| **Must never happen** | One occurrence fails the test. | A lesson marked complete when the learner did not do the work. The Assessor counting words the Coach wrote. |
+| **Must never happen** | For a slip that harms a learner, one occurrence fails the test. For the rest, a failure is checked again first (below). | A lesson marked complete when the learner did not do the work. The Assessor counting words the Coach wrote. |
 | **At least as good as today** | The new version may not do worse than the version learners use now, beyond normal variation. | How often the Coach checks off an objective too early. How often a reply is too long. |
 | **For reading** | Not pass or fail. Collected for the reading panel. | Tone. Whether an explanation was clear. |
 | **Not yet expected** | Something plato should do but doesn't yet. Run and reported, so we can see it start working; never blocks a change. | A formal assessment lesson (L14). The profile naming the learner's stage. |
@@ -174,6 +174,20 @@ Every check has one of four pass marks.
 differently each time it runs. Before any comparison we run today's version
 twice and measure that gap. A new version only "does worse" if it is worse by
 more than that gap.
+
+**Strict, or checked again.** Run across about a thousand trials, a rare slip
+turns up somewhere almost every time, often one today's version makes too.
+So "must never happen" is strict, one occurrence fails, only where a slip
+harms a learner:
+- completing or changing a lesson without the work;
+- recording an approval;
+- changing an author's link or code;
+- AI suspicion in notes the learner reads;
+- a made-up fact or instruction.
+
+Any other failure, and any "at least as good as today" one, is checked again
+first: the case runs 12 more times on both versions, and fails only if it
+happens again, or more often than today. *(Decided 2026-11-24.)*
 
 **Where the bar starts.** Today's version sets it. If today's version already
 gets something wrong some of the time, the first job is to see that number
@@ -207,6 +221,13 @@ scores.
 - After the lesson is complete, ask for feedback on it. Ask for no more work.
 - End every reply with a hidden score and notes that plato records.
 
+**Examples** *(decided 2026-11-24)*. By default the Coach's examples are a
+few words. When a learner asks for one, is stuck after trying, or learns that
+way, it may give one full example sentence, about a different situation from
+theirs, so it shows the shape without being their answer. Never a menu of
+finished answers about their own situation to pick from. Copied text still
+doesn't count as theirs.
+
 ### Single moments (counted by computer)
 
 Each row is one situation. "Stay open" means the lesson must not be marked
@@ -225,13 +246,13 @@ complete on this reply.
 | C7 | L2 | Full, personal answers for every objective. | **Complete.** |
 | C8 | L3 | A goal and measures, but no data. "Am I done?" | Stay open. Says what is missing. |
 | C9 | L3 | Goal, measures, real numbers, and what they show, in the learner's words. | **Complete.** |
-| C10 | L4 | A plan copied from a template, with nothing personal in it. | Stay open. Asks them to connect it to their own situation. |
+| C10 | L4 | A plan copied from a template, with nothing personal in it. | Stay open. Asks them to connect it to their own situation. Dated steps can count for "plan concrete steps" *(decided 2026-11-24)*. |
 | C11 | L5 | Explains the idea correctly, using their own real example. | **Complete.** |
 | C12 | L5 | Repeats the Coach's explanation back almost word for word. | Stay open. |
 | C13 | L6 | Sends the screenshot and explains it. | **Complete.** |
 | C14 | L6 | Says "I made the checklist" but sends no screenshot. | Stay open. Asks to see it. |
 | C15 | L7 | Shares the link. The page has the work. The learner says it is their finished page. | **Complete.** |
-| C16 | L7 | Shares a link, but says nothing about whether it is finished. | Stay open. Asks whether this is the finished work. |
+| C16 | L7 | Shares a link, but says nothing about whether it is finished. | Stay open. A link typed into a message is never opened, so the Coach doesn't say it can see the page and asks them to attach it with the link button (or send a screenshot). Nothing is checked off from the address alone *(decided 2026-11-24)*. |
 | C17 | L7 | Shares a link plato could not read. | Stay open. Says it couldn't read the page and asks them to paste the part that matters. |
 | C18 | L8 | Describes a real example and names where they found it. | **Complete.** |
 | C19 | L8 | Describes an example with no source. | Stay open. Asks for the source. |
@@ -891,10 +912,10 @@ Not needed for review. This maps the proposal to the code.
   language.
 - **Noise margin.** Baseline is run twice per check; margin = the larger of
   the observed difference and a binomial interval at the trial count. Stored
-  in `evals/calibration.json`, regenerated only on purpose.
+  in `server/scripts/evals/calibration.json`, keyed by main's version, regenerated only on purpose (`--calibrate`).
 - **Results, and running automatically.** `npm run eval` writes
   `evals/results/<hash>.json`, where the hash covers every watched file (the
-  coverage map in `server/scripts/evals/watch.js`: prompts, prompt assembly,
+  coverage map in `server/scripts/evals/lib/watch.js`: prompts, prompt assembly,
   the orchestrator, the lesson engine and assessment, the authoring and
   profile code, `constants.js`, `converse.js`, `ai-provider.js`) and the level
   run. A git **pre-push hook** (`.githooks/pre-push`) runs the affected agents
