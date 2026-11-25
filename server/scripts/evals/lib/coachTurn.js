@@ -48,6 +48,8 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
     const again = await parseAndRepair(await coach(assessment.SCRIPT_ADDENDUM));
     if (again.text && !assessment.mixesScripts(again.text, lang)) parsed = again;
   }
+  // The directive's exact links and codes, where this version restores them.
+  if (assessment?.withDirectiveLiterals && parsed.text) parsed = { ...parsed, text: assessment.withDirectiveLiterals(parsed.text, lesson.coachDirective) };
   // The grading check, where this version has it.
   let graded = null;
   if (engine.checkGrading) {
@@ -97,7 +99,9 @@ export async function coachOpening({ app, model, lesson, kb, profile = 'No profi
     ],
     maxTokens: 1024,
   });
-  const { text, progress } = engine.parseCoachResponse(raw);
+  const parsed = engine.parseCoachResponse(raw);
+  const { progress } = parsed;
+  const text = app.assessment?.withDirectiveLiterals ? app.assessment.withDirectiveLiterals(parsed.text, lesson.coachDirective) : parsed.text;
   const score = engine.openingProgress ? engine.openingProgress(progress) : null;
   return { text: text || '', progress, after: score != null ? { ...kb, progress: score } : kb };
 }

@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -565,6 +565,19 @@ describe('a quote put together from the coach’s sentences (agent evaluations W
       { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
     ];
     assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
+describe('withDirectiveLiterals (agent evaluations H1)', () => {
+  const d = 'When the learner is ready to join, share this exact link and code: https://community.example.org/join and the code PLATO-2026.';
+  it('puts back the author’s exact link and code where the reply wrote a near-miss', () => {
+    assert.equal(withDirectiveLiterals('Join link: https:// comunidad.example.org/join. Code: PLATO 2026', d), 'Join link: https://community.example.org/join. Code: PLATO-2026');
+  });
+  it('leaves other links, exact ones, and lessons without a directive alone', () => {
+    const other = 'See https://community.example.org/rules first, then https://community.example.org/join.';
+    assert.equal(withDirectiveLiterals(other, d), other);
+    assert.equal(withDirectiveLiterals('Read https://example.com/other', d), 'Read https://example.com/other');
+    assert.equal(withDirectiveLiterals('https:// comunidad.example.org/join', undefined), 'https:// comunidad.example.org/join');
   });
 });
 

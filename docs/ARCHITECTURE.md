@@ -775,8 +775,7 @@ A request the trace can't reproduce means the trace is missing something.
   exchange N", so Blake's 12,693-line download is about 4,100) or as its
   stored JSON records (complete).
 - **One description, many readers.** `transparency.js` feeds the Trace,
-  "Behind this response" labels, the agent and rules sections of
-  `/how-assessment-works`, the services section of `/privacy`, and
+  "Behind this response" labels, the services section of `/privacy`, and
   `docs/HOW_IT_WORKS.md`, which `scripts/generate-how-it-works.js` writes.
   `client/tests/how-it-works.test.js` fails when the doc is out of date, so a
   change to the registry must regenerate it (`npm run docs:how-it-works`).
@@ -1487,9 +1486,7 @@ the objectives; Blake's review on #451 merged them. The Overview tab, in order:
   Images are fetched only when the section opens, each key once.
 - **Additional context** (`<details>`): plugin enrichments, when there are any.
 
-The progress score isn't repeated; the header's progress bar shows it. It
-ends with **How assessment works**, the one place in the classroom that links
-the assessment page, next to the progress it explains. Each tab panel is its
+The progress score isn't repeated; the header's progress bar shows it. Each tab panel is its
 own focusable scroll area (axe scrollable-region-focusable). It works the same
 on completed lessons and in View as User (it only reads).
 
@@ -1526,15 +1523,14 @@ Only the first line after the title is the lesson's description (what
 the last lesson" there. Coaching notes, such as terms to define at first use,
 go in the optional `## Coach Directive`. No new lesson fields are needed.
 
-### How assessment works (#257, #414)
+### How assessment is explained (#257, #414)
 
-`/how-assessment-works` (`client/src/pages/HowAssessmentWorks.jsx`) is a
-public page, linked from the lesson overview's footer and the Getting Started
-lessons. It describes only what the system does, in plain language (Blake,
-2026-11-10: "just technically how the assessments work"); no policy
-placeholders. Its list of AI helpers and of the rules plato's code applies
-comes from `lib/transparency.js`, so it can't drift from the code; the rest is
-prose to keep in step with the coach prompt and `applyCoachResponseToKB`.
+There was a public `/how-assessment-works` page (#257), linked from the lesson
+overview and Getting Started. It was removed on 2026-11-25 (Blake: "we have
+trace now"): the lesson panel's **Data Trace** tab shows the same thing for
+the learner's own lesson, built from what actually happened and from the same
+source (`lib/transparency.js`). The old address redirects home; Getting
+Started points to the Data Trace tab.
 
 The coach prompt backs this up (#414). When a response could have come from
 anyone, the coach asks for a personal example or the learner's own
@@ -1641,7 +1637,7 @@ all. When the lesson itself says the learner *confirms* what the coach drafts
 
 **When a 10 isn't backed up**, the score is held to 8 and the coach is asked
 again with an "Assessment check (from plato, not the learner)" addendum
-naming what's missing. Its second try streams in place of the first. The
+naming what's missing. Its second try is shown instead of the first. The
 second try's score stays at 8 or lower and its objectives are the ones the
 check found. `applyCoachResponseToKB` makes it a rule: a lesson completes only
 when every objective is checked off (lessons without objectives keep the old
@@ -1691,10 +1687,19 @@ the learner's answer ("Try: …", "Here's a draft combining both: …") and the
 learner pasting it back. `draftsForLearner` flags a reply with a quoted or
 italic passage of 20+ words, or one after a lead like "Try this:". Before
 grading, `sendMessage` asks the coach once to rewrite such a reply as
-feedback plus a question (`DRAFT_ADDENDUM`). The rewrite streams in place and
-is kept even if it still drafts: on playground it still drafted 21 of 26
-times, and switching back to the first reply made learners watch the reply
-change twice. The threshold is 20 words (Blake, 2026-11-22): on prod's
+feedback plus a question (`DRAFT_ADDENDUM`), in one question and 2-4
+sentences (its rewrites asked several questions most of the time; agent
+evaluations). The rewrite is kept even if it still drafts: on playground it
+still drafted 21 of 26 times.
+
+**The learner sees a reply only once it's checked** (Blake, 2026-11-25).
+Replies used to stream as the model wrote them, so a learner watched the
+first reply arrive and then switch to the rewrite, the held reply, or the
+script guard's version. `sendMessage` no longer streams the reply: the page
+shows its thinking indicator until every check has run, then the final
+reply. The opener still streams, except in a lesson with a coach directive,
+whose links and codes are checked first. The Trace keeps the model's first
+reply (`shown.firstReply`) and says the learner didn't see it. The threshold is 20 words (Blake, 2026-11-22): on prod's
 18,223 mid-lesson replies, 10 words would trigger on 29%, 20 on 14%, and 20
 still covers 57% of the passages learners copied into their next message. `coach.md` now asks for
 short example phrases, never sample sentences.

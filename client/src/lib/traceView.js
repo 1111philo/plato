@@ -326,6 +326,7 @@ const DESCRIBE = {
     summary: s.failed ? `plato asked for a rewrite, which failed (${s.failed}), so the first reply was kept.` : s.used ? `plato showed the rewrite in place of the first reply.${s.stillDrafts ? ' The rewrite still drafted an answer.' : ''}` : 'The rewrite came back empty, so the first reply was kept.',
     change: s.after ? { before: s.before, after: s.after } : null,
   }),
+  literals: (s) => ({ summary: 'plato put back the lesson author’s exact link or code.', change: { before: s.before, after: s.after } }),
   scriptCheck: (s) => ({ summary: s.mixed ? 'No: the reply had characters from another language. plato asked the coach to write it again.' : 'Yes.' }),
   scriptGuard: (s) => ({
     summary: s.failed ? `plato asked for a rewrite, which failed (${s.failed}), so the reply was kept.` : s.used ? 'plato showed the rewrite in place of the first reply.' : 'The rewrite still mixed languages, so the reply was kept.',
@@ -424,8 +425,12 @@ const DESCRIBE = {
     details: [{ label: 'The note', text: s.text }],
   }),
   shown: (s) => ({
-    summary: s.replaced ? 'You watched a first reply arrive, and then it was replaced by the one below.' : 'The reply you saw is the one the model wrote.',
-    change: s.replaced ? { before: s.firstStreamed, after: s.text } : null,
+    // Before 2026-11-25 replies streamed as they were written (`firstStreamed`),
+    // so a replaced one had been seen; now plato checks first (`firstReply`).
+    summary: !s.replaced ? 'The reply you saw is the one the model wrote.'
+      : s.streamedLive === false ? 'plato checked the model’s first reply and showed you the one below instead. You didn’t see the first one.'
+        : 'You watched a first reply arrive, and then it was replaced by the one below.',
+    change: s.replaced ? { before: s.firstReply ?? s.firstStreamed, after: s.text } : null,
     details: s.replaced ? [] : [{ label: 'The reply', text: s.text }],
   }),
   error: (s) => ({ summary: `${s.error.message}${s.error.type ? ` (${s.error.type})` : ''}`, details: [{ label: 'The error', text: pretty(s.error) }] }),
@@ -475,6 +480,7 @@ function noteFor(s) {
     case 'tagCheck': return null;
     case 'tagRepair': return s.recovered ? changed('the reply left out its tags, so plato asked the coach again for just those.') : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
+    case 'literals': return changed('the reply changed the author’s link or code slightly, so plato put back the exact text.');
     case 'scriptCheck': return s.mixed ? changed('the reply mixed in another language, so plato asked the coach to rewrite it.') : null;
     case 'gradingFailed': return problem(`The ${N.assessor} couldn’t run, so nothing new was checked off this time.`);
     case 'gradingStood': return changed('plato accepted the coach’s grading without the check, so you weren’t stuck.');
@@ -706,7 +712,8 @@ function describeExchange(rec, followups, { parts, startLesson, prevContext, sam
     title: titleFor(record), headline: headline(record),
     you: input ? (input.text ?? null) : null,
     saw: shown?.text ?? opener?.text ?? null,
-    firstSeen: shown?.replaced ? shown.firstStreamed : null,
+    firstSeen: shown?.replaced ? (shown.firstReply ?? shown.firstStreamed) : null,
+    firstSeenLive: shown?.replaced ? shown.streamedLive !== false : false,
     verdict: { ...verdict, lead: verdict.text.match(/^.*?[.!?](?=\s|$)/)?.[0] || verdict.text, sourceLabel: SOURCES[verdict.source].label, short: record.failed ? 'Failed' : SHORT_VERDICT[verdict.source] },
     flags: flags.filter((f, i) => flags.findIndex((g) => g.id === f.id) === i),
     // Where plato stepped in or something went wrong, each with the step it was on.

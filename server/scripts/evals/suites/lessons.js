@@ -37,7 +37,11 @@ async function earned({ app, model, lesson, kb, history }) {
   const transcript = a.assessmentTranscript([{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, ...history]);
   const check = lesson.objectives.map((_, i) => i + 1);
   const raw = await model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: a.assessmentInput({ lesson, kb, transcript, check }) }], maxTokens: 2048, temperature: 0 });
-  try { return a.groundVerdict(a.parseVerdict(raw), transcript, check).shown.length === check.length; } catch { return null; }
+  try {
+    // Grounded as checkGrading grounds it (a confirmation counts where the lesson says so).
+    const g = a.groundVerdict(a.parseVerdict(raw), transcript, check, a.confirmingCounts ? { confirms: a.confirmingCounts(kb) } : {});
+    return { ok: g.shown.length === check.length, missing: g.missing };
+  } catch { return null; }
 }
 
 export async function run(c, { app, model, trial = 0 }) {
@@ -74,7 +78,9 @@ export async function run(c, { app, model, trial = 0 }) {
   }
   const completed = completedAt != null;
   let unearned = null;
-  if (c.noFinish) unearned = completed ? ((await earned({ app, model, lesson, kb, history })) ?? false) : true;
+  let judged = null;
+  if (c.noFinish && completed) judged = await earned({ app, model, lesson, kb, history });
+  if (c.noFinish) unearned = completed ? (judged?.ok ?? false) : true;
   return {
     checks: {
       finishes: c.finish ? completed : null,
@@ -88,6 +94,7 @@ export async function run(c, { app, model, trial = 0 }) {
       conversation: true,
     },
     sample: {
+      ...(judged && !judged.ok ? { notShown: judged.missing } : {}),
       card: CARDS[c.card].name, lesson: `${lessonKey} ${lesson.name}`, stage, completed, exchanges: completedAt ?? limit, progress: kb.progress,
       conversation: history.map((m) => `${m.role === 'user' ? 'Learner' : 'Coach'}: ${m.content}`).join('\n\n'),
     },

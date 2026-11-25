@@ -28,7 +28,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -454,13 +454,19 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   const coachMsg = await orchestrator.converseStream(
     'coach',
     opening,
-    cleanStream(onStream),
+    // A lesson with a coach directive isn't streamed: its links and codes are
+    // checked first (withDirectiveLiterals), and a corrected one would switch.
+    lesson.coachDirective ? () => {} : cleanStream(onStream),
     1024,
     '',
     trace ? { trace, purpose: 'opening message' } : undefined,
   );
 
-  const { text, progress } = parseCoachResponse(coachMsg);
+  const firstOpening = parseCoachResponse(coachMsg);
+  const { progress } = firstOpening;
+  // The author's links and codes, exactly (withDirectiveLiterals).
+  const text = withDirectiveLiterals(firstOpening.text, lesson.coachDirective);
+  if (text !== firstOpening.text) orchestrator.reportEvent('coach_literal_restored', { lessonId });
   trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
@@ -561,8 +567,13 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // Events the server logs (a code and the lesson id only), noted in the trace too.
   const report = (code) => { orchestrator.reportEvent(code, { lessonId }); trace?.step('event', { code }); };
   // What the learner watched arrive, when a later reply replaced it.
-  let streamed = 0;
-  const stream = trace ? (...a) => { streamed++; return cleanStream(onStream)(...a); } : cleanStream(onStream);
+  // The reply isn't streamed to the learner while it's written: plato checks
+  // it first (tags, the draft guard, the script guard, the grading check) and
+  // may rewrite or replace it, and the learner watching a reply arrive and
+  // then switch to another was a problem (Blake, 2026-11-25). The page shows
+  // its thinking indicator until the checked reply is ready. `onStream` is
+  // kept in the signature for the page; nothing unchecked reaches it.
+  const stream = () => {};
   // `stage` and `check`: where the call belongs in the Trace (orchestrator.converseStream).
   const opts = (purpose, where = {}) => (trace ? { trace, purpose, ...where } : undefined);
 
@@ -650,10 +661,10 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // The draft guard (#584): a reply that writes the learner's answer for them
   // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
   // feedback plus a question. Learners copied these drafts, and the grading
-  // check then (rightly) didn't count them. The rewrite streams in place and
-  // is kept even when it still drafts: going back to the first reply made the
-  // learner watch it switch twice (playground: the rewrite still drafted 21
-  // of 26 times). A failed rewrite keeps the first reply.
+  // check then (rightly) didn't count them. The rewrite is kept even when it
+  // still drafts (playground: it still drafted 21 of 26 times). A failed
+  // rewrite keeps the first reply. Nothing is streamed, so the learner sees
+  // only the reply plato keeps.
   let coachReply = repaired;
   const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
@@ -687,6 +698,16 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
       trace?.step('scriptGuard', { call: trace.lastCall(), before, after: again.text || null, used: fixed });
     } catch (e) { trace?.step('scriptGuard', { before, failed: String(e?.message || e), used: false }); /* keep the reply */ }
     report(fixed ? 'coach_script_rewritten' : 'coach_script_kept');
+  }
+
+  // The author's links and codes, exactly: a near-miss of one in the lesson's
+  // coach directive ("https:// comunidad.example.org/join") is put back as the
+  // author wrote it (agent evaluations H1). Code, no model call.
+  const exact = withDirectiveLiterals(coachReply.text, lesson.coachDirective);
+  if (exact !== coachReply.text) {
+    trace?.step('literals', { before: coachReply.text, after: exact });
+    coachReply = { ...coachReply, text: exact };
+    report('coach_literal_restored');
   }
 
   // The grading check (#584): objectives stay checked off only when the
@@ -779,7 +800,9 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
   });
   const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
-  trace?.step('shown', { text: parsed.text, firstStreamed: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedUpdates: streamed, behindThisResponse: agents });
+  // `firstReply`: what the model wrote first. Not streamed, so the learner
+  // never saw it when plato replaced it (`streamedLive: false`).
+  trace?.step('shown', { text: parsed.text, firstReply: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedLive: false, behindThisResponse: agents });
 
   // true = saved. false = the server refused it; 'too_long' = not sent (past
   // the size budget). Either way tell the learner, and don't retry in the

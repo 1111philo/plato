@@ -3,9 +3,8 @@
  * every step a Trace records, every rule plato's code applies to a result,
  * and every outside service the app uses.
  *
- * The Trace view, "Behind this response", the "How assessment works" and
- * Privacy pages, and the generated docs/HOW_IT_WORKS.md all read from here,
- * so there is one place to change the wording. Tests
+ * The Trace view, "Behind this response", the Privacy page, and the
+ * generated docs/HOW_IT_WORKS.md all read from here, so there is one place to change the wording. Tests
  * (client/tests/transparency.test.js) fail when the code gains an agent, a
  * recorded step, a rule, an event or a service that isn't described here.
  *
@@ -134,6 +133,7 @@ export const STEPS = Object.freeze({
   draftCheck: { stage: 'checked', check: 'draft', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
   tagRepair: { stage: 'checked', check: 'tags', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', check: 'draft', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
+  literals: { stage: 'checked', check: 'language', title: 'The author’s link or code, exactly', source: 'code', means: 'The reply changed a link or code from the lesson author’s instructions slightly, so plato’s code put back the author’s exact text.' },
   scriptCheck: { stage: 'checked', check: 'language', title: 'Was the reply in one language?', source: 'code', means: 'plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others).' },
   scriptGuard: { stage: 'checked', check: 'language', title: 'The reply mixed in another language', source: 'instructions', means: 'plato asked the coach to write the same reply again in your language, and showed the rewrite if it came back clean.' },
   gradingPlan: { stage: 'checked', check: 'grading', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
@@ -227,6 +227,7 @@ export const EVENTS = Object.freeze({
   coach_draft_kept: 'A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.',
   coach_script_rewritten: 'A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.',
   coach_script_kept: 'A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.',
+  coach_literal_restored: 'A reply changed a link or code from the lesson author’s instructions slightly; plato put back the author’s exact text.',
 });
 
 /**

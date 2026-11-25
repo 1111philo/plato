@@ -383,6 +383,7 @@ Write your reply to the learner's last message again, in your usual voice and le
 - Say specifically what their own words did show.
 - Don't say the lesson, the exemplar, or the objectives above are done.
 - Ask for ONE next thing toward the first objective above, in their own words. Don't write it for them, not even as an example to approve.
+- 2-4 sentences and one question (one question mark).
 - End with your tags. [PROGRESS] is ${HELD_PROGRESS} or lower, and objectivesMet lists only objectives their own words showed.`;
 }
 
@@ -500,13 +501,58 @@ export const SCRIPT_ADDENDUM = `## One language (from plato, not the learner)
 
 Your reply wasn't all in the learner's language: it was in another one, or mixed in words or characters from another. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
 
+// Links and codes in an author's coach directive, which the coach must pass
+// on exactly. It sometimes doesn't: "https:// comunidad.example.org/join" for
+// https://community.example.org/join (agent evaluations H1).
+const URL_IN = /https?:\/\/[^\s<>()[\]"'“”‘’]+/gi;
+const CODE_IN = /\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b/g;
+const trimUrl = (u) => u.replace(/[.,;:!?*_]+$/, '');
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const pathOf = (u) => { try { return new URL(u).pathname.replace(/\/$/, ''); } catch { return null; } };
+
+/**
+ * The reply with the directive's links and codes restored where it wrote a
+ * near-miss: a link with the same path a few characters off (or a space
+ * after "https://"), a code with a space or dash changed. A different link
+ * (another path) is left alone. Pure.
+ */
+export function withDirectiveLiterals(text, directive) {
+  if (!text || !directive) return text;
+  const urls = [...new Set((String(directive).match(URL_IN) || []).map(trimUrl))];
+  const codes = [...new Set(String(directive).match(CODE_IN) || [])].filter((c) => /\d/.test(c) && /[A-Z]/.test(c));
+  let out = String(text);
+  if (urls.length) {
+    out = out.replace(/https?:\/\/\s+(?=\S)/gi, (m) => m.replace(/\s+/g, ''));
+    out = out.replace(URL_IN, (m) => {
+      const found = trimUrl(m);
+      const tail = m.slice(found.length);
+      if (urls.includes(found)) return m;
+      const near = urls.find((u) => pathOf(u) != null && pathOf(u) === pathOf(found) && editDistance(found.toLowerCase(), u.toLowerCase()) <= Math.max(3, Math.floor(u.length * 0.25)));
+      return near ? near + tail : m;
+    });
+  }
+  for (const c of codes) {
+    const loose = new RegExp(`\\b${c.split(/[-_]/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\-_–—]?')}\\b`, 'gi');
+    out = out.replace(loose, c);
+  }
+  return out;
+}
+
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
 
 Your reply wrote a sentence or passage for the learner to use as their own answer. Learners copy these, and copied text doesn't count as their work. Write your reply again:
-- Give specific feedback on what they wrote.
-- Ask them to write the next piece themselves. You may suggest what it should cover in a few words (a short phrase, not a sentence they could copy).
-- No quoted or italic sample sentences. Keep your usual voice, length, and tags.`;
+- One or two sentences of specific feedback on what they wrote.
+- Then one question asking them to write the next piece themselves. Anything it should cover goes inside that question in a few words ("Can you write that in your own words, maybe with what the food drive taught you?"), never as more questions or a sample sentence.
+- No quoted or italic sample sentences. One question mark in the whole reply. Then your tags.`;
 
 /**
  * The reply plato shows when completion is held and the coach's own words
