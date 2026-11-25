@@ -180,7 +180,7 @@ It uses the developer's AWS login. `EVAL_SKIP=1 git push` skips it once.
 - It fails unless `evals/results/<fingerprint>-<level>.json` exists, passed, and covers the affected agents.
 - A PR into `main` needs the full level, every agent.
 
-GitHub Actions can't call the model (`plato-gha-bedrock-agents` allows only two Claude models), so nothing here needed an IAM change. Making `agent-evals` a required check is a branch-protection change (below), not yet made. A release PR into `main` is merged only when it passes.
+GitHub Actions can't call the model (`plato-gha-bedrock-agents` allows only two Claude models), so nothing here needed an IAM change. `agent-evals` is a required check on `main` and `playground` (Blake, 2026-11-24; below), so a PR that changes what the evaluations cover can't merge without passing results for its exact version.
 
 ## Deploy dispatch & environments
 
@@ -243,7 +243,12 @@ For the full deploy procedure, SSM parameters, and backup layers, see
 
 `main` and `playground` are ruleset-protected (Settings → Rules → Rulesets →
 "Protect main and playground"): required PR + 1 approving review + passing
-`review` status check from the Code Review workflow; no force pushes; no deletion.
+`review` status check from the Code Review workflow + passing `agent-evals`
+(the agent evaluations' check, `.github/workflows/agent-evals.yml`: it passes
+on any PR that doesn't change what the evaluations cover); no force pushes;
+no deletion. A PR from a branch without that workflow file never reports
+`agent-evals`, so until the harness is on a branch's base, merge with the
+admin bypass.
 
 **Bypass mode**: "Pull requests only" — repository admins **cannot push directly**
 to protected branches (even for emergencies), but can merge PRs without waiting
@@ -254,6 +259,7 @@ This ensures every change to production:
 - Goes through a PR (no direct pushes)
 - Gets code-reviewed by the Bedrock workflow
 - Runs the full CI suite (lint, tests, CodeQL)
+- Carries passing agent evaluations when it changes a prompt, prompt assembly, the lesson engine or the model
 
 ### Emergency hotfix procedure
 
