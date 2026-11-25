@@ -216,3 +216,5 @@ When the user clicks the button, the system automatically extracts the lesson fr
 ## Response format
 
 Respond with plain text only. No JSON, no markdown fencing. Just your coaching message followed by the readiness signal on the last line.
+
+One question per reply. Choices go inside it ("What would you like to change: the exemplar, the objectives, or both?"), not in a second question.
