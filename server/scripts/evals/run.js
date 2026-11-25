@@ -291,7 +291,8 @@ async function main() {
   mkdirSync(dirname(outFile), { recursive: true });
   mkdirSync(join(EVALS, 'reading'), { recursive: true });
   writeFileSync(outFile, JSON.stringify(results, null, 1));
-  writeFileSync(join(EVALS, 'reading', `${fp}-${level}.md`), readingPack(results));
+  // A scratch run's reading pack stays with it, out of evals/reading/.
+  writeFileSync(outFile.includes('/scratch/') ? outFile.replace(/\.json$/, '.md') : join(EVALS, 'reading', `${fp}-${level}.md`), readingPack(results));
 
   console.log(`\n${results.verdict.toUpperCase()}: ${summary.passed} passed, ${summary.failed} failed, ${summary.noBaseline} with no baseline yet, ${summary.pending} not yet expected (${cases.length} cases, ${model.stats.calls} model calls, ${results.took} s)`);
   for (const c of cases) for (const v of Object.values(c.checks)) {
