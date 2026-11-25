@@ -352,6 +352,7 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     // learner's (Blake, 2026-11-23): a grammar fix changes most three-word
     // phrases, so the polish test runs first (agent evaluations A4).
     const learnerAt = firstIndex('learner', q);
+    if (learnerAt >= 0 && !transcript.slice(0, learnerAt).some((m) => m.by === 'coach')) return false; // said before the coach said anything
     if (learnerAt > 0 && polishOfOwn(q, learnerAt)) return false;
     const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
     const said = transcript.map((m) => ({ by: m.by, text: ` ${words(m.text).join(' ')} ` }));
