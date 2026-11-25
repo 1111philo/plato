@@ -621,7 +621,7 @@ export default function LessonChat() {
       <LessonPanel open={panel.open} tab={panel.tab} onTabChange={(tab) => setPanel((p) => ({ ...p, tab }))} onClose={closePanel}
         docked={docked} frame={panelFrame} title={lesson.name} recording={recording}
         overview={(active) => (
-          <LessonOverview active={active} lesson={lesson} lessonKB={lessonKB} messages={messages} onNavigateAway={closePanel} />
+          <LessonOverview active={active} lesson={lesson} lessonKB={lessonKB} messages={messages} />
         )}
         trace={impersonating ? undefined : (active) => (
           <TraceContent scope={lessonGroupId} active={active} recording={recording} what="this lesson"
