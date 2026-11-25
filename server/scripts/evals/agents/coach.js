@@ -50,6 +50,7 @@ export async function run(c, { app, model }) {
     app, model, lesson, kb, language, programKb: c.programKb || '', profile: c.profile || 'No profile yet', name: c.name ?? 'Sam', courseProgress: c.courseProgress || null,
     history: (c.history || []).map(([by, text]) => ({ role: by === 'L' ? 'user' : 'assistant', content: text })),
     message: c.message,
+    links: c.links || [],
   });
   const { parsed, after, completed, newlyMet, text } = turn;
   const allowed = new Set(c.mayMeet ?? (c.complete ? lesson.objectives.map((_, i) => i + 1) : []));

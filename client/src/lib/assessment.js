@@ -169,6 +169,10 @@ export function closeSpelling(a, b) {
 /** groundVerdict's reason when the words that would show an objective were the coach's. */
 export const COACH_WROTE = 'the words that would show it were written by the coach';
 
+/** groundVerdict's reason when the only evidence is a web address the learner typed (never opened). */
+export const ONLY_URL = 'a link the learner typed was never opened: they need to attach the page, or send a screenshot';
+const BARE_URL = /^\s*<?https?:\/\/\S+>?\s*$/i;
+
 /** groundVerdict's reason when the only quote agrees with the coach ("yes, that's me"). */
 export const ONLY_AGREES = 'the learner only agreed with words the coach wrote';
 
@@ -264,6 +268,9 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     // A quote that only agrees ("yes, that's me") shows nothing, unless the
     // lesson says confirming counts (`confirms`, from confirmingCounts).
     if (textQuotes.length && textQuotes.every(onlyAgrees) && !confirms.has(n)) failed = ONLY_AGREES;
+    // A typed web address shows nothing: plato never opened it (C16). An
+    // attached page is "[attached a web page]", and an image "[image]".
+    else if (textQuotes.length && textQuotes.every((q) => BARE_URL.test(q)) && textQuotes.length === quotes.length) failed = ONLY_URL;
     for (const quote of failed ? [] : textQuotes) {
       const result = groundQuote(quote);
       if (result !== true) { failed = result; break; }
@@ -513,7 +520,8 @@ export function heldReply(kb, outstanding, missing) {
   // telling the learner is that their message repeated the coach's wording.
   const copied = outstanding.some((n) => missing?.[n] === COACH_WROTE)
     ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.'
-    : outstanding.some((n) => missing?.[n] === ONLY_AGREES) ? ' Saying yes to my wording doesn’t show it in your own words.' : '';
+    : outstanding.some((n) => missing?.[n] === ONLY_AGREES) ? ' Saying yes to my wording doesn’t show it in your own words.'
+      : outstanding.some((n) => missing?.[n] === ONLY_URL) ? ' I can’t open a link you type: attach the page with the link button, or send a screenshot.' : '';
   const list = names.length > 1 ? `\n\nStill to show in your own words:\n${names.map((x) => `- ${x}`).join('\n')}` : '';
   return `You're close, but this lesson isn't complete yet.${copied} The next step is yours: **${names[0] || 'the remaining objective'}**. A few plain sentences in your own words is enough. Send it when you're ready.${list}`;
 }

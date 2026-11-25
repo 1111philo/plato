@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -565,6 +565,19 @@ describe('a quote put together from the coach’s sentences (agent evaluations W
       { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
     ];
     assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
+describe('a web address the learner typed (agent evaluations C16)', () => {
+  it('shows nothing, since plato never opened it; an attached page or a screenshot can', () => {
+    const v = (quote) => ({ objectives: [{ n: 1, parts: [{ part: 'publish a page', quote }], shown: true }] });
+    const typed = [{ by: 'coach', text: 'Can you share your page?' }, { by: 'learner', text: 'https://sam-rivera.example.com' }];
+    const r = groundVerdict(v('https://sam-rivera.example.com'), typed, [1]);
+    assert.deepEqual(r.shown, []);
+    assert.equal(r.missing[1], ONLY_URL);
+    assert.match(heldReply({ objectives: [{ objective: 'Can publish a simple page' }] }, [1], r.missing), /attach the page/);
+    const attached = [{ by: 'coach', text: 'Can you share your page?' }, { by: 'learner', text: 'Here it is\n[attached a web page]' }];
+    assert.deepEqual(groundVerdict(v('Here it is'), attached, [1]).shown, [1], 'a page they attached is judged on what it shows');
   });
 });
 

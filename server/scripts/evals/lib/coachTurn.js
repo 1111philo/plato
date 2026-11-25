@@ -16,10 +16,11 @@ import { CATALOG } from '../fixtures/lessons.js';
  * (data URLs) when they sent a screenshot. Returns the parsed reply, the
  * lesson record before and after, and what changed.
  */
-export async function coachTurn({ app, model, lesson, kb, profile = 'No profile yet', name = 'Sam', courseProgress = null, programKb = '', language = '', history = [], message, images = [] }) {
+export async function coachTurn({ app, model, lesson, kb, profile = 'No profile yet', name = 'Sam', courseProgress = null, programKb = '', language = '', history = [], message, images = [], links = [] }) {
   const { engine, assessment, orchestrator, work } = app;
   const tail = history.slice(-(engine.COACH_TAIL || 40)).filter((m) => m.content && String(m.content).trim());
-  const parts = images.length && engine.buildUserParts ? engine.buildUserParts(message || '', images) : null;
+  // A screenshot or an attached page, as sendMessage sends them (buildUserParts).
+  const parts = (images.length || links.length) && engine.buildUserParts ? engine.buildUserParts(message || '', images, links) : null;
   const messages = [
     { role: 'user', content: engine.buildContext(lesson, kb, profile, name, courseProgress, app.languageFor(language) || null) },
     { role: 'assistant', content: 'Ready.' },
