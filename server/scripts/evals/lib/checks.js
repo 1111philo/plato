@@ -14,7 +14,7 @@ export function parseJSON(text) {
 
 const STOP = {
   English: /\b(the|and|you|your|to|of|is|that|what|this|with|for)\b/gi,
-  Spanish: /\b(el|la|los|las|de|que|en|con|para|una|por|tu|tus|es|como|qué|su|sus)\b/gi,
+  Spanish: /(?<![\p{L}])(el|la|los|las|de|que|en|con|para|una|un|por|tu|tus|es|son|como|cómo|qué|su|sus|no|lo|sí|tú|mi|mis|más|muy|pero|ya|esta|este|eso|ese|esas|esos|aún|también|cuando|dónde|porque)(?![\p{L}])/giu,
 };
 const BENGALI = /[ঀ-৿]/g;
 export const CJK = /[぀-ヿ㐀-鿿가-힯]/;
@@ -25,7 +25,8 @@ export function inLanguage(text, language = 'English') {
   if (CJK.test(t)) return false;
   if (language === 'Bengali') return (t.match(BENGALI) || []).length > t.replace(/\s/g, '').length * 0.3;
   const count = (re) => (t.match(re) || []).length;
-  if (language === 'Spanish') return count(STOP.Spanish) > count(STOP.English);
+  // ¿ ¡ ñ and accented vowels are Spanish too: a short reply can have few common words.
+  if (language === 'Spanish') return count(STOP.Spanish) + Math.min(3, (t.match(/[¿¡ñáéíóú]/gi) || []).length) > count(STOP.English);
   return count(STOP.English) >= count(STOP.Spanish);
 }
 
