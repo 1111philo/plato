@@ -646,9 +646,12 @@ export function withoutUnbackedClaims(text, numbers) {
  * learner's thinking ("You nailed it", Blake on playground, 2026-11-25), and
  * prompt rules alone didn't stop it (2 of 16). Pure.
  */
+/** A message this long can be judged a copy of the coach's wording (a pasted list of examples is short: "laptop + Chrome, phone + Notion, or desktop + Excel"). */
+export const REPEAT_WORDS = 5;
+
 export function repeatsCoach(text, coachTexts = []) {
   const ws = normalizeForMatch(text).split(' ').filter(Boolean);
-  if (ws.length < COPY_WORDS || !coachTexts.length) return false;
+  if (ws.length < REPEAT_WORDS || !coachTexts.length) return false;
   const theirs = ` ${coachTexts.map((t) => normalizeForMatch(t)).join(' | ')} `;
   const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
   return grams.filter((g) => theirs.includes(` ${g} `)).length / grams.length > COPIED_SHARE;
@@ -690,6 +693,35 @@ export function withoutVoiceSamples(text, learnerTexts = []) {
     return voice ? '' : m;
   });
   return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/([?!])\./g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
+}
+
+/** plato's reply when taking the drafted passages out of a reply leaves nothing to say. */
+export const NO_DRAFT_REPLY = 'I can’t write that for you, because it has to be yours. What would you say in your own words?';
+
+/**
+ * The last line of the draft guard: the reply with every passage
+ * draftsForLearner flags taken out (samples in the learner's voice, long
+ * quoted or italic passages that aren't the learner's, what follows "Try
+ * this:" or "Hint:"), for when the coach's rewrite still drafts (it did on
+ * 8 of 24 "show me" turns, agent evaluations C63). If too little is left,
+ * NO_DRAFT_REPLY. What it returns never trips draftsForLearner. Pure.
+ */
+export function withoutDrafts(text, learnerTexts = []) {
+  const said = normalizeForMatch(learnerTexts.join('\n'));
+  const wordsIn = (t) => t.trim().split(/\s+/).filter(Boolean).length;
+  let out = withoutVoiceSamples(text, learnerTexts);
+  // Long quoted or italic passages, with a lead before them ("For example:", "Try this:").
+  out = out.replace(new RegExp(String.raw`(?:${LEAD}|hint|here(?:'|’)s (?:a|an|one|your) (?:draft|version|revision|example)[^:\n]{0,40})?[,:]?\s*(?:["“]([^"”\n]{0,600})["”]|(?<![*\w])\*([^*\n]{0,600})\*(?!\*))`, 'gi'), (m, a, b) => {
+    const span = (a ?? b ?? '').trim();
+    return wordsIn(span) >= DRAFT_WORDS && !said.includes(normalizeForMatch(span)) ? '' : m;
+  });
+  // What follows a drafting lead on its line.
+  out = out.split('\n').map((line) => {
+    const lead = line.match(DRAFT_LEAD);
+    return lead && wordsIn(line.slice(lead.index + lead[0].length)) >= DRAFT_WORDS ? line.slice(0, lead.index).trimEnd() : line;
+  }).join('\n');
+  out = out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/([?!])\./g, '$1').replace(/\n{3,}/g, '\n\n').trim();
+  return wordsIn(out) >= 6 && !draftsForLearner(out, learnerTexts) ? out : NO_DRAFT_REPLY;
 }
 
 /** The coach's addendum when its reply wrote the learner's text for them. */

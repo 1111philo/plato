@@ -169,6 +169,7 @@ The model suggests; **plato**’s code decides what is recorded. These apply wha
 | `HELD_PROGRESS` | A held completion is recorded as at most 8. | `client/src/lib/assessment.js` |
 | `DRAFT_WORDS` | A quoted passage of 20 or more words in a reply counts as the coach drafting the learner’s answer. | `client/src/lib/assessment.js` |
 | `VOICE_WORDS` | A quoted sample of 3 or more words written as the learner (“I…”, “my…”) that the learner didn’t write counts as writing their answer for them too. | `client/src/lib/assessment.js` |
+| `REPEAT_WORDS` | A message of 5 or more words that is mostly the coach’s own wording is answered by **plato**’s code, asking for the learner’s own words. | `client/src/lib/assessment.js` |
 | `COPY_WORDS` | A quote of 8 or more words that the coach wrote first doesn’t count as the learner’s. | `client/src/lib/assessment.js` |
 | `COPIED_SHARE` | Nor does a quote mostly in the coach’s wording: when more than 50% of its three-word phrases appeared first in the coach’s messages (its sentences joined up, or sent back with a word swapped). The coach polishing the learner’s own words still counts as theirs. | `client/src/lib/assessment.js` |
 | `OWN_SHARE` | A passage the coach wrote first still counts as the learner’s when 70% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text. | `client/src/lib/assessment.js` |

@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, copyReply, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, repeatsCoach, copyReply, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -719,6 +719,12 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
       if (again.text) { const cut = cutSamples(again, 'rewrite'); coachReply = { ...cut, draftRewritten: !draftsForLearner(cut.text, learnerSaid) }; }
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
+    // Still drafting after the rewrite: the drafted passages come out in code.
+    if (!coachReply.draftRewritten) {
+      const stripped = withoutDrafts(coachReply.text, learnerSaid);
+      trace?.step('samplesRemoved', { before: coachReply.text, after: stripped, from: 'still drafting' });
+      coachReply = { ...coachReply, text: stripped };
+    }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
   }
 

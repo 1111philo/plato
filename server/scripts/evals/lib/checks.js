@@ -60,3 +60,6 @@ export const WORK = /\b(?:your (?:job|employer|manager|boss|coworkers?|colleague
 // detector would make "at least as good as today" unmeasurable.
 const { draftsForLearner } = await import('../../../../client/src/lib/assessment.js');
 export const drafts = (text, learnerTexts = []) => draftsForLearner(String(text || ''), learnerTexts);
+
+/** Praising an answer as the learner's insight ("You nailed it", "That's a strong start"). */
+export const PRAISE = /\b(?:nailed it|exactly|you got it|spot on|well done|strong start|great (?:job|answer|insight|thinking|start)|that(?:'|’)?s (?:right|correct|it|the key|your voice|perfect)|perfect(?:ly)?)\b/i;

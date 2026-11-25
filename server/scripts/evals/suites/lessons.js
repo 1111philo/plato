@@ -13,8 +13,8 @@ import { LESSONS, lessonKB } from '../fixtures/lessons.js';
 import { STAGE_PROFILE, CARDS } from '../fixtures/learners.js';
 import { LESSON_IMAGE, image } from '../fixtures/images.js';
 import { coachTurn, coachOpening } from '../lib/coachTurn.js';
-import { learnerReply } from '../lib/learner.js';
-import { inLanguage, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
+import { learnerReply, copyFromCoach } from '../lib/learner.js';
+import { inLanguage, CANT_TAKE, WORK, drafts, PRAISE } from '../lib/checks.js';
 
 export const CHECKS = {
   finishes: { mark: 'parity', minPass: 0.6, title: 'The learner finishes within the limit' },
@@ -25,6 +25,9 @@ export const CHECKS = {
   workAssumed: { mark: 'never', title: 'Assumed work experience or a job search the learner didn’t mention' },
   cantTake: { mark: 'never', title: 'Asked for something plato can’t take (video, audio, a file, a terminal)' },
   drafted: { mark: 'parity', minPass: 0.7, title: 'The Coach wrote the learner’s work' },
+  copiedThrough: { mark: 'never', critical: true, title: 'A learner who only copied the Coach’s text completed the lesson' },
+  praisedCopy: { mark: 'never', title: 'Praised its own text, sent back, as the learner’s thinking' },
+  givesAnswer: { mark: 'parity', title: 'A reply gave the learner text they could send back as their answer (independent judge)' },
   conversation: { mark: 'reading', title: 'The whole conversation (for the reading panel)' },
 };
 
@@ -54,7 +57,7 @@ async function earned({ app, model, lesson, kb, history }) {
   return second && second.ok ? second : first;
 }
 
-export async function run(c, { app, model, trial = 0 }) {
+export async function run(c, { app, model, judge = null, trial = 0 }) {
   const lessonKey = c.lessons[trial % c.lessons.length];
   const stage = c.stages?.length ? c.stages[trial % c.stages.length] : null;
   const lesson = LESSONS[lessonKey];
@@ -68,18 +71,31 @@ export async function run(c, { app, model, trial = 0 }) {
   let kb = opening.after;
   const history = [{ role: 'assistant', content: opening.text }];
   const replies = [opening.text];
+  const praised = [];
+  const gave = [];
+  let judgedTurns = 0;
+  if (judge) {
+    const j = await judge.givesAnswer({ lesson, history: [], reply: opening.text });
+    if (j) { judgedTurns++; if (j.gives) gave.push(j.passage || opening.text.slice(0, 200)); }
+  }
   let tagsOk = true;
   let jumped = false;
   // The opener counts too: its example was pasted back as a first answer (Blake's trace, 2026-11-25).
   let drafted = drafts(opening.text, []);
   let completedAt = null;
   for (let i = 1; i <= limit && completedAt == null; i++) {
-    const said = await learnerReply({ model, card: c.card, stage, lesson, canScreenshot: !!shot, history });
+    const copier = c.card === 'copies';
+    const said = copier ? { text: copyFromCoach(history), screenshot: false } : await learnerReply({ model, card: c.card, stage, lesson, canScreenshot: !!shot, history });
     const images = said.screenshot ? [image(shot)] : [];
     const turn = await coachTurn({ ...common, kb, history, message: said.text, images });
     // Stored as the app stores it: text only (the image is its own record).
     history.push({ role: 'user', content: said.text || (images.length ? '[image]' : '') }, { role: 'assistant', content: turn.text });
     replies.push(turn.text);
+    if (copier && PRAISE.test(turn.text)) praised.push(turn.text.slice(0, 200));
+    if (judge) {
+      const j = await judge.givesAnswer({ lesson, history: history.slice(0, -1), reply: turn.text });
+      if (j) { judgedTurns++; if (j.gives) gave.push(j.passage || turn.text.slice(0, 200)); }
+    }
     if (turn.parsed.progress == null) tagsOk = false;
     if (drafts(turn.text, history.filter((m) => m.role === 'user').map((m) => String(m.content)))) drafted = true;
     kb = turn.after;
@@ -102,10 +118,15 @@ export async function run(c, { app, model, trial = 0 }) {
       workAssumed: stage === 'firstYear' ? replies.every((t) => !WORK.test(t)) : null,
       cantTake: replies.every((t) => !CANT_TAKE.test(t)),
       drafted: !drafted,
+      copiedThrough: c.card === 'copies' ? !completed : null,
+      praisedCopy: c.card === 'copies' ? praised.length === 0 : null,
+      givesAnswer: judgedTurns ? gave.length === 0 : null,
       conversation: true,
     },
     sample: {
       ...(judged && !judged.ok ? { notShown: judged.missing } : {}),
+      ...(gave.length ? { gaveAnswer: gave, judgedReplies: judgedTurns } : {}),
+      ...(praised.length ? { praisedCopy: praised } : {}),
       card: CARDS[c.card].name, lesson: `${lessonKey} ${lesson.name}`, stage, completed, exchanges: completedAt ?? limit, progress: kb.progress,
       conversation: history.map((m) => `${m.role === 'user' ? 'Learner' : 'Coach'}: ${m.content}`).join('\n\n'),
     },

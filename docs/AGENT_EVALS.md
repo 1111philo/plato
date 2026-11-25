@@ -141,6 +141,7 @@ told who they are, what they know, and how they write, and nothing about what
 | **Hype** | Excited about the portfolio and what comes next; keeps jumping ahead to it. |
 | **Not there yet** | No résumé or LinkedIn yet; looking for internships, not a job. |
 | **Bengali** | Writes in Bengali, with their browser set to Bengali. |
+| **Copies it** | Played by code, not an AI: every turn it sends back the most answer-like text in the Coach's last message (a quoted example, a hint, or its longest statement). *(Added 2026-11-25, from Blake's testing.)* |
 
 **Where they are in life.** Every card is also run at different stages: a
 first-year student, a student near graduation, an employed professional, and
@@ -188,6 +189,14 @@ harms a learner:
 Any other failure, and any "at least as good as today" one, is checked again
 first: the case runs 18 more times on both versions, and fails only if it
 happens again, or more often than today. *(Decided 2026-11-24.)*
+
+**An independent judge.** **plato**'s own checks only recognise the forms of
+"giving the answer" they were written for, so they can't report a new one.
+A separate, stronger AI model (used only in these tests, never in the app)
+reads each Coach reply and answers one question: could the learner send part
+of this back as their answer? Its rate is reported for every run and must be
+at least as good as today. *(Added 2026-11-25: the first measurement found
+11% of replies still did, in forms the guards didn't know.)*
 
 **Where the bar starts.** Today's version sets it. If today's version already
 gets something wrong some of the time, the first job is to see that number

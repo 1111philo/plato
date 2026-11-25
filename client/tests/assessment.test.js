@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, copyReply, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, copyReply, withoutDrafts, NO_DRAFT_REPLY, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -578,6 +578,7 @@ describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised a
   it('leaves the learner’s own thinking alone, even on the same topic', () => {
     assert.equal(repeatsCoach('I think it looks at what came before and guesses the word that usually comes next, like autocomplete on my phone.', [hint]), false);
     assert.equal(repeatsCoach('ok', [hint]), false, 'too short to tell');
+    assert.equal(repeatsCoach('laptop + Chrome, phone + Notion, or desktop + Excel.', ['What do you use most? For example: laptop + Chrome, phone + Notion, or desktop + Excel.']), true, 'a short pasted list of examples');
     assert.equal(repeatsCoach('It’s not random — it picks what’s most likely to follow.', []), false, 'no coach messages');
   });
   it('plato answers a copy itself, with one question and no praise', () => {
@@ -617,6 +618,27 @@ describe('withoutVoiceSamples (agent evaluations W5)', () => {
   it('leaves third-person examples and the learner’s own words alone', () => {
     assert.equal(withoutVoiceSamples('Name a time, e.g., “a quiet evening slot”.'), 'Name a time, e.g., “a quiet evening slot”.');
     assert.equal(withoutVoiceSamples('You said “I’m sharpest after dinner”. Why?', ['I’m sharpest after dinner']), 'You said “I’m sharpest after dinner”. Why?');
+  });
+});
+
+describe('withoutDrafts: the draft guard’s last line (agent evaluations C63)', () => {
+  it('what it returns never trips the draft detector', () => {
+    const drafting = [
+      'I can’t write it for you, but try this: “Notion helps me organize my work projects so I can track every task and deadline in one place without losing anything along the way.” Now do iMessage.',
+      'Good. Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you already know by heart from the radio.',
+      'Here it is polished: *Last week I helped a freshman find their class and I liked seeing them relax afterward, because I want everyone to feel welcome when they start out here.* Is that you?',
+      'For example: “I use it because it syncs with my Mac.”',
+    ];
+    for (const t of drafting) {
+      const out = withoutDrafts(t, []);
+      assert.equal(draftsForLearner(out, []), false, out);
+      assert.ok(out.length > 10);
+    }
+    assert.equal(withoutDrafts('For example: “I use it because it syncs with my Mac.”', []), NO_DRAFT_REPLY, 'nothing left to say');
+  });
+  it('leaves a clean reply as it is', () => {
+    const clean = 'You named a real moment. What did it show you about how you work with people?';
+    assert.equal(withoutDrafts(clean, []), clean);
   });
 });
 

@@ -12,7 +12,7 @@
  */
 import { LESSONS, lessonKB } from '../fixtures/lessons.js';
 import { coachTurn } from '../lib/coachTurn.js';
-import { inLanguage, sentences, CJK, ESCALATED, CANT_TAKE, WORK, drafts } from '../lib/checks.js';
+import { inLanguage, sentences, CJK, ESCALATED, CANT_TAKE, WORK, drafts, PRAISE } from '../lib/checks.js';
 
 export const CHECKS = {
   falseComplete: { mark: 'never', critical: true, title: 'Completed a lesson that should stay open' },
@@ -35,6 +35,7 @@ export const CHECKS = {
   nextLesson: { mark: 'parity', title: 'Named the next lesson once the lesson completed' },
   profileNote: { mark: 'parity', title: 'Flagged a new fact for the learner’s profile' },
   praisedCopy: { mark: 'never', title: 'Praised its own words, pasted back, as the learner’s thinking' },
+  givesAnswer: { mark: 'parity', title: 'Gave the learner text they could send back as their answer (independent judge)' },
 };
 
 export const available = (app) => app.prompt('coach') != null && !!app.engine?.buildContext;
@@ -42,11 +43,9 @@ export const available = (app) => app.prompt('coach') != null && !!app.engine?.b
 // Speculating that the learner used AI (the spec's "may have used AI"). Noting
 // that they sent the coach's own words back is a fact plato told the coach.
 const SUSPICION = /\b(?:ai[- ]generated|chatgpt|plagiar\w*|used (?:an )?ai|written by (?:an )?ai|copied from (?:an? )?(?:ai|chatgpt|website|the internet|online))\b/i;
-// Praising a pasted-back hint as the learner's insight (Blake, 2026-11-25: "You nailed it").
-const PRAISE = /\b(?:nailed it|exactly|you got it|spot on|well done|great (?:job|answer|insight|thinking)|that(?:'|’)?s (?:right|correct|it|the key)|perfect(?:ly)?)\b/i;
 const EMPTY_PRAISE = /^\s*(?:great|awesome|amazing|fantastic|excellent|wonderful|perfect|love (?:it|this))\b[!.,]/i;
 
-export async function run(c, { app, model }) {
+export async function run(c, { app, model, judge = null }) {
   const { assessment } = app;
   const lesson = LESSONS[c.lesson];
   const kb = lessonKB(lesson, c.kb || {});
@@ -69,6 +68,9 @@ export async function run(c, { app, model }) {
       ? /^\s*yes/i.test(await model.call({ system: app.system('claim-check'), messages: [{ role: 'user', content: text.slice(0, 8000) }], maxTokens: 5, temperature: 0 }))
       : false;
   }
+  // The independent judge (lib/judge.js): on an open lesson, could the learner send part of this reply back as their answer?
+  const history = [...(c.history || []).map(([by, t]) => ({ role: by === 'L' ? 'user' : 'assistant', content: t })), ...(c.message != null ? [{ role: 'user', content: c.message }] : [])];
+  const judged = judge && kb.status !== 'completed' ? await judge.givesAnswer({ lesson, history, reply: text }) : null;
   const expect = c.expect || {};
 
   return {
@@ -93,7 +95,8 @@ export async function run(c, { app, model }) {
       nextLesson: expect.namesLesson ? text.toLowerCase().includes(expect.namesLesson.toLowerCase()) : null,
       profileNote: expect.profileNote ? !!parsed.profileUpdate?.observation : null,
       praisedCopy: expect.copiedCoach ? !PRAISE.test(text) : null,
+      givesAnswer: judged ? !judged.gives : null,
     },
-    sample: { message: c.message, reply: text, progress: parsed.progress ?? null, completed, newlyMet },
+    sample: { ...(judged?.gives ? { gaveAnswer: judged.passage } : {}), message: c.message, reply: text, progress: parsed.progress ?? null, completed, newlyMet },
   };
 }

@@ -52,6 +52,7 @@ level into `main`.
 | `cases/<id>.json` | That agent's cases, from the spec |
 | `fixtures/lessons.js` | The test lessons L1–L14 |
 | `fixtures/learners.js`, `lib/learner.js` | The character cards and life stages; the simulated learner |
+| `lib/judge.js` | The independent judge (Claude Sonnet 5.5 on Bedrock, evaluations only): did a reply give the learner text they could send back? `--no-judge` leaves it out |
 | `lib/coachTurn.js` | One Coach turn (and the opener) as the app runs it, shared by the single moments, whole lessons and chains |
 | `suites/` | Whole lessons and chains: run only at the full level |
 
