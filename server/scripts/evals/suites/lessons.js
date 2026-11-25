@@ -36,7 +36,10 @@ async function earned({ app, model, lesson, kb, history }) {
   if (!a?.assessmentTranscript || !a.groundVerdict) return null;
   const transcript = a.assessmentTranscript([{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, ...history]);
   const check = lesson.objectives.map((_, i) => i + 1);
-  const raw = await model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: a.assessmentInput({ lesson, kb, transcript, check }) }], maxTokens: 2048, temperature: 0 });
+  const ask = (note) => model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: a.assessmentInput({ lesson, kb, transcript, check, ...(note ? { note } : {}) }) }], maxTokens: 2048, temperature: note ? 0.7 : 0 });
+  // An unreadable reply is asked again, as checkGrading does; still unreadable is no verdict, not a failure.
+  let raw = await ask();
+  try { a.parseVerdict(raw); } catch { raw = await ask(a.FORMAT_NOTE || 'Reply with valid JSON only.'); }
   try {
     // Grounded as checkGrading grounds it (a confirmation counts where the lesson says so).
     const g = a.groundVerdict(a.parseVerdict(raw), transcript, check, a.confirmingCounts ? { confirms: a.confirmingCounts(kb) } : {});
@@ -80,7 +83,7 @@ export async function run(c, { app, model, trial = 0 }) {
   let unearned = null;
   let judged = null;
   if (c.noFinish && completed) judged = await earned({ app, model, lesson, kb, history });
-  if (c.noFinish) unearned = completed ? (judged?.ok ?? false) : true;
+  if (c.noFinish) unearned = completed ? (judged?.ok ?? null) : true;
   return {
     checks: {
       finishes: c.finish ? completed : null,

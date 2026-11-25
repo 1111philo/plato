@@ -186,7 +186,7 @@ harms a learner:
 - a made-up fact or instruction.
 
 Any other failure, and any "at least as good as today" one, is checked again
-first: the case runs 12 more times on both versions, and fails only if it
+first: the case runs 18 more times on both versions, and fails only if it
 happens again, or more often than today. *(Decided 2026-11-24.)*
 
 **Where the bar starts.** Today's version sets it. If today's version already

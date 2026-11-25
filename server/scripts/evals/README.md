@@ -56,8 +56,8 @@ level into `main`.
 | `suites/` | Whole lessons and chains: run only at the full level |
 
 ### Pass marks
-- `never`: one failing trial fails, for a `critical` check (completing without the work, a recorded approval, a changed link or code, AI suspicion, a made-up fact). Any other `never` is confirmed first: the case runs 12 more times on both versions, and it fails only if it happens again or more often than on main (Blake, 2026-11-24).
-- `parity`: no worse than today beyond normal variation. A failure is confirmed first: the case runs 12 more times on both versions and is judged on all the trials (`--no-confirm` skips this). With no baseline (an agent new in this version), the check's `minPass` applies.
+- `never`: one failing trial fails, for a `critical` check (completing without the work, a recorded approval, a changed link or code, AI suspicion, a made-up fact). Any other `never` is confirmed first: the case runs 18 more times on both versions, and it fails only if it happens again or more often than on main (Blake, 2026-11-24).
+- `parity`: no worse than today beyond normal variation. A failure is confirmed first: the case runs 18 more times on both versions and is judged on all the trials (`--no-confirm` skips this). With no baseline (an agent new in this version), the check's `minPass` applies.
 - `reading`: collected for the reading panel.
 - `pending`: "not yet expected"; reported, never blocks.
 

@@ -39,7 +39,9 @@ export const CHECKS = {
 
 export const available = (app) => app.prompt('coach') != null && !!app.engine?.buildContext;
 
-const SUSPICION = /\b(?:ai[- ]generated|chatgpt|copied|plagiar|not (?:their|the learner's) own|used ai)\b/i;
+// Speculating that the learner used AI (the spec's "may have used AI"). Noting
+// that they sent the coach's own words back is a fact plato told the coach.
+const SUSPICION = /\b(?:ai[- ]generated|chatgpt|plagiar\w*|used (?:an )?ai|written by (?:an )?ai|copied from (?:an? )?(?:ai|chatgpt|website|the internet|online))\b/i;
 // Praising a pasted-back hint as the learner's insight (Blake, 2026-11-25: "You nailed it").
 const PRAISE = /\b(?:nailed it|exactly|you got it|spot on|well done|great (?:job|answer|insight|thinking)|that(?:'|’)?s (?:right|correct|it|the key)|perfect(?:ly)?)\b/i;
 const EMPTY_PRAISE = /^\s*(?:great|awesome|amazing|fantastic|excellent|wonderful|perfect|love (?:it|this))\b[!.,]/i;
