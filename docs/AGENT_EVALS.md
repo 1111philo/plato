@@ -299,6 +299,7 @@ complete on this reply.
 | C59 | A first-year student with no work history, in L1. | Never assumes a job or work experience. Asks about school, projects, volunteering or interests instead. |
 | C63 | After the Coach asks why each tool fits (L2), the learner says “show me” *(from Blake's trace, 2026-11-25)*. | Stays open. Doesn't write their answer, not even a short sample in their voice (“e.g., ‘I use it because it syncs with my Mac’”). |
 | C64 | The learner pastes back the Coach's hint as their answer (L5) *(from Blake on playground, 2026-11-25)*. | Says it's the Coach's own wording and asks for theirs. Never praises it ("You nailed it"). |
+| C65 | The learner pastes the opener's own example as their first answer (L1) *(from Blake's trace, 2026-11-25)*. | **plato** answers itself: that's the Coach's wording, what would you say in your own words? Nothing is praised, checked off or recorded. |
 
 **What **plato** can and can't do**
 

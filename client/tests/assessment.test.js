@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, copyReply, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -580,6 +580,13 @@ describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised a
     assert.equal(repeatsCoach('ok', [hint]), false, 'too short to tell');
     assert.equal(repeatsCoach('It’s not random — it picks what’s most likely to follow.', []), false, 'no coach messages');
   });
+  it('plato answers a copy itself, with one question and no praise', () => {
+    for (const kind of ['repeated', 'agreed']) {
+      const t = copyReply(kind);
+      assert.equal((t.match(/\?/g) || []).length, 1, kind);
+      assert.doesNotMatch(t, /great|strong|nailed|exactly|right/i);
+    }
+  });
   it('a hint that gives the answer is a draft', () => {
     assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
   });
@@ -602,6 +609,11 @@ describe('withoutVoiceSamples (agent evaluations W5)', () => {
     assert.equal(withoutVoiceSamples('For Slack, what’s one work goal it helps with? (e.g., “I coordinate with event teams in real time.”) And how well do you know it?', ['Slack, Excel']), 'For Slack, what’s one work goal it helps with? And how well do you know it?');
     assert.equal(withoutVoiceSamples('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.'), 'Pick one time block and say why.');
   });
+  it('cuts the opener’s example answer, and italic or paired samples (Blake’s trace, 2026-11-25)', () => {
+    assert.equal(withoutVoiceSamples('**What’s one experience that taught you something?** For example: “I fixed a broken PDF workflow for a client and realized I care deeply about making tech accessible.” Keep it to 2-3 sentences.'),
+      '**What’s one experience that taught you something?** Keep it to 2-3 sentences.');
+    assert.equal(withoutVoiceSamples('Why? For example: *“Because in teams we do more”* or *“I love seeing my team win”*. What feels natural?'), 'Why? What feels natural?');
+  });
   it('leaves third-person examples and the learner’s own words alone', () => {
     assert.equal(withoutVoiceSamples('Name a time, e.g., “a quiet evening slot”.'), 'Name a time, e.g., “a quiet evening slot”.');
     assert.equal(withoutVoiceSamples('You said “I’m sharpest after dinner”. Why?', ['I’m sharpest after dinner']), 'You said “I’m sharpest after dinner”. Why?');
@@ -615,6 +627,9 @@ describe('withoutUnbackedClaims (Blake’s trace, 2026-11-25)', () => {
     assert.equal(withoutUnbackedClaims('That’s Objective 2 met. What next?', [1]), 'That’s Objective 2 met. What next?', 'a kept objective stays');
     assert.equal(withoutUnbackedClaims('With Objectives 1–4 all demonstrated, you’re close. What next?', [3]), 'What next?');
     assert.equal(withoutUnbackedClaims('Objective 2 met.', [2]), 'Objective 2 met.', 'never empties a reply');
+    // Lossless: a list after the claim keeps every item (it was left as "1. 2. 3.").
+    assert.equal(withoutUnbackedClaims('Strong start. That’s objective 1 met.\n\nTurn it into an arc:\n1. The experience (you have this),\n2. What it taught you,\n3. How it shapes you.\n\nCan you write the third?', [1]),
+      'Strong start.\n\nTurn it into an arc:\n1. The experience (you have this),\n2. What it taught you,\n3. How it shapes you.\n\nCan you write the third?');
   });
 });
 

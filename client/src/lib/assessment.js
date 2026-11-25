@@ -631,8 +631,10 @@ export function withoutUnbackedClaims(text, numbers) {
       return false;
     });
   };
-  const paragraphs = t.split(/(\n\s*\n)/);
-  const out = paragraphs.map((p) => (/^\n\s*\n$/.test(p) ? p : (p.match(/[^.!?\n]+(?:[.!?]+["”’)*]*|$)\s*/g) || [p]).filter((x) => !claims(x)).join('').trimEnd())).join('');
+  // Line by line, sentence by sentence, keeping every character that isn't a
+  // claiming sentence (an earlier version dropped text it couldn't split, and
+  // left a list as "1. 2. 3.": Blake's trace, 2026-11-25).
+  const out = t.split('\n').map((line) => (line.match(/[^.!?]+[.!?]*["”’)*]*\s*|[.!?]+\s*/g) || [line]).filter((x) => !claims(x)).join('').trimEnd()).join('\n');
   const cleaned = out.replace(/\n{3,}/g, '\n\n').trim();
   return cleaned || t;
 }
@@ -652,40 +654,43 @@ export function repeatsCoach(text, coachTexts = []) {
   return grams.filter((g) => theirs.includes(` ${g} `)).length / grams.length > COPIED_SHARE;
 }
 
-/** The note on a turn whose message repeats the coach's own wording (repeatsCoach). */
-export const REPEATED_ADDENDUM = `## The learner's message repeats your words (from plato, not the learner)
+/**
+ * plato's own reply when the learner's message is the coach's wording sent
+ * back (`repeated`, repeatsCoach) or only a yes to a draft the coach wrote
+ * (`agreed`). The coach isn't asked: told about the copy in a note, it still
+ * praised a pasted example as "a strong start" (Blake's trace, 2026-11-25),
+ * so code answers, and nothing is graded on that turn.
+ */
+export function copyReply(kind) {
+  return kind === 'agreed'
+    ? 'Those are still my words, not yours yet. How would you say it yourself?'
+    : 'That’s my wording sent back, so it doesn’t show your thinking yet. What would you say in your own words?';
+}
 
-Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them to say it in their own words.
-
-Your whole reply is two sentences, in the learner's language: one saying it's your wording, then one question (in English, for example: "That's my wording, not your thinking yet. How would you put it in your own words?"). Nothing after the question.`;
-
-// "(e.g., “I coordinate with event teams in real time.”)", "For example: “I
-// can make charts but don't use pivot tables.”": an example given as a quote.
-const SAMPLE = /\s*\(\s*(?:e\.g\.|eg|for example|example|like)[,:]?\s*(["“])([^"”\n]{1,400})["”][^)]{0,80}\)|\s*(?:e\.g\.|for example|example)[,:]?\s*(["“])([^"”\n]{1,400})["”]/gi;
+// An example given as a quote: "(e.g., “I coordinate with event teams.”)",
+// "For example: “I fixed a broken PDF workflow…”", "Try: *“I…”* or *“I…”*".
+const LEAD = String.raw`(?:e\.g\.|eg|for example|for instance|example|examples|like|such as|something like|try(?: this| saying)?|start with|you could (?:write|say))`;
+const QUOTE = String.raw`\*{0,2}["“][^"”\n]{1,400}["”]\*{0,2}`;
+const SAMPLE = new RegExp(String.raw`\s*\(\s*${LEAD}[,:]?\s*${QUOTE}(?:\s*(?:or|,)\s*${QUOTE})*[^)]{0,80}\)|\s*${LEAD}[,:]?\s*${QUOTE}(?:\s*(?:or|,)\s*${QUOTE})*`, 'gi');
 
 /**
  * The reply without its quoted examples in the learner's own voice that the
- * learner didn't write (the same test as draftsForLearner's): the draft
- * guard's rewrite kept them, and a learner who wanted the answer adapted
- * them and completed the lesson (agent evaluations W5). The question and the
- * rest of the reply stay. Pure.
+ * learner didn't write (the same test as draftsForLearner's). The coach's
+ * "examples" were the learner's answer, and learners pasted them back
+ * (Blake's traces; agent evaluations W5), so code cuts them: from every
+ * reply before any rewrite is asked for, and from the lesson's opener. The
+ * question and the rest of the reply stay. Pure.
  */
 export function withoutVoiceSamples(text, learnerTexts = []) {
   const said = normalizeForMatch(learnerTexts.join('\n'));
-  const out = String(text || '').replace(SAMPLE, (m, _q1, a, _q2, b) => {
-    const span = (a ?? b ?? '').trim();
-    const voice = VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span));
+  const out = String(text || '').replace(SAMPLE, (m) => {
+    // Every quoted passage in the example: cut it when any is in the learner's voice and not theirs.
+    const spans = [...m.matchAll(/["“]([^"”\n]{1,400})["”]/g)].map((x) => x[1].trim());
+    const voice = spans.some((span) => VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span)));
     return voice ? '' : m;
   });
-  return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
+  return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/([?!])\./g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
 }
-
-/** The note on a turn where the learner only agreed ("yes, that's me") to a draft the coach wrote (C2). */
-export const AGREED_ADDENDUM = `## The learner only agreed to your wording (from plato, not the learner)
-
-Your last message wrote text for the learner, and they only said yes to it ("that's me", "post it"). That isn't their work and it isn't their voice. Don't call it theirs or praise it.
-
-Your whole reply is two sentences, in the learner's language: one saying the wording is still yours, then one question asking them to write it themselves (in English, for example: "Those are still my words, not yours yet. How would you say it yourself?"). Nothing after the question.`;
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)

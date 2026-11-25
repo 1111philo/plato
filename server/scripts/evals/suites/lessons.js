@@ -70,7 +70,8 @@ export async function run(c, { app, model, trial = 0 }) {
   const replies = [opening.text];
   let tagsOk = true;
   let jumped = false;
-  let drafted = false;
+  // The opener counts too: its example was pasted back as a first answer (Blake's trace, 2026-11-25).
+  let drafted = drafts(opening.text, []);
   let completedAt = null;
   for (let i = 1; i <= limit && completedAt == null; i++) {
     const said = await learnerReply({ model, card: c.card, stage, lesson, canScreenshot: !!shot, history });

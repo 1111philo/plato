@@ -212,7 +212,9 @@ async function main() {
     try {
       // Today's version, measured by this harness: either changing means measuring again.
       const baseFp = `${fingerprint(b.dir)}-${harnessFingerprint(REPO)}`;
-      const file = join(EVALS, 'baseline', `${baseFp}.json`);
+      // A run of some cases only (--cases) keeps its own baseline: cached under the
+      // whole agent's name, it left the other cases with no baseline at all.
+      const file = join(EVALS, 'baseline', `${baseFp}${only ? `-cases-${[...only].sort().join('_').slice(0, 80)}` : ''}.json`);
       const cached = readJson(file, { tally: {}, agents: [] });
       const need = agents.filter((a) => !cached.agents.includes(a.id));
       if (need.length) {

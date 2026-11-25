@@ -27,13 +27,15 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
     ...tail,
     ...(message != null || parts ? [{ role: 'user', content: parts && !(parts.length === 1 && parts[0].type === 'text') ? parts : message }] : []),
   ];
-  // A message that repeats the coach's own wording: every call this turn is told (repeatsCoach), where this version does.
+  // A message that repeats the coach's own wording, or only agrees to its
+  // draft: this version answers it in code (copyReply), an older one with a
+  // note to the coach, an older one still not at all.
   const coachSaid = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text) : [];
   const said = typeof message === 'string' ? message : '';
-  const repeated = !!(assessment?.repeatsCoach && assessment.repeatsCoach(said, coachSaid));
   const priorLearner = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
-  const agreed = !repeated && !!assessment?.AGREED_ADDENDUM && assessment.onlyAgrees(said) && assessment.draftsForLearner(coachSaid[coachSaid.length - 1] || '', priorLearner);
-  const turnNote = repeated ? assessment.REPEATED_ADDENDUM : agreed ? assessment.AGREED_ADDENDUM : '';
+  const repeated = !!(assessment?.repeatsCoach && assessment.repeatsCoach(said, coachSaid));
+  const agreed = !repeated && !!(assessment?.copyReply || assessment?.AGREED_ADDENDUM) && assessment.onlyAgrees(said) && assessment.draftsForLearner(coachSaid[coachSaid.length - 1] || '', priorLearner);
+  const turnNote = assessment?.copyReply ? '' : repeated ? assessment.REPEATED_ADDENDUM || '' : agreed ? assessment.AGREED_ADDENDUM || '' : '';
   const system = (addendum = '') => app.system('coach', { kb: programKb, catalog: CATALOG, addendum: [turnNote, addendum].filter(Boolean).join('\n\n---\n\n'), language });
   const coach = (addendum, msgs = messages, maxTokens = 2048) => model.call({ system: system(addendum), messages: msgs, maxTokens });
   // The tag repair has its own instructions only, as orchestrator.repairCoachTags sends it.
@@ -43,10 +45,23 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
     return engine.recoverMissingTags ? engine.recoverMissingTags(first, () => repair(first.text)) : first;
   };
 
-  let parsed = await parseAndRepair(await coach());
+  const learnerSaidEarly = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
+  let parsed;
+  if (assessment?.copyReply && (repeated || agreed)) {
+    let fixed = assessment.copyReply(agreed ? 'agreed' : 'repeated');
+    if (app.languageFor(language)) {
+      try { fixed = engine.parseCoachResponse(await coach(assessment.localizeAddendum(fixed), messages, 600)).text || fixed; } catch { /* keep the English */ }
+    }
+    parsed = engine.parseCoachResponse(`${fixed}\n[PROGRESS: ${kb.progress ?? 0}]\n[KB_UPDATE: {}]`);
+  } else parsed = await parseAndRepair(await coach());
+  // Example answers in the learner's voice are cut first, where this version does.
+  const cut = (p) => (assessment?.withoutVoiceSamples && kb.status !== 'completed' && p.text ? { ...p, text: assessment.withoutVoiceSamples(p.text, learnerSaidEarly) || p.text } : p);
+  const uncut = parsed.text;
+  parsed = cut(parsed);
   // The draft guard (#584), where this version has it.
-  const learnerSaid = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
-  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && assessment.draftsForLearner(parsed.text || '', learnerSaid)) {
+  const learnerSaid = learnerSaidEarly;
+  const several = (t) => !!assessment?.copyReply && (String(t).match(/\?/g) || []).length > 1;
+  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && (assessment.draftsForLearner(parsed.text || '', learnerSaid) || (parsed.text !== uncut && several(parsed.text)))) {
     const again = await parseAndRepair(await coach(assessment.DRAFT_ADDENDUM));
     if (again.text) parsed = again;
     // A sample in the learner's voice that survived the rewrite comes out, where this version does.
@@ -112,7 +127,9 @@ export async function coachOpening({ app, model, lesson, kb, profile = 'No profi
   });
   const parsed = engine.parseCoachResponse(raw);
   const { progress } = parsed;
-  const text = app.assessment?.withDirectiveLiterals ? app.assessment.withDirectiveLiterals(parsed.text, lesson.coachDirective) : parsed.text;
+  const exact = app.assessment?.withDirectiveLiterals ? app.assessment.withDirectiveLiterals(parsed.text, lesson.coachDirective) : parsed.text;
+  // Example answers in the learner's voice are cut from the opener, where this version does.
+  const text = app.assessment?.copyReply && app.assessment.withoutVoiceSamples ? app.assessment.withoutVoiceSamples(exact, []) || exact : exact;
   const score = engine.openingProgress ? engine.openingProgress(progress) : null;
   return { text: text || '', progress, after: score != null ? { ...kb, progress: score } : kb };
 }
