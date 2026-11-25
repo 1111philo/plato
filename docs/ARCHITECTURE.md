@@ -567,22 +567,14 @@ message.
 The `sendKey` preference lives in the learner's `preferences` sync record and
 is set in Settings → Chat, which saves on change.
 
-## Behind this response (#411)
+## Behind this response (#411), removed
 
-A collapsed "Behind this response" button above each reply
-(`components/chat/AgentActivity.jsx`) summarises which agents worked on it and
-what they did, from what plato already parsed (`lib/agentActivity.js`). It is
-the always-on short version; the full record is [Trace mode](#trace-mode-595),
-which it links to when the conversation has a trace.
-
-- It is a real button with `aria-expanded`, outside the `data-chat-message`
-  node, so Alt+Arrow message navigation is unchanged.
-- Stored on the assistant message as `metadata.agents` (about 1 KB a turn).
-  `fitMessages` drops it oldest-first when `messages:` nears its budget, so it
-  must never be the only copy of anything.
-- Background agents are listed as "Asked to…": the reply records the hand-off,
-  not whether the run later succeeded (the Trace records that).
-- Admin chats keep it in session only.
+A "Behind this response" button above each reply summarised which agents
+worked on it (`metadata.agents`). It was removed on 2026-11-25 (Blake: "seems
+like just extra stuff" now that there's Trace): the lesson panel's Data Trace
+tab shows the same, in full, for any lesson a learner traces. Messages saved
+before then still carry `metadata.agents`; nothing reads it, and `fitMessages`
+still drops it first when a conversation nears its size budget.
 
 ## Trace mode (#595)
 
@@ -775,7 +767,7 @@ A request the trace can't reproduce means the trace is missing something.
   exchange N", so Blake's 12,693-line download is about 4,100) or as its
   stored JSON records (complete).
 - **One description, many readers.** `transparency.js` feeds the Trace,
-  "Behind this response" labels, the services section of `/privacy`, and
+  the services section of `/privacy`, and
   `docs/HOW_IT_WORKS.md`, which `scripts/generate-how-it-works.js` writes.
   `client/tests/how-it-works.test.js` fails when the doc is out of date, so a
   change to the registry must regenerate it (`npm run docs:how-it-works`).
@@ -1406,7 +1398,7 @@ learner can use part of plato, not a subject:
 |---|---|
 | **Welcome to plato** (`getting-started`, `getting-started.md`) | say what plato and the coach are; find the exemplar and objectives and which are met (the lesson overview); say how a lesson is completed and what happens after |
 | **Sharing your work** (`getting-started-sharing`, `getting-started-sharing.md`) | send, and pick the send key (Settings → Chat); share a screenshot or image; attach a link and say what the coach does with it |
-| **What plato does behind the scenes** (`getting-started-behind`, `getting-started-behind.md`) | read and correct the learner profile (Settings → Learner Profile → Add Feedback); use "Behind this response"; say what carries between lessons (unit progress) |
+| **What plato does behind the scenes** (`getting-started-behind`, `getting-started-behind.md`) | read and correct the learner profile (Settings → Learner Profile → Add Feedback); start a trace and read one exchange in the Data Trace; say what carries between lessons (unit progress) |
 
 Each lesson's `## Coach Directive` lists the real control names so the
 coach doesn't invent UI. The files travel with the prompts (the deploy's
@@ -1577,9 +1569,7 @@ built by the same `buildSystemPrompt` as the reply's (knowledge base, lesson
 catalog, the learner's language), plus an addendum with the cue, so learner
 text can't forge or trigger it. Only the missing tags are taken (a reply's own
 progress stands), and they go through `applyCoachResponseToKB` like any
-others. "Behind this response" says "Recorded what this reply left out in a
-second step"; if there's still no progress, it says "Didn't record progress
-for this reply" instead of showing an unchanged score.
+others. The Trace shows the second step.
 
 Both outcomes are logged: the client reports `coach_tags_recovered` /
 `coach_tags_unrecovered` to `POST /v1/ai/events` (known codes only, signed in),
@@ -1648,10 +1638,8 @@ naming what's missing. Its second try is shown instead of the first. The
 second try's score stays at 8 or lower and its objectives are the ones the
 check found. `applyCoachResponseToKB` makes it a rule: a lesson completes only
 when every objective is checked off (lessons without objectives keep the old
-behavior). "Behind this response" adds an **Assessor** entry with
-counts only ("Checked 2 objectives against your own words: 1 shown"; "Held
-the lesson open until the rest is in your own words"). The reasons go to the
-coach, never to the learner.
+behavior). The reasons go to the coach, never to the learner in the reply;
+a learner who traces the lesson sees the check's steps in the Data Trace.
 
 **Fail closed.** A malformed reply is repaired first (the model copies a
 learner's curly ” as the end of a JSON string), then retried once with a note

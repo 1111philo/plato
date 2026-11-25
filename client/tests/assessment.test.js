@@ -17,7 +17,6 @@ const {
   claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
-const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
 // What sendMessage does with a graded reply: merge the checklist, then apply.
 const finish = (k, parsed) => applyCoachResponseToKB(mergeObjectivesMet(k, parsed.kbUpdate), parsed);
@@ -464,21 +463,6 @@ describe('checkGrading', () => {
     const r = await checkGrading({ lesson, kb: kb(), messages: coachDrafted, parsed: { progress: 6 }, assess: async () => { called = true; } });
     assert.equal(called, false);
     assert.equal(r.assessment, null);
-  });
-});
-
-describe('disclosure (Behind this response)', () => {
-  it('reports counts and a held lesson, never the reasons', () => {
-    const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { checked: 2, shown: 1, unverified: 0, held: true, regenerated: true } });
-    const check = agents.find((a) => a.agent === 'assessor');
-    assert.equal(check.label, 'Assessor');
-    assert.deepEqual(check.did, ['Checked 2 objectives against your own words: 1 shown', 'Held the lesson open until the rest is in your own words, and asked the coach to reply again']);
-  });
-  it('says plainly when the check could not run', () => {
-    const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, checked: 1 } });
-    assert.match(agents.find((a) => a.agent === 'assessor').did[0], /nothing new was checked off/);
-    const open = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, failedOpen: true, checked: 1 } });
-    assert.match(open.find((a) => a.agent === 'assessor').did[0], /coach’s assessment stands; the team can review it/);
   });
 });
 

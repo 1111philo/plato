@@ -193,11 +193,9 @@ test.describe('Trace mode', () => {
     await say(page, 'MOCK_COMPLETE MOCK_UNBACKED I think I am done');
     await expect(replies).toHaveCount(before + 1, { timeout: 30_000 });
 
-    // From the reply: "Behind this response" opens the trace at that turn.
-    const behind = page.getByRole('button', { name: /^Behind this response/ }).last();
-    await behind.click();
-    await page.getByRole('button', { name: 'Open the trace for this reply' }).last().click();
-    const panel = panelOf(page);
+    // In the Data Trace tab, the latest exchange.
+    const panel = await openTraceTab(page);
+    await panel.getByRole('button', { name: /^\d+\. Your message: “MOCK_COMPLETE MOCK_UNBACKED/ }).click({ timeout: 20_000 });
     const exchange = panel.getByRole('article');
     await expect(exchange.getByRole('heading', { name: /^Exchange \d+ of \d+/ })).toBeFocused();
     await expect(exchange.getByText(/^You sent: MOCK_COMPLETE MOCK_UNBACKED I think I am done$/)).toBeVisible();
@@ -205,7 +203,7 @@ test.describe('Trace mode', () => {
     const steppedIn = exchange.getByRole('region', { name: 'Where plato stepped in' }).or(exchange.locator('section', { has: page.getByRole('heading', { name: 'Where plato stepped in' }) }));
     await expect(steppedIn.getByText(/plato held the lesson open/)).toBeVisible();
     await expect(exchange.getByText(/plato’s code changed the result/)).toBeVisible();
-    await expect(exchange.getByText('A different reply appeared first, then plato replaced it')).toBeVisible();
+    await expect(exchange.getByText('The model’s first reply, which plato replaced before you saw it')).toBeVisible();
     await steppedIn.getByRole('listitem').filter({ hasText: /held the lesson open/ }).getByRole('button', { name: 'Show this step' }).click();
     await expect(exchange.locator('summary:focus')).toContainText('What the check changed');
     // Every check plato runs, as a question with its answer, even those that found nothing.
@@ -251,7 +249,7 @@ test.describe('Trace mode', () => {
   test('admins have no Trace: not in View as User, not in the editors', async ({ page }) => {
     await login(page, ADMIN);
     await page.goto('/plato/lessons/new');
-    await expect(page.getByRole('button', { name: /^Behind this response/ }).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-chat-message="assistant"]').first()).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('button', { name: /Trace/ })).toHaveCount(0);
     await page.goto('/lessons');
     await page.getByRole('button', { name: 'View as user' }).click();

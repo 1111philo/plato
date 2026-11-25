@@ -262,9 +262,10 @@ export async function saveLessonMessages(lessonId, msgs) {
 }
 
 // The conversation is one DynamoDB item (400 KB cap; the server refuses over
-// 380 KB). The "Behind this response" detail (`metadata.agents`, ~1 KB a
-// reply) is the part we can drop: oldest replies first, until the record
-// fits. The conversation text itself is never trimmed.
+// 380 KB). Replies saved before 2026-11-25 carry `metadata.agents` (the
+// removed "Behind this response" detail, ~1 KB each), the part we can drop:
+// oldest replies first, until the record fits. The conversation text itself
+// is never trimmed.
 export const MESSAGES_BUDGET = 340 * 1024;
 const byteSize = (m) => new TextEncoder().encode(JSON.stringify(m)).length;
 export function fitMessages(msgs, budget = MESSAGES_BUDGET) {

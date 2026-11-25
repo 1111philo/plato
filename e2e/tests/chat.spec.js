@@ -58,35 +58,8 @@ test('choosing Enter to send in Settings applies to the chat', async ({ page }) 
   await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
 });
 
-// #411: every reply has a "Behind this response" disclosure.
-test('learners can see which agents worked on a reply and what they did', async ({ page }) => {
-  await login(page, LEARNER);
-  await page.goto(`/lessons/${LESSONS[2].id}`);
-  await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
-  // The opening message: the Lesson Owner and the Coach, named as their prompts name them.
-  const opening = page.getByRole('button', { name: /^Behind this response/ }).first();
-  await expect(opening).toHaveAccessibleName('Behind this response: Lesson Owner, Coach');
-
-  const composer = page.getByRole('textbox', { name: 'Your message' }).last();
-  await composer.fill('Here is an example');
-  await composer.press(`${MOD}+Enter`);
-  await expect(page.getByText(/Can you give a specific example/)).toBeVisible({ timeout: 20_000 });
-  // The disclosure arrives with the persisted message, after the streamed text.
-  await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2);
-  const latest = page.getByRole('button', { name: /^Behind this response/ }).last();
-  await expect(latest).toHaveAttribute('aria-expanded', 'false');
-  await latest.focus();
-  await page.keyboard.press('Enter');
-  await expect(latest).toHaveAttribute('aria-expanded', 'true');
-  const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
-  await expect(panel).toContainText('Progress 0 → 3 of 10');
-  await expect(panel).toContainText('Mock insight after turn 1');
-  await expect(panel).toContainText('Learner Profile Update');
-  await expectAccessible(page, { label: 'agent activity open' });
-});
-
 // #451 tester QA: a reply without its tags used to record nothing. The client
-// asks for the tags in a second call, and says so under the reply.
+// asks for the tags in a second call.
 test('a coach reply that comes back without its tags still records progress', async ({ page }) => {
   await login(page, LEARNER);
   await page.goto('/lessons/getting-started-behind');
@@ -94,31 +67,22 @@ test('a coach reply that comes back without its tags still records progress', as
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await composer.fill('MOCK_NOTAGS here is my answer');
   await composer.press(`${MOD}+Enter`);
-  await expect(page.getByRole('button', { name: /^Behind this response/ })).toHaveCount(2, { timeout: 20_000 });
-  const latest = page.getByRole('button', { name: /^Behind this response/ }).last();
-  await latest.click();
-  const panel = page.locator(`[id="${await latest.getAttribute('aria-controls')}"]`);
-  await expect(panel).toContainText('Recorded what this reply left out in a second step');
-  await expect(panel).toContainText(/Progress 0 → [1-9] of 10/);
-  await expect(page.getByRole('button', { name: /^Overview \([1-9] of 3 Objectives\): lesson panel$/ }).first()).toBeVisible();
-});
-
-test('the lesson editor shows the lesson creator behind each reply', async ({ page }) => {
-  await login(page, ADMIN);
-  await page.goto('/plato/lessons/new');
-  const button = page.getByRole('button', { name: /^Behind this response/ }).first();
-  await expect(button).toBeVisible({ timeout: 20_000 });
-  await button.click();
-  await expect(page.getByText('Readiness 3 of 10')).toBeVisible();
+  await expect(page.locator('[data-chat-message="assistant"]')).toHaveCount(2, { timeout: 20_000 });
+  await expect(page.getByRole('button', { name: /^Overview \([1-9] of 3 Objectives\): lesson panel$/ }).first()).toBeVisible({ timeout: 20_000 });
 });
 
 // #438: the lesson panel's Overview tab (merged with "Your work"), by keyboard,
 // with the checklist the coach fills in. The header button says how many are met.
 test('the lesson panel shows the objectives met so far, where you are, and shared work', async ({ page }) => {
   await login(page, LEARNER);
-  await page.goto(`/lessons/${LESSONS[2].id}`); // continues the conversation from the test above
+  await page.goto(`/lessons/${LESSONS[2].id}`);
+  await expect(page.getByText(/Welcome! In this lesson/)).toBeVisible({ timeout: 20_000 });
   const composer = page.getByRole('textbox', { name: 'Your message' }).last();
   await expect(composer).toHaveAccessibleDescription(/Enter to send/, { timeout: 20_000 });
+  // One answer, so the coach (mock) checks off the first objective.
+  await composer.fill('Here is an example');
+  await composer.press(`${MOD}+Enter`);
+  await expect(page.getByText(/Can you give a specific example/)).toBeVisible({ timeout: 20_000 });
 
   const open = page.getByRole('button', { name: 'Overview (1 of 4 Objectives): lesson panel' }).first();
   await expect(open).toHaveText('Overview (1 of 4 Objectives)');

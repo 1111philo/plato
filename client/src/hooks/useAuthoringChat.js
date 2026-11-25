@@ -16,13 +16,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { authoringTurn, authoringTail } from '../lib/authoringEngine.js';
 import { useTitleNotification } from './useTitleNotification.js';
 import { MSG_TYPES } from '../lib/constants.js';
-import { authoringActivity, AUTHORING_READS } from '../lib/agentActivity.js';
 
-const reply = (agent, text, before, after) => ({
-  role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE,
-  metadata: { agents: authoringActivity(agent, { before, after, reads: AUTHORING_READS }) },
-  timestamp: Date.now(),
-});
+const reply = (text) => ({ role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, timestamp: Date.now() });
 
 /**
  * @param {object} o
@@ -81,7 +76,7 @@ export function useAuthoringChat({ agent, title, initialMessages, initialReadine
           onStream: (partial) => { if (!cancelled) setStreamingText(partial); },
         });
         if (cancelled) return;
-        pendingRef.current = { msgs: [reply(agent, text, null, r)], r: r ?? fallbackReadiness };
+        pendingRef.current = { msgs: [reply(text)], r: r ?? fallbackReadiness };
         setStreamingText(null);
       } catch (e) {
         if (!cancelled) { setError(e.message || 'Failed to start.'); setBusy(''); setStreamingText(null); }
@@ -105,7 +100,7 @@ export function useAuthoringChat({ agent, title, initialMessages, initialReadine
         agent, messages: authoringTail(all),
         onStream: (partial) => setStreamingText(partial),
       });
-      pendingRef.current = { msgs: [reply(agent, respText, readinessRef.current, r)], r };
+      pendingRef.current = { msgs: [reply(respText)], r };
       setStreamingText(null);
     } catch (e) {
       setError(e.message || 'Failed to send.');

@@ -18,7 +18,6 @@ import UserMessage from '../components/chat/UserMessage.jsx';
 import AssistantMessage from '../components/chat/AssistantMessage.jsx';
 import ProgressBar from '../components/chat/ProgressBar.jsx';
 import ComposeBar from '../components/chat/ComposeBar.jsx';
-import AgentActivity from '../components/chat/AgentActivity.jsx';
 import LessonPanel from '../components/chat/LessonPanel.jsx';
 import LessonOverview from '../components/chat/LessonOverview.jsx';
 import TraceContent from '../components/chat/TraceContent.jsx';
@@ -378,7 +377,6 @@ export default function LessonChat() {
       case MSG_TYPES.GUIDE:
         return (
           <div key={idx}>
-            <AgentActivity agents={msg.metadata?.agents} onOpenTrace={lessonKB?.trace && !impersonating ? () => openPanel('trace', msg.timestamp || Date.now()) : undefined} />
             <AssistantMessage content={msg.content} />
           </div>
         );

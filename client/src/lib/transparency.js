@@ -3,7 +3,7 @@
  * every step a Trace records, every rule plato's code applies to a result,
  * and every outside service the app uses.
  *
- * The Trace view, "Behind this response", the Privacy page, and the
+ * The Trace view, the Privacy page, and the
  * generated docs/HOW_IT_WORKS.md all read from here, so there is one place to change the wording. Tests
  * (client/tests/transparency.test.js) fail when the code gains an agent, a
  * recorded step, a rule, an event or a service that isn't described here.

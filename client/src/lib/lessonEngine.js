@@ -21,7 +21,6 @@ import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
-import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 import { openTrace, traceBytes, traceFull } from './traceSession.js';
 import { rulesApplied } from './lessonTrace.js';
@@ -480,9 +479,8 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
     trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
   }
 
-  const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
   const savedMessages = await saveLessonMessages(lessonId, messages);
@@ -736,7 +734,6 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   else if (assessment?.held) report('coach_completion_held');
   else if (assessment?.unverified) report('coach_objectives_unverified');
 
-  const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   const kbBeforeFull = lessonKB;
   // The objectives checklist (#438) first, against the KB as it was, so the
   // turn that completes the lesson can still check off what it showed.
@@ -792,17 +789,10 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     msgType: MSG_TYPES.USER, phase,
     metadata, timestamp: ts(),
   };
-  // What each agent read and did on this turn (#411), for "Behind this response".
-  const agents = coachTurnActivity({
-    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet, assessment,
-    images: imageDataUrls.length, links: linkList.length,
-    hasUnitNote: !!courseProgress,
-    unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
-  });
-  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
   // `firstReply`: what the model wrote first. Not streamed, so the learner
   // never saw it when plato replaced it (`streamedLive: false`).
-  trace?.step('shown', { text: parsed.text, firstReply: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedLive: false, behindThisResponse: agents });
+  trace?.step('shown', { text: parsed.text, firstReply: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedLive: false });
 
   // true = saved. false = the server refused it; 'too_long' = not sent (past
   // the size budget). Either way tell the learner, and don't retry in the

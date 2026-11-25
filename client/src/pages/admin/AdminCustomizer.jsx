@@ -12,7 +12,6 @@ import { buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { authoringExtract, kbProblem } from '../../lib/authoringEngine.js';
 import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import AgentActivity from '../../components/chat/AgentActivity.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
 import ComposeBar from '../../components/chat/ComposeBar.jsx';
@@ -374,7 +373,6 @@ function KBEditor({ initialContent, onSave, onCancel, initialConversation, initi
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return (
       <div key={idx}>
-        <AgentActivity agents={msg.metadata?.agents} />
         <AssistantMessage content={msg.content} />
       </div>
     );
