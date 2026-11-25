@@ -55,6 +55,15 @@ describe('counting sentences', () => {
   });
 });
 
+describe('the language check', () => {
+  it('knows a short Spanish reply, and still catches English', async () => {
+    const { inLanguage } = await import('../../scripts/evals/lib/checks.js');
+    assert.equal(inLanguage('Esas palabras aún son mías, no tuyas. ¿Cómo lo dirías tú?', 'Spanish'), true);
+    assert.equal(inLanguage('Those are still my words, not yours yet. How would you say it?', 'Spanish'), false);
+    assert.equal(inLanguage('Tell me about one moment at work.', 'English'), true);
+  });
+});
+
 describe('what the evaluations cover', () => {
   it('a change runs the agents it can affect, and nothing else', () => {
     assert.deepEqual(affectedAgents(['client/prompts/lesson-owner.md']), ['lesson-owner']);

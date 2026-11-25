@@ -1,6 +1,6 @@
 // Getting Started ships with plato (#443) as a course of three lessons. On a
-// new classroom it's public and shown first. "How assessment works" is linked
-// from the lesson panel.
+// new classroom it's public and shown first. The lesson panel's Data Trace tab
+// replaced the old "How assessment works" page.
 import { test, expect } from '@playwright/test';
 import { login, expectAccessible } from '../helpers.js';
 import { ADMIN, LEARNER } from '../fixtures.js';
@@ -47,15 +47,13 @@ test('admins are asked to publish a private Getting Started course, and can publ
   for (const id of LESSON_IDS) expect(rows.find((l) => l.lessonId === id).status).toBe('public');
 });
 
-test('"How assessment works" is in the lesson panel’s Overview tab', async ({ page }) => {
+test('the old "How assessment works" address goes home: the lesson panel’s Data Trace tab replaced it', async ({ page }) => {
   await login(page, LEARNER);
+  await page.goto('/how-assessment-works');
+  await expect(page).not.toHaveURL(/how-assessment-works/);
   await page.goto('/lessons/getting-started');
   await page.getByRole('button', { name: /^Overview \(\d of 3 Objectives\): lesson panel$/ }).first().click();
-  const dialog = page.locator('#lesson-panel');
-  await expect(dialog.getByRole('link', { name: 'How assessment works' })).toBeVisible();
-  await expectAccessible(page, { include: '#lesson-panel', label: 'lesson panel with assessment link' });
-  await dialog.getByRole('link', { name: 'How assessment works' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: 'How assessment works' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: 'When a lesson is complete' })).toBeVisible();
-  await expectAccessible(page, { label: 'how assessment works' });
+  const panel = page.locator('#lesson-panel');
+  await expect(panel.getByRole('link', { name: 'How assessment works' })).toHaveCount(0);
+  await expectAccessible(page, { include: '#lesson-panel', label: 'lesson panel' });
 });

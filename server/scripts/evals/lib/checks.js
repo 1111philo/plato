@@ -14,7 +14,7 @@ export function parseJSON(text) {
 
 const STOP = {
   English: /\b(the|and|you|your|to|of|is|that|what|this|with|for)\b/gi,
-  Spanish: /\b(el|la|los|las|de|que|en|con|para|una|por|tu|tus|es|como|qué|su|sus)\b/gi,
+  Spanish: /(?<![\p{L}])(el|la|los|las|de|que|en|con|para|una|un|por|tu|tus|es|son|como|cómo|qué|su|sus|no|lo|sí|tú|mi|mis|más|muy|pero|ya|esta|este|eso|ese|esas|esos|aún|también|cuando|dónde|porque)(?![\p{L}])/giu,
 };
 const BENGALI = /[ঀ-৿]/g;
 export const CJK = /[぀-ヿ㐀-鿿가-힯]/;
@@ -25,7 +25,8 @@ export function inLanguage(text, language = 'English') {
   if (CJK.test(t)) return false;
   if (language === 'Bengali') return (t.match(BENGALI) || []).length > t.replace(/\s/g, '').length * 0.3;
   const count = (re) => (t.match(re) || []).length;
-  if (language === 'Spanish') return count(STOP.Spanish) > count(STOP.English);
+  // ¿ ¡ ñ and accented vowels are Spanish too: a short reply can have few common words.
+  if (language === 'Spanish') return count(STOP.Spanish) + Math.min(3, (t.match(/[¿¡ñáéíóú]/gi) || []).length) > count(STOP.English);
   return count(STOP.English) >= count(STOP.Spanish);
 }
 
@@ -58,4 +59,4 @@ export const WORK = /\b(?:your (?:job|employer|manager|boss|coworkers?|colleague
 // older version drafted too, it just didn't detect it, so its own (missing)
 // detector would make "at least as good as today" unmeasurable.
 const { draftsForLearner } = await import('../../../../client/src/lib/assessment.js');
-export const drafts = (text) => draftsForLearner(String(text || ''));
+export const drafts = (text, learnerTexts = []) => draftsForLearner(String(text || ''), learnerTexts);

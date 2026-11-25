@@ -17,7 +17,6 @@ import { buildConversationText } from '../../lib/lessonCreationEngine.js';
 import { authoringExtract } from '../../lib/authoringEngine.js';
 import { useAuthoringChat } from '../../hooks/useAuthoringChat.js';
 import { MSG_TYPES } from '../../lib/constants.js';
-import AgentActivity from '../../components/chat/AgentActivity.jsx';
 import BundledLessonNotices from './BundledLessonNotices.jsx';
 
 import ChatArea from '../../components/chat/ChatArea.jsx';
@@ -668,7 +667,6 @@ function NewLessonView({ onSave, onCancel, onError: _onError, lessonId, isDraft,
     if (msg.msgType === MSG_TYPES.USER) return <UserMessage key={idx} content={msg.content} />;
     return (
       <div key={idx}>
-        <AgentActivity agents={msg.metadata?.agents} />
         <AssistantMessage content={msg.content} />
       </div>
     );

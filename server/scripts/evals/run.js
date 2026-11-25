@@ -29,7 +29,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const REPO = join(here, '..', '..', '..');
 const EVALS = join(REPO, 'evals');
 /** More trials for a failed "at least as good as today", on both versions. */
-const CONFIRM_TRIALS = 12;
+const CONFIRM_TRIALS = 18;
 
 function args(argv) {
   const out = { level: 'moments', trials: '6', concurrency: '6', base: 'origin/playground' };

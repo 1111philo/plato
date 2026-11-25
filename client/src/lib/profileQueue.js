@@ -77,7 +77,7 @@ export function mergeProfile(existing, returned) {
 // evaluations P4, P6, P11, O4; the same on main). The learner reads the
 // summary, so plato's code takes those sentences out, and any about AI use
 // or copying ("with no evidence of AI-generated content", P11).
-const PROVENANCE = /\b(?:ignored|overrid\w*|according to|was told|observations?|ai[- ]generated|chatgpt|copied|plagiar\w*|the coach (?:noted|noticed|said)|(?:learner|their|the|a|any|this|that) notes?\b|(?:removed|removing|deleted) (?:the |a |their )?note)/i;
+const PROVENANCE = /\b(?:ignored|overrid\w*|according to|was told|observations?|ai[- ]generated|chatgpt|copied|plagiar\w*|the coach (?:noted|noticed|said)|(?:learner|their|the|a|any|this|that|system|admin|coach) notes?\b|(?:removed|removing|deleted) (?:the |a |their )?note)/i;
 
 /** The summary without sentences about its sources. Pure; never empty when the input wasn't. */
 export function withoutProvenance(summary) {

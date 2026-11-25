@@ -14,10 +14,9 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
-const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
 // What sendMessage does with a graded reply: merge the checklist, then apply.
 const finish = (k, parsed) => applyCoachResponseToKB(mergeObjectivesMet(k, parsed.kbUpdate), parsed);
@@ -467,21 +466,6 @@ describe('checkGrading', () => {
   });
 });
 
-describe('disclosure (Behind this response)', () => {
-  it('reports counts and a held lesson, never the reasons', () => {
-    const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { checked: 2, shown: 1, unverified: 0, held: true, regenerated: true } });
-    const check = agents.find((a) => a.agent === 'assessor');
-    assert.equal(check.label, 'Assessor');
-    assert.deepEqual(check.did, ['Checked 2 objectives against your own words: 1 shown', 'Held the lesson open until the rest is in your own words, and asked the coach to reply again']);
-  });
-  it('says plainly when the check could not run', () => {
-    const agents = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, checked: 1 } });
-    assert.match(agents.find((a) => a.agent === 'assessor').did[0], /nothing new was checked off/);
-    const open = coachTurnActivity({ before: kb(), after: kb(), parsed: {}, assessment: { failed: true, failedOpen: true, checked: 1 } });
-    assert.match(open.find((a) => a.agent === 'assessor').did[0], /coach’s assessment stands; the team can review it/);
-  });
-});
-
 describe('heldCompletionAddendum and normalizeForMatch', () => {
   it('names each outstanding objective and caps the score', () => {
     const a = heldCompletionAddendum(kb(), [3], { 3: 'write the message themselves' });
@@ -559,12 +543,91 @@ describe('a quote put together from the coach’s sentences (agent evaluations W
       { by: 'learner', text: 'StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.' },
     ];
     assert.equal(groundVerdict(verdict('StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.'), swapped, [3]).missing[3], COACH_WROTE);
+    // The coach fixing the learner's grammar keeps the words theirs (agent evaluations A4).
+    const fixed = [
+      { by: 'learner', text: 'last year i lead a team of volunteer at the food bank and it show me i like helping people work together' },
+      { by: 'coach', text: 'Lovely. Here it is with the grammar fixed: “Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.”' },
+      { by: 'learner', text: 'Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.'), fixed, [3]).shown, [3]);
     // The coach quoting the learner back doesn't make the learner's words the coach's.
     const echoed = [
       { by: 'learner', text: 'I organised the food drive and it showed me I love bringing people together' },
       { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
     ];
     assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
+describe('a short sample in the learner’s own voice is their answer written for them (Blake’s trace, 2026-11-25)', () => {
+  it('counts as a draft, unless it’s the learner’s own words quoted back, or about someone else', () => {
+    assert.equal(draftsForLearner('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.', ['Watch orientation video']), true);
+    assert.equal(draftsForLearner('Name 2+, e.g., “I use Notion for work and iMessage for social”.', []), true);
+    assert.equal(draftsForLearner('Aquí tienes un borrador: "Hola, soy Sam. Organizar una colecta me enseñó cuánto valoro la comunidad." ¿Te representa?', ['Organicé una colecta de alimentos.']), true, 'Spanish first person (C22)');
+    assert.equal(draftsForLearner('You said “I’m sharpest after dinner”, which grounds it.', ['I’m sharpest after dinner']), false, 'their own words');
+    assert.equal(draftsForLearner('Name a time, e.g., “a quiet evening slot”.', []), false, 'not in their voice');
+    assert.equal(draftsForLearner('Pick one (e.g., “Tuesday 6–7 PM on my MacBook Pro”).'), false, 'without the learner’s messages, the 20-word rule only');
+  });
+});
+
+describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised as “You nailed it”)', () => {
+  const hint = 'How does the AI choose the next token? Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.';
+  it('finds a message that is mostly the coach’s own wording sent back', () => {
+    assert.equal(repeatsCoach('It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.', [hint]), true);
+  });
+  it('leaves the learner’s own thinking alone, even on the same topic', () => {
+    assert.equal(repeatsCoach('I think it looks at what came before and guesses the word that usually comes next, like autocomplete on my phone.', [hint]), false);
+    assert.equal(repeatsCoach('ok', [hint]), false, 'too short to tell');
+    assert.equal(repeatsCoach('It’s not random — it picks what’s most likely to follow.', []), false, 'no coach messages');
+  });
+  it('a hint that gives the answer is a draft', () => {
+    assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
+  });
+});
+
+describe('a line copied from the coach, among the learner’s own (agent evaluations W5)', () => {
+  const t = (...m) => assessmentTranscript([{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, ...m.map(([role, content]) => ({ role, content }))]);
+  it('reads as copied, so it doesn’t count toward the five', () => {
+    const tr = t(['assistant', 'Text me four more. Example: “Grant Writer — May 10 — Draft outreach message to program director”'], ['user', 'Grant Writer — May 10 — Draft outreach message to program director\nData Entry Specialist — Apr 29 — Follow up with hiring manager via LinkedIn']);
+    assert.equal(tr[1].text, `${COPIED_LINE}\nData Entry Specialist — Apr 29 — Follow up with hiring manager via LinkedIn`);
+  });
+  it('a line the learner wrote before the coach echoed it stays theirs', () => {
+    const tr = t(['user', 'I organised the food drive for my neighbours'], ['assistant', 'You said “I organised the food drive for my neighbours”. Why?'], ['user', 'I organised the food drive for my neighbours\nbecause nobody else would']);
+    assert.match(tr[2].text, /^I organised the food drive/);
+  });
+});
+
+describe('withoutVoiceSamples (agent evaluations W5)', () => {
+  it('takes out quoted examples in the learner’s voice and keeps the question', () => {
+    assert.equal(withoutVoiceSamples('For Slack, what’s one work goal it helps with? (e.g., “I coordinate with event teams in real time.”) And how well do you know it?', ['Slack, Excel']), 'For Slack, what’s one work goal it helps with? And how well do you know it?');
+    assert.equal(withoutVoiceSamples('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.'), 'Pick one time block and say why.');
+  });
+  it('leaves third-person examples and the learner’s own words alone', () => {
+    assert.equal(withoutVoiceSamples('Name a time, e.g., “a quiet evening slot”.'), 'Name a time, e.g., “a quiet evening slot”.');
+    assert.equal(withoutVoiceSamples('You said “I’m sharpest after dinner”. Why?', ['I’m sharpest after dinner']), 'You said “I’m sharpest after dinner”. Why?');
+  });
+});
+
+describe('withoutUnbackedClaims (Blake’s trace, 2026-11-25)', () => {
+  it('takes out the sentence saying an objective the check didn’t keep is met', () => {
+    assert.equal(withoutUnbackedClaims('Strong. You linked each tool to your workflow. That’s **Objective 2 met**.\n\nNext: what are five to-dos?', [2]), 'Strong. You linked each tool to your workflow.\n\nNext: what are five to-dos?');
+    assert.equal(withoutUnbackedClaims('That’s Objective 1 in progress. Next, what tools?', [1]), 'That’s Objective 1 in progress. Next, what tools?', 'in progress isn’t met');
+    assert.equal(withoutUnbackedClaims('That’s Objective 2 met. What next?', [1]), 'That’s Objective 2 met. What next?', 'a kept objective stays');
+    assert.equal(withoutUnbackedClaims('With Objectives 1–4 all demonstrated, you’re close. What next?', [3]), 'What next?');
+    assert.equal(withoutUnbackedClaims('Objective 2 met.', [2]), 'Objective 2 met.', 'never empties a reply');
+  });
+});
+
+describe('withDirectiveLiterals (agent evaluations H1)', () => {
+  const d = 'When the learner is ready to join, share this exact link and code: https://community.example.org/join and the code PLATO-2026.';
+  it('puts back the author’s exact link and code where the reply wrote a near-miss', () => {
+    assert.equal(withDirectiveLiterals('Join link: https:// comunidad.example.org/join. Code: PLATO 2026', d), 'Join link: https://community.example.org/join. Code: PLATO-2026');
+  });
+  it('leaves other links, exact ones, and lessons without a directive alone', () => {
+    const other = 'See https://community.example.org/rules first, then https://community.example.org/join.';
+    assert.equal(withDirectiveLiterals(other, d), other);
+    assert.equal(withDirectiveLiterals('Read https://example.com/other', d), 'Read https://example.com/other');
+    assert.equal(withDirectiveLiterals('https:// comunidad.example.org/join', undefined), 'https:// comunidad.example.org/join');
   });
 });
 
@@ -585,6 +648,7 @@ describe('a quote that only agrees (agent evaluations A17)', () => {
   it('knows agreement from evidence', () => {
     for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that', 'Sí, eso soy yo', 'Perfecto, úsalo']) assert.equal(onlyAgrees(q), true, q);
     assert.equal(onlyAgrees('Sí, ayudé en la colecta de comida'), false);
+    assert.equal(onlyAgrees('Sí, ese soy yo'), true, 'C22');
     for (const q of ['I came from retail.', 'Yes, I stayed late to fix the budget error', 'I value calm']) assert.equal(onlyAgrees(q), false, q);
   });
   it('doesn’t count it, unless the lesson says confirming counts', () => {

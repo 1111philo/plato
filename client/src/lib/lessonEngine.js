@@ -21,14 +21,13 @@ import { syncIfUnsaved } from './syncDebounce.js';
 import { ensureProfileExists, updateProfileOnCompletionInBackground, updateProfileFromObservation } from './profileQueue.js';
 import { updateCourseProgressOnCompletionInBackground } from './courseProgressQueue.js';
 import { LESSON_PHASES, MSG_TYPES, MAX_EXCHANGES, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
-import { coachTurnActivity, lessonStartActivity } from './agentActivity.js';
 import { mergeObjectivesMet, objectivesMetForContext } from './lessonWork.js';
 import { openTrace, traceBytes, traceFull } from './traceSession.js';
 import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, REPEATED_ADDENDUM, AGREED_ADDENDUM, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -237,6 +236,12 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
   let out = applied.parsed;
   let regenerated = false;
   let replaced = false;
+  // Objectives the coach claimed and the check didn't keep: the reply mustn't
+  // tell the learner they're met (withoutUnbackedClaims).
+  if (applied.unverified?.length && !applied.held && out.text) {
+    const cleaned = withoutUnbackedClaims(out.text, applied.unverified);
+    if (cleaned !== out.text) { note('claimsRemoved', { before: out.text, after: cleaned, objectives: applied.unverified }); out = { ...out, text: cleaned }; }
+  }
   if (applied.held) {
     if (regenerate) {
       try {
@@ -454,13 +459,19 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   const coachMsg = await orchestrator.converseStream(
     'coach',
     opening,
-    cleanStream(onStream),
+    // A lesson with a coach directive isn't streamed: its links and codes are
+    // checked first (withDirectiveLiterals), and a corrected one would switch.
+    lesson.coachDirective ? () => {} : cleanStream(onStream),
     1024,
     '',
     trace ? { trace, purpose: 'opening message' } : undefined,
   );
 
-  const { text, progress } = parseCoachResponse(coachMsg);
+  const firstOpening = parseCoachResponse(coachMsg);
+  const { progress } = firstOpening;
+  // The author's links and codes, exactly (withDirectiveLiterals).
+  const text = withDirectiveLiterals(firstOpening.text, lesson.coachDirective);
+  if (text !== firstOpening.text) orchestrator.reportEvent('coach_literal_restored', { lessonId });
   trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
@@ -474,9 +485,8 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
     trace?.step('save', { record: 'lessonKB', ...lastSaveResult(`lessonKB:${lessonId}`) });
   }
 
-  const agents = lessonStartActivity({ lessonKB, enrichments, hasUnitNote: !!courseProgress });
   const messages = [
-    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, metadata: { agents }, timestamp: ts() },
+    { role: 'assistant', content: text, msgType: MSG_TYPES.GUIDE, phase: LESSON_PHASES.LEARNING, timestamp: ts() },
   ];
 
   const savedMessages = await saveLessonMessages(lessonId, messages);
@@ -561,8 +571,13 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // Events the server logs (a code and the lesson id only), noted in the trace too.
   const report = (code) => { orchestrator.reportEvent(code, { lessonId }); trace?.step('event', { code }); };
   // What the learner watched arrive, when a later reply replaced it.
-  let streamed = 0;
-  const stream = trace ? (...a) => { streamed++; return cleanStream(onStream)(...a); } : cleanStream(onStream);
+  // The reply isn't streamed to the learner while it's written: plato checks
+  // it first (tags, the draft guard, the script guard, the grading check) and
+  // may rewrite or replace it, and the learner watching a reply arrive and
+  // then switch to another was a problem (Blake, 2026-11-25). The page shows
+  // its thinking indicator until the checked reply is ready. `onStream` is
+  // kept in the signature for the page; nothing unchecked reaches it.
+  const stream = () => {};
   // `stage` and `check`: where the call belongs in the Trace (orchestrator.converseStream).
   const opts = (purpose, where = {}) => (trace ? { trace, purpose, ...where } : undefined);
 
@@ -623,12 +638,24 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
 
   // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
   // "The reply was cut off", since the tags come last).
+  // A message that's mostly the coach's own wording sent back (a pasted
+  // hint): every coach call this turn is told so (repeatsCoach), since the
+  // model doesn't notice its own words and praised them as the learner's.
+  const coachSaid = assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text);
+  const repeated = repeatsCoach(text || '', coachSaid);
+  // Or only "yes, that's me" to a draft the coach just wrote (C2).
+  const lastCoach = coachSaid[coachSaid.length - 1] || '';
+  const agreed = !repeated && onlyAgrees(text || '') && draftsForLearner(lastCoach, assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text));
+  trace?.step('repeatCheck', { repeated, ...(agreed ? { agreed } : {}) });
+  if (repeated || agreed) report('coach_wording_repeated');
+  const turnNote = repeated ? REPEATED_ADDENDUM : agreed ? AGREED_ADDENDUM : '';
+  const withNote = (addendum) => [turnNote, addendum].filter(Boolean).join('\n\n---\n\n');
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
     stream,
     2048,
-    '',
+    turnNote,
     opts('reply'),
   );
 
@@ -650,23 +677,30 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // The draft guard (#584): a reply that writes the learner's answer for them
   // (a quoted sentence to adopt, "Here's a draft: …") is rewritten once as
   // feedback plus a question. Learners copied these drafts, and the grading
-  // check then (rightly) didn't count them. The rewrite streams in place and
-  // is kept even when it still drafts: going back to the first reply made the
-  // learner watch it switch twice (playground: the rewrite still drafted 21
-  // of 26 times). A failed rewrite keeps the first reply.
+  // check then (rightly) didn't count them. The rewrite is kept even when it
+  // still drafts (playground: it still drafted 21 of 26 times). A failed
+  // rewrite keeps the first reply. Nothing is streamed, so the learner sees
+  // only the reply plato keeps.
   let coachReply = repaired;
-  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
+  // What the learner has written, so their own words quoted back aren't a draft.
+  const learnerSaid = assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text);
+  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text, learnerSaid);
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(DRAFT_ADDENDUM), opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
       const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
-      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
+      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text, learnerSaid) };
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
+    // A sample in the learner's voice that survived the rewrite comes out.
+    if (!coachReply.draftRewritten) {
+      const cleaned = withoutVoiceSamples(coachReply.text, learnerSaid);
+      if (cleaned !== coachReply.text) { trace?.step('samplesRemoved', { before: coachReply.text, after: cleaned }); coachReply = { ...coachReply, text: cleaned }; }
+    }
   }
 
   // The script guard: the model sometimes slips characters from another
@@ -680,13 +714,23 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     const before = coachReply.text;
     let fixed = false;
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(SCRIPT_ADDENDUM), opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
       const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
       fixed = !!again.text && !mixesScripts(again.text, language);
       if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
       trace?.step('scriptGuard', { call: trace.lastCall(), before, after: again.text || null, used: fixed });
     } catch (e) { trace?.step('scriptGuard', { before, failed: String(e?.message || e), used: false }); /* keep the reply */ }
     report(fixed ? 'coach_script_rewritten' : 'coach_script_kept');
+  }
+
+  // The author's links and codes, exactly: a near-miss of one in the lesson's
+  // coach directive ("https:// comunidad.example.org/join") is put back as the
+  // author wrote it (agent evaluations H1). Code, no model call.
+  const exact = withDirectiveLiterals(coachReply.text, lesson.coachDirective);
+  if (exact !== coachReply.text) {
+    trace?.step('literals', { before: coachReply.text, after: exact });
+    coachReply = { ...coachReply, text: exact };
+    report('coach_literal_restored');
   }
 
   // The grading check (#584): objectives stay checked off only when the
@@ -700,7 +744,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     // the same with Trace on or off.
     // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
-    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, withNote(addendum), opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
     // plato's own held message, in the learner's language (not streamed: it replaces the reply).
     ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),
@@ -715,7 +759,6 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   else if (assessment?.held) report('coach_completion_held');
   else if (assessment?.unverified) report('coach_objectives_unverified');
 
-  const kbBefore = { progress: lessonKB.progress, status: lessonKB.status };
   const kbBeforeFull = lessonKB;
   // The objectives checklist (#438) first, against the KB as it was, so the
   // turn that completes the lesson can still check off what it showed.
@@ -771,15 +814,10 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     msgType: MSG_TYPES.USER, phase,
     metadata, timestamp: ts(),
   };
-  // What each agent read and did on this turn (#411), for "Behind this response".
-  const agents = coachTurnActivity({
-    before: kbBefore, after: lessonKB, parsed, achieved, newlyMet, assessment,
-    images: imageDataUrls.length, links: linkList.length,
-    hasUnitNote: !!courseProgress,
-    unitName: lesson.course?.id ? (lesson.unit?.name || lesson.course?.name) : null,
-  });
-  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, metadata: { agents }, timestamp: ts() };
-  trace?.step('shown', { text: parsed.text, firstStreamed: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedUpdates: streamed, behindThisResponse: agents });
+  const assistantMsg = { role: 'assistant', content: parsed.text, msgType: MSG_TYPES.GUIDE, phase, timestamp: ts() };
+  // `firstReply`: what the model wrote first. Not streamed, so the learner
+  // never saw it when plato replaced it (`streamedLive: false`).
+  trace?.step('shown', { text: parsed.text, firstReply: stripTags(coachMsg), replaced: stripTags(coachMsg) !== parsed.text, streamedLive: false });
 
   // true = saved. false = the server refused it; 'too_long' = not sent (past
   // the size budget). Either way tell the learner, and don't retry in the

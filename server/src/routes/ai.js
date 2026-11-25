@@ -19,7 +19,7 @@ const CLIENT_EVENTS = new Set([
   'coach_tags_recovered', 'coach_tags_unrecovered', 'conversation_too_long',
   'coach_completion_held', 'coach_objectives_unverified', 'coach_assessment_failed',
   'coach_draft_rewritten', 'coach_draft_kept', 'coach_assessment_failed_open',
-  'coach_script_rewritten', 'coach_script_kept',
+  'coach_script_rewritten', 'coach_script_kept', 'coach_literal_restored', 'coach_wording_repeated',
 ]);
 aiRoute.post('/v1/ai/events', async (c) => {
   const body = await c.req.json().catch(() => ({}));

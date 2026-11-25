@@ -567,22 +567,14 @@ message.
 The `sendKey` preference lives in the learner's `preferences` sync record and
 is set in Settings → Chat, which saves on change.
 
-## Behind this response (#411)
+## Behind this response (#411), removed
 
-A collapsed "Behind this response" button above each reply
-(`components/chat/AgentActivity.jsx`) summarises which agents worked on it and
-what they did, from what plato already parsed (`lib/agentActivity.js`). It is
-the always-on short version; the full record is [Trace mode](#trace-mode-595),
-which it links to when the conversation has a trace.
-
-- It is a real button with `aria-expanded`, outside the `data-chat-message`
-  node, so Alt+Arrow message navigation is unchanged.
-- Stored on the assistant message as `metadata.agents` (about 1 KB a turn).
-  `fitMessages` drops it oldest-first when `messages:` nears its budget, so it
-  must never be the only copy of anything.
-- Background agents are listed as "Asked to…": the reply records the hand-off,
-  not whether the run later succeeded (the Trace records that).
-- Admin chats keep it in session only.
+A "Behind this response" button above each reply summarised which agents
+worked on it (`metadata.agents`). It was removed on 2026-11-25 (Blake: "seems
+like just extra stuff" now that there's Trace): the lesson panel's Data Trace
+tab shows the same, in full, for any lesson a learner traces. Messages saved
+before then still carry `metadata.agents`; nothing reads it, and `fitMessages`
+still drops it first when a conversation nears its size budget.
 
 ## Trace mode (#595)
 
@@ -775,8 +767,7 @@ A request the trace can't reproduce means the trace is missing something.
   exchange N", so Blake's 12,693-line download is about 4,100) or as its
   stored JSON records (complete).
 - **One description, many readers.** `transparency.js` feeds the Trace,
-  "Behind this response" labels, the agent and rules sections of
-  `/how-assessment-works`, the services section of `/privacy`, and
+  the services section of `/privacy`, and
   `docs/HOW_IT_WORKS.md`, which `scripts/generate-how-it-works.js` writes.
   `client/tests/how-it-works.test.js` fails when the doc is out of date, so a
   change to the registry must regenerate it (`npm run docs:how-it-works`).
@@ -1407,7 +1398,7 @@ learner can use part of plato, not a subject:
 |---|---|
 | **Welcome to plato** (`getting-started`, `getting-started.md`) | say what plato and the coach are; find the exemplar and objectives and which are met (the lesson overview); say how a lesson is completed and what happens after |
 | **Sharing your work** (`getting-started-sharing`, `getting-started-sharing.md`) | send, and pick the send key (Settings → Chat); share a screenshot or image; attach a link and say what the coach does with it |
-| **What plato does behind the scenes** (`getting-started-behind`, `getting-started-behind.md`) | read and correct the learner profile (Settings → Learner Profile → Add Feedback); use "Behind this response"; say what carries between lessons (unit progress) |
+| **What plato does behind the scenes** (`getting-started-behind`, `getting-started-behind.md`) | read and correct the learner profile (Settings → Learner Profile → Add Feedback); start a trace and read one exchange in the Data Trace; say what carries between lessons (unit progress) |
 
 Each lesson's `## Coach Directive` lists the real control names so the
 coach doesn't invent UI. The files travel with the prompts (the deploy's
@@ -1487,9 +1478,7 @@ the objectives; Blake's review on #451 merged them. The Overview tab, in order:
   Images are fetched only when the section opens, each key once.
 - **Additional context** (`<details>`): plugin enrichments, when there are any.
 
-The progress score isn't repeated; the header's progress bar shows it. It
-ends with **How assessment works**, the one place in the classroom that links
-the assessment page, next to the progress it explains. Each tab panel is its
+The progress score isn't repeated; the header's progress bar shows it. Each tab panel is its
 own focusable scroll area (axe scrollable-region-focusable). It works the same
 on completed lessons and in View as User (it only reads).
 
@@ -1526,15 +1515,14 @@ Only the first line after the title is the lesson's description (what
 the last lesson" there. Coaching notes, such as terms to define at first use,
 go in the optional `## Coach Directive`. No new lesson fields are needed.
 
-### How assessment works (#257, #414)
+### How assessment is explained (#257, #414)
 
-`/how-assessment-works` (`client/src/pages/HowAssessmentWorks.jsx`) is a
-public page, linked from the lesson overview's footer and the Getting Started
-lessons. It describes only what the system does, in plain language (Blake,
-2026-11-10: "just technically how the assessments work"); no policy
-placeholders. Its list of AI helpers and of the rules plato's code applies
-comes from `lib/transparency.js`, so it can't drift from the code; the rest is
-prose to keep in step with the coach prompt and `applyCoachResponseToKB`.
+There was a public `/how-assessment-works` page (#257), linked from the lesson
+overview and Getting Started. It was removed on 2026-11-25 (Blake: "we have
+trace now"): the lesson panel's **Data Trace** tab shows the same thing for
+the learner's own lesson, built from what actually happened and from the same
+source (`lib/transparency.js`). The old address redirects home; Getting
+Started points to the Data Trace tab.
 
 The coach prompt backs this up (#414). When a response could have come from
 anyone, the coach asks for a personal example or the learner's own
@@ -1581,9 +1569,7 @@ built by the same `buildSystemPrompt` as the reply's (knowledge base, lesson
 catalog, the learner's language), plus an addendum with the cue, so learner
 text can't forge or trigger it. Only the missing tags are taken (a reply's own
 progress stands), and they go through `applyCoachResponseToKB` like any
-others. "Behind this response" says "Recorded what this reply left out in a
-second step"; if there's still no progress, it says "Didn't record progress
-for this reply" instead of showing an unchanged score.
+others. The Trace shows the second step.
 
 Both outcomes are logged: the client reports `coach_tags_recovered` /
 `coach_tags_unrecovered` to `POST /v1/ai/events` (known codes only, signed in),
@@ -1648,14 +1634,12 @@ all. When the lesson itself says the learner *confirms* what the coach drafts
 
 **When a 10 isn't backed up**, the score is held to 8 and the coach is asked
 again with an "Assessment check (from plato, not the learner)" addendum
-naming what's missing. Its second try streams in place of the first. The
+naming what's missing. Its second try is shown instead of the first. The
 second try's score stays at 8 or lower and its objectives are the ones the
 check found. `applyCoachResponseToKB` makes it a rule: a lesson completes only
 when every objective is checked off (lessons without objectives keep the old
-behavior). "Behind this response" adds an **Assessor** entry with
-counts only ("Checked 2 objectives against your own words: 1 shown"; "Held
-the lesson open until the rest is in your own words"). The reasons go to the
-coach, never to the learner.
+behavior). The reasons go to the coach, never to the learner in the reply;
+a learner who traces the lesson sees the check's steps in the Data Trace.
 
 **Fail closed.** A malformed reply is repaired first (the model copies a
 learner's curly ” as the end of a JSON string), then retried once with a note
@@ -1698,10 +1682,40 @@ the learner's answer ("Try: …", "Here's a draft combining both: …") and the
 learner pasting it back. `draftsForLearner` flags a reply with a quoted or
 italic passage of 20+ words, or one after a lead like "Try this:". Before
 grading, `sendMessage` asks the coach once to rewrite such a reply as
-feedback plus a question (`DRAFT_ADDENDUM`). The rewrite streams in place and
-is kept even if it still drafts: on playground it still drafted 21 of 26
-times, and switching back to the first reply made learners watch the reply
-change twice. The threshold is 20 words (Blake, 2026-11-22): on prod's
+feedback plus a question (`DRAFT_ADDENDUM`), in one question and 2-4
+sentences (its rewrites asked several questions most of the time; agent
+evaluations). The rewrite is kept even if it still drafts: on playground it
+still drafted 21 of 26 times.
+
+**A short sample in the learner's voice is a draft too** (Blake's trace,
+2026-11-25): the coach's "examples" were his answers ("e.g., 'Tuesday 6–7 PM
+on my MacBook Pro'"), each under 20 words, and he pasted them back. A quoted
+passage of 3+ words in the learner's first person ("I…", "my…") that the
+learner didn't write (`VOICE_WORDS`) sets off the draft guard as well; their
+own words quoted back don't, nor do examples about someone else. And when the
+check takes back an objective the coach claimed, the reply's sentence saying
+it's met ("That's Objective 2 met") is taken out (`withoutUnbackedClaims`), so
+the coach's words agree with the record.
+
+**A message that repeats the coach's own words** (Blake on playground,
+2026-11-25): a learner pasted back the coach's hint and was told "You nailed
+it". The model doesn't recognise its own wording (a prompt rule alone: still
+2 of 16), so plato's code does: when more than half the message's three-word
+phrases are in the coach's earlier messages (`repeatsCoach`), every coach
+call that turn carries `REPEATED_ADDENDUM` (say it's your wording, don't
+praise or count it, ask for theirs): 0 of 32 after. A "Hint:" that spells out
+the answer is a draft (`DRAFT_LEAD`). The coach prompt also says a hint never
+holds the answer, and program facts (dates, places, people) come only from
+the knowledge base.
+
+**The learner sees a reply only once it's checked** (Blake, 2026-11-25).
+Replies used to stream as the model wrote them, so a learner watched the
+first reply arrive and then switch to the rewrite, the held reply, or the
+script guard's version. `sendMessage` no longer streams the reply: the page
+shows its thinking indicator until every check has run, then the final
+reply. The opener still streams, except in a lesson with a coach directive,
+whose links and codes are checked first. The Trace keeps the model's first
+reply (`shown.firstReply`) and says the learner didn't see it. The threshold is 20 words (Blake, 2026-11-22): on prod's
 18,223 mid-lesson replies, 10 words would trigger on 29%, 20 on 14%, and 20
 still covers 57% of the passages learners copied into their next message. `coach.md` now asks for
 short example phrases, never sample sentences.

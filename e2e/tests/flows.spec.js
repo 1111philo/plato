@@ -46,9 +46,6 @@ test('a completion the learner’s words don’t back up is held', async ({ page
   await expect(page.getByText(/Not done yet\. In your own words/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/You have met every objective/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Continue to next lesson/ })).toHaveCount(0);
-  // "Behind this response" says what the check did.
-  await page.getByRole('button', { name: /Behind this response/ }).last().click();
-  await expect(page.getByText('Held the lesson open until the rest is in your own words, and asked the coach to reply again')).toBeVisible();
 });
 
 test('admin reaches main content with the skip link', async ({ page }) => {

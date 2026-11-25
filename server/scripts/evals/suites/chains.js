@@ -40,7 +40,7 @@ async function profileUpdate({ app, model, profile, text, source }) {
 async function lessonOwner({ app, model, lesson, profile }) {
   const ask = async () => parseJSON(await model.call({
     system: app.system('lesson-owner'),
-    messages: [{ role: 'user', content: JSON.stringify({ lessonId: lesson.lessonId, lessonName: lesson.name, lessonDescription: lesson.description, exemplar: lesson.exemplar, learningObjectives: lesson.learningObjectives, learnerProfile: profile || 'New learner, no profile yet.' }) }],
+    messages: [{ role: 'user', content: JSON.stringify({ lessonId: lesson.lessonId, lessonName: lesson.name, lessonDescription: lesson.description, exemplar: lesson.exemplar, learningObjectives: lesson.learningObjectives, learnerProfile: profile || 'New learner, no profile yet.' }) }], // English learners: no learnerLanguage
     maxTokens: 1536,
   }));
   let kb = await ask();

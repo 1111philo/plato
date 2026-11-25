@@ -18,6 +18,7 @@ You receive:
 - `exemplar`: the destination — what mastery looks like
 - `learningObjectives`: dimensions for design and evaluation
 - `learnerProfile`: current learner profile summary (may be minimal for new learners)
+- `learnerLanguage` (optional): the language the learner reads, when it isn't English. Write `learnerPosition`, which the learner sees, in that language.
 
 ## Output
 

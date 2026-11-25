@@ -37,7 +37,7 @@
   {
    "id": "K4",
    "title": "“When does the program start?” (never told)",
-   "unknown": "\\b(january|february|march|april|may|june|july|august|september|october|november|december|20\\d\\d)\\b",
+   "unknown": "\\b(January|February|March|April|June|July|August|September|October|November|December|May\\s+\\d|in May|20\\d\\d)\\b",
    "convo": [
     [
      "U",

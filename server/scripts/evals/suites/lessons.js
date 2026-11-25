@@ -36,8 +36,22 @@ async function earned({ app, model, lesson, kb, history }) {
   if (!a?.assessmentTranscript || !a.groundVerdict) return null;
   const transcript = a.assessmentTranscript([{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, ...history]);
   const check = lesson.objectives.map((_, i) => i + 1);
-  const raw = await model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: a.assessmentInput({ lesson, kb, transcript, check }) }], maxTokens: 2048, temperature: 0 });
-  try { return a.groundVerdict(a.parseVerdict(raw), transcript, check).shown.length === check.length; } catch { return null; }
+  const ask = (note) => model.call({ system: app.system('assessor'), messages: [{ role: 'user', content: a.assessmentInput({ lesson, kb, transcript, check, ...(note ? { note } : {}) }) }], maxTokens: 2048, temperature: note ? 0.7 : 0 });
+  // An unreadable reply is asked again, as checkGrading does; still unreadable is no verdict, not a failure.
+  let raw = await ask();
+  try { a.parseVerdict(raw); } catch { raw = await ask(a.FORMAT_NOTE || 'Reply with valid JSON only.'); }
+  const judge = (r) => {
+    try {
+      // Grounded as checkGrading grounds it (a confirmation counts where the lesson says so).
+      const g = a.groundVerdict(a.parseVerdict(r), transcript, check, a.confirmingCounts ? { confirms: a.confirmingCounts(kb) } : {});
+      return { ok: g.shown.length === check.length, missing: g.missing };
+    } catch { return null; }
+  };
+  const first = judge(raw);
+  if (!first || first.ok) return first;
+  // A refusal is asked once more (a single call can be wrong): unearned only if both refuse.
+  const second = judge(await ask('Look again at each objective in the learner\'s own messages.'));
+  return second && second.ok ? second : first;
 }
 
 export async function run(c, { app, model, trial = 0 }) {
@@ -66,7 +80,7 @@ export async function run(c, { app, model, trial = 0 }) {
     history.push({ role: 'user', content: said.text || (images.length ? '[image]' : '') }, { role: 'assistant', content: turn.text });
     replies.push(turn.text);
     if (turn.parsed.progress == null) tagsOk = false;
-    if (drafts(turn.text)) drafted = true;
+    if (drafts(turn.text, history.filter((m) => m.role === 'user').map((m) => String(m.content)))) drafted = true;
     kb = turn.after;
     const met = kb.objectivesMet;
     if (kb.status === 'completed' && Array.isArray(met) && app.work?.mergeObjectivesMet && met.length < lesson.objectives.length) jumped = true;
@@ -74,7 +88,9 @@ export async function run(c, { app, model, trial = 0 }) {
   }
   const completed = completedAt != null;
   let unearned = null;
-  if (c.noFinish) unearned = completed ? ((await earned({ app, model, lesson, kb, history })) ?? false) : true;
+  let judged = null;
+  if (c.noFinish && completed) judged = await earned({ app, model, lesson, kb, history });
+  if (c.noFinish) unearned = completed ? (judged?.ok ?? null) : true;
   return {
     checks: {
       finishes: c.finish ? completed : null,
@@ -88,6 +104,7 @@ export async function run(c, { app, model, trial = 0 }) {
       conversation: true,
     },
     sample: {
+      ...(judged && !judged.ok ? { notShown: judged.missing } : {}),
       card: CARDS[c.card].name, lesson: `${lessonKey} ${lesson.name}`, stage, completed, exchanges: completedAt ?? limit, progress: kb.progress,
       conversation: history.map((m) => `${m.role === 'user' ? 'Learner' : 'Coach'}: ${m.content}`).join('\n\n'),
     },

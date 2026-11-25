@@ -38,3 +38,17 @@ describe('grading check retry (#604)', () => {
     });
   }
 });
+
+describe('a reply reaches the learner only after plato has checked it (Blake, 2026-11-25)', () => {
+  it('nothing is streamed while the reply is written; the checked reply is returned', async () => {
+    reset();
+    clearCache();
+    signIn();
+    await startLesson(LESSON.lessonId, LESSON, () => {});
+    const streamed = [];
+    const result = await sendMessage(LESSON.lessonId, LESSON, 'MOCK_COMPLETE MOCK_GARBLED I applied it to my garden plan.', null, [], (t) => streamed.push(t));
+    await settle();
+    assert.deepEqual(streamed, [], 'no unchecked text on screen');
+    assert.ok(result.messages.find((m) => m.role === 'assistant')?.content, 'the checked reply is in the result');
+  });
+});

@@ -76,9 +76,34 @@ function messageText(content, role) {
  */
 export function assessmentTranscript(messages) {
   const convo = (messages || []).slice(2).slice(-MAX_TRANSCRIPT);
-  return convo
+  const out = convo
     .map((m) => ({ by: m.role === 'user' ? 'learner' : 'coach', text: messageText(m.content, m.role).trim() }))
     .filter((m) => m.text);
+  return out.map((m, i) => (m.by === 'learner' ? { ...m, text: markCopiedLines(m.text, out.slice(0, i)) } : m));
+}
+
+/** What a learner's line copied from the coach reads as in the transcript. */
+export const COPIED_LINE = '[a line copied from the coach]';
+const LINE_WORDS = 5;
+
+/**
+ * A learner message with each line the coach wrote first replaced by
+ * COPIED_LINE: the coach's example row pasted in among the learner's own
+ * ("Grant Writer — May 10 — Draft outreach message…") was counted as one of
+ * their five (agent evaluations W5). A line the learner wrote before the
+ * coach echoed it stays theirs. Lines under LINE_WORDS words are left.
+ */
+function markCopiedLines(text, earlier) {
+  const coach = earlier.filter((m) => m.by === 'coach').map((m) => ` ${normalizeForMatch(m.text)} `);
+  if (!coach.length) return text;
+  const theirs = earlier.filter((m) => m.by === 'learner').map((m) => ` ${normalizeForMatch(m.text)} `);
+  return text.split('\n').map((line) => {
+    const n = normalizeForMatch(line);
+    if (n.split(' ').filter(Boolean).length < LINE_WORDS) return line;
+    const inCoach = coach.some((c) => c.includes(` ${n} `));
+    const firstTheirs = theirs.some((c) => c.includes(` ${n} `));
+    return inCoach && !firstTheirs ? COPIED_LINE : line;
+  }).join('\n');
 }
 
 /**
@@ -202,7 +227,7 @@ const AGREEING = new Set(('yes yeah yep yup sure ok okay fine that thats this it
   + 'accurate correct right true exactly perfect great good nice sounds looks love like works agree agreed '
   + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do '
   // Spanish, the language most learners use after English (C22: "Eso soy yo").
-  + 'si eso esto soy yo es correcto exacto exactamente perfecto vale claro esta bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
+  + 'si eso esto ese esa este esta soy yo es correcto exacto exactamente perfecto vale claro bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
 
 /** True when a quote only agrees or confirms: every word is an agreeing word. Pure. */
 export function onlyAgrees(quote) {
@@ -348,6 +373,12 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
   function assembledFromCoach(q) {
     const ws = words(q);
     if (ws.length < COPY_WORDS) return false;
+    // The coach polishing or combining the learner's own words keeps them the
+    // learner's (Blake, 2026-11-23): a grammar fix changes most three-word
+    // phrases, so the polish test runs first (agent evaluations A4).
+    const learnerAt = firstIndex('learner', q);
+    if (learnerAt >= 0 && !transcript.slice(0, learnerAt).some((m) => m.by === 'coach')) return false; // said before the coach said anything
+    if (learnerAt > 0 && polishOfOwn(q, learnerAt)) return false;
     const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
     const said = transcript.map((m) => ({ by: m.by, text: ` ${words(m.text).join(' ')} ` }));
     let copied = 0;
@@ -403,6 +434,7 @@ Write your reply to the learner's last message again, in your usual voice and le
 - Say specifically what their own words did show.
 - Don't say the lesson, the exemplar, or the objectives above are done.
 - Ask for ONE next thing toward the first objective above, in their own words. Don't write it for them, not even as an example to approve.
+- 2-4 sentences and one question (one question mark).
 - End with your tags. [PROGRESS] is ${HELD_PROGRESS} or lower, and objectivesMet lists only objectives their own words showed.`;
 }
 
@@ -464,8 +496,12 @@ export function claimsCompletion(text) {
  * passages learners actually copied.
  */
 export const DRAFT_WORDS = 20;
+/** A quoted sample this long in the learner's first person ("I…", "my…") counts as their answer written for them. */
+export const VOICE_WORDS = 3;
+// English and Spanish first person (C22: "soy Sam… me enseñó").
+const VOICE = /(?:^|[^\p{L}'’])(?:i|i['’]m|i['’]ll|i['’]ve|i['’]d|my|me|mine|yo|mi|mis|soy|estoy|tengo|conmigo)(?![\p{L}])/iu;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
-const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
+const DRAFT_LEAD = /\b(?:hint\s*:|try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 
 /**
  * True when a coach reply writes a sentence for the learner to adopt: a
@@ -473,11 +509,17 @@ const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s 
  * "Try this:" / "Here's a draft". Learners copied these back and were held
  * for it, so plato asks the coach to rewrite such replies as a question.
  */
-export function draftsForLearner(text) {
+export function draftsForLearner(text, learnerTexts = null) {
   const t = String(text ?? '');
+  const said = learnerTexts ? normalizeForMatch(learnerTexts.join('\n')) : null;
   for (const m of t.matchAll(QUOTED)) {
     const span = (m[1] ?? m[2] ?? '').trim();
     if (span.split(/\s+/).filter(Boolean).length >= DRAFT_WORDS) return true;
+    // A short sample in the learner's own voice ("e.g., 'Tuesday 6–7 PM on my
+    // MacBook Pro'") is their answer written for them: learners pasted these
+    // back (Blake's trace, 2026-11-25). The learner's own words quoted back
+    // aren't (`learnerTexts`); a third-person example ("a deadline you hit") isn't.
+    if (said != null && VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span))) return true;
   }
   for (const line of t.split('\n')) {
     const lead = line.match(DRAFT_LEAD);
@@ -520,13 +562,138 @@ export const SCRIPT_ADDENDUM = `## One language (from plato, not the learner)
 
 Your reply wasn't all in the learner's language: it was in another one, or mixed in words or characters from another. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
 
+// Links and codes in an author's coach directive, which the coach must pass
+// on exactly. It sometimes doesn't: "https:// comunidad.example.org/join" for
+// https://community.example.org/join (agent evaluations H1).
+const URL_IN = /https?:\/\/[^\s<>()[\]"'“”‘’]+/gi;
+const CODE_IN = /\b[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+\b/g;
+const trimUrl = (u) => u.replace(/[.,;:!?*_]+$/, '');
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const pathOf = (u) => { try { return new URL(u).pathname.replace(/\/$/, ''); } catch { return null; } };
+
+/**
+ * The reply with the directive's links and codes restored where it wrote a
+ * near-miss: a link with the same path a few characters off (or a space
+ * after "https://"), a code with a space or dash changed. A different link
+ * (another path) is left alone. Pure.
+ */
+export function withDirectiveLiterals(text, directive) {
+  if (!text || !directive) return text;
+  const urls = [...new Set((String(directive).match(URL_IN) || []).map(trimUrl))];
+  const codes = [...new Set(String(directive).match(CODE_IN) || [])].filter((c) => /\d/.test(c) && /[A-Z]/.test(c));
+  let out = String(text);
+  if (urls.length) {
+    out = out.replace(/https?:\/\/\s+(?=\S)/gi, (m) => m.replace(/\s+/g, ''));
+    out = out.replace(URL_IN, (m) => {
+      const found = trimUrl(m);
+      const tail = m.slice(found.length);
+      if (urls.includes(found)) return m;
+      const near = urls.find((u) => pathOf(u) != null && pathOf(u) === pathOf(found) && editDistance(found.toLowerCase(), u.toLowerCase()) <= Math.max(3, Math.floor(u.length * 0.25)));
+      return near ? near + tail : m;
+    });
+  }
+  for (const c of codes) {
+    const loose = new RegExp(`\\b${c.split(/[-_]/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('[\\s\\-_–—]?')}\\b`, 'gi');
+    out = out.replace(loose, c);
+  }
+  return out;
+}
+
+// A sentence telling the learner an objective is met: "That's Objective 2
+// met", "This closes Objective 4", "Objective 1 ✅".
+const MET_WORDS = /\b(?:met|meets|shown|demonstrated|done|complete[ds]?|covered|achieved|closes?|closed|nailed|hit|checked off|fully)\b|✅/i;
+
+/**
+ * The reply without its sentences saying objectives plato didn't keep are
+ * met. The coach told a learner "That's Objective 2 met" on a turn the
+ * grading check had taken objective 2 back, so its words and the record
+ * disagreed (Blake's trace, 2026-11-25). `numbers`: 1-based objectives not
+ * kept. Pure; never empties a reply.
+ */
+export function withoutUnbackedClaims(text, numbers) {
+  const t = String(text || '');
+  if (!numbers?.length) return t;
+  const wanted = new Set(numbers.map(Number));
+  const claims = (sentence) => {
+    if (!MET_WORDS.test(sentence)) return false;
+    const refs = [...sentence.matchAll(/\bobjectives?\s*#?\s*(\d)(?:\s*(?:[-–—]|to|and|&|,)\s*(\d))?/gi)];
+    return refs.some((m) => {
+      const a = Number(m[1]); const b = m[2] ? Number(m[2]) : a;
+      for (let n = Math.min(a, b); n <= Math.max(a, b); n++) if (wanted.has(n)) return true;
+      return false;
+    });
+  };
+  const paragraphs = t.split(/(\n\s*\n)/);
+  const out = paragraphs.map((p) => (/^\n\s*\n$/.test(p) ? p : (p.match(/[^.!?\n]+(?:[.!?]+["”’)*]*|$)\s*/g) || [p]).filter((x) => !claims(x)).join('').trimEnd())).join('');
+  const cleaned = out.replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned || t;
+}
+
+/**
+ * True when most of a learner's message is the coach's own earlier wording
+ * sent back: more than COPIED_SHARE of its three-word phrases are in the
+ * coach's messages (`coachTexts`). A pasted hint was praised as the
+ * learner's thinking ("You nailed it", Blake on playground, 2026-11-25), and
+ * prompt rules alone didn't stop it (2 of 16). Pure.
+ */
+export function repeatsCoach(text, coachTexts = []) {
+  const ws = normalizeForMatch(text).split(' ').filter(Boolean);
+  if (ws.length < COPY_WORDS || !coachTexts.length) return false;
+  const theirs = ` ${coachTexts.map((t) => normalizeForMatch(t)).join(' | ')} `;
+  const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
+  return grams.filter((g) => theirs.includes(` ${g} `)).length / grams.length > COPIED_SHARE;
+}
+
+/** The note on a turn whose message repeats the coach's own wording (repeatsCoach). */
+export const REPEATED_ADDENDUM = `## The learner's message repeats your words (from plato, not the learner)
+
+Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them to say it in their own words.
+
+Your whole reply is two sentences, in the learner's language: one saying it's your wording, then one question (in English, for example: "That's my wording, not your thinking yet. How would you put it in your own words?"). Nothing after the question.`;
+
+// "(e.g., “I coordinate with event teams in real time.”)", "For example: “I
+// can make charts but don't use pivot tables.”": an example given as a quote.
+const SAMPLE = /\s*\(\s*(?:e\.g\.|eg|for example|example|like)[,:]?\s*(["“])([^"”\n]{1,400})["”][^)]{0,80}\)|\s*(?:e\.g\.|for example|example)[,:]?\s*(["“])([^"”\n]{1,400})["”]/gi;
+
+/**
+ * The reply without its quoted examples in the learner's own voice that the
+ * learner didn't write (the same test as draftsForLearner's): the draft
+ * guard's rewrite kept them, and a learner who wanted the answer adapted
+ * them and completed the lesson (agent evaluations W5). The question and the
+ * rest of the reply stay. Pure.
+ */
+export function withoutVoiceSamples(text, learnerTexts = []) {
+  const said = normalizeForMatch(learnerTexts.join('\n'));
+  const out = String(text || '').replace(SAMPLE, (m, _q1, a, _q2, b) => {
+    const span = (a ?? b ?? '').trim();
+    const voice = VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span));
+    return voice ? '' : m;
+  });
+  return out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ');
+}
+
+/** The note on a turn where the learner only agreed ("yes, that's me") to a draft the coach wrote (C2). */
+export const AGREED_ADDENDUM = `## The learner only agreed to your wording (from plato, not the learner)
+
+Your last message wrote text for the learner, and they only said yes to it ("that's me", "post it"). That isn't their work and it isn't their voice. Don't call it theirs or praise it.
+
+Your whole reply is two sentences, in the learner's language: one saying the wording is still yours, then one question asking them to write it themselves (in English, for example: "Those are still my words, not yours yet. How would you say it yourself?"). Nothing after the question.`;
+
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
 
 Your reply wrote a sentence or passage for the learner to use as their own answer. Learners copy these, and copied text doesn't count as their work. Write your reply again:
-- Give specific feedback on what they wrote.
-- Ask them to write the next piece themselves. You may suggest what it should cover in a few words (a short phrase, not a sentence they could copy).
-- No quoted or italic sample sentences. Keep your usual voice, length, and tags.`;
+- One or two sentences of specific feedback on what they wrote.
+- Then one question asking them to write the next piece themselves. Anything it should cover goes inside that question in a few words ("Can you write that in your own words, maybe with what the food drive taught you?"), never as more questions or a sample sentence.
+- No quoted or italic sample sentences. One question mark in the whole reply. Then your tags.`;
 
 /**
  * The reply plato shows when completion is held and the coach's own words

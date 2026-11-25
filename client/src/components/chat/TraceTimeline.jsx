@@ -261,7 +261,7 @@ function Exchange({ exchange: e, total, onBack, onPrev, onNext, headingRef }) {
           {e.saw != null && e.saw !== '' && <ChatQuote who="coach" text={e.saw} />}
           {e.firstSeen && (
             <details className="mt-1">
-              <summary className={summaryClass}>A different reply appeared first, then plato replaced it</summary>
+              <summary className={summaryClass}>{e.firstSeenLive ? 'A different reply appeared first, then plato replaced it' : 'The model’s first reply, which plato replaced before you saw it'}</summary>
               <pre className={preClass}>{e.firstSeen}</pre>
             </details>
           )}

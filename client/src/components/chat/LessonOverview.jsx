@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Check from 'lucide-react/dist/esm/icons/check';
 import { getScreenshot } from '../../../js/storage.js';
 import { objectiveStatuses, objectivesMetLabel, collectArtifacts } from '../../lib/lessonWork.js';
@@ -10,11 +9,10 @@ import { objectiveStatuses, objectivesMetLabel, collectArtifacts } from '../../l
  * yet; informational, never completes a lesson), what finished work looks
  * like, where the learner is and the coach's notes, the images and links
  * they've shared (images fetched only when that section opens, while
- * `active`), any plugin context, and a link to "How assessment works". Works
+ * `active`), any plugin context. Works
  * before the lesson starts, during, after completion, and in View as User.
  */
-export default function LessonOverview({ active, lesson, lessonKB, messages, onNavigateAway }) {
-  const navigate = useNavigate();
+export default function LessonOverview({ active, lesson, lessonKB, messages }) {
   const objectives = objectiveStatuses(lessonKB, lesson.learningObjectives);
   const complete = lessonKB?.status === 'completed';
   const started = !!lessonKB?.status;
@@ -174,16 +172,6 @@ export default function LessonOverview({ active, lesson, lessonKB, messages, onN
           </div>
         </details>
       )}
-      {/* How lessons are judged, next to the progress it explains. */}
-      <p>
-        <a
-          href="/how-assessment-works"
-          onClick={(e) => { e.preventDefault(); onNavigateAway?.(); navigate('/how-assessment-works'); }}
-          className="text-sm text-primary underline underline-offset-2"
-        >
-          How assessment works
-        </a>
-      </p>
     </div>
   );
 }

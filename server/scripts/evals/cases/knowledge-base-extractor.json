@@ -119,7 +119,7 @@
      "We train volunteers to use AI. Learners are adults. Maria Lopez leads it."
     ]
    ],
-   "unknown": "\\b(january|february|march|april|may|june|july|august|september|october|november|december|20\\d\\d)\\b"
+   "unknown": "\\b(January|February|March|April|June|July|August|September|October|November|December|May\\s+\\d|in May|20\\d\\d)\\b"
   },
   {
    "id": "B7",

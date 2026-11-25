@@ -3,9 +3,8 @@
  * every step a Trace records, every rule plato's code applies to a result,
  * and every outside service the app uses.
  *
- * The Trace view, "Behind this response", the "How assessment works" and
- * Privacy pages, and the generated docs/HOW_IT_WORKS.md all read from here,
- * so there is one place to change the wording. Tests
+ * The Trace view, the Privacy page, and the
+ * generated docs/HOW_IT_WORKS.md all read from here, so there is one place to change the wording. Tests
  * (client/tests/transparency.test.js) fail when the code gains an agent, a
  * recorded step, a rule, an event or a service that isn't described here.
  *
@@ -30,7 +29,7 @@ export const SOURCES = Object.freeze({
  * header from the instructions a call actually sent (js/agentHeader.js).
  */
 import { AGENTS } from './agents.generated.js';
-import { HELD_PROGRESS, DRAFT_WORDS, COPY_WORDS, COPIED_SHARE, OWN_SHARE, MAX_TRANSCRIPT } from './assessment.js';
+import { HELD_PROGRESS, DRAFT_WORDS, VOICE_WORDS, COPY_WORDS, COPIED_SHARE, OWN_SHARE, MAX_TRANSCRIPT } from './assessment.js';
 import { MAX_EXCHANGES, MIN_OBJECTIVES, MAX_OBJECTIVES, MINS_PER_EXCHANGE, MAX_PROGRESS, MAX_INSIGHTS } from './constants.js';
 
 export { AGENTS };
@@ -134,6 +133,10 @@ export const STEPS = Object.freeze({
   draftCheck: { stage: 'checked', check: 'draft', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
   tagRepair: { stage: 'checked', check: 'tags', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', check: 'draft', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
+  repeatCheck: { stage: 'prepared', title: 'Did your message repeat the coach’s own words?', source: 'code', means: 'plato’s code compares your message with the coach’s earlier messages. When most of it is the coach’s wording (a hint or example pasted back), the coach is told, so it doesn’t praise it as your thinking.' },
+  samplesRemoved: { stage: 'checked', check: 'draft', title: 'Examples written as your answer were taken out', source: 'code', means: 'The rewrite still had example sentences written in your voice, as if they were your answer, so plato’s code took them out.' },
+  claimsRemoved: { stage: 'checked', check: 'grading', title: 'The reply said an objective was met that wasn’t', source: 'code', means: 'The check didn’t find that objective in your own words, so plato’s code took out the sentence saying it was met.' },
+  literals: { stage: 'checked', check: 'language', title: 'The author’s link or code, exactly', source: 'code', means: 'The reply changed a link or code from the lesson author’s instructions slightly, so plato’s code put back the author’s exact text.' },
   scriptCheck: { stage: 'checked', check: 'language', title: 'Was the reply in one language?', source: 'code', means: 'plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others).' },
   scriptGuard: { stage: 'checked', check: 'language', title: 'The reply mixed in another language', source: 'instructions', means: 'plato asked the coach to write the same reply again in your language, and showed the rewrite if it came back clean.' },
   gradingPlan: { stage: 'checked', check: 'grading', title: 'Whether to check the grading', source: 'code', means: `The ${N.assessor} runs only when the coach checks off an objective or scores 10.` },
@@ -195,6 +198,7 @@ export const THRESHOLDS = Object.freeze({
   MINS_PER_EXCHANGE: { where: 'client/src/lib/constants.js', means: `Time estimates assume ${MINS_PER_EXCHANGE} minutes per exchange.` },
   HELD_PROGRESS: { where: 'client/src/lib/assessment.js', means: `A held completion is recorded as at most ${HELD_PROGRESS}.` },
   DRAFT_WORDS: { where: 'client/src/lib/assessment.js', means: `A quoted passage of ${DRAFT_WORDS} or more words in a reply counts as the coach drafting the learner’s answer.` },
+  VOICE_WORDS: { where: 'client/src/lib/assessment.js', means: `A quoted sample of ${VOICE_WORDS} or more words written as the learner (“I…”, “my…”) that the learner didn’t write counts as writing their answer for them too.` },
   COPY_WORDS: { where: 'client/src/lib/assessment.js', means: `A quote of ${COPY_WORDS} or more words that the coach wrote first doesn’t count as the learner’s.` },
   COPIED_SHARE: { where: 'client/src/lib/assessment.js', means: `Nor does a quote mostly in the coach’s wording: when more than ${Math.round(COPIED_SHARE * 100)}% of its three-word phrases appeared first in the coach’s messages (its sentences joined up, or sent back with a word swapped). The coach polishing the learner’s own words still counts as theirs.` },
   OWN_SHARE: { where: 'client/src/lib/assessment.js', means: `A passage the coach wrote first still counts as the learner’s when ${Math.round(OWN_SHARE * 100)}% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text.` },
@@ -227,6 +231,8 @@ export const EVENTS = Object.freeze({
   coach_draft_kept: 'A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.',
   coach_script_rewritten: 'A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.',
   coach_script_kept: 'A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.',
+  coach_wording_repeated: 'A learner’s message was mostly the coach’s own wording sent back, so the coach was told not to count or praise it.',
+  coach_literal_restored: 'A reply changed a link or code from the lesson author’s instructions slightly; plato put back the author’s exact text.',
 });
 
 /**
