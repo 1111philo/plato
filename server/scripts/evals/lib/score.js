@@ -39,7 +39,10 @@ export function judge({ mark, trials, extra = null, critical = false, baseline =
     const all = judge({ mark: 'parity', trials: [...trials, ...extra], baseline, gap, minPass: null });
     if (all.verdict === 'n/a') return { ...all, mark };
     const worse = baseline?.n ? all.verdict === 'fail' : false;
-    return { ...all, mark, firstFails: first.fails, againFails: again, confirmed: true, verdict: again || worse ? 'fail' : 'pass' };
+    // "Happens again": it failed in the first trials and in the confirmation
+    // trials. A single slip that only shows up among the extra trials (a case
+    // confirmed for another check) isn't a repeat.
+    return { ...all, mark, firstFails: first.fails, againFails: again, confirmed: true, verdict: (first.fails && again) || worse ? 'fail' : 'pass' };
   }
   if (extra) trials = [...trials, ...extra];
   const ran = trials.filter((t) => t !== null);
