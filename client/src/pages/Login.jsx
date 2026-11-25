@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand.jsx';
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -114,7 +115,7 @@ export default function Login() {
       <p className="mt-4 text-xs text-white/90">
         <a href="/privacy" onClick={e => { e.preventDefault(); navigate('/privacy'); }} className="underline hover:text-white">Privacy</a>
         {' · '}
-        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">plato</a>.
+        Powered by <a href="https://github.com/1111philo/plato" target="_blank" rel="noopener noreferrer" className="underline hover:text-white"><Brand /></a>.
       </p>
     </main>
   );

@@ -1,3 +1,4 @@
+import { Brand, BrandText } from '../../components/Brand.jsx';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { adminApi } from './adminApi.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -68,7 +69,7 @@ export default function AdminNotifications() {
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">{notice?.text || ''}</div>
       {notice && (
         <div className={`flex items-center justify-between rounded-lg px-4 py-3 mb-4 text-sm ${notice.type === 'error' ? 'bg-destructive/10 text-red-800 dark:text-destructive' : 'bg-green-50 text-green-800'}`}>
-          <span>{notice.text}</span>
+          <span><BrandText>{notice.text}</BrandText></span>
           <button onClick={() => setNotice(null)} aria-label="Dismiss" className="ml-2 text-lg leading-none hover:opacity-70">&times;</button>
         </div>
       )}
@@ -279,7 +280,7 @@ function Automations({ data, canWrite, onNotice, onChange }) {
   }
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">Emails plato sends on its own. Invitations always go out; each of the others is off until you turn it on.</p>
+      <p className="text-sm text-muted-foreground">Emails <Brand /> sends on its own. Invitations always go out; each of the others is off until you turn it on.</p>
       {(data.alwaysOn || ALWAYS_ON).map((id) => templates[id]).filter(Boolean).map((t) => (
         <Card key={t.id}>
           <CardHeader><CardTitle>{t.label}</CardTitle></CardHeader>

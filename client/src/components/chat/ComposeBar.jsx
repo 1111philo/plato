@@ -1,3 +1,4 @@
+import { BrandText } from '../Brand.jsx';
 import { useState, useRef, useId, useEffect } from 'react';
 import { useAutoResize } from '../../hooks/useAutoResize.js';
 import { compressImageDataUrl } from '../../lib/imageCompression.js';
@@ -426,7 +427,7 @@ export default function ComposeBar({
           <div className="flex-1" />
           {!disabled && (
             <span id={hintId} className="text-xs text-muted-foreground px-1 truncate">
-              {sendDisabled ? sendDisabledHint : sendHint(sendKey)}
+              <BrandText>{sendDisabled ? sendDisabledHint : sendHint(sendKey)}</BrandText>
             </span>
           )}
           <Button

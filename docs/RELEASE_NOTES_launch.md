@@ -62,9 +62,9 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #489 | Coach replies show as they stream in: the typing animation and its setting are gone | #247 |
 | #490 | One lesson overview: "N of M objectives met" opens objectives, exemplar, where you are, shared work, and additional context (replaces Lesson Overview + Your work) | #438 |
 | #491 | Notifications: Everyone means every role, plus By role; Invitation automations (always on, editable) and Removed from the wait list (off by default) | #389, #388 |
-| #492 | Getting Started becomes a three-lesson course, "Getting Started with plato" | #443 |
+| #492 | Getting Started becomes a three-lesson course, "Getting Started with **plato**" | #443 |
 | #493 | "How assessment works" moves to the lesson overview's footer (left of Close); the header button reads "Progress (N of M Objectives)"; course descriptions aren't shown | #257, #438 |
-| #497 | Dependency bumps folded in from Dependabot #495 (`@hono/node-server` 2.1.3, dev server only; serveStatic security fix plato doesn't use) and #496 (`follow-redirects` 1.16.2 override) | deps |
+| #497 | Dependency bumps folded in from Dependabot #495 (`@hono/node-server` 2.1.3, dev server only; serveStatic security fix **plato** doesn't use) and #496 (`follow-redirects` 1.16.2 override) | deps |
 | #498 | Merge main (#449, named AWS sessions in the agent workflows) into playground | infra |
 | #502 | Tester QA: one lesson page per lesson (no stale chat after Continue); invites say what's wrong up front (signed in as someone else, used/expired); a generated username is shown once | #451 QA |
 | #503 | Tester QA: coach replies without tags are re-asked for them; coach ignores injected authority (0/4 vs 4/4 completions on Bedrock); no false escalation; coach max_tokens 2048 | #451 QA |
@@ -76,11 +76,11 @@ PR links this file. Upgrading installs come from **Beta-RC-232** (`629c778`).
 | #513 | User Fields dialog: rows with a one-line summary, edit in place, one "who can see it" choice (Everyone / Learners, after signup / Admins only), delete behind a confirmation; fits phones | #364 |
 | #514 | Bulk update in Admin → Users: select users (or all matching), then set or clear their group or one user field | #362 |
 | #515 | Scale review ops: tables kept on delete/replace (`Retain`), `DEPLOY_FREEZE` for prod auto-deploys, event-day runbook | ops |
-| #516 | Scale review: the AI endpoint accepts only plato's model, with size caps and per-user limits; typed throttle errors, client backoff, and a Send countdown | review |
+| #516 | Scale review: the AI endpoint accepts only **plato**'s model, with size caps and per-user limits; typed throttle errors, client backoff, and a Send countdown | review |
 | #517 | Scale review: reset links can't be used as sessions; current password to change password or email, other sessions signed out; refresh race fixed; sign-in limits and lockout | review |
 | #518 | Scale review: 30 s cache for shared data on learner paths; parsed lessons list; precomputed time estimates; faster cold starts | review |
 | #519 | Scale review: each save written once; profile updates only on explicit coach tags; admin stats and email jobs scale; no double emails from overlapping jobs | review |
-| #520 | Scale review follow-ups: per-IP sign-in limits sized for a room on one Wi-Fi; setup check reads one item; Bedrock access limited to plato's model | review |
+| #520 | Scale review follow-ups: per-IP sign-in limits sized for a room on one Wi-Fi; setup check reads one item; Bedrock access limited to **plato**'s model | review |
 
 ## Upgrading from Beta-RC-232 (self-hosted installs)
 

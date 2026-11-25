@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useState, useEffect, useCallback } from 'react';
 import { can, normalizeRole } from '../../lib/permissions.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -323,13 +324,13 @@ export default function AdminHome() {
           </Button>
         </div>
       </div>
-      <p className="text-muted-foreground mb-6">Manage users and settings for plato.</p>
+      <p className="text-muted-foreground mb-6">Manage users and settings for <Brand />.</p>
       <span className="sr-only" role="status" aria-live="polite">{refreshAnnounce}</span>
 
       {!hasKB && (
         <Link to="/plato/setup-kb" className="block no-underline mb-6">
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 hover:bg-amber-100 transition-colors" role="alert">
-            <strong>Set up your knowledge base</strong> — tell plato about your program so the AI can give learners informed answers.{' '}
+            <strong>Set up your knowledge base</strong> — tell <Brand /> about your program so the AI can give learners informed answers.{' '}
             <span className="underline">Get started</span>
           </div>
         </Link>

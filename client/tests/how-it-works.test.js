@@ -19,7 +19,7 @@ describe('docs/HOW_IT_WORKS.md', () => {
 
   it('covers every part of plato’s description of itself', () => {
     const doc = render();
-    for (const heading of ['## The AI agents', '## What the coach is told before every reply', '## The rules plato’s code applies', '## What a Trace records', '## Outside services, and what each is sent']) {
+    for (const heading of ['## The AI agents', '## What the coach is told before every reply', '## The rules **plato**’s code applies', '## What a Trace records', '## Outside services, and what each is sent']) {
       assert.ok(doc.includes(heading), heading);
     }
     assert.doesNotMatch(doc, /undefined|\[object Object\]/);

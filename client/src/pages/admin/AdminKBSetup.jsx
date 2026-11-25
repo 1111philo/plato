@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from './adminApi.js';
@@ -103,7 +104,7 @@ export default function AdminKBSetup() {
         <Button variant="ghost" size="sm" onClick={() => navigate('/plato')}>Skip for now</Button>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
-        The knowledge base tells plato&apos;s AI about your program — who you are, what you do, and how things work.
+        The knowledge base tells <Brand />&apos;s AI about your program — who you are, what you do, and how things work.
         Chat with the editor below to build it, or skip and come back later from the Customizer.
       </p>
 

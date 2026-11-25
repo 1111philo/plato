@@ -3,6 +3,7 @@
  * that opens it as a dialog, where the learner starts and stops recording
  * (TraceContent.jsx). While it records, the button says so.
  */
+import { Brand } from '../Brand.jsx';
 import { useEffect, useRef, useState } from 'react';
 import Footprints from 'lucide-react/dist/esm/icons/footprints';
 import useTraceSwitch from '../../hooks/useTraceSwitch.js';
@@ -39,7 +40,7 @@ export default function TraceButton({ scope, what, size = 'sm', className }) {
           <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col bg-stone-50 dark:bg-stone-950">
             <DialogHeader>
               <DialogTitle ref={titleRef} tabIndex={-1}>Data Trace</DialogTitle>
-              <DialogDescription>What plato does behind {what}.</DialogDescription>
+              <DialogDescription>What <Brand /> does behind {what}.</DialogDescription>
             </DialogHeader>
             <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden pr-2 rounded-sm focus-visible:outline-2 focus-visible:outline-ring" tabIndex={0} role="region" aria-label="Trace steps">
               <TraceContent scope={scope} active recording={on} onStart={() => set(true)} onStop={() => set(false)} error={error} what={what} />

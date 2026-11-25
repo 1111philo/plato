@@ -14,6 +14,7 @@
  * registry changes and the doc wasn't regenerated.
  */
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { brandMarkdown } from './brand-docs.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { parseAgentHeader } from '../client/js/agentHeader.js';
@@ -88,7 +89,8 @@ export function render() {
   out.push('', '## Outside services, and what each is sent', '', 'plato has no analytics or tracking.', '', '| Service | Role | Used | What it is sent |', '|---|---|---|---|');
   for (const s of Object.values(SERVICES)) out.push(`| ${s.name} | ${s.role} | ${s.when} | ${s.sent}${s.note ? ` ${s.note}` : ''} |`);
   out.push('');
-  return out.join('\n');
+  // The product's name is always **plato** in prose (scripts/brand-docs.js).
+  return brandMarkdown(out.join('\n'));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

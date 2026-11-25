@@ -1,3 +1,4 @@
+import { Brand, BrandText } from '../Brand.jsx';
 /**
  * The Trace's "Technology and services" tab (#595): the AI model and every
  * outside service plato uses, what each is sent, and which ones this
@@ -10,7 +11,7 @@ function Service({ s }) {
       <p className="text-sm">{s.role}</p>
       <p className="text-sm"><span className="font-medium">What it is sent:</span> {s.sent}</p>
       {s.detail && <p className="text-sm">{s.detail}</p>}
-      {s.note && <p className="text-xs text-muted-foreground">{s.note}</p>}
+      {s.note && <p className="text-xs text-muted-foreground"><BrandText>{s.note}</BrandText></p>}
     </li>
   );
 }
@@ -21,7 +22,7 @@ export default function TraceTechnology({ services }) {
   return (
     <div className="space-y-4 text-sm">
       <p className="text-muted-foreground">
-        The technology behind plato, and what is shared with each service. plato has no analytics or tracking.
+        The technology behind <Brand />, and what is shared with each service. <Brand /> has no analytics or tracking.
       </p>
       <section aria-labelledby="trace-tech-used" className="space-y-2">
         <h3 id="trace-tech-used" className="font-semibold">Used by this classroom</h3>

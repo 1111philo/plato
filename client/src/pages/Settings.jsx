@@ -1,3 +1,4 @@
+import { Brand } from '../components/Brand.jsx';
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -272,7 +273,7 @@ export default function Settings() {
           </div>
           {learnerNotes.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-sm font-medium">What you&rsquo;ve told plato</h3>
+              <h3 className="text-sm font-medium">What you&rsquo;ve told <Brand /></h3>
               <p className="text-xs text-muted-foreground">Your profile always follows these, even as lessons update it.</p>
               <ul className="space-y-2" aria-label="Your notes">
                 {learnerNotes.map((n, i) => (

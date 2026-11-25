@@ -1,3 +1,4 @@
+import { Brand } from '../../components/Brand.jsx';
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -142,7 +143,7 @@ export default function AdminLayout() {
                     rel="noopener noreferrer"
                     className="text-xs opacity-60 hover:opacity-100 transition-opacity"
                   >
-                    plato {version}
+                    <Brand /> {version}
                   </a>
                 </>
               )}
@@ -191,7 +192,7 @@ export default function AdminLayout() {
                 rel="noopener noreferrer"
                 className="text-xs opacity-60 hover:opacity-100 transition-opacity"
               >
-                plato {version}
+                <Brand /> {version}
               </a>
             </>
           )}

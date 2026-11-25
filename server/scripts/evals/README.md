@@ -1,7 +1,7 @@
 # Agent evaluations
 
 The tests in [`docs/AGENT_EVALS.md`](../../../docs/AGENT_EVALS.md), built. Each
-case runs several times against plato's model (Bedrock, us-east-2), through
+case runs several times against **plato**'s model (Bedrock, us-east-2), through
 the app's own code, and every check is scored by its pass mark.
 
 ## Running
@@ -44,7 +44,7 @@ level into `main`.
 |---|---|
 | `run.js` | The CLI: picks agents, runs the baseline (today's `origin/main`, in a temporary worktree) and the candidate (this checkout), scores, writes results |
 | `check.js`, `hook.js` | The decision the hook and the GitHub check share; the hook |
-| `lib/app.js` | Loads one version of plato's code (candidate or baseline). Missing modules stay `undefined`, so an older version runs as it did |
+| `lib/app.js` | Loads one version of **plato**'s code (candidate or baseline). Missing modules stay `undefined`, so an older version runs as it did |
 | `lib/model.js` | The Bedrock Converse caller, and a stand-in for the harness's own tests |
 | `lib/watch.js` | What's covered: which files affect which agents, and the version fingerprint |
 | `lib/score.js` | The pass marks |

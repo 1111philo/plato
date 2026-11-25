@@ -1,3 +1,4 @@
+import { BrandText } from '../components/Brand.jsx';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
@@ -446,7 +447,7 @@ export default function LessonChat() {
             </Button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
-                <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
+                <h1 className="text-sm font-semibold truncate mr-auto"><BrandText>{lesson.name}</BrandText></h1>
                 {recording && (
                   <button tabIndex={-1} className="shrink-0 cursor-pointer text-xs" onClick={() => openPanel('trace')} title="Trace is recording">
                     <TraceRecordingDot withText="wide" />
@@ -489,7 +490,7 @@ export default function LessonChat() {
           </Button>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3">
-              <h1 className="text-sm font-semibold truncate mr-auto">{lesson.name}</h1>
+              <h1 className="text-sm font-semibold truncate mr-auto"><BrandText>{lesson.name}</BrandText></h1>
               {recording && (
                 <button className="shrink-0 cursor-pointer rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-ring" onClick={() => openPanel('trace')}
                   aria-label="Trace is recording this lesson: open the Trace">

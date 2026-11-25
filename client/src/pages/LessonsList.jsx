@@ -1,3 +1,4 @@
+import { BrandText } from '../components/Brand.jsx';
 import { Fragment, useState, useEffect, useMemo, useId } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext.jsx';
@@ -401,7 +402,7 @@ function ProgressHeader({ id, level, name, progress }) {
             ? 'text-base font-semibold'
             : 'text-sm font-semibold uppercase tracking-wider text-muted-foreground'}
         >
-          {name}
+          <BrandText>{name}</BrandText>
         </Heading>
         {total > 0 && (
           <span className="text-sm tabular-nums text-muted-foreground">
@@ -496,11 +497,11 @@ function LessonCard({ lesson, progress, timeStats, onOpen, onShowOverview }) {
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 space-y-1.5">
             <span className="text-base font-semibold leading-snug transition-colors group-hover:text-primary block">
-              <span className="sr-only">Open lesson </span>{lesson.name}
+              <span className="sr-only">Open lesson </span><BrandText>{lesson.name}</BrandText>
             </span>
             {lesson.description && (
               <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                {lesson.description}
+                <BrandText>{lesson.description}</BrandText>
               </p>
             )}
           </div>
@@ -640,12 +641,12 @@ function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange, o
               the learner reads the title. */}
           {lesson.unit?.name && (
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {lesson.program?.name ? `${lesson.program.name} › ${lesson.unit.name}` : lesson.unit.name}
+              <BrandText>{lesson.program?.name ? `${lesson.program.name} › ${lesson.unit.name}` : lesson.unit.name}</BrandText>
             </p>
           )}
-          <DialogTitle>{lesson.name}</DialogTitle>
+          <DialogTitle><BrandText>{lesson.name}</BrandText></DialogTitle>
           {lesson.description && (
-            <DialogDescription>{lesson.description}</DialogDescription>
+            <DialogDescription><BrandText>{lesson.description}</BrandText></DialogDescription>
           )}
         </DialogHeader>
 
@@ -688,7 +689,7 @@ function LessonDetailDialog({ lesson, progress, timeStats, open, onOpenChange, o
 
           <div>
             <h3 className="text-sm font-medium mb-1">Exemplar</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{lesson.exemplar}</p>
+            <p className="text-sm text-muted-foreground leading-relaxed"><BrandText>{lesson.exemplar}</BrandText></p>
           </div>
 
           <div>

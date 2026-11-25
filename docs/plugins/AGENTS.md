@@ -1,10 +1,10 @@
 # Plato plugins — AI agent guide
 
-This file is the entry point for any AI agent (Claude Code, Cursor, etc.) working on plato plugins. Read this before generating code. The recipes at the bottom are copy-paste-ready.
+This file is the entry point for any AI agent (Claude Code, Cursor, etc.) working on **plato** plugins. Read this before generating code. The recipes at the bottom are copy-paste-ready.
 
 ## Decision tree (run this first)
 
-When asked to build/modify plato functionality, decide which surface area to touch:
+When asked to build/modify **plato** functionality, decide which surface area to touch:
 
 ```
 ┌─ Is the change inside plugins/<id>/?  ────────► PLUGIN PATH (this guide)

@@ -1,3 +1,4 @@
+import { brandHtml } from './brand.js';
 /** XSS-safe text escaping. */
 export function esc(s) {
   const el = document.createElement('span');
@@ -72,7 +73,8 @@ export function renderMd(text) {
   // Clean up <br> tags adjacent to block-level elements
   escaped = escaped.replace(/<br>(<\/?(?:[uo]l|table|thead|tbody|tr)>)/g, '$1');
   escaped = escaped.replace(/(<\/?(?:[uo]l|table|thead|tbody|tr)>)<br>/g, '$1');
-  return escaped;
+  // The product's name is always **plato**, bold (lib/brand.js).
+  return brandHtml(escaped);
 }
 
 /** Detect and linkify bare URLs in escaped HTML. */

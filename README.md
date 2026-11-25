@@ -2,7 +2,7 @@
   <img src="client/assets/plato-square.png" alt="plato" width="120" />
 </p>
 
-# plato
+# **plato**
 
 An Open Source, AI-powered [microlearning](https://philosophers.group/platos-microlearning/) platform. Learners work through focused, exemplar-driven lessons in a continuous conversation with an AI coach that creates activities, evaluates submissions, and tracks progress toward mastery — all in under 20 minutes.
 
@@ -10,11 +10,11 @@ Built by [11:11 Philosopher's Group](https://github.com/1111philo).
 
 Special thanks to [UIC Tech Solutions](https://it.uic.edu/), [UIC TS Open Source Fund](https://osf.it.uic.edu/), [WordPress](https://wordpress.org/), [Louisiana Tech](https://www.latech.edu/), and the [ULL Louisiana Educate Program](https://louisiana.edu/educate).
 
-> **Looking to extend plato?** plato supports plugins like WordPress: add custom user fields, new admin KPIs, AI agents, lifecycle hooks, and more. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one in seconds, or read the **[plugin authoring guide](docs/plugins/AUTHORING.md)** (and the **[AI-agent guide](docs/plugins/AGENTS.md)** if you're working with Claude Code or similar tools).
+> **Looking to extend **plato**?** **plato** supports plugins like WordPress: add custom user fields, new admin KPIs, AI agents, lifecycle hooks, and more. Run `node scripts/create-plato-plugin.js my-plugin` to scaffold one in seconds, or read the **[plugin authoring guide](docs/plugins/AUTHORING.md)** (and the **[AI-agent guide](docs/plugins/AGENTS.md)** if you're working with Claude Code or similar tools).
 
 ## How it works
 
-plato applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each lesson is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
+**plato** applies [microlearning principles](https://philosophers.group/platos-microlearning/) through AI-powered personalization. Each lesson is a focused experience designed to be completable in ~11 exchanges (~20 minutes), built around a single exemplar and 2-4 learning objectives.
 
 A **lesson** defines an exemplar (the mastery-level outcome a learner produces) and a set of learning objectives. When a learner starts a lesson, an AI coach opens a conversation and guides them through activities — coaching, creating tasks, evaluating submissions (text or images), and tracking progress — all in a single continuous chat. The coach enriches a knowledge base as the learner progresses, adapting to their strengths and weaknesses until they achieve the exemplar.
 
@@ -87,12 +87,12 @@ On first visit you'll name your classroom and create an admin account. Prompts a
 
 ### AI provider
 
-plato runs a single **open source** model on Amazon Bedrock — [Qwen3-VL 235B
+**plato** runs a single **open source** model on Amazon Bedrock — [Qwen3-VL 235B
 A22B](https://huggingface.co/Qwen/Qwen3-VL-235B-A22B-Instruct), under the
 OSI-approved **Apache-2.0** license. All nine agents share it; there is no
 per-agent routing.
 
-The license is a requirement, not a preference: plato is AGPL-3.0, so the model
+The license is a requirement, not a preference: **plato** is AGPL-3.0, so the model
 has to be open source, not merely open weight. That rules out models under
 bespoke community licenses (Llama 4, Gemma) even where they benchmark well.
 
@@ -131,7 +131,7 @@ plato/
 
 For architectural details (AI agents, data model, auth, conventions) see [CLAUDE.md](CLAUDE.md).
 
-## Extending plato
+## Extending **plato**
 
 There are two contribution paths and they have different review bars:
 
@@ -143,7 +143,7 @@ node scripts/create-plato-plugin.js my-plugin --name "My Plugin"
 
 Then read [docs/plugins/AUTHORING.md](docs/plugins/AUTHORING.md) (humans) or [docs/plugins/AGENTS.md](docs/plugins/AGENTS.md) (AI agents). The full extension reference is at [docs/plugins/EXTENSION_REFERENCE.md](docs/plugins/EXTENSION_REFERENCE.md). Plugins can add admin pages, custom settings UI, server routes, lifecycle hooks, and more.
 
-**Contribute to plato core.** Anything outside `plugins/` is core — coach, lessons, KPIs, agents, the plugin host itself. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and review process; [CLAUDE.md](CLAUDE.md) for architecture context. Core changes require more review than plugin changes because they affect every plato deployment, including the public plugin contract.
+**Contribute to **plato** core.** Anything outside `plugins/` is core — coach, lessons, KPIs, agents, the plugin host itself. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and review process; [CLAUDE.md](CLAUDE.md) for architecture context. Core changes require more review than plugin changes because they affect every **plato** deployment, including the public plugin contract.
 
 ## Deployment
 
@@ -151,7 +151,7 @@ For production deployment to AWS — SAM setup, CI/CD from a private fork, custo
 
 ## Accessibility
 
-plato is designed to be fully usable with screen readers (VoiceOver, NVDA, JAWS) and keyboard-only navigation. The AI chat follows the [MITRE Chatbot Accessibility Playbook](https://mitre.github.io/chatbot-accessibility-playbook/) and [Orange accessibility guidelines](https://a11y-guidelines.orange.com/en/articles/chatbot/): silent-by-default chat log, controlled announcements for new messages, keyboard navigation between messages (`Alt+ArrowUp`/`Alt+ArrowDown`), and `Cmd/Ctrl+Enter` to send. Implementation details live in [CLAUDE.md](CLAUDE.md).
+**plato** is designed to be fully usable with screen readers (VoiceOver, NVDA, JAWS) and keyboard-only navigation. The AI chat follows the [MITRE Chatbot Accessibility Playbook](https://mitre.github.io/chatbot-accessibility-playbook/) and [Orange accessibility guidelines](https://a11y-guidelines.orange.com/en/articles/chatbot/): silent-by-default chat log, controlled announcements for new messages, keyboard navigation between messages (`Alt+ArrowUp`/`Alt+ArrowDown`), and `Cmd/Ctrl+Enter` to send. Implementation details live in [CLAUDE.md](CLAUDE.md).
 
 ## Contributing
 
