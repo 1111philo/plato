@@ -133,6 +133,7 @@ export const STEPS = Object.freeze({
   draftCheck: { stage: 'checked', check: 'draft', title: 'Did the reply write the answer for you?', source: 'code', means: 'plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself.' },
   tagRepair: { stage: 'checked', check: 'tags', title: 'What the second request got back', source: 'instructions', means: 'The coach left off its tags, so plato asked it for just the tags of the reply it gave.' },
   draftGuard: { stage: 'checked', check: 'draft', title: 'The coach wrote your answer for you', source: 'instructions', means: 'The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply.' },
+  repeatCheck: { stage: 'prepared', title: 'Did your message repeat the coach’s own words?', source: 'code', means: 'plato’s code compares your message with the coach’s earlier messages. When most of it is the coach’s wording (a hint or example pasted back), the coach is told, so it doesn’t praise it as your thinking.' },
   claimsRemoved: { stage: 'checked', check: 'grading', title: 'The reply said an objective was met that wasn’t', source: 'code', means: 'The check didn’t find that objective in your own words, so plato’s code took out the sentence saying it was met.' },
   literals: { stage: 'checked', check: 'language', title: 'The author’s link or code, exactly', source: 'code', means: 'The reply changed a link or code from the lesson author’s instructions slightly, so plato’s code put back the author’s exact text.' },
   scriptCheck: { stage: 'checked', check: 'language', title: 'Was the reply in one language?', source: 'code', means: 'plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others).' },
@@ -229,6 +230,7 @@ export const EVENTS = Object.freeze({
   coach_draft_kept: 'A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.',
   coach_script_rewritten: 'A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.',
   coach_script_kept: 'A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.',
+  coach_wording_repeated: 'A learner’s message was mostly the coach’s own wording sent back, so the coach was told not to count or praise it.',
   coach_literal_restored: 'A reply changed a link or code from the lesson author’s instructions slightly; plato put back the author’s exact text.',
 });
 

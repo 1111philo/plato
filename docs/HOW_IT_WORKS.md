@@ -203,6 +203,7 @@ With Trace on for a conversation, each exchange of it is recorded step by step. 
 | Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
 | What the second request got back (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
 | The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
+| Did your message repeat the coach’s own words? (`repeatCheck`) | plato prepared and sent the request | plato’s code | plato’s code compares your message with the coach’s earlier messages. When most of it is the coach’s wording (a hint or example pasted back), the coach is told, so it doesn’t praise it as your thinking. |
 | The reply said an objective was met that wasn’t (`claimsRemoved`) | plato checked the answer | plato’s code | The check didn’t find that objective in your own words, so plato’s code took out the sentence saying it was met. |
 | The author’s link or code, exactly (`literals`) | plato checked the answer | plato’s code | The reply changed a link or code from the lesson author’s instructions slightly, so plato’s code put back the author’s exact text. |
 | Was the reply in one language? (`scriptCheck`) | plato checked the answer | plato’s code | plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others). |
@@ -247,6 +248,7 @@ A code and the lesson’s id. Never conversation text.
 - `coach_draft_kept`: A reply that drafted the learner’s answer was rewritten, and the rewrite still drafted.
 - `coach_script_rewritten`: A reply that mixed in characters from another language (such as Chinese in an English reply) was rewritten.
 - `coach_script_kept`: A reply that mixed in another language was rewritten, and the rewrite still did, so the reply was kept.
+- `coach_wording_repeated`: A learner’s message was mostly the coach’s own wording sent back, so the coach was told not to count or praise it.
 - `coach_literal_restored`: A reply changed a link or code from the lesson author’s instructions slightly; plato put back the author’s exact text.
 
 ## Outside services, and what each is sent

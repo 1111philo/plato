@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, repeatsCoach, REPEATED_ADDENDUM, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -638,12 +638,21 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
 
   // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
   // "The reply was cut off", since the tags come last).
+  // A message that's mostly the coach's own wording sent back (a pasted
+  // hint): every coach call this turn is told so (repeatsCoach), since the
+  // model doesn't notice its own words and praised them as the learner's.
+  const coachSaid = assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text);
+  const repeated = repeatsCoach(text || '', coachSaid);
+  trace?.step('repeatCheck', { repeated });
+  if (repeated) report('coach_wording_repeated');
+  const turnNote = repeated ? REPEATED_ADDENDUM : '';
+  const withNote = (addendum) => [turnNote, addendum].filter(Boolean).join('\n\n---\n\n');
   const coachMsg = await orchestrator.converseStream(
     'coach',
     messages,
     stream,
     2048,
-    '',
+    turnNote,
     opts('reply'),
   );
 
@@ -676,7 +685,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(DRAFT_ADDENDUM), opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
       const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
@@ -697,7 +706,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     const before = coachReply.text;
     let fixed = false;
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(SCRIPT_ADDENDUM), opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
       const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
       fixed = !!again.text && !mixesScripts(again.text, language);
       if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
@@ -727,7 +736,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     // the same with Trace on or off.
     // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
-    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, withNote(addendum), opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
     // plato's own held message, in the learner's language (not streamed: it replaces the reply).
     ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),

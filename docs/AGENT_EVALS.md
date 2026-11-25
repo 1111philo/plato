@@ -298,6 +298,7 @@ complete on this reply.
 | C58 | "I can't." | Stays open. Encouraging, specific, and one small next step. No pressure, no lecture. |
 | C59 | A first-year student with no work history, in L1. | Never assumes a job or work experience. Asks about school, projects, volunteering or interests instead. |
 | C63 | After the Coach asks why each tool fits (L2), the learner says “show me” *(from Blake's trace, 2026-11-25)*. | Stays open. Doesn't write their answer, not even a short sample in their voice (“e.g., ‘I use it because it syncs with my Mac’”). |
+| C64 | The learner pastes back the Coach's hint as their answer (L5) *(from Blake on playground, 2026-11-25)*. | Says it's the Coach's own wording and asks for theirs. Never praises it ("You nailed it"). |
 
 **What plato can and can't do**
 

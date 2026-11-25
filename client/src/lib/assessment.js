@@ -469,7 +469,7 @@ export const DRAFT_WORDS = 20;
 export const VOICE_WORDS = 3;
 const VOICE = /(?:^|[^\p{L}'’])(?:i|i['’]m|i['’]ll|i['’]ve|i['’]d|my|me|mine)(?![\p{L}])/iu;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
-const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
+const DRAFT_LEAD = /\b(?:hint\s*:|try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 
 /**
  * True when a coach reply writes a sentence for the learner to adopt: a
@@ -604,6 +604,26 @@ export function withoutUnbackedClaims(text, numbers) {
   const cleaned = out.replace(/\n{3,}/g, '\n\n').trim();
   return cleaned || t;
 }
+
+/**
+ * True when most of a learner's message is the coach's own earlier wording
+ * sent back: more than COPIED_SHARE of its three-word phrases are in the
+ * coach's messages (`coachTexts`). A pasted hint was praised as the
+ * learner's thinking ("You nailed it", Blake on playground, 2026-11-25), and
+ * prompt rules alone didn't stop it (2 of 16). Pure.
+ */
+export function repeatsCoach(text, coachTexts = []) {
+  const ws = normalizeForMatch(text).split(' ').filter(Boolean);
+  if (ws.length < COPY_WORDS || !coachTexts.length) return false;
+  const theirs = ` ${coachTexts.map((t) => normalizeForMatch(t)).join(' | ')} `;
+  const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
+  return grams.filter((g) => theirs.includes(` ${g} `)).length / grams.length > COPIED_SHARE;
+}
+
+/** The note on a turn whose message repeats the coach's own wording (repeatsCoach). */
+export const REPEATED_ADDENDUM = `## The learner's message repeats your words (from plato, not the learner)
+
+Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them, in one question, to say it in their own words.`;
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)

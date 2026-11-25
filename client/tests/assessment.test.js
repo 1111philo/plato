@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -559,6 +559,21 @@ describe('a short sample in the learner’s own voice is their answer written fo
     assert.equal(draftsForLearner('You said “I’m sharpest after dinner”, which grounds it.', ['I’m sharpest after dinner']), false, 'their own words');
     assert.equal(draftsForLearner('Name a time, e.g., “a quiet evening slot”.', []), false, 'not in their voice');
     assert.equal(draftsForLearner('Pick one (e.g., “Tuesday 6–7 PM on my MacBook Pro”).'), false, 'without the learner’s messages, the 20-word rule only');
+  });
+});
+
+describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised as “You nailed it”)', () => {
+  const hint = 'How does the AI choose the next token? Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.';
+  it('finds a message that is mostly the coach’s own wording sent back', () => {
+    assert.equal(repeatsCoach('It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.', [hint]), true);
+  });
+  it('leaves the learner’s own thinking alone, even on the same topic', () => {
+    assert.equal(repeatsCoach('I think it looks at what came before and guesses the word that usually comes next, like autocomplete on my phone.', [hint]), false);
+    assert.equal(repeatsCoach('ok', [hint]), false, 'too short to tell');
+    assert.equal(repeatsCoach('It’s not random — it picks what’s most likely to follow.', []), false, 'no coach messages');
+  });
+  it('a hint that gives the answer is a draft', () => {
+    assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
   });
 });
 

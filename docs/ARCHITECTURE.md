@@ -1697,6 +1697,17 @@ check takes back an objective the coach claimed, the reply's sentence saying
 it's met ("That's Objective 2 met") is taken out (`withoutUnbackedClaims`), so
 the coach's words agree with the record.
 
+**A message that repeats the coach's own words** (Blake on playground,
+2026-11-25): a learner pasted back the coach's hint and was told "You nailed
+it". The model doesn't recognise its own wording (a prompt rule alone: still
+2 of 16), so plato's code does: when more than half the message's three-word
+phrases are in the coach's earlier messages (`repeatsCoach`), every coach
+call that turn carries `REPEATED_ADDENDUM` (say it's your wording, don't
+praise or count it, ask for theirs): 0 of 32 after. A "Hint:" that spells out
+the answer is a draft (`DRAFT_LEAD`). The coach prompt also says a hint never
+holds the answer, and program facts (dates, places, people) come only from
+the knowledge base.
+
 **The learner sees a reply only once it's checked** (Blake, 2026-11-25).
 Replies used to stream as the model wrote them, so a learner watched the
 first reply arrive and then switch to the rewrite, the held reply, or the

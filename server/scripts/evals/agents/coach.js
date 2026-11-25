@@ -34,11 +34,14 @@ export const CHECKS = {
   emptyPraise: { mark: 'parity', title: 'Opened with empty praise' },
   nextLesson: { mark: 'parity', title: 'Named the next lesson once the lesson completed' },
   profileNote: { mark: 'parity', title: 'Flagged a new fact for the learner’s profile' },
+  praisedCopy: { mark: 'never', title: 'Praised its own words, pasted back, as the learner’s thinking' },
 };
 
 export const available = (app) => app.prompt('coach') != null && !!app.engine?.buildContext;
 
 const SUSPICION = /\b(?:ai[- ]generated|chatgpt|copied|plagiar|not (?:their|the learner's) own|used ai)\b/i;
+// Praising a pasted-back hint as the learner's insight (Blake, 2026-11-25: "You nailed it").
+const PRAISE = /\b(?:nailed it|exactly|you got it|spot on|well done|great (?:job|answer|insight|thinking)|that(?:'|’)?s (?:right|correct|it|the key)|perfect(?:ly)?)\b/i;
 const EMPTY_PRAISE = /^\s*(?:great|awesome|amazing|fantastic|excellent|wonderful|perfect|love (?:it|this))\b[!.,]/i;
 
 export async function run(c, { app, model }) {
@@ -87,6 +90,7 @@ export async function run(c, { app, model }) {
       emptyPraise: !EMPTY_PRAISE.test(text),
       nextLesson: expect.namesLesson ? text.toLowerCase().includes(expect.namesLesson.toLowerCase()) : null,
       profileNote: expect.profileNote ? !!parsed.profileUpdate?.observation : null,
+      praisedCopy: expect.copiedCoach ? !PRAISE.test(text) : null,
     },
     sample: { message: c.message, reply: text, progress: parsed.progress ?? null, completed, newlyMet },
   };

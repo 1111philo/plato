@@ -27,9 +27,13 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
     ...tail,
     ...(message != null || parts ? [{ role: 'user', content: parts && !(parts.length === 1 && parts[0].type === 'text') ? parts : message }] : []),
   ];
-  const system = (addendum = '') => app.system('coach', { kb: programKb, catalog: CATALOG, addendum, language });
+  // A message that repeats the coach's own wording: every call this turn is told (repeatsCoach), where this version does.
+  const coachSaid = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text) : [];
+  const turnNote = assessment?.repeatsCoach && assessment.repeatsCoach(typeof message === 'string' ? message : '', coachSaid) ? assessment.REPEATED_ADDENDUM : '';
+  const system = (addendum = '') => app.system('coach', { kb: programKb, catalog: CATALOG, addendum: [turnNote, addendum].filter(Boolean).join('\n\n---\n\n'), language });
   const coach = (addendum, msgs = messages, maxTokens = 2048) => model.call({ system: system(addendum), messages: msgs, maxTokens });
-  const repair = (reply) => coach(orchestrator.TAG_REPAIR_ADDENDUM, [...messages, { role: 'assistant', content: reply || '…' }, { role: 'user', content: orchestrator.TAG_REPAIR_CUE }], 600);
+  // The tag repair has its own instructions only, as orchestrator.repairCoachTags sends it.
+  const repair = (reply) => model.call({ system: app.system('coach', { kb: programKb, catalog: CATALOG, addendum: orchestrator.TAG_REPAIR_ADDENDUM, language }), messages: [...messages, { role: 'assistant', content: reply || '…' }, { role: 'user', content: orchestrator.TAG_REPAIR_CUE }], maxTokens: 600 });
   const parseAndRepair = async (raw) => {
     const first = engine.parseCoachResponse(raw);
     return engine.recoverMissingTags ? engine.recoverMissingTags(first, () => repair(first.text)) : first;

@@ -751,6 +751,32 @@
    "expect": {
     "noDraft": true
    }
+  },
+  {
+   "id": "C64",
+   "lesson": "L5",
+   "title": "The learner pastes back the Coach’s hint as their answer (Blake, playground, 2026-11-25).",
+   "from": "Blake",
+   "complete": false,
+   "kb": {
+    "progress": 4,
+    "activitiesCompleted": 5
+   },
+   "history": [
+    [
+     "L",
+     "Shorter words like a11y probably use fewer tokens."
+    ],
+    [
+     "C",
+     "Exactly — you’re seeing how shorter, simpler words save tokens. “a11y” (short for “accessibility”) might be one token instead of three, and “Acrobat” might stay whole instead of “Acro” + “bat”.\n\nThis matters because AI tools often have token limits — like a budget. Fewer tokens = faster, cheaper responses.\n\nNext:\nHow do you think the AI chooses which token comes next when writing “run Adobe Acrobat’s accessibility checker”?\nHint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.\n\nOne sentence. Your guess"
+    ]
+   ],
+   "message": "It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric.",
+   "expect": {
+    "copiedCoach": true,
+    "noDraft": true
+   }
   }
  ]
 }
