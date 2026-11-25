@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, withoutVoiceSamples, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, repeatsCoach, withoutVoiceSamples, COPIED_LINE, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -581,6 +581,18 @@ describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised a
   });
   it('a hint that gives the answer is a draft', () => {
     assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
+  });
+});
+
+describe('a line copied from the coach, among the learner’s own (agent evaluations W5)', () => {
+  const t = (...m) => assessmentTranscript([{ role: 'user', content: '{}' }, { role: 'assistant', content: 'Ready.' }, ...m.map(([role, content]) => ({ role, content }))]);
+  it('reads as copied, so it doesn’t count toward the five', () => {
+    const tr = t(['assistant', 'Text me four more. Example: “Grant Writer — May 10 — Draft outreach message to program director”'], ['user', 'Grant Writer — May 10 — Draft outreach message to program director\nData Entry Specialist — Apr 29 — Follow up with hiring manager via LinkedIn']);
+    assert.equal(tr[1].text, `${COPIED_LINE}\nData Entry Specialist — Apr 29 — Follow up with hiring manager via LinkedIn`);
+  });
+  it('a line the learner wrote before the coach echoed it stays theirs', () => {
+    const tr = t(['user', 'I organised the food drive for my neighbours'], ['assistant', 'You said “I organised the food drive for my neighbours”. Why?'], ['user', 'I organised the food drive for my neighbours\nbecause nobody else would']);
+    assert.match(tr[2].text, /^I organised the food drive/);
   });
 });
 

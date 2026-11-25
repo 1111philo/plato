@@ -40,11 +40,18 @@ async function earned({ app, model, lesson, kb, history }) {
   // An unreadable reply is asked again, as checkGrading does; still unreadable is no verdict, not a failure.
   let raw = await ask();
   try { a.parseVerdict(raw); } catch { raw = await ask(a.FORMAT_NOTE || 'Reply with valid JSON only.'); }
-  try {
-    // Grounded as checkGrading grounds it (a confirmation counts where the lesson says so).
-    const g = a.groundVerdict(a.parseVerdict(raw), transcript, check, a.confirmingCounts ? { confirms: a.confirmingCounts(kb) } : {});
-    return { ok: g.shown.length === check.length, missing: g.missing };
-  } catch { return null; }
+  const judge = (r) => {
+    try {
+      // Grounded as checkGrading grounds it (a confirmation counts where the lesson says so).
+      const g = a.groundVerdict(a.parseVerdict(r), transcript, check, a.confirmingCounts ? { confirms: a.confirmingCounts(kb) } : {});
+      return { ok: g.shown.length === check.length, missing: g.missing };
+    } catch { return null; }
+  };
+  const first = judge(raw);
+  if (!first || first.ok) return first;
+  // A refusal is asked once more (a single call can be wrong): unearned only if both refuse.
+  const second = judge(await ask('Look again at each objective in the learner\'s own messages.'));
+  return second && second.ok ? second : first;
 }
 
 export async function run(c, { app, model, trial = 0 }) {

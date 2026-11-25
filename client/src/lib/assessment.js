@@ -76,9 +76,34 @@ function messageText(content, role) {
  */
 export function assessmentTranscript(messages) {
   const convo = (messages || []).slice(2).slice(-MAX_TRANSCRIPT);
-  return convo
+  const out = convo
     .map((m) => ({ by: m.role === 'user' ? 'learner' : 'coach', text: messageText(m.content, m.role).trim() }))
     .filter((m) => m.text);
+  return out.map((m, i) => (m.by === 'learner' ? { ...m, text: markCopiedLines(m.text, out.slice(0, i)) } : m));
+}
+
+/** What a learner's line copied from the coach reads as in the transcript. */
+export const COPIED_LINE = '[a line copied from the coach]';
+const LINE_WORDS = 5;
+
+/**
+ * A learner message with each line the coach wrote first replaced by
+ * COPIED_LINE: the coach's example row pasted in among the learner's own
+ * ("Grant Writer — May 10 — Draft outreach message…") was counted as one of
+ * their five (agent evaluations W5). A line the learner wrote before the
+ * coach echoed it stays theirs. Lines under LINE_WORDS words are left.
+ */
+function markCopiedLines(text, earlier) {
+  const coach = earlier.filter((m) => m.by === 'coach').map((m) => ` ${normalizeForMatch(m.text)} `);
+  if (!coach.length) return text;
+  const theirs = earlier.filter((m) => m.by === 'learner').map((m) => ` ${normalizeForMatch(m.text)} `);
+  return text.split('\n').map((line) => {
+    const n = normalizeForMatch(line);
+    if (n.split(' ').filter(Boolean).length < LINE_WORDS) return line;
+    const inCoach = coach.some((c) => c.includes(` ${n} `));
+    const firstTheirs = theirs.some((c) => c.includes(` ${n} `));
+    return inCoach && !firstTheirs ? COPIED_LINE : line;
+  }).join('\n');
 }
 
 /**
