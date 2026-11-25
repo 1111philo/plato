@@ -348,6 +348,11 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
   function assembledFromCoach(q) {
     const ws = words(q);
     if (ws.length < COPY_WORDS) return false;
+    // The coach polishing or combining the learner's own words keeps them the
+    // learner's (Blake, 2026-11-23): a grammar fix changes most three-word
+    // phrases, so the polish test runs first (agent evaluations A4).
+    const learnerAt = firstIndex('learner', q);
+    if (learnerAt > 0 && polishOfOwn(q, learnerAt)) return false;
     const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
     const said = transcript.map((m) => ({ by: m.by, text: ` ${words(m.text).join(' ')} ` }));
     let copied = 0;

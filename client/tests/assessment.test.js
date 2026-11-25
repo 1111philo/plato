@@ -543,6 +543,13 @@ describe('a quote put together from the coach’s sentences (agent evaluations W
       { by: 'learner', text: 'StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.' },
     ];
     assert.equal(groundVerdict(verdict('StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.'), swapped, [3]).missing[3], COACH_WROTE);
+    // The coach fixing the learner's grammar keeps the words theirs (agent evaluations A4).
+    const fixed = [
+      { by: 'learner', text: 'last year i lead a team of volunteer at the food bank and it show me i like helping people work together' },
+      { by: 'coach', text: 'Lovely. Here it is with the grammar fixed: “Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.”' },
+      { by: 'learner', text: 'Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('Last year I led a team of volunteers at the food bank, and it showed me I like helping people work together.'), fixed, [3]).shown, [3]);
     // The coach quoting the learner back doesn't make the learner's words the coach's.
     const echoed = [
       { by: 'learner', text: 'I organised the food drive and it showed me I love bringing people together' },
