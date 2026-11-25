@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, withDirectiveLiterals, withoutUnbackedClaims, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { mergeObjectivesMet } = await import('../src/lib/lessonWork.js');
@@ -549,6 +549,26 @@ describe('a quote put together from the coach’s sentences (agent evaluations W
       { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
     ];
     assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
+describe('a short sample in the learner’s own voice is their answer written for them (Blake’s trace, 2026-11-25)', () => {
+  it('counts as a draft, unless it’s the learner’s own words quoted back, or about someone else', () => {
+    assert.equal(draftsForLearner('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.', ['Watch orientation video']), true);
+    assert.equal(draftsForLearner('Name 2+, e.g., “I use Notion for work and iMessage for social”.', []), true);
+    assert.equal(draftsForLearner('You said “I’m sharpest after dinner”, which grounds it.', ['I’m sharpest after dinner']), false, 'their own words');
+    assert.equal(draftsForLearner('Name a time, e.g., “a quiet evening slot”.', []), false, 'not in their voice');
+    assert.equal(draftsForLearner('Pick one (e.g., “Tuesday 6–7 PM on my MacBook Pro”).'), false, 'without the learner’s messages, the 20-word rule only');
+  });
+});
+
+describe('withoutUnbackedClaims (Blake’s trace, 2026-11-25)', () => {
+  it('takes out the sentence saying an objective the check didn’t keep is met', () => {
+    assert.equal(withoutUnbackedClaims('Strong. You linked each tool to your workflow. That’s **Objective 2 met**.\n\nNext: what are five to-dos?', [2]), 'Strong. You linked each tool to your workflow.\n\nNext: what are five to-dos?');
+    assert.equal(withoutUnbackedClaims('That’s Objective 1 in progress. Next, what tools?', [1]), 'That’s Objective 1 in progress. Next, what tools?', 'in progress isn’t met');
+    assert.equal(withoutUnbackedClaims('That’s Objective 2 met. What next?', [1]), 'That’s Objective 2 met. What next?', 'a kept objective stays');
+    assert.equal(withoutUnbackedClaims('With Objectives 1–4 all demonstrated, you’re close. What next?', [3]), 'What next?');
+    assert.equal(withoutUnbackedClaims('Objective 2 met.', [2]), 'Objective 2 met.', 'never empties a reply');
   });
 });
 

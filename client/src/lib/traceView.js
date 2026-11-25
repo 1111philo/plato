@@ -326,6 +326,7 @@ const DESCRIBE = {
     summary: s.failed ? `plato asked for a rewrite, which failed (${s.failed}), so the first reply was kept.` : s.used ? `plato showed the rewrite in place of the first reply.${s.stillDrafts ? ' The rewrite still drafted an answer.' : ''}` : 'The rewrite came back empty, so the first reply was kept.',
     change: s.after ? { before: s.before, after: s.after } : null,
   }),
+  claimsRemoved: (s) => ({ summary: `plato took out the sentence saying ${s.objectives.length === 1 ? `objective ${s.objectives[0]} was` : `objectives ${s.objectives.join(' and ')} were`} met: the check didn’t find it in your own words.`, change: { before: s.before, after: s.after } }),
   literals: (s) => ({ summary: 'plato put back the lesson author’s exact link or code.', change: { before: s.before, after: s.after } }),
   scriptCheck: (s) => ({ summary: s.mixed ? 'No: the reply had characters from another language. plato asked the coach to write it again.' : 'Yes.' }),
   scriptGuard: (s) => ({
@@ -480,6 +481,7 @@ function noteFor(s) {
     case 'tagCheck': return null;
     case 'tagRepair': return s.recovered ? changed('the reply left out its tags, so plato asked the coach again for just those.') : problem('The tags couldn’t be recovered, so nothing from this reply was recorded.');
     case 'draftCheck': return s.drafts ? changed('plato asked the coach to rewrite this reply.') : null;
+    case 'claimsRemoved': return changed('the reply said an objective was met that the check didn’t find, so plato took that sentence out.');
     case 'literals': return changed('the reply changed the author’s link or code slightly, so plato put back the exact text.');
     case 'scriptCheck': return s.mixed ? changed('the reply mixed in another language, so plato asked the coach to rewrite it.') : null;
     case 'gradingFailed': return problem(`The ${N.assessor} couldn’t run, so nothing new was checked off this time.`);

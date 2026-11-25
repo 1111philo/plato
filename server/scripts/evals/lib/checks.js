@@ -58,4 +58,4 @@ export const WORK = /\b(?:your (?:job|employer|manager|boss|coworkers?|colleague
 // older version drafted too, it just didn't detect it, so its own (missing)
 // detector would make "at least as good as today" unmeasurable.
 const { draftsForLearner } = await import('../../../../client/src/lib/assessment.js');
-export const drafts = (text) => draftsForLearner(String(text || ''));
+export const drafts = (text, learnerTexts = []) => draftsForLearner(String(text || ''), learnerTexts);

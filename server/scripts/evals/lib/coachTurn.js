@@ -37,7 +37,8 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
 
   let parsed = await parseAndRepair(await coach());
   // The draft guard (#584), where this version has it.
-  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && assessment.draftsForLearner(parsed.text || '')) {
+  const learnerSaid = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
+  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && assessment.draftsForLearner(parsed.text || '', learnerSaid)) {
     const again = await parseAndRepair(await coach(assessment.DRAFT_ADDENDUM));
     if (again.text) parsed = again;
   }

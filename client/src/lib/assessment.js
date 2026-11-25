@@ -465,6 +465,9 @@ export function claimsCompletion(text) {
  * passages learners actually copied.
  */
 export const DRAFT_WORDS = 20;
+/** A quoted sample this long in the learner's first person ("I…", "my…") counts as their answer written for them. */
+export const VOICE_WORDS = 3;
+const VOICE = /(?:^|[^\p{L}'’])(?:i|i['’]m|i['’]ll|i['’]ve|i['’]d|my|me|mine)(?![\p{L}])/iu;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
 const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 
@@ -474,11 +477,17 @@ const DRAFT_LEAD = /\b(?:try (?:this|something like|saying)?\s*:|here(?:'|’)s 
  * "Try this:" / "Here's a draft". Learners copied these back and were held
  * for it, so plato asks the coach to rewrite such replies as a question.
  */
-export function draftsForLearner(text) {
+export function draftsForLearner(text, learnerTexts = null) {
   const t = String(text ?? '');
+  const said = learnerTexts ? normalizeForMatch(learnerTexts.join('\n')) : null;
   for (const m of t.matchAll(QUOTED)) {
     const span = (m[1] ?? m[2] ?? '').trim();
     if (span.split(/\s+/).filter(Boolean).length >= DRAFT_WORDS) return true;
+    // A short sample in the learner's own voice ("e.g., 'Tuesday 6–7 PM on my
+    // MacBook Pro'") is their answer written for them: learners pasted these
+    // back (Blake's trace, 2026-11-25). The learner's own words quoted back
+    // aren't (`learnerTexts`); a third-person example ("a deadline you hit") isn't.
+    if (said != null && VOICE.test(span) && span.split(/\s+/).filter(Boolean).length >= VOICE_WORDS && !said.includes(normalizeForMatch(span))) return true;
   }
   for (const line of t.split('\n')) {
     const lead = line.match(DRAFT_LEAD);
@@ -564,6 +573,36 @@ export function withDirectiveLiterals(text, directive) {
     out = out.replace(loose, c);
   }
   return out;
+}
+
+// A sentence telling the learner an objective is met: "That's Objective 2
+// met", "This closes Objective 4", "Objective 1 ✅".
+const MET_WORDS = /\b(?:met|meets|shown|demonstrated|done|complete[ds]?|covered|achieved|closes?|closed|nailed|hit|checked off|fully)\b|✅/i;
+
+/**
+ * The reply without its sentences saying objectives plato didn't keep are
+ * met. The coach told a learner "That's Objective 2 met" on a turn the
+ * grading check had taken objective 2 back, so its words and the record
+ * disagreed (Blake's trace, 2026-11-25). `numbers`: 1-based objectives not
+ * kept. Pure; never empties a reply.
+ */
+export function withoutUnbackedClaims(text, numbers) {
+  const t = String(text || '');
+  if (!numbers?.length) return t;
+  const wanted = new Set(numbers.map(Number));
+  const claims = (sentence) => {
+    if (!MET_WORDS.test(sentence)) return false;
+    const refs = [...sentence.matchAll(/\bobjectives?\s*#?\s*(\d)(?:\s*(?:[-–—]|to|and|&|,)\s*(\d))?/gi)];
+    return refs.some((m) => {
+      const a = Number(m[1]); const b = m[2] ? Number(m[2]) : a;
+      for (let n = Math.min(a, b); n <= Math.max(a, b); n++) if (wanted.has(n)) return true;
+      return false;
+    });
+  };
+  const paragraphs = t.split(/(\n\s*\n)/);
+  const out = paragraphs.map((p) => (/^\n\s*\n$/.test(p) ? p : (p.match(/[^.!?\n]+(?:[.!?]+["”’)*]*|$)\s*/g) || [p]).filter((x) => !claims(x)).join('').trimEnd())).join('');
+  const cleaned = out.replace(/\n{3,}/g, '\n\n').trim();
+  return cleaned || t;
 }
 
 /** The coach's addendum when its reply wrote the learner's text for them. */

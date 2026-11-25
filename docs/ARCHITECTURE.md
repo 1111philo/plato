@@ -1687,6 +1687,16 @@ sentences (its rewrites asked several questions most of the time; agent
 evaluations). The rewrite is kept even if it still drafts: on playground it
 still drafted 21 of 26 times.
 
+**A short sample in the learner's voice is a draft too** (Blake's trace,
+2026-11-25): the coach's "examples" were his answers ("e.g., 'Tuesday 6–7 PM
+on my MacBook Pro'"), each under 20 words, and he pasted them back. A quoted
+passage of 3+ words in the learner's first person ("I…", "my…") that the
+learner didn't write (`VOICE_WORDS`) sets off the draft guard as well; their
+own words quoted back don't, nor do examples about someone else. And when the
+check takes back an objective the coach claimed, the reply's sentence saying
+it's met ("That's Objective 2 met") is taken out (`withoutUnbackedClaims`), so
+the coach's words agree with the record.
+
 **The learner sees a reply only once it's checked** (Blake, 2026-11-25).
 Replies used to stream as the model wrote them, so a learner watched the
 first reply arrive and then switch to the rewrite, the held reply, or the

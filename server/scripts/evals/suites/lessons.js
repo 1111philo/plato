@@ -70,7 +70,7 @@ export async function run(c, { app, model, trial = 0 }) {
     history.push({ role: 'user', content: said.text || (images.length ? '[image]' : '') }, { role: 'assistant', content: turn.text });
     replies.push(turn.text);
     if (turn.parsed.progress == null) tagsOk = false;
-    if (drafts(turn.text)) drafted = true;
+    if (drafts(turn.text, history.filter((m) => m.role === 'user').map((m) => String(m.content)))) drafted = true;
     kb = turn.after;
     const met = kb.objectivesMet;
     if (kb.status === 'completed' && Array.isArray(met) && app.work?.mergeObjectivesMet && met.length < lesson.objectives.length) jumped = true;

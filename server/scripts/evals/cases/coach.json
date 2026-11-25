@@ -726,6 +726,31 @@
     "activitiesCompleted": 0
    },
    "message": "Start the lesson."
+  },
+  {
+   "id": "C63",
+   "lesson": "L2",
+   "title": "“show me”, after the Coach asks why each tool fits (Blake’s trace, 2026-11-25).",
+   "from": "Blake's trace",
+   "complete": false,
+   "kb": {
+    "progress": 5,
+    "activitiesCompleted": 5
+   },
+   "history": [
+    [
+     "L",
+     "Notion for work, iMessage for social, Apple Reminders for personal."
+    ],
+    [
+     "C",
+     "Good variety. Now, for each tool, explain why it fits the way you work. One sentence per tool."
+    ]
+   ],
+   "message": "show me",
+   "expect": {
+    "noDraft": true
+   }
   }
  ]
 }

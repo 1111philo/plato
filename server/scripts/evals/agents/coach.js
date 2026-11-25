@@ -73,7 +73,7 @@ export async function run(c, { app, model }) {
       offList: c.mayMeet !== undefined || c.complete === false ? newlyMet.every((n) => allowed.has(n)) : null,
       saysDoneOpen: saysDone === null ? null : !saysDone,
       tags: parsed.progress != null,
-      drafted: expect.noDraft ? !drafts(text) : null,
+      drafted: expect.noDraft ? !drafts(text, [...(c.history || []).filter(([by]) => by === 'L').map(([, t]) => t), c.message || '']) : null,
       escalated: expect.noEscalate ? !ESCALATED.test(text) : null,
       cantTake: !CANT_TAKE.test(text),
       language: language || expect.language ? inLanguage(text, language || expect.language) : !CJK.test(text),

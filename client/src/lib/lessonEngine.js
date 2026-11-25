@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -236,6 +236,12 @@ export async function checkGrading({ lesson, kb, parsed, messages, imageParts = 
   let out = applied.parsed;
   let regenerated = false;
   let replaced = false;
+  // Objectives the coach claimed and the check didn't keep: the reply mustn't
+  // tell the learner they're met (withoutUnbackedClaims).
+  if (applied.unverified?.length && !applied.held && out.text) {
+    const cleaned = withoutUnbackedClaims(out.text, applied.unverified);
+    if (cleaned !== out.text) { note('claimsRemoved', { before: out.text, after: cleaned, objectives: applied.unverified }); out = { ...out, text: cleaned }; }
+  }
   if (applied.held) {
     if (regenerate) {
       try {
@@ -664,7 +670,9 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   // rewrite keeps the first reply. Nothing is streamed, so the learner sees
   // only the reply plato keeps.
   let coachReply = repaired;
-  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text);
+  // What the learner has written, so their own words quoted back aren't a draft.
+  const learnerSaid = assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text);
+  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text, learnerSaid);
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
@@ -672,7 +680,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
       const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
-      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text) };
+      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text, learnerSaid) };
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
