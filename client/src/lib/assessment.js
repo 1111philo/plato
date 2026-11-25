@@ -127,8 +127,15 @@ export function normalizeForMatch(s) {
 
 const words = (s) => normalizeForMatch(s).split(' ').filter(Boolean);
 
-/** True when `quote` appears in `text`: as a substring, or ≥80% of its words in order (the model sometimes drops a word). */
-function appearsIn(quote, text) {
+/**
+ * True when `quote` appears in `text`: as a substring, or ≥80% of its words in
+ * order within a short stretch of `text` (the model sometimes drops or changes
+ * a word). The stretch is at most the quote's length plus a few words: without
+ * that limit, a learner's own short sentence "appeared" in any long coach
+ * message that happened to use its common words in the same order, so the
+ * check said the coach wrote it (playground, 2026-11-24).
+ */
+export function appearsIn(quote, text, { tight = false } = {}) {
   const q = normalizeForMatch(quote);
   const t = normalizeForMatch(text);
   if (!q || !t) return false;
@@ -136,12 +143,23 @@ function appearsIn(quote, text) {
   const qw = words(quote);
   if (qw.length < 4) return false;
   const tw = words(text);
-  let j = 0, hits = 0;
-  for (const w of qw) {
-    const k = tw.indexOf(w, j);
-    if (k !== -1) { hits++; j = k + 1; }
+  const need = Math.ceil(qw.length * 0.8);
+  if (!tight) {
+    let j = 0, hits = 0;
+    for (const w of qw) { const k = tw.indexOf(w, j); if (k !== -1) { hits++; j = k + 1; } }
+    return hits >= need;
   }
-  return hits / qw.length >= 0.8;
+  const span = qw.length + Math.max(2, Math.ceil(qw.length * 0.25));
+  for (let s = 0; s < tw.length; s++) {
+    if (!qw.includes(tw[s])) continue;
+    let j = s, hits = 0;
+    for (const w of qw) {
+      const k = tw.indexOf(w, j);
+      if (k !== -1 && k < s + span) { hits++; j = k + 1; }
+    }
+    if (hits >= need) return true;
+  }
+  return false;
 }
 
 /** Share of a coach-written passage's words that must be the learner's earlier words for it to count as their polished text. */
@@ -237,7 +255,9 @@ export function objectiveForLearner(o) {
 export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false, confirms = new Set() } = {}) {
   const found = {};
   let current = null;
-  const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text));
+  // The learner's words: a loose match, since the assessor paraphrases quotes. The coach's: a tight one,
+  // or a learner's own sentence "appears" in any long coach message with the same common words.
+  const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text, { tight: by === 'coach' }));
   const byN = new Map();
   for (const o of Array.isArray(verdict?.objectives) ? verdict.objectives : []) {
     const n = Number(o?.n);
