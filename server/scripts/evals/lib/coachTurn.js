@@ -46,13 +46,16 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
   };
 
   const learnerSaidEarly = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
+  // One of plato's fixed replies in the learner's language, as lessonEngine's platoSays gives it.
+  const platoSays = async (kind) => {
+    const lang = app.languageFor(language) || null;
+    const fixed = assessment.copyReply(kind, lang);
+    if (!lang || assessment.hasFixedReplies?.(lang)) return fixed;
+    try { return engine.parseCoachResponse(await coach(assessment.localizeAddendum(fixed), messages, 600)).text || fixed; } catch { return fixed; }
+  };
   let parsed;
   if (assessment?.copyReply && (repeated || agreed)) {
-    const lang = app.languageFor(language) || null;
-    let fixed = assessment.copyReply(agreed ? 'agreed' : 'repeated', lang);
-    if (lang && !(assessment.hasFixedReplies ? assessment.hasFixedReplies(lang) : false)) {
-      try { fixed = engine.parseCoachResponse(await coach(assessment.localizeAddendum(fixed), messages, 600)).text || fixed; } catch { /* keep the English */ }
-    }
+    const fixed = await platoSays(agreed ? 'agreed' : 'repeated');
     parsed = engine.parseCoachResponse(`${fixed}\n[PROGRESS: ${kb.progress ?? 0}]\n[KB_UPDATE: {}]`);
   } else parsed = await parseAndRepair(await coach());
   const platoReply = !!assessment?.copyReply && (repeated || agreed) && !!assessment.hasFixedReplies;
@@ -69,7 +72,10 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
     // A sample in the learner's voice that survived the rewrite comes out, where this version does.
     if (assessment.withoutVoiceSamples && assessment.draftsForLearner(parsed.text || '', learnerSaid)) parsed = { ...parsed, text: assessment.withoutVoiceSamples(parsed.text, learnerSaid) };
     // Still drafting: the drafted passages come out in code, where this version does.
-    if (assessment.withoutDrafts && assessment.draftsForLearner(parsed.text || '', learnerSaid)) parsed = { ...parsed, text: assessment.withoutDrafts(parsed.text, learnerSaid, assessment.hasFixedReplies?.(app.languageFor(language) || null) ? app.languageFor(language) || null : null) };
+    if (assessment.withoutDrafts && assessment.draftsForLearner(parsed.text || '', learnerSaid)) {
+      const stripped = assessment.withoutDrafts(parsed.text, learnerSaid);
+      parsed = { ...parsed, text: stripped === assessment.NO_DRAFT_REPLY && assessment.hasFixedReplies ? await platoSays('noDraft') : stripped };
+    }
   }
   // The script guard, where this version has it: a reply that mixes in another
   // script is rewritten once, and the rewrite used only when it's clean.

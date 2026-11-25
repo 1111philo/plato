@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, repeatsCoach, copyReply, hasFixedReplies, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, NO_DRAFT_REPLY, repeatsCoach, copyReply, hasFixedReplies, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -653,18 +653,21 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   const lastCoach = coachSaid[coachSaid.length - 1] || '';
   const agreed = !repeated && onlyAgrees(text || '') && draftsForLearner(lastCoach, assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text));
   trace?.step('repeatCheck', { repeated, ...(agreed ? { agreed } : {}) });
+  // One of plato's fixed replies (copyReply) in the learner's language: built
+  // in for English and Spanish; otherwise the coach translates it, and a
+  // failed translation keeps the English.
+  const platoSays = async (kind) => {
+    const language = learnerLanguageName();
+    const fixed = copyReply(kind, language);
+    if (hasFixedReplies(language)) return fixed;
+    try {
+      return parseCoachResponse(await orchestrator.converseStream('coach', messages, () => {}, 600, localizeAddendum(fixed), opts('plato’s own reply, in the learner’s language'))).text || fixed;
+    } catch { return fixed; }
+  };
   let coachMsg;
   if (repeated || agreed) {
     report('coach_wording_repeated');
-    const language = learnerLanguageName();
-    let fixed = copyReply(agreed ? 'agreed' : 'repeated', language);
-    // A language plato has no built-in text for: the coach translates it; a failed translation keeps the English.
-    if (!hasFixedReplies(language)) {
-      try {
-        const translated = parseCoachResponse(await orchestrator.converseStream('coach', messages, () => {}, 600, localizeAddendum(fixed), opts('plato’s reply to a copied answer, in the learner’s language'))).text;
-        if (translated) fixed = translated;
-      } catch { /* keep the English */ }
-    }
+    const fixed = await platoSays(agreed ? 'agreed' : 'repeated');
     trace?.step('copyReply', { kind: agreed ? 'agreed' : 'repeated', text: fixed });
     coachMsg = `${fixed}\n[PROGRESS: ${lessonKB.progress ?? 0}]\n[KB_UPDATE: {}]`;
   } else {
@@ -724,7 +727,9 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     // Still drafting after the rewrite: the drafted passages come out in code.
     if (!coachReply.draftRewritten) {
-      const stripped = withoutDrafts(coachReply.text, learnerSaid, hasFixedReplies(learnerLanguageName()) ? learnerLanguageName() : null);
+      let stripped = withoutDrafts(coachReply.text, learnerSaid);
+      // Nothing left to say: plato's fixed reply, in the learner's language.
+      if (stripped === NO_DRAFT_REPLY) stripped = await platoSays('noDraft');
       trace?.step('samplesRemoved', { before: coachReply.text, after: stripped, from: 'still drafting' });
       coachReply = { ...coachReply, text: stripped };
     }
