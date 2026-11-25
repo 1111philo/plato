@@ -227,6 +227,23 @@
    "stages": [
     "firstYear"
    ]
+  },
+  {
+   "id": "W16",
+   "card": "copies",
+   "title": "Copies it (sends the Coach’s own text back every turn): L1, L2, L5, L4",
+   "lessons": [
+    "L1",
+    "L2",
+    "L5",
+    "L4"
+   ],
+   "trials": 4,
+   "limit": 8,
+   "stages": [
+    "employed",
+    "nearGrad"
+   ]
   }
  ]
 }

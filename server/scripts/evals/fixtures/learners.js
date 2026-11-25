@@ -5,6 +5,8 @@
  * about what plato checks. Made-up people; no learner data.
  */
 export const CARDS = {
+  // Played by code, not a model (lib/learner.js copyFromCoach): sends the Coach's own text back, every turn.
+  copies: { name: 'Copies it', who: 'You send back whatever example, hint or wording the coach gives, as your answer.' },
   steady: { name: 'Steady', who: 'You are engaged and answer fully. You have real experience to draw on and you do the work the coach asks for, in your own words.' },
   brief: { name: 'Brief', who: 'You answer in a few words, usually one short sentence or less. You need prompting to say more, but you are not being difficult: when asked a direct question you answer it, briefly, and you do the work in short form.' },
   new: { name: 'New to it', who: 'You are a beginner. You are unsure of technical terms and sometimes ask what a word means before answering. You are willing and you do the work, simply.' },

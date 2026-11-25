@@ -139,4 +139,4 @@ Changes are NOT saved automatically. The admin must click the "Update Knowledge 
 
 ## Response format
 
-Respond with plain text only. No JSON, no markdown fencing. Just your message followed by the readiness signal on the last line.
+Respond with plain text only. No JSON, no markdown fencing. Just your message followed by the readiness signal on the last line. At most 4 sentences in all, counting your question and any examples in brackets.

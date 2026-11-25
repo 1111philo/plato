@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { loadApp } from './lib/app.js';
 import { bedrockModel } from './lib/model.js';
+import { bedrockJudge } from './lib/judge.js';
 import { AGENTS, SUITES, affectedAgents, changedSince, fingerprint, harnessFingerprint, uncommittedWatched } from './lib/watch.js';
 import { judge, runVerdict } from './lib/score.js';
 
@@ -78,7 +79,7 @@ async function pool(jobs, n, onDone) {
  * Run `agents`' cases against one version of plato (`app`), `trials` times
  * each. Returns `{ [agent]: { [caseId]: { trials: [{ checks, sample } | { error }] } } }`.
  */
-export async function runCases({ app, model, agents, trials, concurrency, progress, exact = false }) {
+export async function runCases({ app, model, judge = null, agents, trials, concurrency, progress, exact = false }) {
   const jobs = [];
   const slots = [];
   for (const agent of agents) {
@@ -86,7 +87,7 @@ export async function runCases({ app, model, agents, trials, concurrency, progre
     for (const c of agent.cases) {
       // `exact`: `trials` for every case (a confirmation), except whole lessons, one per lesson.
       for (let t = 0; t < (exact && !c.lessons ? trials : c.trials || trials); t++) {
-        jobs.push(() => agent.run(c, { app, model, trial: t }));
+        jobs.push(() => agent.run(c, { app, model, judge, trial: t }));
         slots.push([agent.id, c.id]);
       }
     }
@@ -195,6 +196,8 @@ async function main() {
   const trials = Number(opt.trials);
   const concurrency = Number(opt.concurrency);
   const model = bedrockModel();
+  // The independent judge (lib/judge.js); --no-judge leaves its checks out.
+  const judge = opt['no-judge'] ? null : bedrockJudge();
   const say = (t) => { if (!opt.quiet) process.stderr.write(t); };
   say(`Evaluating ${agents.map((a) => a.id).join(', ')} (${level}, ${trials} trials each)${missing.length ? `; not built yet: ${missing.join(', ')}` : ''}\n`);
   const startedAt = new Date().toISOString();
@@ -212,13 +215,15 @@ async function main() {
     try {
       // Today's version, measured by this harness: either changing means measuring again.
       const baseFp = `${fingerprint(b.dir)}-${harnessFingerprint(REPO)}`;
-      const file = join(EVALS, 'baseline', `${baseFp}.json`);
+      // A run of some cases only (--cases) keeps its own baseline: cached under the
+      // whole agent's name, it left the other cases with no baseline at all.
+      const file = join(EVALS, 'baseline', `${baseFp}${only ? `-cases-${[...only].sort().join('_').slice(0, 80)}` : ''}.json`);
       const cached = readJson(file, { tally: {}, agents: [] });
       const need = agents.filter((a) => !cached.agents.includes(a.id));
       if (need.length) {
         say(`Baseline (origin/main ${b.sha.slice(0, 7)}): ${need.map((a) => a.id).join(', ')}\n`);
         const bapp = await loadApp(b.dir);
-        const raw = await runCases({ app: bapp, model, agents: need, trials, concurrency, progress: () => say('.') });
+        const raw = await runCases({ app: bapp, model, judge, agents: need, trials, concurrency, progress: () => say('.') });
         say('\n');
         Object.assign(cached.tally, tally(raw));
         cached.agents = [...new Set([...cached.agents, ...need.map((a) => a.id)])];
@@ -232,7 +237,7 @@ async function main() {
       if (opt.calibrate) {
         say('Calibrating: running today’s version again\n');
         const bapp = await loadApp(b.dir);
-        const again = tally(await runCases({ app: bapp, model, agents, trials, concurrency, progress: () => say('.') }));
+        const again = tally(await runCases({ app: bapp, model, judge, agents, trials, concurrency, progress: () => say('.') }));
         say('\n');
         const cal = readJson(join(here, 'calibration.json'), {});
         const gaps = {};
@@ -251,7 +256,7 @@ async function main() {
 
   say('Candidate (this checkout)\n');
   const app = await loadApp(REPO);
-  const raw = await runCases({ app, model, agents, trials, concurrency, progress: () => say('.') });
+  const raw = await runCases({ app, model, judge, agents, trials, concurrency, progress: () => say('.') });
   say('\n');
   let cases = score({ agents, raw, baseline, gaps });
 
@@ -265,13 +270,13 @@ async function main() {
   if (toConfirm.length && !opt['no-confirm']) {
     const sub = agents.map((a) => ({ ...a, cases: a.cases.filter((c) => toConfirm.some((x) => x.agent === a.id && x.id === c.id)) })).filter((a) => a.cases.length);
     say(`Confirming ${toConfirm.map((c) => `${c.agent} ${c.id}`).join(', ')}: ${CONFIRM_TRIALS} more trials each, on both versions\n`);
-    const more = await runCases({ app, model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true });
+    const more = await runCases({ app, model, judge, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true });
     for (const [a, cs] of Object.entries(more)) for (const [id, r] of Object.entries(cs)) {
       raw[a][id].confirmFrom = raw[a][id].trials.length;
       raw[a][id].trials.push(...r.trials);
     }
     if (baselineDir) {
-      const extra = tally(await runCases({ app: await loadApp(baselineDir), model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true }));
+      const extra = tally(await runCases({ app: await loadApp(baselineDir), model, judge, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true }));
       for (const [a, cs] of Object.entries(extra)) for (const [id, checks] of Object.entries(cs)) for (const [k, v] of Object.entries(checks)) {
         const t = ((baseline[a] ||= {})[id] ||= {})[k] ||= { fails: 0, n: 0 };
         t.fails += v.fails; t.n += v.n;
@@ -284,7 +289,7 @@ async function main() {
   const summary = runVerdict(cases);
   const errors = cases.reduce((n, c) => n + c.errors, 0);
   const results = {
-    v: 1, fingerprint: fp, commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim(), dirty: dirty.length > 0, level, agents: agents.map((a) => a.id), notBuilt: missing, model: model.id,
+    v: 1, fingerprint: fp, commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8' }).trim(), dirty: dirty.length > 0, level, agents: agents.map((a) => a.id), notBuilt: missing, model: model.id, judge: judge ? { model: judge.id, calls: judge.stats.calls } : null,
     baseline: baselineInfo, startedAt, took: Math.round((Date.now() - t0) / 1000), stats: model.stats, errors,
     ...summary, verdict: errors > cases.length ? 'error' : summary.verdict, cases,
   };

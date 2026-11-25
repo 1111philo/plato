@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, repeatsCoach, REPEATED_ADDENDUM, AGREED_ADDENDUM, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, NO_DRAFT_REPLY, repeatsCoach, copyReply, hasFixedReplies, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -459,9 +459,9 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   const coachMsg = await orchestrator.converseStream(
     'coach',
     opening,
-    // A lesson with a coach directive isn't streamed: its links and codes are
-    // checked first (withDirectiveLiterals), and a corrected one would switch.
-    lesson.coachDirective ? () => {} : cleanStream(onStream),
+    // Not streamed: the opener is checked first, like every reply (the
+    // author's links and codes, example answers), and a corrected one would switch.
+    () => {},
     1024,
     '',
     trace ? { trace, purpose: 'opening message' } : undefined,
@@ -470,8 +470,12 @@ async function startLessonTraced(lessonId, lesson, onStream, onProgress, trace) 
   const firstOpening = parseCoachResponse(coachMsg);
   const { progress } = firstOpening;
   // The author's links and codes, exactly (withDirectiveLiterals).
-  const text = withDirectiveLiterals(firstOpening.text, lesson.coachDirective);
-  if (text !== firstOpening.text) orchestrator.reportEvent('coach_literal_restored', { lessonId });
+  const exact = withDirectiveLiterals(firstOpening.text, lesson.coachDirective);
+  if (exact !== firstOpening.text) orchestrator.reportEvent('coach_literal_restored', { lessonId });
+  // No example answers in the learner's voice in the opener either: one was
+  // pasted back as the first answer (Blake's trace, 2026-11-25).
+  const text = withoutVoiceSamples(exact, []) || exact;
+  if (text !== exact) trace?.step('samplesRemoved', { before: exact, after: text, from: 'opener' });
   trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, text, progress, opener: true });
 
   // The opener is scored like any turn (clamped 0–10), but it can't finish
@@ -638,26 +642,37 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
 
   // 2048: a long explanation at 1024 ran out mid-reply (the turn fails with
   // "The reply was cut off", since the tags come last).
-  // A message that's mostly the coach's own wording sent back (a pasted
-  // hint): every coach call this turn is told so (repeatsCoach), since the
-  // model doesn't notice its own words and praised them as the learner's.
+  // A message that's mostly the coach's own wording sent back (a pasted hint
+  // or example), or only a yes to a draft the coach wrote: plato answers it
+  // itself (copyReply). The coach isn't asked: told about the copy in a note,
+  // it still praised a pasted example (Blake's trace, 2026-11-25). The fixed
+  // reply carries the lesson's current score and no notes, so nothing is
+  // graded or recorded from a copy.
   const coachSaid = assessmentTranscript(messages).filter((m) => m.by === 'coach').map((m) => m.text);
   const repeated = repeatsCoach(text || '', coachSaid);
-  // Or only "yes, that's me" to a draft the coach just wrote (C2).
   const lastCoach = coachSaid[coachSaid.length - 1] || '';
   const agreed = !repeated && onlyAgrees(text || '') && draftsForLearner(lastCoach, assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text));
   trace?.step('repeatCheck', { repeated, ...(agreed ? { agreed } : {}) });
-  if (repeated || agreed) report('coach_wording_repeated');
-  const turnNote = repeated ? REPEATED_ADDENDUM : agreed ? AGREED_ADDENDUM : '';
-  const withNote = (addendum) => [turnNote, addendum].filter(Boolean).join('\n\n---\n\n');
-  const coachMsg = await orchestrator.converseStream(
-    'coach',
-    messages,
-    stream,
-    2048,
-    turnNote,
-    opts('reply'),
-  );
+  // One of plato's fixed replies (copyReply) in the learner's language: built
+  // in for English and Spanish; otherwise the coach translates it, and a
+  // failed translation keeps the English.
+  const platoSays = async (kind) => {
+    const language = learnerLanguageName();
+    const fixed = copyReply(kind, language);
+    if (hasFixedReplies(language)) return fixed;
+    try {
+      return parseCoachResponse(await orchestrator.converseStream('coach', messages, () => {}, 600, localizeAddendum(fixed), opts('plato’s own reply, in the learner’s language'))).text || fixed;
+    } catch { return fixed; }
+  };
+  let coachMsg;
+  if (repeated || agreed) {
+    report('coach_wording_repeated');
+    const fixed = await platoSays(agreed ? 'agreed' : 'repeated');
+    trace?.step('copyReply', { kind: agreed ? 'agreed' : 'repeated', text: fixed });
+    coachMsg = `${fixed}\n[PROGRESS: ${lessonKB.progress ?? 0}]\n[KB_UPDATE: {}]`;
+  } else {
+    coachMsg = await orchestrator.converseStream('coach', messages, stream, 2048, '', opts('reply'));
+  }
 
   const firstParse = parseCoachResponse(coachMsg);
   trace?.step('parsed', { call: trace.lastCall(), tags: COACH_TAGS, raw: coachMsg, ...firstParse });
@@ -684,23 +699,41 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   let coachReply = repaired;
   // What the learner has written, so their own words quoted back aren't a draft.
   const learnerSaid = assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text);
-  const drafts = lessonKB.status !== 'completed' && draftsForLearner(repaired.text, learnerSaid);
+  // Example answers written in the learner's voice are cut by code first
+  // (withoutVoiceSamples): no model call, and usually nothing left to rewrite.
+  const cutSamples = (reply, why) => {
+    const cleaned = withoutVoiceSamples(reply.text || '', learnerSaid);
+    if (cleaned === (reply.text || '') || !cleaned.trim()) return reply;
+    trace?.step('samplesRemoved', { before: reply.text, after: cleaned, from: why });
+    return { ...reply, text: cleaned };
+  };
+  // plato's own reply to a copy isn't the coach's: it skips the draft guard.
+  const platoReply = repeated || agreed;
+  if (lessonKB.status !== 'completed' && !platoReply) coachReply = cutSamples(coachReply, 'reply');
+  // A rewrite is asked for only when the cut wasn't enough: the reply still
+  // drafts, or it had samples cut and still asks several questions (replies
+  // that write the answer tend to: agent evaluations C63).
+  const drafts = lessonKB.status !== 'completed' && !platoReply && (draftsForLearner(coachReply.text, learnerSaid)
+    || (coachReply.text !== repaired.text && (coachReply.text.match(/\?/g) || []).length > 1));
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(DRAFT_ADDENDUM), opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, DRAFT_ADDENDUM, opts('rewrite: the first reply wrote the learner’s answer for them', { stage: 'checked', check: 'draft' }));
       const rewriteParse = parseCoachResponse(raw);
       trace?.step('tagCheck', { ...tagsFound(rewriteParse), for: 'rewrite' });
       const again = await recoverMissingTags(rewriteParse, () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'draft' })));
-      if (again.text) coachReply = { ...again, draftRewritten: !draftsForLearner(again.text, learnerSaid) };
+      if (again.text) { const cut = cutSamples(again, 'rewrite'); coachReply = { ...cut, draftRewritten: !draftsForLearner(cut.text, learnerSaid) }; }
       trace?.step('draftGuard', { call: trace.lastCall(), before: repaired.text, after: again.text || null, used: !!again.text, stillDrafts: again.text ? !coachReply.draftRewritten : null, progress: again.progress ?? null });
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
-    report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
-    // A sample in the learner's voice that survived the rewrite comes out.
+    // Still drafting after the rewrite: the drafted passages come out in code.
     if (!coachReply.draftRewritten) {
-      const cleaned = withoutVoiceSamples(coachReply.text, learnerSaid);
-      if (cleaned !== coachReply.text) { trace?.step('samplesRemoved', { before: coachReply.text, after: cleaned }); coachReply = { ...coachReply, text: cleaned }; }
+      let stripped = withoutDrafts(coachReply.text, learnerSaid);
+      // Nothing left to say: plato's fixed reply, in the learner's language.
+      if (stripped === NO_DRAFT_REPLY) stripped = await platoSays('noDraft');
+      trace?.step('samplesRemoved', { before: coachReply.text, after: stripped, from: 'still drafting' });
+      coachReply = { ...coachReply, text: stripped };
     }
+    report(coachReply.draftRewritten ? 'coach_draft_rewritten' : 'coach_draft_kept');
   }
 
   // The script guard: the model sometimes slips characters from another
@@ -714,7 +747,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     const before = coachReply.text;
     let fixed = false;
     try {
-      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, withNote(SCRIPT_ADDENDUM), opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
+      const raw = await orchestrator.converseStream('coach', messages, stream, 2048, SCRIPT_ADDENDUM, opts('rewrite: the reply mixed in another language', { stage: 'checked', check: 'language' }));
       const again = await recoverMissingTags(parseCoachResponse(raw), () => orchestrator.repairCoachTags(messages, stripTags(raw), opts('tag repair, for the rewrite', { check: 'language' })));
       fixed = !!again.text && !mixesScripts(again.text, language);
       if (fixed) coachReply = { ...again, draftRewritten: coachReply.draftRewritten };
@@ -744,7 +777,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     // the same with Trace on or off.
     // The retry after an unreadable reply asks for RETRY_TEMPERATURE: pass it on (#604).
     assess: (input, images, o) => orchestrator.assessTurn(input, images, { temperature: o?.temperature, ...(trace ? { trace, purpose: o?.purpose } : {}) }),
-    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, withNote(addendum), opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
+    regenerate: (addendum) => orchestrator.converseStream('coach', messages, stream, 2048, addendum, opts('rewrite: completion was held', { stage: 'checked', check: 'grading' })),
     judgeClaim: (t) => orchestrator.checkCompletionClaim(t, opts()),
     // plato's own held message, in the learner's language (not streamed: it replaces the reply).
     ...(learnerLanguageName() ? { localize: (addendum) => orchestrator.converseStream('coach', messages, () => {}, 600, addendum, opts('the held message, in the learner’s language', { stage: 'checked', check: 'grading' })) } : {}),

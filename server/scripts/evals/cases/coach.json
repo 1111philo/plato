@@ -777,6 +777,29 @@
     "copiedCoach": true,
     "noDraft": true
    }
+  },
+  {
+   "id": "C65",
+   "lesson": "L1",
+   "title": "The learner pastes the opener’s example as their first answer (Blake’s trace, 2026-11-25).",
+   "from": "Blake's trace",
+   "complete": false,
+   "mayMeet": [],
+   "kb": {
+    "progress": 1,
+    "activitiesCompleted": 0
+   },
+   "history": [
+    [
+     "C",
+     "Blake, your goal in this lesson is to write a Slack message that authentically reflects who you are.\n\nTo start, tell me: **What’s one professional experience — even a small one — that taught you something about who you are at work?** For example: “I fixed a broken PDF workflow for a client and realized I care deeply about making tech accessible.” Keep it to 2-3 sentences — we’ll build from there."
+    ]
+   ],
+   "message": "I fixed a broken PDF workflow for a client and realized I care deeply about making tech accessible.",
+   "expect": {
+    "copiedCoach": true,
+    "noDraft": true
+   }
   }
  ]
 }

@@ -81,7 +81,9 @@ const PROVENANCE = /\b(?:ignored|overrid\w*|according to|was told|observations?|
 
 /** The summary without sentences about its sources. Pure; never empty when the input wasn't. */
 export function withoutProvenance(summary) {
-  const text = String(summary || '').trim();
+  // A clause saying which lesson showed it comes off; the fact stays ("…write
+  // clearly, as shown in their completed professional identity lesson": O2).
+  const text = String(summary || '').trim().replace(/,?\s*as (?:shown|demonstrated|seen|evidenced|evident) (?:in|by|from)[^.;!?]*(?=[.;!?])/gi, '');
   const sentences = text.match(/[^.!?]+[.!?]+["”’)]*|[^.!?]+$/g) || [];
   const kept = sentences.filter((x) => !PROVENANCE.test(x)).map((x) => x.trim());
   return kept.length ? kept.join(' ') : text;

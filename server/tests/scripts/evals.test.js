@@ -34,6 +34,7 @@ describe('pass marks', () => {
     assert.equal(judge({ mark: 'never', trials: once }).verdict, 'fail', 'before confirming');
     assert.equal(judge({ mark: 'never', trials: once, extra: Array(12).fill(true), baseline: { fails: 1, n: 18 } }).verdict, 'pass', 'didn’t happen again');
     assert.equal(judge({ mark: 'never', trials: once, extra: [...Array(11).fill(true), false], baseline: { fails: 1, n: 18 } }).verdict, 'fail', 'happened again');
+    assert.equal(judge({ mark: 'never', trials: Array(6).fill(true), extra: [...Array(17).fill(true), false], baseline: { fails: 0, n: 24 } }).verdict, 'pass', 'one slip among the extra trials only isn’t a repeat');
     assert.equal(judge({ mark: 'never', trials: Array(6).fill(false), extra: Array(12).fill(true), baseline: { fails: 0, n: 18 } }).verdict, 'fail', 'more often than today (6 of 18, today 0)');
   });
   it('a critical "never" fails on one slip, confirmed or not', () => {

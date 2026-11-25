@@ -39,3 +39,22 @@ export async function learnerReply({ model, card, stage, lesson, canScreenshot, 
   const screenshot = canScreenshot && SCREENSHOT.test(text);
   return { text: text.replace(SCREENSHOT, '').trim(), screenshot };
 }
+
+/**
+ * The "Copies it" learner: no model, no thinking of its own. Each turn it
+ * sends back the most answer-like text in the Coach's last message: a quoted
+ * passage, else what follows "for example", "hint", "try" and the like, else
+ * the Coach's longest statement. It's what a learner does who uses the
+ * example as the answer (Blake, 2026-11-25).
+ */
+export function copyFromCoach(history) {
+  const last = [...history].reverse().find((m) => m.role === 'assistant');
+  const text = String(last?.content || '').replace(/\*\*|__/g, '').replace(/(^|\s)\*(?=\S)|(?<=\S)\*(?=\s|$|[.,;:!?])/g, '$1');
+  const wordsIn = (t) => t.trim().split(/\s+/).filter(Boolean).length;
+  const quoted = [...text.matchAll(/["“]([^"”\n]{8,400})["”]/g)].map((m) => m[1].trim()).filter((q) => wordsIn(q) >= 4);
+  if (quoted.length) return quoted.sort((a, b) => wordsIn(b) - wordsIn(a))[0];
+  const lead = text.match(/(?:for example|for instance|e\.g\.|hint|try(?: this)?|something like|start with)\s*[,:]\s*([^\n]{12,400})/i);
+  if (lead) return lead[1].split(/(?<=[.!?])\s/)[0].trim();
+  const statements = text.split(/\n+|(?<=[.!?])\s+/).map((x) => x.replace(/^[-•\d.)\s]+/, '').trim()).filter((x) => x && !x.includes('?') && wordsIn(x) >= 5);
+  return statements.sort((a, b) => wordsIn(b) - wordsIn(a))[0] || 'ok';
+}
