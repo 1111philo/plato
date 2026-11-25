@@ -29,7 +29,10 @@ export function inLanguage(text, language = 'English') {
   return count(STOP.English) >= count(STOP.Spanish);
 }
 
-export const sentences = (t) => (String(t).replace(/\[[^\]]*\]/g, '').match(/[^.!?]+[.!?]+/g) || [t]).filter((s) => s.trim().length > 3).length;
+// A full stop inside "e.g.", "$28.50" or "livingwage.mit.edu" doesn't end a
+// sentence (C37: a three-sentence reply with "(e.g., …)" counted as six).
+const ABBREVIATIONS = /\b(e\.g|i\.e|etc|vs|approx|Mr|Mrs|Ms|Dr|St)\./gi;
+export const sentences = (t) => (String(t).replace(/\[[^\]]*\]/g, '').replace(ABBREVIATIONS, (m) => m.replace(/\./g, '')).replace(/(\w)\.(\w)/g, '$1$2').match(/[^.!?]+[.!?]+/g) || [t]).filter((s) => s.trim().length > 3).length;
 export const questions = (t) => (String(t).match(/\?/g) || []).length;
 export const words = (t) => String(t).trim().split(/\s+/).filter(Boolean).length;
 

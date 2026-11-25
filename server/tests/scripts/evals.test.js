@@ -47,6 +47,14 @@ describe('pass marks', () => {
   });
 });
 
+describe('counting sentences', () => {
+  it('a full stop in "e.g.", a price or a web address doesn’t end a sentence', async () => {
+    const { sentences } = await import('../../scripts/evals/lib/checks.js');
+    assert.equal(sentences('I can’t skip lessons for you. Let’s start small: what’s one thing you’ve worked on (e.g., a school assignment)? I’ll help you turn that into a memo.'), 3);
+    assert.equal(sentences('Your target is $28.50 an hour, from livingwage.mit.edu. Good.'), 2);
+  });
+});
+
 describe('what the evaluations cover', () => {
   it('a change runs the agents it can affect, and nothing else', () => {
     assert.deepEqual(affectedAgents(['client/prompts/lesson-owner.md']), ['lesson-owner']);
