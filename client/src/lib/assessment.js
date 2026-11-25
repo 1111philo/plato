@@ -21,6 +21,8 @@ export const MAX_TRANSCRIPT = 40;
 const LINK_CONTEXT_PREFIX = '[REFERENCE CONTEXT';
 /** Words a quote needs before matching a coach message means the learner copied it. */
 export const COPY_WORDS = 8;
+/** More than this share of a quote's three-word sequences written first by the coach: the quote is the coach's wording. */
+export const COPIED_SHARE = 0.5;
 
 /** 1-based numbers of the objectives the coach claimed this turn that weren't already checked off. */
 function claimedNew(kb, parsed) {
@@ -176,11 +178,13 @@ export const ONLY_AGREES = 'the learner only agreed with words the coach wrote';
 // 6 of 6), so plato's code doesn't let a quote made only of them count.
 const AGREEING = new Set(('yes yeah yep yup sure ok okay fine that thats this it its is was me i im am you '
   + 'accurate correct right true exactly perfect great good nice sounds looks love like works agree agreed '
-  + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do').split(' '));
+  + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do '
+  // Spanish, the language most learners use after English (C22: "Eso soy yo").
+  + 'si eso esto soy yo es correcto exacto exactamente perfecto vale claro esta bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
 
 /** True when a quote only agrees or confirms: every word is an agreeing word. Pure. */
 export function onlyAgrees(quote) {
-  const ws = String(quote || '').toLowerCase().replace(/[’']/g, '').match(/[a-z]+/g) || [];
+  const ws = String(quote || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f’']/g, '').match(/\p{L}+/gu) || [];
   return ws.length > 0 && ws.length <= 12 && ws.every((w) => AGREEING.has(w));
 }
 
@@ -300,8 +304,32 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
       if (evidence) (found[current] ||= []).push({ quote: q, learnerAt, coachAt, ok: !coachFirst && learnerAt !== -1 });
       if (coachFirst) return COACH_WROTE;
       if (learnerAt === -1) return 'not yet shown in the learner’s own words';
+      if (assembledFromCoach(q)) return COACH_WROTE;
     }
     return true;
+  }
+
+  /**
+   * A quote mostly made of the coach's wording: more than COPIED_SHARE of its
+   * three-word sequences first appeared in a coach message (and not in
+   * anything the learner wrote before it). Catches the coach's sentences
+   * joined up, or sent back with a word or two swapped as the coach
+   * suggested (agent evaluations W4), which the whole-quote check misses.
+   * The coach polishing the learner's own words still counts as theirs:
+   * those sequences were the learner's first.
+   */
+  function assembledFromCoach(q) {
+    const ws = words(q);
+    if (ws.length < COPY_WORDS) return false;
+    const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
+    const said = transcript.map((m) => ({ by: m.by, text: ` ${words(m.text).join(' ')} ` }));
+    let copied = 0;
+    for (const g of grams) {
+      const coachAt = said.findIndex((m) => m.by === 'coach' && m.text.includes(` ${g} `));
+      if (coachAt === -1) continue;
+      if (!said.slice(0, coachAt).some((m) => m.by === 'learner' && m.text.includes(` ${g} `))) copied++;
+    }
+    return copied / grams.length > COPIED_SHARE;
   }
 }
 
@@ -435,17 +463,35 @@ export function draftsForLearner(text) {
 // ("one moment —哪怕很小— where you felt proud", agent evaluations C59).
 const CJK_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
 const CJK_LANGUAGES = new Set(['Chinese', 'Japanese', 'Korean']);
+// Languages with a script of their own: a reply to these learners should be
+// mostly in it. A Bengali learner got whole lessons in English (agent
+// evaluations W8), with the language in both the prompt and the context.
+const SCRIPTS = {
+  Bengali: /[\u0980-\u09ff]/g, Hindi: /[\u0900-\u097f]/g, Marathi: /[\u0900-\u097f]/g, Nepali: /[\u0900-\u097f]/g,
+  Arabic: /[\u0600-\u06ff]/g, Urdu: /[\u0600-\u06ff]/g, Persian: /[\u0600-\u06ff]/g, Hebrew: /[\u0590-\u05ff]/g,
+  Russian: /[\u0400-\u04ff]/g, Ukrainian: /[\u0400-\u04ff]/g, Greek: /[\u0370-\u03ff]/g,
+  Punjabi: /[\u0a00-\u0a7f]/g, Gujarati: /[\u0a80-\u0aff]/g, Tamil: /[\u0b80-\u0bff]/g, Telugu: /[\u0c00-\u0c7f]/g,
+  Thai: /[\u0e00-\u0e7f]/g, Burmese: /[\u1000-\u109f]/g, Khmer: /[\u1780-\u17ff]/g, Amharic: /[\u1200-\u137f]/g,
+};
 
-/** True when a reply has characters from a script the learner's language doesn't use. Pure. */
+/**
+ * True when a reply isn't in the learner's script: characters from Chinese,
+ * Japanese or Korean in another language's reply, or, for a language with a
+ * script of its own, a reply mostly in another one. Pure.
+ */
 export function mixesScripts(text, languageName = null) {
-  if (CJK_LANGUAGES.has(languageName)) return false;
-  return CJK_SCRIPT.test(String(text || ''));
+  const t = String(text || '');
+  if (!CJK_LANGUAGES.has(languageName) && CJK_SCRIPT.test(t)) return true;
+  const own = SCRIPTS[languageName];
+  if (!own) return false;
+  const letters = (t.replace(/\[[^\]]*\]/g, '').match(/\p{L}/gu) || []).length;
+  return letters > 20 && (t.match(own) || []).length < letters * 0.5;
 }
 
 /** The coach's addendum when its reply mixed in another language. */
 export const SCRIPT_ADDENDUM = `## One language (from plato, not the learner)
 
-Your reply mixed in words or characters from another language. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
+Your reply wasn't all in the learner's language: it was in another one, or mixed in words or characters from another. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)

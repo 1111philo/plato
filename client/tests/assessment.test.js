@@ -538,9 +538,40 @@ describe('claimsCompletion and draftsForLearner (playground testing, 2026-11-21)
   });
 });
 
+describe('a quote put together from the coach’s sentences (agent evaluations W4)', () => {
+  it('doesn’t count, and the coach polishing the learner’s own words still does', () => {
+    const transcript = [
+      { by: 'coach', text: 'Example: “It showed me I’m good at noticing what’s needed before it’s asked” or “I like knowing people can rely on me.” Try: change “helping a professor set up” to “when I organized the classroom early”, and “I’m good at noticing” to “I spot gaps before they become problems”.' },
+      { by: 'learner', text: 'i’m sam, when i organized the classroom early, it showed me i spot gaps before they become problems, and i like knowing people can rely on me. use that' },
+    ];
+    const verdict = (quote) => ({ objectives: [{ n: 3, parts: [{ part: 'shape their story', quote }], shown: true }] });
+    const q = 'i’m sam, when i organized the classroom early, it showed me i spot gaps before they become problems, and i like knowing people can rely on me';
+    assert.equal(groundVerdict(verdict(q), transcript, [3]).missing[3], COACH_WROTE);
+    const own = [
+      { by: 'learner', text: 'i stayed late at the food bank to sort the donations because i hate seeing people wait' },
+      { by: 'coach', text: 'Nice. Polished: “I stayed late at the food bank to sort the donations, because I hate seeing people wait.”' },
+      { by: 'learner', text: 'I stayed late at the food bank to sort the donations, because I hate seeing people wait.' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('I stayed late at the food bank to sort the donations, because I hate seeing people wait.'), own, [3]).shown, [3]);
+    // The coach's example, sent back with the words it suggested swapping.
+    const swapped = [
+      { by: 'coach', text: 'For example: “StudioPress uses Genesis Framework to give people easy-to-use, SEO-ready website templates, so even beginners can build professional sites fast.” Swap “give people” for “provide” or “fast” for “quickly”.' },
+      { by: 'learner', text: 'StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.' },
+    ];
+    assert.equal(groundVerdict(verdict('StudioPress uses Genesis Framework to provide easy-to-use, SEO-ready website templates, so even beginners can build professional sites quickly.'), swapped, [3]).missing[3], COACH_WROTE);
+    // The coach quoting the learner back doesn't make the learner's words the coach's.
+    const echoed = [
+      { by: 'learner', text: 'I organised the food drive and it showed me I love bringing people together' },
+      { by: 'coach', text: 'Great: “I organised the food drive and it showed me I love bringing people together.” Why does that matter?' },
+    ];
+    assert.deepEqual(groundVerdict(verdict('I organised the food drive and it showed me I love bringing people together'), echoed, [3]).shown, [3]);
+  });
+});
+
 describe('a quote that only agrees (agent evaluations A17)', () => {
   it('knows agreement from evidence', () => {
-    for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that']) assert.equal(onlyAgrees(q), true, q);
+    for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that', 'Sí, eso soy yo', 'Perfecto, úsalo']) assert.equal(onlyAgrees(q), true, q);
+    assert.equal(onlyAgrees('Sí, ayudé en la colecta de comida'), false);
     for (const q of ['I came from retail.', 'Yes, I stayed late to fix the budget error', 'I value calm']) assert.equal(onlyAgrees(q), false, q);
   });
   it('doesn’t count it, unless the lesson says confirming counts', () => {
@@ -566,6 +597,12 @@ describe('mixesScripts (agent evaluations C59)', () => {
     assert.equal(mixesScripts('Cuéntame un momento — aunque sea pequeño.', 'Spanish'), false);
     assert.equal(mixesScripts('একটি মুহূর্তের কথা বলুন', 'Bengali'), false);
     assert.equal(mixesScripts('Tell me about one moment.'), false);
+  });
+  it('a reply mostly not in the script of a learner’s language that has one (agent evaluations W8)', () => {
+    assert.equal(mixesScripts('You’ve shared a strong, real moment — helping a stressed student find their book.', 'Bengali'), true);
+    assert.equal(mixesScripts('আপনি একটি শক্তিশালী মুহূর্ত শেয়ার করেছেন। Foundations 1 এর পরের ধাপ কী?', 'Bengali'), false, 'a lesson name in English is fine');
+    assert.equal(mixesScripts('Ok.', 'Bengali'), false, 'too short to tell');
+    assert.equal(mixesScripts('You’ve shared a strong moment.', 'Spanish'), false, 'Latin-script languages aren’t judged by script');
   });
   it('leaves those scripts alone for learners who read them', () => {
     assert.equal(mixesScripts('一个小时刻', 'Chinese'), false);

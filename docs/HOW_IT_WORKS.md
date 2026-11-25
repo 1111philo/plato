@@ -169,6 +169,7 @@ The model suggests; plato’s code decides what is recorded. These apply whateve
 | `HELD_PROGRESS` | A held completion is recorded as at most 8. | `client/src/lib/assessment.js` |
 | `DRAFT_WORDS` | A quoted passage of 20 or more words in a reply counts as the coach drafting the learner’s answer. | `client/src/lib/assessment.js` |
 | `COPY_WORDS` | A quote of 8 or more words that the coach wrote first doesn’t count as the learner’s. | `client/src/lib/assessment.js` |
+| `COPIED_SHARE` | Nor does a quote mostly in the coach’s wording: when more than 50% of its three-word phrases appeared first in the coach’s messages (its sentences joined up, or sent back with a word swapped). The coach polishing the learner’s own words still counts as theirs. | `client/src/lib/assessment.js` |
 | `OWN_SHARE` | A passage the coach wrote first still counts as the learner’s when 70% or more of its words (allowing for spelling slips) were in the learner’s earlier messages: the coach only polished their text. | `client/src/lib/assessment.js` |
 | `MAX_TRANSCRIPT` | The Assessor reads the last 40 messages. | `client/src/lib/assessment.js` |
 
@@ -201,7 +202,7 @@ With Trace on for a conversation, each exchange of it is recorded step by step. 
 | Did the reply write the answer for you? (`draftCheck`) | plato checked the answer | plato’s code | plato’s code looks for a long quoted passage, or wording like “here’s a draft”, which would mean the coach wrote what you should write yourself. |
 | What the second request got back (`tagRepair`) | plato checked the answer | plato’s instructions | The coach left off its tags, so plato asked it for just the tags of the reply it gave. |
 | The coach wrote your answer for you (`draftGuard`) | plato checked the answer | plato’s instructions | The first reply drafted the learner’s answer. plato asked the coach to give feedback and a question instead, and showed that reply. |
-| Was the reply in one language? (`scriptCheck`) | plato checked the answer | plato’s code | plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply. |
+| Was the reply in one language? (`scriptCheck`) | plato checked the answer | plato’s code | plato’s code looks for characters from a script your language doesn’t use, such as Chinese characters in an English reply, or for a reply that isn’t in your language’s own script (Bengali, Hindi, Arabic and others). |
 | The reply mixed in another language (`scriptGuard`) | plato checked the answer | plato’s instructions | plato asked the coach to write the same reply again in your language, and showed the rewrite if it came back clean. |
 | Whether to check the grading (`gradingPlan`) | plato checked the answer | plato’s code | The Assessor runs only when the coach checks off an objective or scores 10. |
 | The Assessor’s answer couldn’t be read (`gradingRetry`) | plato checked the answer | plato’s code | Its reply wasn’t in the expected format, so plato asked once more. |

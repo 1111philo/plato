@@ -4,7 +4,7 @@
  *
  *   npm run eval -- [--agents coach,assessor | --affected [--base origin/playground]]
  *                   [--level moments|full] [--trials 6] [--concurrency 6]
- *                   [--calibrate] [--no-baseline] [--quiet] [--cases C61,W7]
+ *                   [--calibrate] [--no-baseline] [--no-confirm] [--quiet] [--cases C61,W7]
  *
  * Runs each case several times against plato's model (Bedrock, us-east-2,
  * your AWS login), through the app's own code, and scores every check by its
@@ -28,6 +28,8 @@ import { judge, runVerdict } from './lib/score.js';
 const here = dirname(fileURLToPath(import.meta.url));
 export const REPO = join(here, '..', '..', '..');
 const EVALS = join(REPO, 'evals');
+/** More trials for a failed "at least as good as today", on both versions. */
+const CONFIRM_TRIALS = 12;
 
 function args(argv) {
   const out = { level: 'moments', trials: '6', concurrency: '6', base: 'origin/playground' };
@@ -71,13 +73,14 @@ async function pool(jobs, n, onDone) {
  * Run `agents`' cases against one version of plato (`app`), `trials` times
  * each. Returns `{ [agent]: { [caseId]: { trials: [{ checks, sample } | { error }] } } }`.
  */
-export async function runCases({ app, model, agents, trials, concurrency, progress }) {
+export async function runCases({ app, model, agents, trials, concurrency, progress, exact = false }) {
   const jobs = [];
   const slots = [];
   for (const agent of agents) {
     if (!agent.available(app)) continue;
     for (const c of agent.cases) {
-      for (let t = 0; t < (c.trials || trials); t++) {
+      // `exact`: `trials` for every case (a confirmation), except whole lessons, one per lesson.
+      for (let t = 0; t < (exact && !c.lessons ? trials : c.trials || trials); t++) {
         jobs.push(() => agent.run(c, { app, model, trial: t }));
         slots.push([agent.id, c.id]);
       }
@@ -172,7 +175,8 @@ async function main() {
   const dirty = uncommittedWatched(REPO);
   // Only some cases (--cases C61,W7): for checking a fix; it never counts.
   const only = opt.cases ? new Set(String(opt.cases).split(',')) : null;
-  const outFile = join(EVALS, dirty.length || only ? 'scratch' : 'results', `${fp}-${level}.json`);
+  // Scratch runs get their own file: two at once at the same commit would overwrite each other.
+  const outFile = dirty.length || only ? join(EVALS, 'scratch', `${fp}-${level}-${Date.now()}-${process.pid}.json`) : join(EVALS, 'results', `${fp}-${level}.json`);
   if (!ids.length) { console.log('Nothing the evaluations cover has changed.'); return 0; }
   if (dirty.length) process.stderr.write(`Note: uncommitted changes to ${dirty.join(', ')}. These results go to evals/scratch/ and won't count until you commit and run again.\n`);
 
@@ -189,10 +193,14 @@ async function main() {
   const t0 = Date.now();
 
   // Today's version, once per version of main (and agent set).
+  let baselineDir = null;
+  let cleanupBaseline = () => {};
   let baseline = {};
   let baselineInfo = null;
   if (!opt['no-baseline']) {
     const b = baselineRoot('origin/main');
+    baselineDir = b.dir;
+    cleanupBaseline = b.cleanup;
     try {
       // Today's version, measured by this harness: either changing means measuring again.
       const baseFp = `${fingerprint(b.dir)}-${harnessFingerprint(REPO)}`;
@@ -229,7 +237,7 @@ async function main() {
         cal[fingerprint(b.dir)] = { main: b.sha, at: startedAt, gaps: { ...(cal[fingerprint(b.dir)]?.gaps || {}), ...gaps } };
         writeFileSync(join(here, 'calibration.json'), JSON.stringify(cal, null, 1));
       }
-    } finally { b.cleanup(); }
+    } catch (e) { b.cleanup(); throw e; }
   }
   const gaps = baselineInfo ? readJson(join(here, 'calibration.json'), {})[baselineInfo.mainFingerprint]?.gaps || {} : {};
 
@@ -237,7 +245,29 @@ async function main() {
   const app = await loadApp(REPO);
   const raw = await runCases({ app, model, agents, trials, concurrency, progress: () => say('.') });
   say('\n');
-  const cases = score({ agents, raw, baseline, gaps });
+  let cases = score({ agents, raw, baseline, gaps });
+
+  // A failed "at least as good as today" is confirmed before it counts: the
+  // case runs CONFIRM_TRIALS more times on both versions and is judged on all
+  // the trials. Six trials can't tell a 25% rate from 0% (the Knowledge Base
+  // Editor's K3: 0 of 6 on main, then 3 of 12). A real regression survives it.
+  const toConfirm = cases.filter((c) => Object.values(c.checks).some((v) => v.verdict === 'fail' && v.mark === 'parity'));
+  if (toConfirm.length && !opt['no-confirm']) {
+    const sub = agents.map((a) => ({ ...a, cases: a.cases.filter((c) => toConfirm.some((x) => x.agent === a.id && x.id === c.id)) })).filter((a) => a.cases.length);
+    say(`Confirming ${toConfirm.map((c) => `${c.agent} ${c.id}`).join(', ')}: ${CONFIRM_TRIALS} more trials each, on both versions\n`);
+    const more = await runCases({ app, model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true });
+    for (const [a, cs] of Object.entries(more)) for (const [id, r] of Object.entries(cs)) raw[a][id].trials.push(...r.trials);
+    if (baselineDir) {
+      const extra = tally(await runCases({ app: await loadApp(baselineDir), model, agents: sub, trials: CONFIRM_TRIALS, concurrency, progress: () => say('.'), exact: true }));
+      for (const [a, cs] of Object.entries(extra)) for (const [id, checks] of Object.entries(cs)) for (const [k, v] of Object.entries(checks)) {
+        const t = ((baseline[a] ||= {})[id] ||= {})[k] ||= { fails: 0, n: 0 };
+        t.fails += v.fails; t.n += v.n;
+      }
+    }
+    say('\n');
+    cases = score({ agents, raw, baseline, gaps });
+  }
+  cleanupBaseline();
   const summary = runVerdict(cases);
   const errors = cases.reduce((n, c) => n + c.errors, 0);
   const results = {

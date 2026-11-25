@@ -57,7 +57,7 @@ level into `main`.
 
 ### Pass marks
 - `never`: one failing trial fails.
-- `parity`: no worse than today beyond normal variation. With no baseline (an agent new in this version), the check's `minPass` applies.
+- `parity`: no worse than today beyond normal variation. A failure is confirmed first: the case runs 12 more times on both versions and is judged on all the trials (`--no-confirm` skips this). With no baseline (an agent new in this version), the check's `minPass` applies.
 - `reading`: collected for the reading panel.
 - `pending`: "not yet expected"; reported, never blocks.
 
