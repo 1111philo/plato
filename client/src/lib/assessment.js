@@ -227,7 +227,7 @@ const AGREEING = new Set(('yes yeah yep yup sure ok okay fine that thats this it
   + 'accurate correct right true exactly perfect great good nice sounds looks love like works agree agreed '
   + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do '
   // Spanish, the language most learners use after English (C22: "Eso soy yo").
-  + 'si eso esto soy yo es correcto exacto exactamente perfecto vale claro esta bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
+  + 'si eso esto ese esa este esta soy yo es correcto exacto exactamente perfecto vale claro bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
 
 /** True when a quote only agrees or confirms: every word is an agreeing word. Pure. */
 export function onlyAgrees(quote) {
@@ -498,7 +498,8 @@ export function claimsCompletion(text) {
 export const DRAFT_WORDS = 20;
 /** A quoted sample this long in the learner's first person ("I…", "my…") counts as their answer written for them. */
 export const VOICE_WORDS = 3;
-const VOICE = /(?:^|[^\p{L}'’])(?:i|i['’]m|i['’]ll|i['’]ve|i['’]d|my|me|mine)(?![\p{L}])/iu;
+// English and Spanish first person (C22: "soy Sam… me enseñó").
+const VOICE = /(?:^|[^\p{L}'’])(?:i|i['’]m|i['’]ll|i['’]ve|i['’]d|my|me|mine|yo|mi|mis|soy|estoy|tengo|conmigo)(?![\p{L}])/iu;
 const QUOTED = /["“]([^"”\n]{0,600})["”]|(?:^|[^*])\*([^*\n]{0,600})\*(?!\*)/g;
 const DRAFT_LEAD = /\b(?:hint\s*:|try (?:this|something like|saying)?\s*:|here(?:'|’)s (?:a|your|one) (?:draft|version|revision)|revised(?: version)?\s*:|you could (?:write|say)\s*:|for example\s*:)/i;
 
@@ -656,7 +657,7 @@ export const REPEATED_ADDENDUM = `## The learner's message repeats your words (f
 
 Most of the learner's last message is your own wording sent back: a hint, an example or an explanation from your earlier messages. It doesn't show their thinking. Open by saying so ("That's my hint word for word"), not by agreeing with it: no "exactly", "that's right", "spot on" or "you're describing…". Don't count it toward an objective. Then ask them to say it in their own words.
 
-Your whole reply is two sentences: one saying it's your wording, then one question. For example: "That's my wording, not your thinking yet. How would you put it in your own words?" Nothing after the question.`;
+Your whole reply is two sentences, in the learner's language: one saying it's your wording, then one question (in English, for example: "That's my wording, not your thinking yet. How would you put it in your own words?"). Nothing after the question.`;
 
 // "(e.g., “I coordinate with event teams in real time.”)", "For example: “I
 // can make charts but don't use pivot tables.”": an example given as a quote.
@@ -684,7 +685,7 @@ export const AGREED_ADDENDUM = `## The learner only agreed to your wording (from
 
 Your last message wrote text for the learner, and they only said yes to it ("that's me", "post it"). That isn't their work and it isn't their voice. Don't call it theirs or praise it.
 
-Your whole reply is two sentences: one saying the wording is still yours, then one question asking them to write it themselves. For example: "Those are still my words, not yours yet. How would you say it yourself?" Nothing after the question.`;
+Your whole reply is two sentences, in the learner's language: one saying the wording is still yours, then one question asking them to write it themselves (in English, for example: "Those are still my words, not yours yet. How would you say it yourself?"). Nothing after the question.`;
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)

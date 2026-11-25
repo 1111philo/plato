@@ -563,6 +563,7 @@ describe('a short sample in the learner’s own voice is their answer written fo
   it('counts as a draft, unless it’s the learner’s own words quoted back, or about someone else', () => {
     assert.equal(draftsForLearner('Pick one time block (e.g., “Tuesday 6–7 PM on my MacBook Pro”) and say why.', ['Watch orientation video']), true);
     assert.equal(draftsForLearner('Name 2+, e.g., “I use Notion for work and iMessage for social”.', []), true);
+    assert.equal(draftsForLearner('Aquí tienes un borrador: "Hola, soy Sam. Organizar una colecta me enseñó cuánto valoro la comunidad." ¿Te representa?', ['Organicé una colecta de alimentos.']), true, 'Spanish first person (C22)');
     assert.equal(draftsForLearner('You said “I’m sharpest after dinner”, which grounds it.', ['I’m sharpest after dinner']), false, 'their own words');
     assert.equal(draftsForLearner('Name a time, e.g., “a quiet evening slot”.', []), false, 'not in their voice');
     assert.equal(draftsForLearner('Pick one (e.g., “Tuesday 6–7 PM on my MacBook Pro”).'), false, 'without the learner’s messages, the 20-word rule only');
@@ -647,6 +648,7 @@ describe('a quote that only agrees (agent evaluations A17)', () => {
   it('knows agreement from evidence', () => {
     for (const q of ['Yes, that’s accurate, that’s me.', 'yes', 'Sounds good, post it', 'That is me', 'Perfect, use that', 'Sí, eso soy yo', 'Perfecto, úsalo']) assert.equal(onlyAgrees(q), true, q);
     assert.equal(onlyAgrees('Sí, ayudé en la colecta de comida'), false);
+    assert.equal(onlyAgrees('Sí, ese soy yo'), true, 'C22');
     for (const q of ['I came from retail.', 'Yes, I stayed late to fix the budget error', 'I value calm']) assert.equal(onlyAgrees(q), false, q);
   });
   it('doesn’t count it, unless the lesson says confirming counts', () => {
