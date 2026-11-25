@@ -14,7 +14,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404 });
 const {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   parseVerdict, allObjectivesMet, heldCompletionAddendum, normalizeForMatch, HELD_PROGRESS,
-  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE,
+  claimsCompletion, draftsForLearner, mixesScripts, onlyAgrees, confirmingCounts, ONLY_AGREES, ONLY_URL, heldReply, heldPosition, objectiveForLearner, COACH_WROTE, closeSpelling, OWN_SHARE, appearsIn,
 } = await import('../src/lib/assessment.js');
 const { applyCoachResponseToKB, checkGrading, nextGradingFailures } = await import('../src/lib/lessonEngine.js');
 const { coachTurnActivity } = await import('../src/lib/agentActivity.js');
@@ -694,5 +694,25 @@ describe('the coach’s polish of the learner’s own words (Blake, 2026-11-23)'
     assert.equal(closeSpelling('work', 'word'), false);
     assert.equal(closeSpelling('values', 'valley'), false);
     assert.equal(OWN_SHARE, 0.7);
+  });
+});
+
+describe('who wrote a quote first (playground, 2026-11-24)', () => {
+  const longCoach = 'Actually, the exemplar is right there in the lesson overview. It is the bolded description at the top that says what your finished message should cover: what plato is, how the coach works with you, and what a completed lesson looks like. It reads like a short note. Look for that section of the overview.';
+
+  it('a learner’s own sentence isn’t the coach’s just because a long coach message has its words scattered in order', () => {
+    const quote = 'In the what finished work looks like section of the overview';
+    assert.equal(appearsIn(quote, longCoach), true, 'loose: the old match, still used for the learner’s own messages');
+    assert.equal(appearsIn(quote, longCoach, { tight: true }), false, 'tight: used for the coach’s messages');
+    const transcript = [{ by: 'coach', text: longCoach }, { by: 'learner', text: quote }];
+    assert.deepEqual(groundVerdict({ objectives: [{ n: 1, shown: true, quote }] }, transcript, [1]).shown, [1]);
+  });
+
+  it('a quote the coach wrote first, with a word dropped, is still the coach’s', () => {
+    const coach = 'Try: "This mirrors how law firms organize case files, so I can find briefs by topic, date, or stage fast."';
+    const learner = 'This mirrors how law firms organize case files so I can find briefs by topic or stage fast';
+    assert.equal(appearsIn(learner, coach, { tight: true }), true);
+    const g = groundVerdict({ objectives: [{ n: 1, shown: true, quote: learner }] }, [{ by: 'coach', text: coach }, { by: 'learner', text: learner }], [1]);
+    assert.equal(g.missing[1], COACH_WROTE);
   });
 });

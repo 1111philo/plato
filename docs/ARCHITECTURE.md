@@ -1618,7 +1618,14 @@ evidence gets the same verdict.
 `client/src/lib/assessment.js` then grounds every quote. It must appear in a
 learner message (exactly, or 80% of its words in order). It doesn't count if
 the coach wrote that passage first, at 8+ words: a learner pasting back the
-coach's draft. Order matters, since coaches quote learners' words back to
+coach's draft. "The coach wrote it" uses a tighter match: the 80% must fall
+within a short stretch of the coach's message (the quote's length plus a few
+words). With the loose match, a learner's own sentence "appeared" in any long
+coach message that used its common words in the same order (playground,
+2026-11-24); on 399 prod completions the tight match removed 7 of 73 holds
+for the coach's wording and let 4 more lessons complete, losing none. The
+learner side keeps the loose match: tightening it too lost 31 completions,
+since the assessor often paraphrases the learner when it quotes them. Order matters, since coaches quote learners' words back to
 them, and only the coach's *earlier* text counts as the coach's. The
 coach's polish of the learner's own text still counts as theirs (Blake,
 2026-11-23): a coach-first passage whose words were mostly (`OWN_SHARE`, 70%)
