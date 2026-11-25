@@ -116,8 +116,10 @@ describe('describeTrace', () => {
   it('plato checked the answer is the checks it runs, in order, each with its answer', async () => {
     const view = await record(['MOCK_NOTAGS first', 'My second answer.']);
     const checks = (e) => e.stages.find((st) => st.id === 'checked').checks;
-    const [tags, draft, grading] = checks(view.exchanges[1]);
-    assert.deepEqual([tags.id, draft.id, grading.id], ['tags', 'draft', 'grading']);
+    const [tags, draft, language, grading] = checks(view.exchanges[1]);
+    assert.deepEqual([tags.id, draft.id, language.id, grading.id], ['tags', 'draft', 'language', 'grading']);
+    assert.match(language.title, /one language/);
+    assert.equal(language.answer.summary, 'Yes.');
     assert.match(tags.title, /^Did the reply include its tags\?$/);
     assert.match(tags.answer.summary, /^No: the reply was missing the progress score and the notes/);
     assert.deepEqual(tags.steps.map((s) => [s.type, s.part]), [['call', 'request'], ['call', 'reply'], ['tagRepair', undefined]]);
@@ -126,7 +128,7 @@ describe('describeTrace', () => {
     // A turn where every check passed still lists them.
     const ok = checks(view.exchanges[2]);
     assert.match(ok[0].answer.summary, /^Yes: /);
-    assert.equal(ok.length, 3);
+    assert.equal(ok.length, 4);
   });
 
   it('an AI call is two steps: what was sent (and how big), then the reply (how big, how long, why it stopped)', async () => {

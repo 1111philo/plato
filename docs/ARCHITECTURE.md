@@ -198,11 +198,26 @@ system prompt except the two whose output only plato reads (`assessor`,
   the directive too.
 - Admin-side agents (lesson creator/extractor, KB editor/extractor) follow
   the *admin's* browser, so lessons and the KB are authored in that language.
+- **The Coach also gets it in its context** (`learnerLanguage` in
+  `buildContext`, omitted for English). With only the system prompt's
+  Language section, which comes after 22,000 characters of English, it opened
+  lessons in English about half the time, and a rule asking for "the
+  language of this conversation" made it worse, because everything it reads
+  first is English (agent evaluations, 2026-11-24). With the context field, 8
+  of 8 openers in Spanish and in Bengali.
+- **plato's own fixed text** (the held-completion message, `heldReply`) is
+  put into the learner's language by the Coach (`checkGrading`'s `localize`,
+  `localizeAddendum`); a failed translation keeps the English.
+- The map covers the languages learners use. Bengali was missing, so Bengali
+  browsers got no directive at all; it and other South Asian, African and
+  Southeast Asian languages were added after review.
 - Verified against Qwen3-VL on Bedrock (Spanish, 3 runs × 7 agents, outputs
   run through plato's own parsers): all tags, JSON, headings, and `- Can `
-  objectives parsed; prose came back in Spanish. Internal KB fields the coach
-  reads but learners never see (`evidence`, `learnerPosition`) sometimes stay
-  English because their input (the lesson) is English — harmless.
+  objectives parsed; prose came back in Spanish. `evidence`, which only the
+  Coach and Assessor read, sometimes stays English because its input (the
+  lesson) is English: harmless. `learnerPosition` is learner-facing ("Where
+  you are") and must be in their language. The agent evaluations
+  (`server/scripts/evals/`) check these on every change.
 
 ## AI provider & model choice
 
@@ -1303,10 +1318,17 @@ already finished the intro lesson." These flow end-to-end through one optional
 
 1. **Extract** — `lesson-extractor` emits `## Coach Directive` **verbatim**
    (codes, URLs, caveats intact) only when the conversation contained such
-   instructions; otherwise it omits the heading.
-2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`) reads the
-   section into `lesson.coachDirective` (buffered like the exemplar so multi-line
-   directives survive; absent ⇒ no key).
+   instructions; otherwise it omits the heading. It used to write coaching
+   advice of its own there (agent evaluations X1: 6 of 6 on main), so
+   `authoringExtract` drops a directive unless at least half its words are in
+   the author's messages (`withoutInventedDirective`; verbatim means they
+   are), and asks the extractor once more when plato's check refuses the
+   lesson (`EXTRACT_ATTEMPTS`).
+2. **Parse** — `parseLessonPrompt` (`client/js/lessonOwner.js`, and its server
+   copy `server/src/lib/lesson-parse.js`) reads the section into
+   `lesson.coachDirective` (buffered like the exemplar so multi-line
+   directives survive; absent ⇒ no key). A directive that only says "None",
+   "N/A" or "—" is no directive.
 3. **Serve** — `buildContext` (`client/src/lib/lessonEngine.js`) surfaces it as
    `context.coachDirective` in **both** active and completed states.
 4. **Obey** — `coach.md` treats it as a high-priority instruction followed every

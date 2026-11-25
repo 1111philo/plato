@@ -45,6 +45,13 @@ describe('buildContext', () => {
     assert.match(context.postCompletionDirective, /start the next lesson separately/i);
   });
 
+  it('names the learner’s language when it isn’t English, and adds nothing for English (#240)', () => {
+    const es = JSON.parse(buildContext(sampleLesson(), { status: 'active' }, 'p', 'Alex', null, 'Spanish'));
+    assert.equal(es.learnerLanguage, 'Spanish');
+    const en = JSON.parse(buildContext(sampleLesson(), { status: 'active' }, 'p', 'Alex', null, null));
+    assert.equal('learnerLanguage' in en, false);
+  });
+
   it('does not add post-completion instructions while a lesson is still active', () => {
     const context = JSON.parse(buildContext(
       sampleLesson(),

@@ -1,0 +1,252 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 9. O7 checks the profile names the learner's stage (not yet expected).",
+ "cases": [
+  {
+   "id": "O1",
+   "lesson": "L3",
+   "title": "A completed L3, with notes that the learner read data well.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Read the KPI table accurately and spotted the weekday shortfall",
+     "Wrote a clear memo paragraph for the board"
+    ],
+    "learnerPosition": "Completed: memo with goal, KPIs, data and interpretation"
+   },
+   "skill": "data|kpi|numbers|memo|interpret"
+  },
+  {
+   "id": "O2",
+   "lesson": "L1",
+   "title": "Profile says “finds writing hard”; completed L1 with notes praising clear writing.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "Finds writing hard",
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Wrote a clear, well-structured intro in plain language",
+     "Grammar was clean throughout"
+    ]
+   },
+   "gone": "finds writing hard"
+  },
+  {
+   "id": "O3",
+   "lesson": "L2",
+   "title": "The learner's note says “I'm a beginner”; the lesson went very well.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [
+     {
+      "text": "I'm a beginner.",
+      "at": 1
+     }
+    ],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Moved quickly; strong tool knowledge"
+    ]
+   },
+   "keep": "beginner"
+  },
+  {
+   "id": "O4",
+   "lesson": "L4",
+   "title": "A lesson where the learner struggled throughout.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Struggled to put dates on steps",
+     "Needed many prompts to name a trade-off"
+    ]
+   },
+   "exchanges": 18
+  },
+  {
+   "id": "O5",
+   "lesson": "L2",
+   "title": "A lesson that ran 25 exchanges.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Took time to name a gap, then explained it well"
+    ]
+   },
+   "exchanges": 25
+  },
+  {
+   "id": "O6",
+   "lesson": "L2",
+   "title": "Completed L2 by a Spanish-speaking learner.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Use AI to run my nonprofit more efficiently",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Explicó bien cómo usa Google Sheets"
+    ]
+   },
+   "language": "Spanish"
+  },
+  {
+   "id": "O7",
+   "lesson": "L1",
+   "title": "A first-year student completes L1.",
+   "profile": {
+    "name": "Sam",
+    "goal": "Find an on-campus internship",
+    "strengths": [
+     "Organised"
+    ],
+    "weaknesses": [
+     "New to spreadsheets"
+    ],
+    "preferences": {
+     "experienceLevel": "beginner"
+    },
+    "learnerNotes": [
+     {
+      "text": "I'm a first-year student, no job yet.",
+      "at": 1
+     }
+    ],
+    "masteredLessons": [
+     "eval-l9"
+    ],
+    "activeLessons": [
+     "eval-l3"
+    ],
+    "createdAt": 1,
+    "updatedAt": 1
+   },
+   "kb": {
+    "insights": [
+     "Drew on a class project for the intro"
+    ]
+   },
+   "from": "review",
+   "mark": "pending"
+  }
+ ]
+}

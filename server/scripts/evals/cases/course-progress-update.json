@@ -1,0 +1,213 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 10.",
+ "cases": [
+  {
+   "id": "U1",
+   "title": "First lesson of a unit completed; no earlier note.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "completed": {
+    "name": "Tech Stack Fluency",
+    "learnerPosition": "Mapped Excel, Slack and ChatGPT to budget and grant goals; gap: AI for budget checks.",
+    "insights": [
+     "Strong on Excel pivot tables",
+     "Wants AI to reconcile spending"
+    ]
+   },
+   "want": "excel|budget|grant",
+   "notDone": [
+    "Measuring Impact",
+    "Digital Identity",
+    "Digital Community"
+   ]
+  },
+  {
+   "id": "U2",
+   "title": "Second lesson completed; an earlier note exists.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "prior": "Mapped Excel, Slack and ChatGPT to grant goals; gap: AI for budget checks.",
+   "completed": {
+    "name": "Measuring Impact",
+    "learnerPosition": "Memo with 3 KPIs and real data; weekdays short.",
+    "insights": [
+     "Read the data accurately",
+     "Plans to recruit weekday volunteers"
+    ]
+   },
+   "doneIds": [
+    "tech-stack"
+   ],
+   "want": "memo|kpi|data",
+   "notDone": [
+    "Digital Identity",
+    "Digital Community"
+   ]
+  },
+  {
+   "id": "U3",
+   "title": "Fifth lesson; the earlier note is already near the limit.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "prior": "Learner mapped Excel, Slack and ChatGPT to grant goals and named AI budget checks as a gap; wrote a KPI memo with real numbers showing weekday shortfalls; built a LinkedIn headline and bio focused on nonprofit operations; joined the community and posted an intro about volunteering. Strong with spreadsheets and data; growing in public writing; prefers concrete examples and short steps. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail. Detail.",
+   "completed": {
+    "name": "Measuring Impact",
+    "learnerPosition": "Memo with 3 KPIs and real data; weekdays short.",
+    "insights": [
+     "Read the data accurately",
+     "Plans to recruit weekday volunteers"
+    ]
+   },
+   "doneIds": [
+    "a",
+    "b",
+    "c",
+    "d"
+   ]
+  },
+  {
+   "id": "U4",
+   "title": "The new lesson shows the learner changed their mind.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "prior": "Wants to focus on fundraising emails.",
+   "completed": {
+    "name": "Measuring Impact",
+    "learnerPosition": "Decided to focus on volunteer retention instead of fundraising.",
+    "insights": [
+     "Changed focus from fundraising to volunteer retention"
+    ]
+   },
+   "want": "retention"
+  },
+  {
+   "id": "U5",
+   "title": "Four lessons in the unit; the learner has done one.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "completed": {
+    "name": "Tech Stack Fluency",
+    "learnerPosition": "Mapped Excel, Slack and ChatGPT to budget and grant goals; gap: AI for budget checks.",
+    "insights": [
+     "Strong on Excel pivot tables",
+     "Wants AI to reconcile spending"
+    ]
+   },
+   "notDone": [
+    "Measuring Impact",
+    "Digital Identity",
+    "Digital Community"
+   ]
+  },
+  {
+   "id": "U6",
+   "title": "U1 for a Spanish-speaking learner.",
+   "lessons": [
+    {
+     "name": "Tech Stack Fluency",
+     "description": "Map your tools"
+    },
+    {
+     "name": "Measuring Impact",
+     "description": "A memo with KPIs"
+    },
+    {
+     "name": "Digital Identity",
+     "description": "Your online presence"
+    },
+    {
+     "name": "Digital Community",
+     "description": "Join and contribute"
+    }
+   ],
+   "completed": {
+    "name": "Tech Stack Fluency",
+    "learnerPosition": "Relacionó Excel, Slack y ChatGPT con metas de presupuesto.",
+    "insights": [
+     "Domina las tablas dinámicas"
+    ]
+   },
+   "language": "Spanish"
+  }
+ ]
+}

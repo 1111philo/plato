@@ -67,3 +67,15 @@ describe('mergeProfile', () => {
     assert.equal(merged.preferences.experienceLevel, 'beginner'); // preserved
   });
 });
+
+describe('withoutProvenance (agent evaluations P4, P6, P11, O4)', () => {
+  it('takes out sentences about where a fact came from, and keeps the learner', async () => {
+    const { withoutProvenance } = await import('../src/lib/profileQueue.js');
+    const s = 'Sam is a beginner aiming to run their nonprofit. They write clearly. Any coach observation suggesting advanced ability does not override their self-described beginner status.';
+    assert.equal(withoutProvenance(s), 'Sam is a beginner aiming to run their nonprofit. They write clearly.');
+    assert.equal(withoutProvenance('Sam uses a Mac. No work device is specified after removing the note about using one at work.'), 'Sam uses a Mac.');
+    assert.equal(withoutProvenance('Sam writes clearly. Their profile shows no evidence of AI-generated content.'), 'Sam writes clearly.');
+    assert.equal(withoutProvenance('Sam takes careful notes in class and likes structure.'), 'Sam takes careful notes in class and likes structure.', 'their own note-taking is about them');
+    assert.equal(withoutProvenance('No learner notes currently override this profile.'), 'No learner notes currently override this profile.', 'never empties a summary');
+  });
+});

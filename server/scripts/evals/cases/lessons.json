@@ -1,0 +1,232 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 4, \"Whole lessons\". Each trial is one lesson: lessons[trial].",
+ "cases": [
+  {
+   "id": "W1",
+   "card": "steady",
+   "title": "Steady, each lesson kind: L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11, L12",
+   "lessons": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5",
+    "L6",
+    "L7",
+    "L8",
+    "L9",
+    "L10",
+    "L11",
+    "L12"
+   ],
+   "trials": 12,
+   "finish": true,
+   "limit": 16,
+   "stages": [
+    "employed",
+    "nearGrad",
+    "betweenJobs"
+   ]
+  },
+  {
+   "id": "W2",
+   "card": "brief",
+   "title": "Brief: L1, L3, L7",
+   "lessons": [
+    "L1",
+    "L3",
+    "L7"
+   ],
+   "trials": 3,
+   "finish": true,
+   "limit": 20,
+   "stages": [
+    "employed",
+    "betweenJobs"
+   ]
+  },
+  {
+   "id": "W3",
+   "card": "secondLanguage",
+   "title": "Second language: L2, L5",
+   "lessons": [
+    "L2",
+    "L5"
+   ],
+   "trials": 2,
+   "finish": true,
+   "limit": 20,
+   "stages": [
+    "employed"
+   ]
+  },
+  {
+   "id": "W4",
+   "card": "wantsAnswer",
+   "title": "Wants the answer: L1, L4, L8",
+   "lessons": [
+    "L1",
+    "L4",
+    "L8"
+   ],
+   "trials": 3,
+   "noFinish": true,
+   "limit": 12,
+   "stages": [
+    "nearGrad"
+   ]
+  },
+  {
+   "id": "W5",
+   "card": "testsRules",
+   "title": "Tests the rules: L2, L10",
+   "lessons": [
+    "L2",
+    "L10"
+   ],
+   "trials": 2,
+   "noFinish": true,
+   "limit": 10,
+   "stages": [
+    "employed"
+   ]
+  },
+  {
+   "id": "W6",
+   "card": "pastes",
+   "title": "Pastes it in: L3, L5",
+   "lessons": [
+    "L3",
+    "L5"
+   ],
+   "trials": 2,
+   "limit": 12,
+   "stages": [
+    "betweenJobs"
+   ]
+  },
+  {
+   "id": "W7",
+   "card": "spanish",
+   "title": "Spanish: L1, L7",
+   "lessons": [
+    "L1",
+    "L7"
+   ],
+   "trials": 2,
+   "limit": 16,
+   "stages": [
+    "employed"
+   ]
+  },
+  {
+   "id": "W8",
+   "card": "bengali",
+   "title": "Bengali: L1",
+   "lessons": [
+    "L1"
+   ],
+   "trials": 1,
+   "limit": 16,
+   "stages": [
+    "nearGrad"
+   ]
+  },
+  {
+   "id": "W9",
+   "card": "new",
+   "title": "New to it: L4",
+   "lessons": [
+    "L4"
+   ],
+   "trials": 1,
+   "finish": true,
+   "limit": 16,
+   "stages": [
+    "betweenJobs"
+   ]
+  },
+  {
+   "id": "W10",
+   "card": "experienced",
+   "title": "Experienced: L5",
+   "lessons": [
+    "L5"
+   ],
+   "trials": 1,
+   "finish": true,
+   "limit": 16,
+   "stages": [
+    "employed"
+   ]
+  },
+  {
+   "id": "W11",
+   "card": "wanders",
+   "title": "Wanders: L8",
+   "lessons": [
+    "L8"
+   ],
+   "trials": 1,
+   "limit": 16,
+   "stages": [
+    "nearGrad"
+   ]
+  },
+  {
+   "id": "W12",
+   "card": "frustrated",
+   "title": "Frustrated: L2",
+   "lessons": [
+    "L2"
+   ],
+   "trials": 1,
+   "limit": 16,
+   "stages": [
+    "employed"
+   ]
+  },
+  {
+   "id": "W13",
+   "card": "hype",
+   "title": "Hype: L7",
+   "lessons": [
+    "L7"
+   ],
+   "trials": 1,
+   "limit": 16,
+   "stages": [
+    "nearGrad"
+   ]
+  },
+  {
+   "id": "W14",
+   "card": "notThereYet",
+   "title": "Not there yet: L13",
+   "lessons": [
+    "L13"
+   ],
+   "trials": 1,
+   "limit": 16,
+   "stages": [
+    "nearGrad"
+   ]
+  },
+  {
+   "id": "W15",
+   "card": "steady",
+   "title": "Steady, first-year student (no work experience): L1, L4, L2",
+   "lessons": [
+    "L1",
+    "L4",
+    "L2"
+   ],
+   "trials": 3,
+   "finish": true,
+   "limit": 16,
+   "stages": [
+    "firstYear"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,172 @@
+{
+ "doc": "docs/AGENT_EVALS.md section 12.",
+ "cases": [
+  {
+   "id": "X1",
+   "title": "A complete design, agreed step by step.",
+   "convo": [
+    [
+     "U",
+     "A lesson on writing a volunteer bio."
+    ],
+    [
+     "A",
+     "What should it include?"
+    ],
+    [
+     "U",
+     "Who they are, one thing they've done as a volunteer, and why they care."
+    ],
+    [
+     "A",
+     "Objectives?"
+    ],
+    [
+     "U",
+     "Can describe a volunteer experience; can say why it matters to them; can write it in plain language."
+    ],
+    [
+     "A",
+     "Name?"
+    ],
+    [
+     "U",
+     "Writing Your Volunteer Bio."
+    ]
+   ],
+   "noDirective": true
+  },
+  {
+   "id": "X2",
+   "title": "Six objectives were discussed.",
+   "convo": [
+    [
+     "U",
+     "A lesson on budgeting with six objectives: track spending, set a budget, cut a cost, save weekly, read a bank statement, and plan one purchase."
+    ],
+    [
+     "A",
+     "That's a lot for 20 minutes; which matter most?"
+    ],
+    [
+     "U",
+     "Probably tracking, setting a budget and cutting a cost, but keep whatever you think."
+    ]
+   ]
+  },
+  {
+   "id": "X3",
+   "title": "Instructions for the coach, with a link and a code.",
+   "contains": [
+    "https://community.example.org/join",
+    "PLATO-2026"
+   ],
+   "convo": [
+    [
+     "U",
+     "A lesson on joining our community: learners share a screenshot of their first post."
+    ],
+    [
+     "A",
+     "Any instructions for the coach?"
+    ],
+    [
+     "U",
+     "Yes: share https://community.example.org/join and the code PLATO-2026 when they're ready."
+    ],
+    [
+     "A",
+     "Saved as a coach directive."
+    ],
+    [
+     "U",
+     "Call it 'Join the Community'."
+    ]
+   ]
+  },
+  {
+   "id": "X4",
+   "title": "No instructions for the coach.",
+   "noDirective": true,
+   "convo": [
+    [
+     "U",
+     "A lesson where learners write three interview questions to ask an employer."
+    ],
+    [
+     "A",
+     "Objectives?"
+    ],
+    [
+     "U",
+     "Can write open questions; can tailor them to the role."
+    ],
+    [
+     "A",
+     "Any coach instructions?"
+    ],
+    [
+     "U",
+     "No, none."
+    ]
+   ]
+  },
+  {
+   "id": "X5",
+   "title": "The author changed their mind halfway.",
+   "final": "cover letter",
+   "dropped": "résumé|resume",
+   "convo": [
+    [
+     "U",
+     "A lesson on writing a résumé summary."
+    ],
+    [
+     "A",
+     "What should it include?"
+    ],
+    [
+     "U",
+     "Actually, change it: make it a lesson on writing a cover letter instead."
+    ],
+    [
+     "A",
+     "Got it, a cover letter. What should the letter include?"
+    ],
+    [
+     "U",
+     "A specific story and why they want the role. Call it 'Your First Cover Letter'."
+    ]
+   ]
+  },
+  {
+   "id": "X6",
+   "title": "A thin conversation: a name and a rough idea.",
+   "convo": [
+    [
+     "U",
+     "Something about time management. Maybe 'Plan Your Week'."
+    ]
+   ]
+  },
+  {
+   "id": "X7",
+   "title": "The conversation was in Spanish.",
+   "language": "Spanish",
+   "convo": [
+    [
+     "U",
+     "Una lección sobre escribir una biografía de voluntario."
+    ],
+    [
+     "A",
+     "¿Qué debe incluir?"
+    ],
+    [
+     "U",
+     "Quiénes son, una experiencia como voluntario y por qué les importa. Se llama 'Tu biografía de voluntario'."
+    ]
+   ]
+  }
+ ]
+}

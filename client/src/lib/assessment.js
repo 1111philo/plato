@@ -21,6 +21,8 @@ export const MAX_TRANSCRIPT = 40;
 const LINK_CONTEXT_PREFIX = '[REFERENCE CONTEXT';
 /** Words a quote needs before matching a coach message means the learner copied it. */
 export const COPY_WORDS = 8;
+/** More than this share of a quote's three-word sequences written first by the coach: the quote is the coach's wording. */
+export const COPIED_SHARE = 0.5;
 
 /** 1-based numbers of the objectives the coach claimed this turn that weren't already checked off. */
 function claimedNew(kb, parsed) {
@@ -167,6 +169,40 @@ export function closeSpelling(a, b) {
 /** groundVerdict's reason when the words that would show an objective were the coach's. */
 export const COACH_WROTE = 'the words that would show it were written by the coach';
 
+/** groundVerdict's reason when the only evidence is a web address the learner typed (never opened). */
+export const ONLY_URL = 'a link the learner typed was never opened: they need to attach the page, or send a screenshot';
+const BARE_URL = /^\s*<?https?:\/\/\S+>?\s*$/i;
+
+/** groundVerdict's reason when the only quote agrees with the coach ("yes, that's me"). */
+export const ONLY_AGREES = 'the learner only agreed with words the coach wrote';
+
+// The words of a reply that only agrees or confirms ("Yes, that's accurate,
+// that's me."). The assessor counted these as showing an objective even
+// though assessor.md says agreeing isn't showing (agent evaluations A17:
+// 6 of 6), so plato's code doesn't let a quote made only of them count.
+const AGREEING = new Set(('yes yeah yep yup sure ok okay fine that thats this it its is was me i im am you '
+  + 'accurate correct right true exactly perfect great good nice sounds looks love like works agree agreed '
+  + 'all of the above totally absolutely definitely really so very much thanks thank go ahead post send use do '
+  // Spanish, the language most learners use after English (C22: "Eso soy yo").
+  + 'si eso esto soy yo es correcto exacto exactamente perfecto vale claro esta bien de acuerdo usalo usa publicalo publica me gusta asi todo genial gracias listo').split(' '));
+
+/** True when a quote only agrees or confirms: every word is an agreeing word. Pure. */
+export function onlyAgrees(quote) {
+  const ws = String(quote || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f’']/g, '').match(/\p{L}+/gu) || [];
+  return ws.length > 0 && ws.length <= 12 && ws.every((w) => AGREEING.has(w));
+}
+
+/**
+ * The objectives a confirmation can show: where the objective or the exemplar
+ * says the learner confirms something the coach built (assessor.md "Unless the
+ * lesson says otherwise", e.g. "Can confirm a profile that is true to them").
+ * A Set of 1-based numbers.
+ */
+export function confirmingCounts(kb) {
+  const exemplar = /\bconfirm/i.test(kb?.exemplar || '');
+  return new Set((kb?.objectives || []).map((o, i) => (exemplar || /\bconfirm/i.test(typeof o === 'string' ? o : o?.objective || '') ? i + 1 : 0)).filter(Boolean));
+}
+
 /**
  * An objective as a step addressed to the learner. Objectives are written
  * about the learner ("Can ... confirm their profile"); held replies speak to
@@ -190,11 +226,15 @@ export function objectiveForLearner(o) {
  * `check`, and the numbers the assessor called shown with a quote that failed
  * (checkGrading asks it once more about those).
  *
+ * A quote that only agrees with the coach (`onlyAgrees`) doesn't count, except
+ * for the objectives in `confirms` (confirmingCounts: the lesson says the
+ * learner's confirmation shows them).
+ *
  * With `evidence` (Trace mode), also `evidence: { n: [{ quote, learnerAt,
  * coachAt, ok }] }`: for each quote piece, which transcript message it was
  * found in (−1: nowhere), so a person can see why a quote did or didn't count.
  */
-export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false } = {}) {
+export function groundVerdict(verdict, transcript, check, { imageThisTurn = false, evidence = false, confirms = new Set() } = {}) {
   const found = {};
   let current = null;
   const firstIndex = (by, quote) => transcript.findIndex((m) => m.by === by && appearsIn(quote, m.text));
@@ -225,7 +265,13 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
     }
     let failed = null;
     current = n;
-    for (const quote of textQuotes) {
+    // A quote that only agrees ("yes, that's me") shows nothing, unless the
+    // lesson says confirming counts (`confirms`, from confirmingCounts).
+    if (textQuotes.length && textQuotes.every(onlyAgrees) && !confirms.has(n)) failed = ONLY_AGREES;
+    // A typed web address shows nothing: plato never opened it (C16). An
+    // attached page is "[attached a web page]", and an image "[image]".
+    else if (textQuotes.length && textQuotes.every((q) => BARE_URL.test(q)) && textQuotes.length === quotes.length) failed = ONLY_URL;
+    for (const quote of failed ? [] : textQuotes) {
       const result = groundQuote(quote);
       if (result !== true) { failed = result; break; }
     }
@@ -265,8 +311,32 @@ export function groundVerdict(verdict, transcript, check, { imageThisTurn = fals
       if (evidence) (found[current] ||= []).push({ quote: q, learnerAt, coachAt, ok: !coachFirst && learnerAt !== -1 });
       if (coachFirst) return COACH_WROTE;
       if (learnerAt === -1) return 'not yet shown in the learner’s own words';
+      if (assembledFromCoach(q)) return COACH_WROTE;
     }
     return true;
+  }
+
+  /**
+   * A quote mostly made of the coach's wording: more than COPIED_SHARE of its
+   * three-word sequences first appeared in a coach message (and not in
+   * anything the learner wrote before it). Catches the coach's sentences
+   * joined up, or sent back with a word or two swapped as the coach
+   * suggested (agent evaluations W4), which the whole-quote check misses.
+   * The coach polishing the learner's own words still counts as theirs:
+   * those sequences were the learner's first.
+   */
+  function assembledFromCoach(q) {
+    const ws = words(q);
+    if (ws.length < COPY_WORDS) return false;
+    const grams = ws.slice(2).map((_, i) => ws.slice(i, i + 3).join(' '));
+    const said = transcript.map((m) => ({ by: m.by, text: ` ${words(m.text).join(' ')} ` }));
+    let copied = 0;
+    for (const g of grams) {
+      const coachAt = said.findIndex((m) => m.by === 'coach' && m.text.includes(` ${g} `));
+      if (coachAt === -1) continue;
+      if (!said.slice(0, coachAt).some((m) => m.by === 'learner' && m.text.includes(` ${g} `))) copied++;
+    }
+    return copied / grams.length > COPIED_SHARE;
   }
 }
 
@@ -396,6 +466,40 @@ export function draftsForLearner(text) {
   return false;
 }
 
+// Han, kana and Hangul: what Qwen3-VL slips into replies in other languages
+// ("one moment —哪怕很小— where you felt proud", agent evaluations C59).
+const CJK_SCRIPT = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+const CJK_LANGUAGES = new Set(['Chinese', 'Japanese', 'Korean']);
+// Languages with a script of their own: a reply to these learners should be
+// mostly in it. A Bengali learner got whole lessons in English (agent
+// evaluations W8), with the language in both the prompt and the context.
+const SCRIPTS = {
+  Bengali: /[\u0980-\u09ff]/g, Hindi: /[\u0900-\u097f]/g, Marathi: /[\u0900-\u097f]/g, Nepali: /[\u0900-\u097f]/g,
+  Arabic: /[\u0600-\u06ff]/g, Urdu: /[\u0600-\u06ff]/g, Persian: /[\u0600-\u06ff]/g, Hebrew: /[\u0590-\u05ff]/g,
+  Russian: /[\u0400-\u04ff]/g, Ukrainian: /[\u0400-\u04ff]/g, Greek: /[\u0370-\u03ff]/g,
+  Punjabi: /[\u0a00-\u0a7f]/g, Gujarati: /[\u0a80-\u0aff]/g, Tamil: /[\u0b80-\u0bff]/g, Telugu: /[\u0c00-\u0c7f]/g,
+  Thai: /[\u0e00-\u0e7f]/g, Burmese: /[\u1000-\u109f]/g, Khmer: /[\u1780-\u17ff]/g, Amharic: /[\u1200-\u137f]/g,
+};
+
+/**
+ * True when a reply isn't in the learner's script: characters from Chinese,
+ * Japanese or Korean in another language's reply, or, for a language with a
+ * script of its own, a reply mostly in another one. Pure.
+ */
+export function mixesScripts(text, languageName = null) {
+  const t = String(text || '');
+  if (!CJK_LANGUAGES.has(languageName) && CJK_SCRIPT.test(t)) return true;
+  const own = SCRIPTS[languageName];
+  if (!own) return false;
+  const letters = (t.replace(/\[[^\]]*\]/g, '').match(/\p{L}/gu) || []).length;
+  return letters > 20 && (t.match(own) || []).length < letters * 0.5;
+}
+
+/** The coach's addendum when its reply mixed in another language. */
+export const SCRIPT_ADDENDUM = `## One language (from plato, not the learner)
+
+Your reply wasn't all in the learner's language: it was in another one, or mixed in words or characters from another. Write the same reply again, entirely in the learner's language (English, unless the context gives \`learnerLanguage\`). Keep your usual voice, length, and tags.`;
+
 /** The coach's addendum when its reply wrote the learner's text for them. */
 export const DRAFT_ADDENDUM = `## Let them write it (from plato, not the learner)
 
@@ -415,9 +519,24 @@ export function heldReply(kb, outstanding, missing) {
   // words"), so they stay out of this learner-facing reply. The one worth
   // telling the learner is that their message repeated the coach's wording.
   const copied = outstanding.some((n) => missing?.[n] === COACH_WROTE)
-    ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.' : '';
+    ? ' Some of what you sent repeats my wording, and that doesn’t count as yours.'
+    : outstanding.some((n) => missing?.[n] === ONLY_AGREES) ? ' Saying yes to my wording doesn’t show it in your own words.'
+      : outstanding.some((n) => missing?.[n] === ONLY_URL) ? ' I can’t open a link you type: attach the page with the link button, or send a screenshot.' : '';
   const list = names.length > 1 ? `\n\nStill to show in your own words:\n${names.map((x) => `- ${x}`).join('\n')}` : '';
   return `You're close, but this lesson isn't complete yet.${copied} The next step is yours: **${names[0] || 'the remaining objective'}**. A few plain sentences in your own words is enough. Send it when you're ready.${list}`;
+}
+
+/**
+ * The coach's addendum that puts one of plato's fixed messages (heldReply)
+ * into the learner's language, when it isn't English. The message is plato's;
+ * the coach only translates it.
+ */
+export function localizeAddendum(text) {
+  return `## A message from plato (not the learner)
+
+Reply with ONLY the message below, written in the learner's language (\`learnerLanguage\` in the context). Keep its meaning, its bold and its list; add nothing; no tags.
+
+${text}`;
 }
 
 /** The learner-visible "Where you are" note on a held turn, when the coach's says the lesson is done. */
