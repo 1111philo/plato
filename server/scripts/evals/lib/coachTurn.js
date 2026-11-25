@@ -48,26 +48,28 @@ export async function coachTurn({ app, model, lesson, kb, profile = 'No profile 
   const learnerSaidEarly = assessment?.assessmentTranscript ? assessment.assessmentTranscript(messages).filter((m) => m.by === 'learner').map((m) => m.text) : [];
   let parsed;
   if (assessment?.copyReply && (repeated || agreed)) {
-    let fixed = assessment.copyReply(agreed ? 'agreed' : 'repeated');
-    if (app.languageFor(language)) {
+    const lang = app.languageFor(language) || null;
+    let fixed = assessment.copyReply(agreed ? 'agreed' : 'repeated', lang);
+    if (lang && !(assessment.hasFixedReplies ? assessment.hasFixedReplies(lang) : false)) {
       try { fixed = engine.parseCoachResponse(await coach(assessment.localizeAddendum(fixed), messages, 600)).text || fixed; } catch { /* keep the English */ }
     }
     parsed = engine.parseCoachResponse(`${fixed}\n[PROGRESS: ${kb.progress ?? 0}]\n[KB_UPDATE: {}]`);
   } else parsed = await parseAndRepair(await coach());
+  const platoReply = !!assessment?.copyReply && (repeated || agreed) && !!assessment.hasFixedReplies;
   // Example answers in the learner's voice are cut first, where this version does.
-  const cut = (p) => (assessment?.withoutVoiceSamples && kb.status !== 'completed' && p.text ? { ...p, text: assessment.withoutVoiceSamples(p.text, learnerSaidEarly) || p.text } : p);
+  const cut = (p) => (assessment?.withoutVoiceSamples && kb.status !== 'completed' && !platoReply && p.text ? { ...p, text: assessment.withoutVoiceSamples(p.text, learnerSaidEarly) || p.text } : p);
   const uncut = parsed.text;
   parsed = cut(parsed);
   // The draft guard (#584), where this version has it.
   const learnerSaid = learnerSaidEarly;
   const several = (t) => !!assessment?.copyReply && (String(t).match(/\?/g) || []).length > 1;
-  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && (assessment.draftsForLearner(parsed.text || '', learnerSaid) || (parsed.text !== uncut && several(parsed.text)))) {
+  if (assessment?.draftsForLearner && assessment.DRAFT_ADDENDUM && kb.status !== 'completed' && !platoReply && (assessment.draftsForLearner(parsed.text || '', learnerSaid) || (parsed.text !== uncut && several(parsed.text)))) {
     const again = await parseAndRepair(await coach(assessment.DRAFT_ADDENDUM));
     if (again.text) parsed = again;
     // A sample in the learner's voice that survived the rewrite comes out, where this version does.
     if (assessment.withoutVoiceSamples && assessment.draftsForLearner(parsed.text || '', learnerSaid)) parsed = { ...parsed, text: assessment.withoutVoiceSamples(parsed.text, learnerSaid) };
     // Still drafting: the drafted passages come out in code, where this version does.
-    if (assessment.withoutDrafts && assessment.draftsForLearner(parsed.text || '', learnerSaid)) parsed = { ...parsed, text: assessment.withoutDrafts(parsed.text, learnerSaid) };
+    if (assessment.withoutDrafts && assessment.draftsForLearner(parsed.text || '', learnerSaid)) parsed = { ...parsed, text: assessment.withoutDrafts(parsed.text, learnerSaid, assessment.hasFixedReplies?.(app.languageFor(language) || null) ? app.languageFor(language) || null : null) };
   }
   // The script guard, where this version has it: a reply that mixes in another
   // script is rewritten once, and the rewrite used only when it's clean.

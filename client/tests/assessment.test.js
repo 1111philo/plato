@@ -588,6 +588,12 @@ describe('repeatsCoach (Blake on playground, 2026-11-25: a pasted hint praised a
       assert.doesNotMatch(t, /great|strong|nailed|exactly|right/i);
     }
   });
+  it('Spanish is built in, so it never depends on a translation (C22)', () => {
+    assert.match(copyReply('agreed', 'Spanish'), /¿Cómo lo dirías tú\?/);
+    assert.match(copyReply('repeated', 'Spanish'), /propias palabras/);
+    assert.equal(copyReply('agreed', 'Bengali'), copyReply('agreed'), 'no built-in text: English, translated by the coach');
+    assert.equal(withoutDrafts('Por ejemplo: “Uso Notion porque se sincroniza con mi Mac.”', [], 'Spanish'), copyReply('noDraft', 'Spanish'));
+  });
   it('a hint that gives the answer is a draft', () => {
     assert.equal(draftsForLearner('Hint: It’s not random — it picks based on what’s most likely to follow, like predicting the next word in a song lyric you know.'), true);
   });

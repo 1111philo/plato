@@ -27,7 +27,7 @@ import { rulesApplied } from './lessonTrace.js';
 import {
   assessmentPlan, assessmentTranscript, assessmentInput, groundVerdict, applyVerdict,
   heldCompletionAddendum, allObjectivesMet, parseVerdict, HELD_PROGRESS,
-  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, repeatsCoach, copyReply, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
+  FORMAT_NOTE, confirmingCounts, withoutUnbackedClaims, claimsCompletion, heldReply, heldPosition, localizeAddendum, mixesScripts, SCRIPT_ADDENDUM, withDirectiveLiterals, withoutVoiceSamples, withoutDrafts, repeatsCoach, copyReply, hasFixedReplies, onlyAgrees, draftsForLearner, DRAFT_ADDENDUM, DRAFT_WORDS,
 } from './assessment.js';
 
 /** The assessor's retry after a malformed reply: varied, so it isn't the identical request. */
@@ -656,9 +656,10 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
   let coachMsg;
   if (repeated || agreed) {
     report('coach_wording_repeated');
-    let fixed = copyReply(agreed ? 'agreed' : 'repeated');
-    // In the learner's language, when it isn't English; a failed translation keeps the English.
-    if (learnerLanguageName()) {
+    const language = learnerLanguageName();
+    let fixed = copyReply(agreed ? 'agreed' : 'repeated', language);
+    // A language plato has no built-in text for: the coach translates it; a failed translation keeps the English.
+    if (!hasFixedReplies(language)) {
       try {
         const translated = parseCoachResponse(await orchestrator.converseStream('coach', messages, () => {}, 600, localizeAddendum(fixed), opts('plato’s reply to a copied answer, in the learner’s language'))).text;
         if (translated) fixed = translated;
@@ -703,11 +704,13 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     trace?.step('samplesRemoved', { before: reply.text, after: cleaned, from: why });
     return { ...reply, text: cleaned };
   };
-  if (lessonKB.status !== 'completed') coachReply = cutSamples(coachReply, 'reply');
+  // plato's own reply to a copy isn't the coach's: it skips the draft guard.
+  const platoReply = repeated || agreed;
+  if (lessonKB.status !== 'completed' && !platoReply) coachReply = cutSamples(coachReply, 'reply');
   // A rewrite is asked for only when the cut wasn't enough: the reply still
   // drafts, or it had samples cut and still asks several questions (replies
   // that write the answer tend to: agent evaluations C63).
-  const drafts = lessonKB.status !== 'completed' && (draftsForLearner(coachReply.text, learnerSaid)
+  const drafts = lessonKB.status !== 'completed' && !platoReply && (draftsForLearner(coachReply.text, learnerSaid)
     || (coachReply.text !== repaired.text && (coachReply.text.match(/\?/g) || []).length > 1));
   trace?.step('draftCheck', lessonKB.status === 'completed' ? { skipped: 'completed' } : { drafts, minWords: DRAFT_WORDS });
   if (drafts) {
@@ -721,7 +724,7 @@ async function sendMessageTraced(lessonId, lesson, text, imageDataUrl, links, on
     } catch (e) { trace?.step('draftGuard', { before: repaired.text, failed: String(e?.message || e), used: false }); /* keep the first reply */ }
     // Still drafting after the rewrite: the drafted passages come out in code.
     if (!coachReply.draftRewritten) {
-      const stripped = withoutDrafts(coachReply.text, learnerSaid);
+      const stripped = withoutDrafts(coachReply.text, learnerSaid, hasFixedReplies(learnerLanguageName()) ? learnerLanguageName() : null);
       trace?.step('samplesRemoved', { before: coachReply.text, after: stripped, from: 'still drafting' });
       coachReply = { ...coachReply, text: stripped };
     }

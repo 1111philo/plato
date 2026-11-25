@@ -664,10 +664,23 @@ export function repeatsCoach(text, coachTexts = []) {
  * praised a pasted example as "a strong start" (Blake's trace, 2026-11-25),
  * so code answers, and nothing is graded on that turn.
  */
-export function copyReply(kind) {
-  return kind === 'agreed'
-    ? 'Those are still my words, not yours yet. How would you say it yourself?'
-    : 'That’s my wording sent back, so it doesn’t show your thinking yet. What would you say in your own words?';
+const FIXED_REPLIES = {
+  English: {
+    repeated: 'That’s my wording sent back, so it doesn’t show your thinking yet. What would you say in your own words?',
+    agreed: 'Those are still my words, not yours yet. How would you say it yourself?',
+    noDraft: 'I can’t write that for you, because it has to be yours. What would you say in your own words?',
+  },
+  // The language most learners use after English: no model call, so it can't come back wrong.
+  Spanish: {
+    repeated: 'Eso es lo que escribí yo, así que todavía no muestra lo que piensas tú. ¿Cómo lo dirías con tus propias palabras?',
+    agreed: 'Esas palabras todavía son mías, no tuyas. ¿Cómo lo dirías tú?',
+    noDraft: 'No puedo escribirlo por ti, porque tiene que ser tuyo. ¿Cómo lo dirías con tus propias palabras?',
+  },
+};
+/** True when plato's fixed replies are built in for this language (others are translated by the coach). */
+export const hasFixedReplies = (languageName) => !languageName || !!FIXED_REPLIES[languageName];
+export function copyReply(kind, languageName = null) {
+  return (FIXED_REPLIES[languageName] || FIXED_REPLIES.English)[kind] || FIXED_REPLIES.English.repeated;
 }
 
 // An example given as a quote: "(e.g., “I coordinate with event teams.”)",
@@ -696,7 +709,7 @@ export function withoutVoiceSamples(text, learnerTexts = []) {
 }
 
 /** plato's reply when taking the drafted passages out of a reply leaves nothing to say. */
-export const NO_DRAFT_REPLY = 'I can’t write that for you, because it has to be yours. What would you say in your own words?';
+export const NO_DRAFT_REPLY = FIXED_REPLIES.English.noDraft;
 
 /**
  * The last line of the draft guard: the reply with every passage
@@ -706,7 +719,7 @@ export const NO_DRAFT_REPLY = 'I can’t write that for you, because it has to b
  * 8 of 24 "show me" turns, agent evaluations C63). If too little is left,
  * NO_DRAFT_REPLY. What it returns never trips draftsForLearner. Pure.
  */
-export function withoutDrafts(text, learnerTexts = []) {
+export function withoutDrafts(text, learnerTexts = [], languageName = null) {
   const said = normalizeForMatch(learnerTexts.join('\n'));
   const wordsIn = (t) => t.trim().split(/\s+/).filter(Boolean).length;
   let out = withoutVoiceSamples(text, learnerTexts);
@@ -721,7 +734,7 @@ export function withoutDrafts(text, learnerTexts = []) {
     return lead && wordsIn(line.slice(lead.index + lead[0].length)) >= DRAFT_WORDS ? line.slice(0, lead.index).trimEnd() : line;
   }).join('\n');
   out = out.replace(/[ \t]+([.,;:!?])/g, '$1').replace(/([?!])\./g, '$1').replace(/\n{3,}/g, '\n\n').trim();
-  return wordsIn(out) >= 6 && !draftsForLearner(out, learnerTexts) ? out : NO_DRAFT_REPLY;
+  return wordsIn(out) >= 6 && !draftsForLearner(out, learnerTexts) ? out : copyReply('noDraft', languageName);
 }
 
 /** The coach's addendum when its reply wrote the learner's text for them. */
